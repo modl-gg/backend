@@ -6,4 +6,5 @@ public final class ServerResponseMessage {
     public static final String REGISTER_EMAIL_EXISTS = "The provided email is already in use!";
     public static final String REGISTER_DOMAIN_EXISTS = "The provided subdomain is already in use!";
     public static final String REGISTER_NAME_EXISTS = "The provided server name is already in use!";
+    public static final String REGISTER_RESERVED_SUBDOMAIN = "The provided subdomain is reserved and cannot be used!";
 }

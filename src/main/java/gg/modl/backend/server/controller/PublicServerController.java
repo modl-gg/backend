@@ -1,6 +1,6 @@
 package gg.modl.backend.server.controller;
 
-import gg.modl.backend.rest.RESTMapping;
+import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerResponseMessage;
 import gg.modl.backend.server.ServerService;
 import jakarta.validation.Valid;
@@ -17,10 +17,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Set;
+
 @RestController
-@RequestMapping(RESTMapping.V1_PUBLIC_SERVERS)
+@RequestMapping(RESTMappingV1.PUBLIC_SERVER)
 @RequiredArgsConstructor
 public class PublicServerController {
+    private static final Set<String> RESERVED_SUBDOMAINS = Set.of(
+            "payments", "payment", "api", "app",
+            "status", "mail", "www", "discord",
+            "admin", "twitter", "demo", "panel",
+            "ftp", "sftp", "www2", "www3",
+            "billing", "stripe", "test", "staging",
+            "root", "internal", "administrator", "mod",
+            "beta", "dev", "portal", "dashboard",
+            "modl", "support", "help", "email",
+            "docs", "secure", "alpha", "cdn"
+    );
     private final ServerService serverService;
 
     @PostMapping("/register")
@@ -28,6 +41,9 @@ public class PublicServerController {
         if (bindingResult.hasErrors()) {
             // Invalid schema
             return ResponseEntity.badRequest().body(new RegisterResponse(false, ServerResponseMessage.REGISTER_INVALID_SCHEMA));
+        }
+        if (RESERVED_SUBDOMAINS.contains(request.customDomain)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_RESERVED_SUBDOMAIN));
         }
         // TODO: ratelimit
         // TODO: cloudflare turnstile
