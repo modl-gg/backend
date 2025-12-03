@@ -15,7 +15,7 @@ public class CustomErrorController implements ErrorController {
     @RequestMapping("/error")
     public ResponseEntity<ErrorResponse> handleError(HttpServletRequest request) {
         Object status = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
-        
+
         int statusCode = status != null ? Integer.parseInt(status.toString()) : 500;
         
         String errorMessage;
@@ -29,7 +29,7 @@ public class CustomErrorController implements ErrorController {
             errorMessage = "An internal server error occurred.";
         } else {
             error = "Error";
-            errorMessage = "An error occurred processing your request.";
+            errorMessage = "Your request is missing required data.";
         }
         
         ErrorResponse errorResponse = new ErrorResponse(

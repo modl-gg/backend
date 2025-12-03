@@ -13,4 +13,7 @@ public final class RESTMappingV1 {
 
     private static final String PLAYER = "/player";
     public static final String MINECRAFT_PLAYER = PREFIX_MINECRAFT + PLAYER;
+
+    private static final String AUTH = "/auth";
+    public static final String PANEL_AUTH = PREFIX_PANEL + AUTH;
 }

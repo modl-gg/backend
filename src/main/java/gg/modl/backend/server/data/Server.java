@@ -123,12 +123,12 @@ public class Server {
 
     // Custom Domain Management
     @Nullable
-    @Field(name = "customDomain_override", targetType = FieldType.STRING)
+    @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
     @Indexed(unique = true, sparse = true)
     private String customDomainOverride;
 
     @Nullable
-    @Field(name = "customDomain_status", targetType = FieldType.STRING)
+    @Field(name = ServerField.CUSTOM_DOMAIN_STATUS, targetType = FieldType.STRING)
     private CustomDomainStatus customDomainStatus;
 
     @Nullable

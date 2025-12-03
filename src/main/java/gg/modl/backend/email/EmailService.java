@@ -2,6 +2,7 @@ package gg.modl.backend.email;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -10,15 +11,10 @@ import org.springframework.stereotype.Service;
 import java.io.UnsupportedEncodingException;
 
 @Service
+@RequiredArgsConstructor
 public class EmailService {
     private final JavaMailSender mailSender;
     private final CustomEmailConfiguration config;
-
-    @Autowired
-    public EmailService(JavaMailSender mailSender, CustomEmailConfiguration config) {
-        this.mailSender = mailSender;
-        this.config = config;
-    }
 
     public void send(String toEmail, String subject, String htmlBody) throws MessagingException, UnsupportedEncodingException {
         MimeMessage mimeMessage = mailSender.createMimeMessage();

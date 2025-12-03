@@ -1,7 +1,11 @@
 package gg.modl.backend.database;
 
 import com.mongodb.client.MongoClient;
+import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
+import org.springframework.data.mongodb.core.convert.*;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,10 +23,30 @@ public class DynamicMongoTemplateProvider {
     }
 
     public MongoTemplate getFromDatabaseName(String databaseName) {
-        return mongoTemplateCache.computeIfAbsent(databaseName, dbName -> new MongoTemplate(mongoClient, dbName));
+        return mongoTemplateCache.computeIfAbsent(databaseName, dbName -> {
+            MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(mongoClient, databaseName);
+
+            return new MongoTemplate(factory, getDefaultMongoConverter(factory));
+        });
     }
 
     public MongoTemplate getGlobalDatabase() {
         return getFromDatabaseName(GLOBAL_DATABASE_NAME);
+    }
+
+    private static MongoConverter getDefaultMongoConverter(MongoDatabaseFactory factory) {
+        DbRefResolver dbRefResolver = new DefaultDbRefResolver(factory);
+        MongoCustomConversions conversions = new MongoCustomConversions(CustomMongoConverters.CONVERTERS);
+
+        MongoMappingContext mappingContext = new MongoMappingContext();
+        mappingContext.setSimpleTypeHolder(conversions.getSimpleTypeHolder());
+        mappingContext.afterPropertiesSet();
+
+        MappingMongoConverter converter = new MappingMongoConverter(dbRefResolver, mappingContext);
+        converter.setCustomConversions(conversions);
+        converter.setCodecRegistryProvider(factory);
+        converter.afterPropertiesSet();
+
+        return converter;
     }
 }

@@ -2,12 +2,10 @@ package gg.modl.backend.server;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.server.data.ProvisioningStatus;
-import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.server.data.*;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -49,6 +47,20 @@ public class ServerService {
 
     public String generateDatabaseName(@NotNull String subdomain) {
         return SERVER_DATABASE_PREFIX + subdomain;
+    }
+
+    @Nullable
+    public Server getServerFromDomain(@NotNull String domain) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+
+        // domain is either subdomain or custom domain
+        // scans for subdomain
+        Criteria subdomainCriteria = Criteria.where(ServerField.SUBDOMAIN).is(domain);
+        // scans for custom domain and makes sure custom domain is active
+        Criteria customDomainCriteria = new Criteria().andOperator(Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain), Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.ACTIVE.name().toLowerCase()));
+
+        Query query = new Query(new Criteria().orOperator(subdomainCriteria, customDomainCriteria));
+        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
