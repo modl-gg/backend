@@ -2,7 +2,6 @@ package gg.modl.backend.auth.controller;
 
 import gg.modl.backend.auth.AuthService;
 import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +17,7 @@ public class PanelAuthController {
 
     @PostMapping("/send-email-code")
     public ResponseEntity<SendEmailCodeResponse> sendEmailCode(HttpServletRequest request/*, @RequestBody SendEmailCodeRequest requestData*/) {
-        System.out.println(RequestUtil.getRequestServer(request));
+        // TODO: complete
         return ResponseEntity.ok(new SendEmailCodeResponse());
     }
 

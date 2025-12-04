@@ -1,13 +1,14 @@
 package gg.modl.backend.server.data;
 
+// Enum names have to be lowercase to work with current MongoDB data. Make these uppercase once database has been modified.
 public enum SubscriptionStatus {
-    ACTIVE,
-    CANCELED,
-    PAST_DUE,
-    INACTIVE,
-    TRIALING,
-    INCOMPLETE,
-    INCOMPLETE_EXPIRED,
-    UNPAID,
-    PAUSED
+    active,
+    canceled,
+    past_due,
+    inactive,
+    trialing,
+    incomplete,
+    incomplete_expired,
+    unpaid,
+    paused
 }

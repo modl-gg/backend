@@ -37,9 +37,9 @@ public class ServerService {
                 databaseName,
                 adminEmail,
                 false,
-                ProvisioningStatus.PENDING,
-                ServerPlan.FREE,
-                SubscriptionStatus.INACTIVE,
+                ProvisioningStatus.pending,
+                ServerPlan.free,
+                SubscriptionStatus.inactive,
                 now,
                 now
         ));
@@ -57,7 +57,7 @@ public class ServerService {
         // scans for subdomain
         Criteria subdomainCriteria = Criteria.where(ServerField.SUBDOMAIN).is(domain);
         // scans for custom domain and makes sure custom domain is active
-        Criteria customDomainCriteria = new Criteria().andOperator(Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain), Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.ACTIVE.name().toLowerCase()));
+        Criteria customDomainCriteria = new Criteria().andOperator(Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain), Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.active.name().toLowerCase()));
 
         Query query = new Query(new Criteria().orOperator(subdomainCriteria, customDomainCriteria));
         return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
