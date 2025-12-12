@@ -13,8 +13,6 @@ import java.time.Instant;
 @Data
 public class AuthCode {
     @Id
-    private String id;
-
     @Field
     @Indexed(unique = true)
     private String email;

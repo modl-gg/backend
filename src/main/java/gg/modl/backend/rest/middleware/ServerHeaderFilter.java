@@ -16,7 +16,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
-public class PanelFilter extends OncePerRequestFilter {
+public class ServerHeaderFilter extends OncePerRequestFilter {
     private final ServerService serverService;
 
     @Override

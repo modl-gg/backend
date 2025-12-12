@@ -13,10 +13,10 @@ public class FilterConfig {
     private final ServerService serverService;
 
     @Bean
-    public FilterRegistrationBean<PanelFilter> panelFilter() {
-        FilterRegistrationBean<PanelFilter> registrationBean = new FilterRegistrationBean<>();
-        registrationBean.setFilter(new PanelFilter(serverService));
-        registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*");
+    public FilterRegistrationBean<ServerHeaderFilter> panelFilter() {
+        FilterRegistrationBean<ServerHeaderFilter> registrationBean = new FilterRegistrationBean<>();
+        registrationBean.setFilter(new ServerHeaderFilter(serverService));
+        registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
         registrationBean.setOrder(1);
 
         return registrationBean;

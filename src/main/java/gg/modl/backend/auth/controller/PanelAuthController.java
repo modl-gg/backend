@@ -59,8 +59,8 @@ public class PanelAuthController {
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
     }
 
-    @PostMapping("/verify-code")
-    public ResponseEntity<AuthResponse> verifyCode(
+    @PostMapping("/verify-email-code")
+    public ResponseEntity<AuthResponse> verifyEmailCode(
             HttpServletRequest request,
             HttpServletResponse response,
             @RequestBody @Valid VerifyCodeRequest requestData,
