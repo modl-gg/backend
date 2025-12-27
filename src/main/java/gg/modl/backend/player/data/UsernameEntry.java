@@ -5,4 +5,4 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.Date;
 
-public record UsernameEntry(@NotNull String username, @NotNull Date addedAt) {}
+public record UsernameEntry(@NotNull String username, @NotNull Date date) {}
