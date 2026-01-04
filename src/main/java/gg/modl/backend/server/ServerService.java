@@ -92,5 +92,12 @@ public class ServerService {
         return new ServerExistResult(emailMatch, nameMatch, domainMatch);
     }
 
+    @Nullable
+    public Server getServerByApiKey(@NotNull String apiKey) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        Query query = new Query(Criteria.where(ServerField.API_KEY).is(apiKey));
+        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+    }
+
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}
 }

@@ -144,6 +144,12 @@ public class Server {
     @Indexed(unique = true, sparse = true)
     private String customDomainCloudflareId;
 
+    // API Key
+    @Nullable
+    @Field(name = "apiKey", targetType = FieldType.STRING)
+    @Indexed(unique = true, sparse = true)
+    private String apiKey;
+
     // Analytics/Stats
     @Nullable
     @Field(name = "lastActivityAt", targetType = FieldType.DATE_TIME)

@@ -5,4 +5,21 @@ public final class CollectionName {
     public static final String PLAYERS = "players";
     public static final String SESSIONS = "sessions";
     public static final String AUTH_CODES = "auth_codes";
+    public static final String SETTINGS = "settings";
+
+    // Staff & Roles
+    public static final String STAFF = "staff";
+    public static final String STAFF_ROLES = "staffroles";
+    public static final String INVITATIONS = "invitations";
+
+    // Tickets
+    public static final String TICKETS = "tickets";
+
+    // Audit
+    public static final String LOGS = "logs";
+
+    // Knowledgebase & Homepage
+    public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebaseCategories";
+    public static final String KNOWLEDGEBASE_ARTICLES = "knowledgebaseArticles";
+    public static final String HOMEPAGE_CARDS = "homepageCards";
 }
