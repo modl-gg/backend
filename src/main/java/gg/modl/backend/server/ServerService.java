@@ -28,21 +28,33 @@ public class ServerService {
     }
 
     public void createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail) {
+        createServer(serverName, customDomain, adminEmail, null, ServerPlan.free);
+    }
+
+    public Server createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail,
+                             @Nullable String emailVerificationToken, @NotNull ServerPlan plan) {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
-        createServer(new Server(
+        Server server = new Server(
                 serverName,
                 customDomain,
                 databaseName,
                 adminEmail,
                 false,
                 ProvisioningStatus.pending,
-                ServerPlan.free,
+                plan,
                 SubscriptionStatus.inactive,
                 now,
                 now
-        ));
+        );
+
+        if (emailVerificationToken != null) {
+            server.setEmailVerificationToken(emailVerificationToken);
+        }
+
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        return db.save(server, CollectionName.MODL_SERVERS);
     }
 
     public String generateDatabaseName(@NotNull String subdomain) {

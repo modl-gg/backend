@@ -86,23 +86,33 @@ public class DashboardService {
         return Collections.emptyList();
     }
 
+    private static final int MAX_ACTIVITY_LIMIT = 100;
+    private static final int MAX_DAYS = 90;
+    private static final int MAX_QUERY_RESULTS = 200;
+
     public List<ActivityItemResponse> getRecentActivity(Server server, String staffEmail, int limit, int days) {
         MongoTemplate template = getTemplate(server);
         List<ActivityItemResponse> activities = new ArrayList<>();
+
+        int safeLimit = Math.max(1, Math.min(limit, MAX_ACTIVITY_LIMIT));
+        int safeDays = Math.max(1, Math.min(days, MAX_DAYS));
 
         String staffUsername = getStaffUsernameByEmail(template, staffEmail);
         if (staffUsername == null) {
             return activities;
         }
 
-        Date cutoffDate = new Date(System.currentTimeMillis() - (long) days * 24 * 60 * 60 * 1000);
+        Date cutoffDate = new Date(System.currentTimeMillis() - (long) safeDays * 24 * 60 * 60 * 1000);
 
         try {
-            Query ticketQuery = Query.query(new Criteria().orOperator(
-                    Criteria.where("creator").is(staffUsername),
-                    Criteria.where("assignedTo").is(staffUsername),
-                    Criteria.where("replies.name").is(staffUsername)
-            ));
+            Query ticketQuery = Query.query(new Criteria().andOperator(
+                    Criteria.where("created").gte(cutoffDate),
+                    new Criteria().orOperator(
+                            Criteria.where("creator").is(staffUsername),
+                            Criteria.where("assignedTo").is(staffUsername),
+                            Criteria.where("replies.name").is(staffUsername)
+                    )
+            )).limit(MAX_QUERY_RESULTS);
             List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : tickets) {
@@ -147,7 +157,10 @@ public class DashboardService {
         }
 
         try {
-            Query playerQuery = Query.query(Criteria.where("punishments.issuerName").is(staffUsername));
+            Query playerQuery = Query.query(
+                    Criteria.where("punishments.issuerName").is(staffUsername)
+                            .and("punishments.issued").gte(cutoffDate)
+            ).limit(MAX_QUERY_RESULTS);
             List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
 
             for (Player player : players) {
@@ -179,8 +192,8 @@ public class DashboardService {
 
         activities.sort((a, b) -> b.time().compareTo(a.time()));
 
-        if (activities.size() > limit) {
-            return activities.subList(0, limit);
+        if (activities.size() > safeLimit) {
+            return activities.subList(0, safeLimit);
         }
 
         return activities;

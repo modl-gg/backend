@@ -21,12 +21,17 @@ import java.util.List;
 public class LogService {
     private final DynamicMongoTemplateProvider mongoProvider;
 
+    private static final int MAX_LIMIT = 500;
+    private static final int DEFAULT_LIMIT = 100;
+
     public List<SystemLogResponse> getLogs(Server server, int limit) {
         MongoTemplate template = getTemplate(server);
 
+        int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
+
         Query query = new Query()
                 .with(Sort.by(Sort.Direction.DESC, "created"))
-                .limit(limit);
+                .limit(safeLimit);
 
         List<SystemLog> logs = template.find(query, SystemLog.class, CollectionName.LOGS);
 

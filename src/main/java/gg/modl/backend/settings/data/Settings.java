@@ -9,8 +9,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
-import java.util.Map;
-
 @Document(collection = CollectionName.SETTINGS)
 @Data
 @NoArgsConstructor
@@ -24,5 +22,5 @@ public class Settings {
     private String type;
 
     @Field(name = "data")
-    private Map<String, Object> data;
+    private Object data;
 }

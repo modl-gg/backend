@@ -40,16 +40,18 @@ public class QuickResponseSettingsService {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public QuickResponseSettings.Action findAction(QuickResponseSettings settings, String categoryId, String actionId) {
-        if (settings == null || settings.getCategories() == null) {
+        if (settings == null || settings.getCategories() == null || categoryId == null || actionId == null) {
             return null;
         }
 
         for (QuickResponseSettings.Category category : settings.getCategories()) {
-            if (category.getId().equals(categoryId) && category.getActions() != null) {
+            if (category == null || category.getId() == null || category.getActions() == null) {
+                continue;
+            }
+            if (categoryId.equals(category.getId())) {
                 for (QuickResponseSettings.Action action : category.getActions()) {
-                    if (action.getId().equals(actionId)) {
+                    if (action != null && actionId.equals(action.getId())) {
                         return action;
                     }
                 }

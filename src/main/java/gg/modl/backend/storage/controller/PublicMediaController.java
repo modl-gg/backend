@@ -1,21 +1,32 @@
 package gg.modl.backend.storage.controller;
 
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.dto.request.PresignUploadRequest;
+import gg.modl.backend.storage.dto.response.PresignUploadResponse;
+import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageQuotaService;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_MEDIA)
 @RequiredArgsConstructor
 public class PublicMediaController {
     private final S3StorageService s3StorageService;
+    private final MediaValidationService validationService;
+    private final StorageQuotaService quotaService;
+
+    private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "appeal");
 
     private static final long EVIDENCE_SIZE_LIMIT = 100L * 1024 * 1024; // 100MB (authenticated users only)
     private static final long TICKETS_SIZE_LIMIT = 10L * 1024 * 1024;   // 10MB for public ticket uploads
@@ -54,5 +65,47 @@ public class PublicMediaController {
         );
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/presign")
+    public ResponseEntity<?> getPresignedUploadUrl(
+            @RequestBody @Valid PresignUploadRequest presignRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(presignRequest.uploadType())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Upload type not allowed for public uploads. Allowed: " + PUBLIC_ALLOWED_UPLOAD_TYPES
+            ));
+        }
+
+        MediaValidationService.ValidationResult validation = validationService.validateMetadata(
+                presignRequest.fileName(),
+                presignRequest.contentType(),
+                presignRequest.fileSize(),
+                presignRequest.uploadType()
+        );
+
+        if (!validation.valid()) {
+            return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
+        }
+
+        if (!quotaService.canUpload(server, presignRequest.fileSize())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+        }
+
+        try {
+            PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
+                    server,
+                    presignRequest.uploadType(),
+                    presignRequest.fileName(),
+                    presignRequest.contentType(),
+                    presignRequest.fileSize()
+            );
+            return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }

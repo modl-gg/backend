@@ -3,11 +3,15 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
+import gg.modl.backend.storage.dto.request.PresignUploadRequest;
+import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -67,5 +71,65 @@ public class PanelMediaController {
             return ResponseEntity.ok(Map.of("message", "File deleted"));
         }
         return ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/presign")
+    public ResponseEntity<?> getPresignedUploadUrl(
+            @RequestBody @Valid PresignUploadRequest presignRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        MediaValidationService.ValidationResult validation = validationService.validateMetadata(
+                presignRequest.fileName(),
+                presignRequest.contentType(),
+                presignRequest.fileSize(),
+                presignRequest.uploadType()
+        );
+
+        if (!validation.valid()) {
+            return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
+        }
+
+        if (!quotaService.canUpload(server, presignRequest.fileSize())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+        }
+
+        try {
+            PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
+                    server,
+                    presignRequest.uploadType(),
+                    presignRequest.fileName(),
+                    presignRequest.contentType(),
+                    presignRequest.fileSize()
+            );
+            return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/confirm")
+    public ResponseEntity<?> confirmUpload(
+            @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        String key = confirmRequest.key();
+
+        if (!key.startsWith(server.getDatabaseName() + "/")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+        }
+
+        UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
+        if (uploadDetails == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Upload not found",
+                    "message", "The file was not uploaded or the presigned URL expired"
+            ));
+        }
+
+        return ResponseEntity.ok(uploadDetails);
     }
 }

@@ -7,7 +7,10 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffService;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,6 +22,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH)
@@ -35,6 +42,8 @@ public class PanelAuthController {
     private final AuthService authService;
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
+    private final StaffService staffService;
+    private final PermissionService permissionService;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -100,14 +109,72 @@ public class PanelAuthController {
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
     }
 
+    @PatchMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            HttpServletRequest request,
+            @RequestBody @Valid UpdateProfileRequest requestData,
+            BindingResult bindingResult) {
+
+        if (bindingResult.hasErrors()) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "Invalid request data"));
+        }
+
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+
+        try {
+            var result = staffService.updateProfileUsername(server, email, requestData.username());
+            if (result.isEmpty()) {
+                return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+            }
+            Staff staff = result.get();
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), staff.getRole()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
+        }
+    }
+
+    @GetMapping("/permissions")
+    public ResponseEntity<List<String>> getUserPermissions(HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(Collections.emptyList());
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+
+        // Check if user is Super Admin (server admin)
+        if (permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.ok(permissionService.getAllPermissionIds(server));
+        }
+
+        // Get staff member and their role
+        var staffOpt = staffService.getStaffByEmail(server, email);
+        if (staffOpt.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        String roleName = staffOpt.get().getRole();
+        var roleOpt = permissionService.getRoleByName(server, roleName);
+        if (roleOpt.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        return ResponseEntity.ok(roleOpt.get().getPermissions());
+    }
+
     private Cookie createSessionCookie(String sessionId) {
         Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), sessionId);
 
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-        cookie.setAttribute("SameSite", "Strict");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
 
         return cookie;
     }
@@ -116,10 +183,10 @@ public class PanelAuthController {
         Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), "");
 
         cookie.setHttpOnly(true);
-        cookie.setSecure(true);
+        cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge(0);
-        cookie.setAttribute("SameSite", "Strict");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
 
         return cookie;
     }
@@ -142,4 +209,8 @@ public class PanelAuthController {
     public record SendEmailCodeRequest(@Email @NotBlank String email) {}
 
     public record VerifyCodeRequest(@Email @NotBlank String email, @NotBlank String code) {}
+
+    public record UpdateProfileRequest(String username) {}
+
+    public record ProfileResponse(String id, String email, String username, String role) {}
 }

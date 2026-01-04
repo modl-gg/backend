@@ -7,6 +7,7 @@ import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
 import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -22,6 +23,7 @@ import java.util.Base64;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AuthService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -45,6 +47,11 @@ public class AuthService {
         authCode.setExpiresAt(Instant.now().plusSeconds(authConfiguration.getEmailCodeExpiry()));
 
         mongo.save(authCode);
+
+        if (authConfiguration.isDevelopmentMode()) {
+            log.info("DEV MODE: Login code for {} is: {}", email, code);
+            return;
+        }
 
         EmailHTMLTemplate.HTMLEmail emailContent = EmailHTMLTemplate.USER_CODE.build(server.getServerName(), code);
         emailService.send(email, emailContent);

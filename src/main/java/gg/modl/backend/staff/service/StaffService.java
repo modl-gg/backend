@@ -301,6 +301,40 @@ public class StaffService {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 
+    public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
+        MongoTemplate template = getTemplate(server);
+        Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
+        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+
+        if (staff == null) {
+            return Optional.empty();
+        }
+
+        if (newUsername != null && !newUsername.equals(staff.getUsername())) {
+            Query usernameQuery = Query.query(
+                    Criteria.where("username").is(newUsername)
+                            .and("_id").ne(staff.getId())
+            );
+            if (template.exists(usernameQuery, Staff.class, CollectionName.STAFF)) {
+                throw new IllegalStateException("Username already in use");
+            }
+
+            Update update = new Update()
+                    .set("username", newUsername)
+                    .set("updatedAt", new Date());
+            template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+            staff.setUsername(newUsername);
+        }
+
+        return Optional.of(staff);
+    }
+
+    public Optional<Staff> getStaffByEmail(Server server, String email) {
+        MongoTemplate template = getTemplate(server);
+        Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
+        return Optional.ofNullable(template.findOne(query, Staff.class, CollectionName.STAFF));
+    }
+
     private StaffResponse toStaffResponse(Staff staff, String status) {
         return new StaffResponse(
                 staff.getId(),

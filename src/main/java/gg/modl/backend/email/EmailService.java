@@ -32,24 +32,9 @@ public class EmailService {
     }
 
     public void sendStaffInviteEmail(String toEmail, String serverName, String role, String invitationLink) {
-        String subject = "You have been invited to join the " + serverName + " team!";
-        String htmlBody = """
-                <html>
-                <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-                    <h2>Staff Invitation</h2>
-                    <p>You have been invited to join the <strong>%s</strong> team as a <strong>%s</strong>.</p>
-                    <p>Click the button below to accept your invitation:</p>
-                    <p style="margin: 20px 0;">
-                        <a href="%s" style="display: inline-block; padding: 12px 24px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 6px;">Accept Invitation</a>
-                    </p>
-                    <p style="color: #666; font-size: 14px;">This invitation will expire in 24 hours.</p>
-                    <p style="color: #666; font-size: 12px;">If you didn't expect this invitation, you can safely ignore this email.</p>
-                </body>
-                </html>
-                """.formatted(serverName, role, invitationLink);
-
         try {
-            send(toEmail, subject, htmlBody);
+            EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.STAFF_INVITE_TEMPLATE.build(serverName, role, invitationLink);
+            send(toEmail, email);
         } catch (Exception e) {
             throw new RuntimeException("Failed to send staff invitation email", e);
         }

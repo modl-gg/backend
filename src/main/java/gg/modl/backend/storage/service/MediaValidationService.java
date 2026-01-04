@@ -78,5 +78,51 @@ public class MediaValidationService {
         }
     }
 
+    public ValidationResult validateMetadata(String fileName, String contentType, long fileSize, String uploadType) {
+        if (fileName == null || fileName.isBlank()) {
+            return new ValidationResult(false, "File name is required");
+        }
+
+        if (contentType == null || contentType.isBlank()) {
+            return new ValidationResult(false, "Content type is required");
+        }
+
+        String lowerFilename = fileName.toLowerCase();
+        for (String ext : DANGEROUS_EXTENSIONS) {
+            if (lowerFilename.endsWith(ext)) {
+                log.warn("Blocked presign request for potentially dangerous file: {}", fileName);
+                return new ValidationResult(false, "File type not allowed");
+            }
+        }
+
+        Set<String> allowedTypes = ALLOWED_TYPES.getOrDefault(uploadType, Set.of());
+        if (allowedTypes.isEmpty()) {
+            return new ValidationResult(false, "Invalid upload type");
+        }
+
+        if (!allowedTypes.contains(contentType)) {
+            return new ValidationResult(false, "File type not allowed for " + uploadType + ". Allowed: " + allowedTypes);
+        }
+
+        long maxSize = MAX_SIZES.getOrDefault(uploadType, MAX_FILE_SIZE_BYTES);
+        if (fileSize > maxSize) {
+            return new ValidationResult(false, "File exceeds maximum size of " + formatBytes(maxSize));
+        }
+
+        if (fileSize <= 0) {
+            return new ValidationResult(false, "Invalid file size");
+        }
+
+        return new ValidationResult(true, null);
+    }
+
+    public Set<String> getAllowedTypes(String uploadType) {
+        return ALLOWED_TYPES.getOrDefault(uploadType, Set.of());
+    }
+
+    public long getMaxSize(String uploadType) {
+        return MAX_SIZES.getOrDefault(uploadType, MAX_FILE_SIZE_BYTES);
+    }
+
     public record ValidationResult(boolean valid, String error) {}
 }

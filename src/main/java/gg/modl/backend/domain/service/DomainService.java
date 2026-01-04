@@ -22,7 +22,7 @@ public class DomainService {
 
     private final CloudflareClient cloudflareClient;
 
-    @Value("${modl.domain:modl.gg}")
+    @Value("${modl.domain}")
     private String baseDomain;
 
     public DomainStatusResponse getDomainConfig(Server server) {

@@ -31,8 +31,9 @@ public class ApiKeySettingsService {
         Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
 
         Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        @SuppressWarnings("unchecked")
         Map<String, Object> data = settings != null && settings.getData() != null
-                ? new HashMap<>(settings.getData())
+                ? new HashMap<>((Map<String, Object>) settings.getData())
                 : new HashMap<>();
 
         String newApiKey = generateSecureApiKey();
@@ -60,7 +61,9 @@ public class ApiKeySettingsService {
         }
 
         String fieldName = getFieldNameForType(keyType);
-        Object apiKey = settings.getData().get(fieldName);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) settings.getData();
+        Object apiKey = data.get(fieldName);
         return apiKey instanceof String ? (String) apiKey : null;
     }
 
@@ -74,7 +77,8 @@ public class ApiKeySettingsService {
             return false;
         }
 
-        Map<String, Object> data = new HashMap<>(settings.getData());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = new HashMap<>((Map<String, Object>) settings.getData());
         String fieldName = getFieldNameForType(keyType);
 
         if (!data.containsKey(fieldName)) {

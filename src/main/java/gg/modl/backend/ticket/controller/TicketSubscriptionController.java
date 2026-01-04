@@ -23,10 +23,9 @@ public class TicketSubscriptionController {
     @GetMapping
     public ResponseEntity<List<TicketSubscriptionResponse>> getSubscriptions(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get staff email from session
-        String staffEmail = "";
+        String staffEmail = RequestUtil.getSessionEmail(request);
 
-        if (staffEmail.isBlank()) {
+        if (staffEmail == null || staffEmail.isBlank()) {
             return ResponseEntity.status(401).build();
         }
 
@@ -40,10 +39,9 @@ public class TicketSubscriptionController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get staff email from session
-        String staffEmail = "";
+        String staffEmail = RequestUtil.getSessionEmail(request);
 
-        if (staffEmail.isBlank()) {
+        if (staffEmail == null || staffEmail.isBlank()) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
 
@@ -60,10 +58,9 @@ public class TicketSubscriptionController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get staff email from session
-        String staffEmail = "";
+        String staffEmail = RequestUtil.getSessionEmail(request);
 
-        if (staffEmail.isBlank()) {
+        if (staffEmail == null || staffEmail.isBlank()) {
             return ResponseEntity.status(401).build();
         }
 
@@ -77,10 +74,9 @@ public class TicketSubscriptionController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get staff email from session
-        String staffEmail = "";
+        String staffEmail = RequestUtil.getSessionEmail(request);
 
-        if (staffEmail.isBlank()) {
+        if (staffEmail == null || staffEmail.isBlank()) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
         }
 

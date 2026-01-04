@@ -37,7 +37,8 @@ public class GeneralSettingsService {
                     .build();
         }
 
-        Map<String, Object> data = settings.getData();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) settings.getData();
         return GeneralSettings.builder()
                 .serverDisplayName(getStringValue(data, "serverDisplayName"))
                 .discordWebhookUrl(getStringValue(data, "discordWebhookUrl"))

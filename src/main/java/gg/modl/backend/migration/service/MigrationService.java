@@ -150,9 +150,23 @@ public class MigrationService {
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
 
+    private static final int MAX_MESSAGE_LENGTH = 1000;
+
     public Map<String, Object> updateProgress(Server server, UpdateProgressRequest request) {
-        if (!VALID_STATUSES.contains(request.status())) {
+        if (request.status() == null || !VALID_STATUSES.contains(request.status())) {
             return Map.of("success", false, "error", "Invalid status value");
+        }
+
+        if (request.message() == null || request.message().length() > MAX_MESSAGE_LENGTH) {
+            return Map.of("success", false, "error", "Invalid or too long message");
+        }
+
+        if (request.recordsProcessed() != null && request.recordsProcessed() < 0) {
+            return Map.of("success", false, "error", "Invalid recordsProcessed value");
+        }
+
+        if (request.totalRecords() != null && request.totalRecords() < 0) {
+            return Map.of("success", false, "error", "Invalid totalRecords value");
         }
 
         MongoTemplate template = getTemplate(server);

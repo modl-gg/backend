@@ -24,7 +24,7 @@ public class StripeConfiguration {
     private String priceId;
 
     @Getter
-    @Value("${modl.domain:modl.gg}")
+    @Value("${modl.domain}")
     private String domain;
 
     @PostConstruct

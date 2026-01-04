@@ -34,7 +34,9 @@ public class ApiKeyService {
             return null;
         }
 
-        Object apiKey = settings.getData().get(API_KEY_FIELD);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> data = (java.util.Map<String, Object>) settings.getData();
+        Object apiKey = data.get(API_KEY_FIELD);
         return apiKey instanceof String ? (String) apiKey : null;
     }
 

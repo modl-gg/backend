@@ -85,6 +85,10 @@ public final class RESTMappingV1 {
     public static final String PUBLIC_SETTINGS = PREFIX_PUBLIC + SETTINGS;
     public static final String PUBLIC_MEDIA = PREFIX_PUBLIC + MEDIA;
 
+    // Registration
+    private static final String REGISTRATION = "/registration";
+    public static final String PUBLIC_REGISTRATION = PREFIX_PUBLIC + REGISTRATION;
+
     // Logs
     private static final String LOGS = "/logs";
     public static final String PANEL_LOGS = PREFIX_PANEL + LOGS;
@@ -93,4 +97,21 @@ public final class RESTMappingV1 {
     private static final String MIGRATION = "/migration";
     public static final String PANEL_MIGRATION = PREFIX_PANEL + MIGRATION;
     public static final String MINECRAFT_MIGRATION = PREFIX_MINECRAFT + MIGRATION;
+
+    // Admin routes
+    public static final String ADMIN_AUTH = PREFIX_ADMIN + "/auth";
+
+    private static final String SERVERS = "/servers";
+    public static final String ADMIN_SERVERS = PREFIX_ADMIN + SERVERS;
+
+    public static final String ADMIN_ANALYTICS = PREFIX_ADMIN + ANALYTICS;
+
+    private static final String MONITORING = "/monitoring";
+    public static final String ADMIN_MONITORING = PREFIX_ADMIN + MONITORING;
+
+    private static final String SYSTEM = "/system";
+    public static final String ADMIN_SYSTEM = PREFIX_ADMIN + SYSTEM;
+
+    private static final String SECURITY = "/security";
+    public static final String ADMIN_SECURITY = PREFIX_ADMIN + SECURITY;
 }

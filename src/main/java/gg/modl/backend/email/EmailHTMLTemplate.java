@@ -1,5 +1,7 @@
 package gg.modl.backend.email;
 
+import static gg.modl.backend.ModlConstants.BRAND_NAME;
+
 public interface EmailHTMLTemplate {
     CodeTemplate USER_CODE = (serverName, code) -> new HTMLEmail(
             "%s | Login Code".formatted(serverName),
@@ -31,7 +33,7 @@ public interface EmailHTMLTemplate {
     );
 
     CodeTemplate ADMIN_CODE = (code, __) -> new HTMLEmail(
-            "modl.gg | Admin Login Code",
+            BRAND_NAME + " | Admin Login Code",
             """
                     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
                       <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
@@ -59,10 +61,37 @@ public interface EmailHTMLTemplate {
                     """.formatted(code));
 
     VerifyLinkTemplate REGISTRATION_VERIFY_LINK = link -> new HTMLEmail(
-            "modl.gg | Verify your email",
+            BRAND_NAME + " | Verify your email",
             """
-                    <p>Please verify your email address by clicking the following link: <a href="%s">%s</a></p>
-                    """.formatted(link, link));
+                    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">
+                      <div style="background-color: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h2 style="color: #333; margin-bottom: 20px;">Verify Your Email</h2>
+
+                        <p style="color: #555; font-size: 16px;">
+                          Thank you for registering with %s!
+                        </p>
+
+                        <p style="color: #555; font-size: 16px;">
+                          Please verify your email address by clicking the button below:
+                        </p>
+
+                        <div style="text-align: center; margin: 30px 0;">
+                          <a href="%s" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">Verify Email</a>
+                        </div>
+
+                        <p style="color: #888; font-size: 14px; margin: 20px 0;">
+                          Or copy and paste this link into your browser:
+                        </p>
+                        <p style="color: #666; font-size: 12px; word-break: break-all;">%s</p>
+
+                        <div style="border-top: 1px solid #e9ecef; padding-top: 20px; margin-top: 30px;">
+                          <p style="color: #6c757d; font-size: 12px; margin: 15px 0 0 0;">
+                            If you didn't create an account, you can safely ignore this email.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    """.formatted(BRAND_NAME, link, link));
 
     StaffInviteTemplate STAFF_INVITE_TEMPLATE = (serverName, staffRole, link) -> new HTMLEmail(
             "%s | Staff Invitation".formatted(serverName),

@@ -31,7 +31,7 @@ public class InvitationService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final EmailService emailService;
 
-    @Value("${modl.domain:modl.gg}")
+    @Value("${modl.domain}")
     private String appDomain;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
