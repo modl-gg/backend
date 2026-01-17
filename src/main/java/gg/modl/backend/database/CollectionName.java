@@ -8,7 +8,7 @@ public final class CollectionName {
     public static final String SETTINGS = "settings";
 
     // Staff & Roles
-    public static final String STAFF = "staff";
+    public static final String STAFF = "staffs";
     public static final String STAFF_ROLES = "staffroles";
     public static final String INVITATIONS = "invitations";
 
@@ -19,7 +19,7 @@ public final class CollectionName {
     public static final String LOGS = "logs";
 
     // Knowledgebase & Homepage
-    public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebaseCategories";
-    public static final String KNOWLEDGEBASE_ARTICLES = "knowledgebaseArticles";
-    public static final String HOMEPAGE_CARDS = "homepageCards";
+    public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebasecategories";
+    public static final String KNOWLEDGEBASE_ARTICLES = "knowledgebasearticles";
+    public static final String HOMEPAGE_CARDS = "homepagecards";
 }

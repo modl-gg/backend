@@ -1,5 +1,6 @@
 package gg.modl.backend.staff.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -17,6 +18,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Staff {
     @Id
     private String id;
@@ -47,6 +49,7 @@ public class Staff {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TicketSubscription {
         private String ticketId;
         private Date subscribedAt;
@@ -59,10 +62,31 @@ public class Staff {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TicketSubscriptionSettings {
         @Builder.Default
-        private boolean autoSubscribe = true;
+        private boolean enabled = true;
+        private String frequency;
+        private NotificationSettings emailNotifications;
+        private NotificationSettings pushNotifications;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class NotificationSettings {
         @Builder.Default
-        private boolean emailNotifications = false;
+        private boolean enabled = false;
+        @Builder.Default
+        private boolean newTickets = false;
+        @Builder.Default
+        private boolean ticketReplies = false;
+        @Builder.Default
+        private boolean ticketStatusChanges = false;
+        @Builder.Default
+        private boolean ticketAssignments = false;
+        private List<String> subscribedTypes;
     }
 }

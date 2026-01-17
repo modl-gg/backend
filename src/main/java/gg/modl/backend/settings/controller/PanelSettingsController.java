@@ -17,13 +17,14 @@ import java.util.Map;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
 @RequiredArgsConstructor
-public class SettingsController {
+public class PanelSettingsController {
     private final PunishmentTypeService punishmentTypeService;
     private final GeneralSettingsService generalSettingsService;
     private final ApiKeySettingsService apiKeySettingsService;
     private final AIModerationSettingsService aiModerationSettingsService;
     private final WebhookSettingsService webhookSettingsService;
     private final TicketFormSettingsService ticketFormSettingsService;
+    private final DomainSettingsService domainSettingsService;
 
     @GetMapping("/punishment-types")
     public ResponseEntity<List<PunishmentType>> getPunishmentTypes(HttpServletRequest request) {
@@ -227,5 +228,71 @@ public class SettingsController {
         Server server = RequestUtil.getRequestServer(request);
         TicketFormSettings updated = ticketFormSettingsService.updateFormByType(server, type, form);
         return ResponseEntity.ok(updated);
+    }
+
+    // Domain Settings Endpoints
+    @GetMapping("/domain")
+    public ResponseEntity<DomainSettings> getDomainSettings(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        String host = request.getHeader("Host");
+        DomainSettings settings = domainSettingsService.getDomainSettings(server, host);
+        return ResponseEntity.ok(settings);
+    }
+
+    @PostMapping("/domain")
+    public ResponseEntity<?> configureDomain(
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String customDomain = body.get("customDomain");
+        
+        if (customDomain == null || customDomain.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Custom domain is required"));
+        }
+        
+        try {
+            DomainSettings settings = domainSettingsService.configureDomain(server, customDomain.trim());
+            return ResponseEntity.ok(settings);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/domain/verify")
+    public ResponseEntity<?> verifyDomain(
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String domain = body.get("domain");
+        
+        if (domain == null || domain.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Domain is required"));
+        }
+        
+        try {
+            DomainSettings settings = domainSettingsService.verifyDomain(server, domain.trim());
+            return ResponseEntity.ok(Map.of(
+                    "status", settings.getStatus(),
+                    "message", "Domain verified successfully"
+            ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/domain")
+    public ResponseEntity<?> removeDomain(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        
+        try {
+            domainSettingsService.removeDomain(server);
+            return ResponseEntity.ok(Map.of("message", "Domain removed successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
     }
 }

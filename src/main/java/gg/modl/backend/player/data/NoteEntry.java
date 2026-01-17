@@ -1,15 +1,27 @@
 package gg.modl.backend.player.data;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.Date;
 
-public record NoteEntry(
-        @NotNull String id,
-        @NotNull String text,
-        @NotNull Date date,
-        @NotNull String issuerName,
-        @Nullable String issuerId
-) {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class NoteEntry {
+    @Field("_id")
+    @JsonProperty("id")
+    private String id;
+    
+    private String text;
+    private Date date;
+    private String issuerName;
+    private String issuerId;
 }

@@ -124,13 +124,13 @@ public class PlayerService {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("minecraftUuid").is(minecraftUuid.toString()));
 
-        NoteEntry entry = new NoteEntry(
-                new ObjectId().toHexString(),
-                text,
-                new Date(),
-                issuerName,
-                issuerId
-        );
+        NoteEntry entry = NoteEntry.builder()
+                .id(new ObjectId().toHexString())
+                .text(text)
+                .date(new Date())
+                .issuerName(issuerName)
+                .issuerId(issuerId)
+                .build();
         Update update = new Update().push("notes", entry);
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);

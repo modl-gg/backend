@@ -1,5 +1,6 @@
 package gg.modl.backend.analytics.controller;
 
+import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
@@ -44,6 +45,16 @@ public class AnalyticsController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentAnalyticsResponse analytics = analyticsService.getPunishmentAnalytics(server, period);
+        return ResponseEntity.ok(analytics);
+    }
+
+    @GetMapping("/audit-logs")
+    public ResponseEntity<AuditLogsAnalyticsResponse> getAuditLogsAnalytics(
+            @RequestParam(defaultValue = "7d") String period,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        AuditLogsAnalyticsResponse analytics = analyticsService.getAuditLogsAnalytics(server, period);
         return ResponseEntity.ok(analytics);
     }
 

@@ -138,6 +138,29 @@ public class PanelAuthController {
         }
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+
+        // Check if user is Super Admin (server admin) - they may not have a staff record
+        if (permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin"));
+        }
+
+        var staffOpt = staffService.getStaffByEmail(server, email);
+        if (staffOpt.isEmpty()) {
+            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+        }
+
+        Staff staff = staffOpt.get();
+        return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), staff.getRole()));
+    }
+
     @GetMapping("/permissions")
     public ResponseEntity<List<String>> getUserPermissions(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);

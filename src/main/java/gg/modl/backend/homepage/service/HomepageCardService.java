@@ -33,7 +33,7 @@ public class HomepageCardService {
 
     public List<HomepageCard> getVisibleCards(Server server) {
         MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("isVisible").is(true))
+        Query query = Query.query(Criteria.where("is_enabled").is(true))
                 .with(Sort.by(Sort.Direction.ASC, "ordinal"));
         return template.find(query, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);
     }
@@ -53,10 +53,14 @@ public class HomepageCardService {
                 .title(request.title())
                 .description(request.description())
                 .icon(request.icon())
+                .iconColor(request.iconColor())
                 .actionType(request.actionType())
-                .actionValue(request.actionValue())
+                .actionUrl(request.actionUrl())
+                .actionButtonText(request.actionButtonText())
+                .categoryId(request.categoryId())
+                .backgroundColor(request.backgroundColor())
                 .ordinal(maxOrdinal + 1)
-                .isVisible(true)
+                .isEnabled(request.isEnabled() != null ? request.isEnabled() : true)
                 .createdAt(new Date())
                 .updatedAt(new Date())
                 .build();
@@ -74,7 +78,7 @@ public class HomepageCardService {
             return Optional.empty();
         }
 
-        Update update = new Update().set("updatedAt", new Date());
+        Update update = new Update().set("updated_at", new Date());
 
         if (request.title() != null) {
             update.set("title", request.title());
@@ -85,14 +89,26 @@ public class HomepageCardService {
         if (request.icon() != null) {
             update.set("icon", request.icon());
         }
+        if (request.iconColor() != null) {
+            update.set("icon_color", request.iconColor());
+        }
         if (request.actionType() != null) {
-            update.set("actionType", request.actionType());
+            update.set("action_type", request.actionType());
         }
-        if (request.actionValue() != null) {
-            update.set("actionValue", request.actionValue());
+        if (request.actionUrl() != null) {
+            update.set("action_url", request.actionUrl());
         }
-        if (request.isVisible() != null) {
-            update.set("isVisible", request.isVisible());
+        if (request.actionButtonText() != null) {
+            update.set("action_button_text", request.actionButtonText());
+        }
+        if (request.categoryId() != null) {
+            update.set("category_id", request.categoryId());
+        }
+        if (request.backgroundColor() != null) {
+            update.set("background_color", request.backgroundColor());
+        }
+        if (request.isEnabled() != null) {
+            update.set("is_enabled", request.isEnabled());
         }
 
         template.updateFirst(query, update, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);

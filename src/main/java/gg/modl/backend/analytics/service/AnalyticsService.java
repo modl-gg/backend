@@ -1,5 +1,6 @@
 package gg.modl.backend.analytics.service;
 
+import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
@@ -93,6 +94,48 @@ public class AnalyticsService {
         List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = Collections.emptyList();
 
         return new PunishmentAnalyticsResponse(byType, bySeverity, dailyPunishments, byStaff);
+    }
+
+    public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
+        MongoTemplate template = getTemplate(server);
+        Date startDate = getStartDate(period);
+
+        // Aggregate logs by level
+        Aggregation levelAgg = Aggregation.newAggregation(
+                Aggregation.match(Criteria.where("created").gte(startDate)),
+                Aggregation.group("level").count().as("count")
+        );
+        List<Document> levelResults = template.aggregate(levelAgg, CollectionName.LOGS, Document.class).getMappedResults();
+        List<AuditLogsAnalyticsResponse.LevelCount> byLevel = levelResults.stream()
+                .map(doc -> new AuditLogsAnalyticsResponse.LevelCount(
+                        doc.getString("_id") != null ? doc.getString("_id") : "unknown",
+                        doc.getInteger("count", 0)
+                ))
+                .toList();
+
+        // Generate hourly trend for the last 24 hours
+        List<AuditLogsAnalyticsResponse.HourlyCount> hourlyTrend = new ArrayList<>();
+        long now = System.currentTimeMillis();
+        long hourMs = 60 * 60 * 1000L;
+        
+        for (int i = 23; i >= 0; i--) {
+            Date hourStart = new Date(now - (i + 1) * hourMs);
+            Date hourEnd = new Date(now - i * hourMs);
+            
+            long count = template.count(
+                    Query.query(Criteria.where("created").gte(hourStart).lt(hourEnd)),
+                    CollectionName.LOGS
+            );
+            
+            java.time.LocalTime time = java.time.Instant.ofEpochMilli(hourEnd.getTime())
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .toLocalTime();
+            String hourLabel = String.format("%02d:00", time.getHour());
+            
+            hourlyTrend.add(new AuditLogsAnalyticsResponse.HourlyCount(hourLabel, (int) count));
+        }
+
+        return new AuditLogsAnalyticsResponse(byLevel, hourlyTrend);
     }
 
     private String normalizeCategory(String type) {

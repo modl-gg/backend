@@ -1,5 +1,8 @@
 package gg.modl.backend.settings.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record DurationDetail(
         int value,
         String unit,
