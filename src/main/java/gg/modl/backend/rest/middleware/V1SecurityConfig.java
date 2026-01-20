@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
@@ -28,12 +29,13 @@ public class V1SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(c -> c
-                        .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
-                        .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
-                        .requestMatchers(RESTMappingV1.ADMIN_AUTH + "/**").permitAll()
-                        .requestMatchers(RESTMappingV1.PREFIX_ADMIN + "/**").hasAuthority(RESTSecurityRole.ADMIN)
-                        .requestMatchers(RESTMappingV1.PREFIX_PANEL + "/**").hasAuthority(RESTSecurityRole.USER)
-                        .requestMatchers(RESTMappingV1.PREFIX_MINECRAFT + "/**").hasAuthority(RESTSecurityRole.MINECRAFT)
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.PREFIX_PUBLIC + "/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.PANEL_AUTH + "/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.ADMIN_AUTH + "/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.WEBHOOKS_STRIPE + "/**")).permitAll()
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.PREFIX_ADMIN + "/**")).hasAuthority(RESTSecurityRole.ADMIN)
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.PREFIX_PANEL + "/**")).hasAuthority(RESTSecurityRole.USER)
+                        .requestMatchers(new AntPathRequestMatcher(RESTMappingV1.PREFIX_MINECRAFT + "/**")).hasAuthority(RESTSecurityRole.MINECRAFT)
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
