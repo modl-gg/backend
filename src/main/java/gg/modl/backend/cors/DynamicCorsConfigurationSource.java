@@ -23,8 +23,8 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     @Value("${modl.cors.system-origins:}")
     private String systemOrigins;
 
-    @Value("${modl.domain:modl.gg}")
-    private String appDomain;
+    @Value("${modl.cors.app-domains:modl.gg}")
+    private String appDomains;
 
     private final ConcurrentHashMap<String, CachedOrigin> originCache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 5 * 60 * 1000;
@@ -88,7 +88,12 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     }
 
     private boolean isSubdomainOfAppDomain(String host) {
-        return host.endsWith("." + appDomain);
+        if (appDomains == null || appDomains.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(appDomains.split(","))
+                .map(String::trim)
+                .anyMatch(domain -> host.endsWith("." + domain));
     }
 
     private String extractHost(String origin) {
