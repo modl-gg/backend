@@ -14,16 +14,17 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
 
-    @Value("${modl.cors.system-origins:}")
+    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://cobl.gg,https://admin.cobl.gg}")
     private String systemOrigins;
 
-    @Value("${modl.cors.app-domains:modl.gg}")
+    @Value("${modl.cors.app-domains:modl.gg,cobl.gg}")
     private String appDomains;
 
     private final ConcurrentHashMap<String, CachedOrigin> originCache = new ConcurrentHashMap<>();
@@ -83,7 +84,9 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         if (systemOrigins == null || systemOrigins.isBlank()) {
             return false;
         }
-        Set<String> origins = Set.copyOf(Arrays.asList(systemOrigins.split(",")));
+        Set<String> origins = Arrays.stream(systemOrigins.split(","))
+                .map(String::trim)
+                .collect(Collectors.toSet());
         return origins.contains(origin);
     }
 
