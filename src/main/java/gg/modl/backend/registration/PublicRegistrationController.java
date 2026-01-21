@@ -18,9 +18,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.security.SecureRandom;
@@ -155,6 +157,20 @@ public class PublicRegistrationController {
         ));
     }
 
+    @GetMapping("/verify")
+    public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Verification token is required."));
+        }
+
+        boolean verified = serverService.verifyEmailToken(token);
+        if (!verified) {
+            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Invalid or expired verification token."));
+        }
+
+        return ResponseEntity.ok(new VerifyResponse(true, "Email verified successfully. You can now access your panel."));
+    }
+
     private void sendVerificationEmail(String email, String verificationLink) throws Exception {
         EmailHTMLTemplate.HTMLEmail htmlEmail = EmailHTMLTemplate.REGISTRATION_VERIFY_LINK.build(verificationLink);
         emailService.send(email, htmlEmail);
@@ -193,4 +209,6 @@ public class PublicRegistrationController {
     public record RegisterResponse(boolean success, String message, ServerInfo server) {}
 
     public record ServerInfo(String id, String name) {}
+
+    public record VerifyResponse(boolean success, String message) {}
 }

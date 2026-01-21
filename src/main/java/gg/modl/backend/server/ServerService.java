@@ -143,5 +143,28 @@ public class ServerService {
         return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 
+    @Nullable
+    public Server getServerByEmailVerificationToken(@NotNull String token) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        Query query = new Query(Criteria.where("emailVerificationToken").is(token));
+        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+    }
+
+    public boolean verifyEmailToken(@NotNull String token) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        Query query = new Query(Criteria.where("emailVerificationToken").is(token));
+        Server server = db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+
+        if (server == null) {
+            return false;
+        }
+
+        server.setEmailVerified(true);
+        server.setEmailVerificationToken(null);
+        server.setUpdatedAt(new Date());
+        db.save(server, CollectionName.MODL_SERVERS);
+        return true;
+    }
+
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}
 }
