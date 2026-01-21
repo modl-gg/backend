@@ -52,11 +52,7 @@ public class PublicRegistrationController {
             BindingResult bindingResult) {
 
         if (bindingResult.hasErrors()) {
-            String errors = bindingResult.getFieldErrors().stream()
-                    .map(e -> e.getField() + ": " + e.getDefaultMessage())
-                    .reduce((a, b) -> a + ", " + b)
-                    .orElse("Validation failed");
-            return ResponseEntity.badRequest().body(new RegisterResponse(false, errors, null));
+            return ResponseEntity.badRequest().body(new RegisterResponse(false, "Validation failed", null));
         }
 
         String clientIp = getClientIp(request);
@@ -117,7 +113,7 @@ public class PublicRegistrationController {
         String emailVerificationToken = generateSecureToken();
 
         // Parse plan
-        ServerPlan plan = "premium".equalsIgnoreCase(requestData.plan()) ? ServerPlan.premium : ServerPlan.free;
+        ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.premium : ServerPlan.free;
 
         // Create server
         Server server;

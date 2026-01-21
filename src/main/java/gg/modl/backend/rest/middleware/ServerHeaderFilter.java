@@ -1,5 +1,6 @@
 package gg.modl.backend.rest.middleware;
 
+import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import gg.modl.backend.server.ServerService;
@@ -12,11 +13,16 @@ import org.jetbrains.annotations.Nullable;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 
 public class ServerHeaderFilter extends OncePerRequestFilter {
     private final ServerService serverService;
     private final boolean developmentMode;
     private final String devServerDomain;
+
+    private static final Set<String> EXCLUDED_PATHS = Set.of(
+            RESTMappingV1.PUBLIC_REGISTRATION
+    );
 
     public ServerHeaderFilter(ServerService serverService) {
         this(serverService, false, null);
@@ -26,6 +32,12 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
         this.serverService = serverService;
         this.developmentMode = developmentMode;
         this.devServerDomain = devServerDomain;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(@NotNull HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
     }
 
     @Override
