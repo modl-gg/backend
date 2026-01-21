@@ -71,7 +71,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             return false;
         }
 
-        if (isSubdomainOfAppDomain(host)) {
+        if (isAppDomainOrSubdomain(host)) {
             return true;
         }
 
@@ -87,13 +87,13 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         return origins.contains(origin);
     }
 
-    private boolean isSubdomainOfAppDomain(String host) {
+    private boolean isAppDomainOrSubdomain(String host) {
         if (appDomains == null || appDomains.isBlank()) {
             return false;
         }
         return Arrays.stream(appDomains.split(","))
                 .map(String::trim)
-                .anyMatch(domain -> host.endsWith("." + domain));
+                .anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
     }
 
     private String extractHost(String origin) {
