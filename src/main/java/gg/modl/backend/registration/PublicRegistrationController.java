@@ -1,13 +1,19 @@
 package gg.modl.backend.registration;
 
+import gg.modl.backend.auth.AuthConfiguration;
+import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.turnstile.TurnstileService;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -27,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -38,10 +45,13 @@ public class PublicRegistrationController {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+    private static final long AUTO_LOGIN_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
     private final ServerService serverService;
     private final TurnstileService turnstileService;
     private final EmailService emailService;
+    private final SessionService sessionService;
+    private final AuthConfiguration authConfiguration;
     private final Map<String, Long> rateLimitMap = new ConcurrentHashMap<>();
 
     @Value("${modl.app-domain}")
@@ -160,15 +170,125 @@ public class PublicRegistrationController {
     @GetMapping("/verify")
     public ResponseEntity<?> verifyEmail(@RequestParam String token) {
         if (token == null || token.isBlank()) {
-            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Verification token is required."));
+            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Verification token is required.", null, null));
         }
 
-        boolean verified = serverService.verifyEmailToken(token);
-        if (!verified) {
-            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Invalid or expired verification token."));
+        Server server = serverService.verifyEmailToken(token);
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new VerifyResponse(false, "Invalid or expired verification token.", null, null));
         }
 
-        return ResponseEntity.ok(new VerifyResponse(true, "Email verified successfully. You can now access your panel."));
+        // Generate auto-login token for seamless setup flow
+        String autoLoginToken = generateSecureToken();
+        Date tokenExpiry = new Date(System.currentTimeMillis() + AUTO_LOGIN_TOKEN_EXPIRY_MS);
+        serverService.setAutoLoginToken(server, autoLoginToken, tokenExpiry);
+
+        return ResponseEntity.ok(new VerifyResponse(
+                true,
+                "Email verified successfully.",
+                server.getCustomDomain(),
+                autoLoginToken
+        ));
+    }
+
+    @GetMapping("/setup-status")
+    public ResponseEntity<?> getSetupStatus(@RequestParam String token) {
+        if (token == null || token.isBlank()) {
+            return ResponseEntity.badRequest().body(new SetupStatusResponse(
+                    null, null, false, null, "Token is required."
+            ));
+        }
+
+        Server server = serverService.getServerByAutoLoginToken(token);
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new SetupStatusResponse(
+                    null, null, false, null, "Invalid or expired setup token."
+            ));
+        }
+
+        // Check if token has expired
+        if (server.getProvisioningSignInTokenExpiresAt() != null &&
+                server.getProvisioningSignInTokenExpiresAt().before(new Date())) {
+            return ResponseEntity.badRequest().body(new SetupStatusResponse(
+                    server.getCustomDomain(), server.getServerName(),
+                    server.getEmailVerified(), null, "Setup token has expired. Please request a new verification email."
+            ));
+        }
+
+        return ResponseEntity.ok(new SetupStatusResponse(
+                server.getCustomDomain(),
+                server.getServerName(),
+                server.getEmailVerified(),
+                server.getProvisioningStatus().name(),
+                getProvisioningMessage(server.getProvisioningStatus())
+        ));
+    }
+
+    @PostMapping("/auto-login")
+    public ResponseEntity<?> autoLogin(
+            @RequestBody AutoLoginRequest request,
+            HttpServletResponse response) {
+
+        if (request.token() == null || request.token().isBlank()) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(false, "Token is required.", null));
+        }
+
+        Server server = serverService.getServerByAutoLoginToken(request.token());
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(false, "Invalid or expired token.", null));
+        }
+
+        // Check token expiry
+        if (server.getProvisioningSignInTokenExpiresAt() != null &&
+                server.getProvisioningSignInTokenExpiresAt().before(new Date())) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(
+                    false, "Setup token has expired. Please sign in manually.", null
+            ));
+        }
+
+        // Verify provisioning is complete and email is verified
+        if (server.getProvisioningStatus() != ProvisioningStatus.completed) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(
+                    false, "Server setup is not yet complete.", null
+            ));
+        }
+
+        if (!Boolean.TRUE.equals(server.getEmailVerified())) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(
+                    false, "Email verification is required.", null
+            ));
+        }
+
+        // Create session for the admin user
+        AuthSessionData session = sessionService.createSession(server, server.getAdminEmail());
+
+        // Clear the auto-login token (one-time use)
+        serverService.clearAutoLoginToken(server);
+
+        // Set session cookie
+        Cookie sessionCookie = createSessionCookie(session.getId());
+        response.addCookie(sessionCookie);
+
+        return ResponseEntity.ok(new AutoLoginResponse(true, "Login successful.", "/panel"));
+    }
+
+    private String getProvisioningMessage(ProvisioningStatus status) {
+        return switch (status) {
+            case pending -> "Your server is queued for setup...";
+            case in_progress -> "Setting up your server...";
+            case completed -> "Setup complete!";
+            case failed -> "Setup failed. Please contact support.";
+        };
+    }
+
+    private Cookie createSessionCookie(String sessionId) {
+        Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), sessionId);
+        cookie.setHttpOnly(true);
+        cookie.setSecure(authConfiguration.isCookieSecure());
+        cookie.setPath("/");
+        cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        return cookie;
     }
 
     private void sendVerificationEmail(String email, String verificationLink) throws Exception {
@@ -210,5 +330,11 @@ public class PublicRegistrationController {
 
     public record ServerInfo(String id, String name) {}
 
-    public record VerifyResponse(boolean success, String message) {}
+    public record VerifyResponse(boolean success, String message, String subdomain, String autoLoginToken) {}
+
+    public record SetupStatusResponse(String subdomain, String serverName, boolean emailVerified, String provisioningStatus, String message) {}
+
+    public record AutoLoginRequest(@NotBlank String token) {}
+
+    public record AutoLoginResponse(boolean success, String message, String redirectUrl) {}
 }

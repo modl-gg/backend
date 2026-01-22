@@ -150,20 +150,43 @@ public class ServerService {
         return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 
-    public boolean verifyEmailToken(@NotNull String token) {
+    @Nullable
+    public Server verifyEmailToken(@NotNull String token) {
         MongoTemplate db = mongoProvider.getGlobalDatabase();
         Query query = new Query(Criteria.where("emailVerificationToken").is(token));
         Server server = db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
 
         if (server == null) {
-            return false;
+            return null;
         }
 
         server.setEmailVerified(true);
         server.setEmailVerificationToken(null);
         server.setUpdatedAt(new Date());
-        db.save(server, CollectionName.MODL_SERVERS);
-        return true;
+        return db.save(server, CollectionName.MODL_SERVERS);
+    }
+
+    @Nullable
+    public Server getServerByAutoLoginToken(@NotNull String token) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        Query query = new Query(Criteria.where("provisioningSignInToken").is(token));
+        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+    }
+
+    public Server setAutoLoginToken(@NotNull Server server, @NotNull String token, @NotNull Date expiresAt) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        server.setProvisioningSignInToken(token);
+        server.setProvisioningSignInTokenExpiresAt(expiresAt);
+        server.setUpdatedAt(new Date());
+        return db.save(server, CollectionName.MODL_SERVERS);
+    }
+
+    public Server clearAutoLoginToken(@NotNull Server server) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        server.setProvisioningSignInToken(null);
+        server.setProvisioningSignInTokenExpiresAt(null);
+        server.setUpdatedAt(new Date());
+        return db.save(server, CollectionName.MODL_SERVERS);
     }
 
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}
