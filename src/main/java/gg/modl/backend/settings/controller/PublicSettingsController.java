@@ -29,7 +29,7 @@ public class PublicSettingsController {
         Server server = RequestUtil.getRequestServer(request);
 
         if (server == null) {
-            return ResponseEntity.ok(getDefaultSettings());
+            return ResponseEntity.ok(getNotFoundSettings());
         }
 
         try {
@@ -37,6 +37,7 @@ public class PublicSettingsController {
             TicketFormSettings ticketForms = ticketFormSettingsService.getTicketFormSettings(server);
 
             Map<String, Object> response = new HashMap<>();
+            response.put("serverExists", true);
             response.put("serverDisplayName", generalSettings.getServerDisplayName() != null
                     ? generalSettings.getServerDisplayName() : "modl");
             response.put("panelIconUrl", generalSettings.getPanelIconUrl());
@@ -45,13 +46,14 @@ public class PublicSettingsController {
 
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.ok(getDefaultSettings());
+            return ResponseEntity.ok(getNotFoundSettings());
         }
     }
 
-    private Map<String, Object> getDefaultSettings() {
+    private Map<String, Object> getNotFoundSettings() {
         Map<String, Object> response = new HashMap<>();
-        response.put("serverDisplayName", "modl");
+        response.put("serverExists", false);
+        response.put("serverDisplayName", null);
         response.put("panelIconUrl", null);
         response.put("homepageIconUrl", null);
         response.put("ticketForms", Map.of());

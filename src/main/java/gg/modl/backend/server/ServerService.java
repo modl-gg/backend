@@ -162,6 +162,7 @@ public class ServerService {
 
         server.setEmailVerified(true);
         server.setEmailVerificationToken(null);
+        server.setProvisioningStatus(ProvisioningStatus.completed);
         server.setUpdatedAt(new Date());
         return db.save(server, CollectionName.MODL_SERVERS);
     }
