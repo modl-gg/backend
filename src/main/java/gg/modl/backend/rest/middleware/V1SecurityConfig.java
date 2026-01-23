@@ -31,6 +31,7 @@ public class V1SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(c -> c
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
                         .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
                         .requestMatchers(RESTMappingV1.ADMIN_AUTH + "/**").permitAll()
