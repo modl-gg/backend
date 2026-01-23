@@ -1,5 +1,6 @@
 package gg.modl.backend.rest.middleware;
 
+import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import gg.modl.backend.server.data.Server;
@@ -10,10 +11,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.stereotype.Component;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 @RequiredArgsConstructor
 public class ApiKeyFilter extends OncePerRequestFilter {
@@ -43,6 +47,21 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         }
 
         request.setAttribute(RequestAttribute.SERVER, server);
+
+        List<SimpleGrantedAuthority> authorities = List.of(
+                new SimpleGrantedAuthority(RESTSecurityRole.MINECRAFT)
+        );
+
+        UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                        server.getId(),
+                        null,
+                        authorities
+                );
+
+        authentication.setDetails(server);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
         chain.doFilter(request, response);
     }
 }
