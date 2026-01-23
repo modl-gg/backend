@@ -1,5 +1,6 @@
 package gg.modl.backend.rest.middleware;
 
+import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
@@ -14,14 +15,22 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 
+@Component
 @RequiredArgsConstructor
 public class ApiKeyFilter extends OncePerRequestFilter {
     private final ApiKeyService apiKeyService;
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT);
+    }
 
     @Override
     protected void doFilterInternal(

@@ -20,6 +20,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @RequiredArgsConstructor
 public class V1SecurityConfig {
     private final SessionAuthenticationFilter sessionAuthenticationFilter;
+    private final ApiKeyFilter apiKeyFilter;
     private final DynamicCorsConfigurationSource dynamicCorsConfigurationSource;
 
     @Bean
@@ -39,6 +40,7 @@ public class V1SecurityConfig {
                         .requestMatchers(RESTMappingV1.PREFIX_MINECRAFT + "/**").hasAuthority(RESTSecurityRole.MINECRAFT)
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)

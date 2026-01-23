@@ -3,7 +3,6 @@ package gg.modl.backend.rest.middleware;
 import gg.modl.backend.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
-import gg.modl.backend.settings.ApiKeyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -17,8 +16,8 @@ import org.springframework.web.filter.CorsFilter;
 @RequiredArgsConstructor
 public class FilterConfig {
     private final ServerService serverService;
-    private final ApiKeyService apiKeyService;
     private final DynamicCorsConfigurationSource corsConfigurationSource;
+    private final ApiKeyFilter apiKeyFilter;
 
     @Value("${modl.development-mode:false}")
     private boolean developmentMode;
@@ -45,11 +44,9 @@ public class FilterConfig {
     }
 
     @Bean
-    public FilterRegistrationBean<ApiKeyFilter> minecraftApiKeyFilter() {
-        FilterRegistrationBean<ApiKeyFilter> registrationBean = new FilterRegistrationBean<>();
-        registrationBean.setFilter(new ApiKeyFilter(apiKeyService));
-        registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_MINECRAFT + "/*");
-        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+    public FilterRegistrationBean<ApiKeyFilter> apiKeyFilterRegistration() {
+        FilterRegistrationBean<ApiKeyFilter> registrationBean = new FilterRegistrationBean<>(apiKeyFilter);
+        registrationBean.setEnabled(false);
         return registrationBean;
     }
 }
