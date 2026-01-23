@@ -98,6 +98,16 @@ public final class RESTMappingV1 {
     public static final String PANEL_MIGRATION = PREFIX_PANEL + MIGRATION;
     public static final String MINECRAFT_MIGRATION = PREFIX_MINECRAFT + MIGRATION;
 
+    // Minecraft API endpoints
+    private static final String PUNISHMENTS = "/punishments";
+    public static final String MINECRAFT_PUNISHMENTS = PREFIX_MINECRAFT + PUNISHMENTS;
+    public static final String MINECRAFT_STAFF = PREFIX_MINECRAFT + STAFF;
+    private static final String NOTIFICATIONS = "/notifications";
+    public static final String MINECRAFT_NOTIFICATIONS = PREFIX_MINECRAFT + NOTIFICATIONS;
+
+    // Health check
+    public static final String HEALTH = V1 + "/health";
+
     // Admin routes
     public static final String ADMIN_AUTH = PREFIX_ADMIN + "/auth";
 
