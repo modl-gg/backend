@@ -66,6 +66,7 @@ docker run -d \
     --restart unless-stopped \
     -p ${ROLLBACK_PORT}:8080 \
     -v "$(pwd)/.env:/app/.env:ro" \
+    --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=staging \
     ${APP_NAME}:${ROLLBACK_COLOR}
 

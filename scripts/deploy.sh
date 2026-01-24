@@ -109,6 +109,7 @@ docker run -d \
     --restart unless-stopped \
     -p ${NEW_PORT}:8080 \
     -v "$(pwd)/.env:/app/.env:ro" \
+    --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
     ${DEPLOY_IMAGE}
 
