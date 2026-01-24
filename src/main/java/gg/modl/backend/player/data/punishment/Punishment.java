@@ -1,6 +1,8 @@
 package gg.modl.backend.player.data.punishment;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -9,35 +11,37 @@ import java.util.List;
 import java.util.Map;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class Punishment {
     @NotNull
-    private final String id;
+    private String id;
 
-    private final int type_ordinal; // Name is formatted like this to fit existing database schema
+    private int type_ordinal; // Name is formatted like this to fit existing database schema
 
     @NotNull
-    private final String issuerName;
+    private String issuerName;
 
     // TODO: migrate or add issuerId to be able to track exactly who the issuer was because names can change
 
     @NotNull
-    private final Date issued;
+    private Date issued;
 
     @Nullable
     private Date started;
 
     @NotNull
-    private final List<PunishmentModification> modifications;
+    private List<PunishmentModification> modifications;
 
     @NotNull
-    private final List<PunishmentNote> notes;
+    private List<PunishmentNote> notes;
 
     @NotNull
-    private final List<PunishmentEvidence> evidence;
+    private List<PunishmentEvidence> evidence;
 
     @NotNull
-    private final List<String> attachedTicketIds;
+    private List<String> attachedTicketIds;
 
     @Nullable
-    private final Map<String, Object> data;
+    private Map<String, Object> data;
 }

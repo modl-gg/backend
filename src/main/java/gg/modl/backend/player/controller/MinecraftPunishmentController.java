@@ -347,6 +347,7 @@ public class MinecraftPunishmentController {
                 request.typeOrdinal(),
                 request.issuerName(),
                 now,
+                null,
                 new ArrayList<>(),
                 notes,
                 new ArrayList<>(),

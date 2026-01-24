@@ -456,16 +456,13 @@ public class MigrationProcessor {
                     typeOrdinal,
                     issuerName,
                     issued,
+                    started,
                     modifications,
                     notes,
                     evidence,
                     attachedTicketIds,
                     punishmentData.isEmpty() ? null : punishmentData
             );
-
-            if (started != null) {
-                punishment.setStarted(started);
-            }
 
             result.add(punishment);
         }
