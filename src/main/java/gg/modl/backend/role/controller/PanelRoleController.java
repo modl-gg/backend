@@ -2,6 +2,7 @@ package gg.modl.backend.role.controller;
 
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.dto.request.CreateRoleRequest;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
 import gg.modl.backend.role.dto.request.UpdateRoleRequest;
@@ -13,6 +14,7 @@ import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,15 +32,15 @@ public class PanelRoleController {
     @GetMapping
     public ResponseEntity<RoleListResponse> getAllRoles(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        var roles = roleService.getAllRoles(server);
+        List<RoleResponse> roles = roleService.getAllRoles(server);
         return ResponseEntity.ok(new RoleListResponse(roles));
     }
 
     @GetMapping("/permissions")
     public ResponseEntity<PermissionsResponse> getPermissions(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        var permissions = permissionService.getAllPermissions(server);
-        var categories = permissionService.getPermissionCategories();
+        List<Permission> permissions = permissionService.getAllPermissions(server);
+        Map<String, String> categories = permissionService.getPermissionCategories();
         return ResponseEntity.ok(new PermissionsResponse(permissions, categories));
     }
 

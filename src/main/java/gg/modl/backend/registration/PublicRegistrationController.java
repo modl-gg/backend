@@ -93,7 +93,7 @@ public class PublicRegistrationController {
         }
 
         // Check for duplicates
-        var existResult = serverService.doesServerExist(
+        ServerService.ServerExistResult existResult = serverService.doesServerExist(
                 requestData.email(),
                 requestData.serverName(),
                 requestData.customDomain()

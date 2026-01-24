@@ -1,6 +1,7 @@
 package gg.modl.backend.knowledgebase.service;
 
 import com.github.slugify.Slugify;
+import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
@@ -103,7 +104,7 @@ public class KnowledgebaseArticleService {
     public boolean deleteArticle(Server server, String id) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("_id").is(id));
-        var result = template.remove(query, KnowledgebaseArticle.class, CollectionName.KNOWLEDGEBASE_ARTICLES);
+        DeleteResult result = template.remove(query, KnowledgebaseArticle.class, CollectionName.KNOWLEDGEBASE_ARTICLES);
         return result.getDeletedCount() > 0;
     }
 

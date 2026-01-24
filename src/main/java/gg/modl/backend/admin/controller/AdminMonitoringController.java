@@ -1,5 +1,7 @@
 package gg.modl.backend.admin.controller;
 
+import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
@@ -212,7 +214,7 @@ public class AdminMonitoringController {
                 .set("resolvedBy", request.getOrDefault("resolvedBy", "admin"))
                 .set("resolvedAt", new Date());
 
-        var result = getTemplate().updateFirst(query, update, SystemLog.class, LOGS_COLLECTION);
+        UpdateResult result = getTemplate().updateFirst(query, update, SystemLog.class, LOGS_COLLECTION);
         if (result.getModifiedCount() == 0) {
             return ResponseEntity.status(404).body(Map.of("success", false, "error", "Log entry not found"));
         }
@@ -271,7 +273,7 @@ public class AdminMonitoringController {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Log IDs are required"));
         }
 
-        var result = getTemplate().remove(Query.query(Criteria.where("_id").in(logIds)), SystemLog.class, LOGS_COLLECTION);
+        DeleteResult result = getTemplate().remove(Query.query(Criteria.where("_id").in(logIds)), SystemLog.class, LOGS_COLLECTION);
         return ResponseEntity.ok(Map.of("success", true, "data", Map.of("deletedCount", result.getDeletedCount()), "message", "Successfully deleted " + result.getDeletedCount() + " log(s)"));
     }
 
@@ -320,7 +322,7 @@ public class AdminMonitoringController {
 
     @PostMapping("/logs/clear-all")
     public ResponseEntity<?> clearAllLogs() {
-        var result = getTemplate().remove(new Query(), SystemLog.class, LOGS_COLLECTION);
+        DeleteResult result = getTemplate().remove(new Query(), SystemLog.class, LOGS_COLLECTION);
         log.info("All system logs cleared by admin");
         return ResponseEntity.ok(Map.of("success", true, "data", Map.of("deletedCount", result.getDeletedCount()), "message", "Successfully cleared all logs"));
     }

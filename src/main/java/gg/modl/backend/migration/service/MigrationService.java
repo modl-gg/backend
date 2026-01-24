@@ -52,7 +52,7 @@ public class MigrationService {
             );
         }
 
-        var cooldown = checkCooldown(server);
+        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
 
         return new MigrationStatusResponse(currentMigration, cooldown);
     }
@@ -93,7 +93,7 @@ public class MigrationService {
             return Map.of("success", false, "error", "A migration is already in progress");
         }
 
-        var cooldown = checkCooldown(server);
+        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
         if (cooldown.onCooldown()) {
             return Map.of("success", false, "error", "Migration on cooldown. Please wait before starting another migration.");
         }

@@ -3,6 +3,7 @@ package gg.modl.backend.ticket.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.AddReplyRequest;
 import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
@@ -10,6 +11,7 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -146,7 +148,7 @@ public class PublicTicketController {
         Server server = RequestUtil.getRequestServer(request);
 
         try {
-            var replyOpt = ticketService.addReply(server, id, replyRequest);
+            Optional<TicketReply> replyOpt = ticketService.addReply(server, id, replyRequest);
 
             if (replyOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();

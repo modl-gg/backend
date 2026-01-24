@@ -5,6 +5,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.ServerField;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -69,7 +70,7 @@ public class ApiKeyService {
     private Server findServerByApiKeyInSettings(@NotNull String apiKey) {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query allServersQuery = new Query();
-        var servers = globalDb.find(allServersQuery, Server.class, CollectionName.MODL_SERVERS);
+        List<Server> servers = globalDb.find(allServersQuery, Server.class, CollectionName.MODL_SERVERS);
 
         for (Server server : servers) {
             if (server.getDatabaseName() == null) {

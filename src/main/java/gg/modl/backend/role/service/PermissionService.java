@@ -5,6 +5,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,18 +58,18 @@ public class PermissionService {
     }
 
     public List<Permission> getPunishmentPermissions(Server server) {
-        var punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
         List<Permission> permissions = new ArrayList<>();
 
-        for (var type : punishmentTypes) {
+        punishmentTypes.forEach(type -> {
             String permId = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
             permissions.add(new Permission(
-                    permId,
-                    "Apply " + type.getName(),
-                    "Permission to apply " + type.getName() + " punishments",
-                    "punishment"
+                permId,
+                "Apply " + type.getName(),
+                "Permission to apply " + type.getName() + " punishments",
+                "punishment"
             ));
-        }
+        });
 
         return permissions;
     }

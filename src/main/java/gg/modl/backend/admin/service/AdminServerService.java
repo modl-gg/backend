@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.service;
 
+import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.ProvisioningStatus;
@@ -111,7 +112,7 @@ public class AdminServerService {
 
     public boolean deleteById(String id) {
         Query query = Query.query(Criteria.where("_id").is(id));
-        var result = getTemplate().remove(query, Server.class, CollectionName.MODL_SERVERS);
+        DeleteResult result = getTemplate().remove(query, Server.class, CollectionName.MODL_SERVERS);
         return result.getDeletedCount() > 0;
     }
 

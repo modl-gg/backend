@@ -3,6 +3,8 @@ package gg.modl.backend.ticket.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.*;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
@@ -11,6 +13,8 @@ import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -115,7 +119,7 @@ public class PanelTicketController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         try {
-            var replyOpt = ticketService.addReply(server, id, replyRequest);
+            Optional<TicketReply> replyOpt = ticketService.addReply(server, id, replyRequest);
 
             if (replyOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
@@ -163,7 +167,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        var tickets = ticketService.getTicketsByPlayer(server, uuid);
+        List<Ticket> tickets = ticketService.getTicketsByPlayer(server, uuid);
         return ResponseEntity.ok(tickets);
     }
 
@@ -173,7 +177,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        var tickets = ticketService.getTicketsByTag(server, tag);
+        List<Ticket> tickets = ticketService.getTicketsByTag(server, tag);
         return ResponseEntity.ok(tickets);
     }
 

@@ -46,6 +46,7 @@ public class PanelAuthController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
+    private Optional<Staff> result;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -138,7 +139,7 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
 
         try {
-            var result = staffService.updateProfileUsername(server, email, requestData.username());
+            Optional<Staff> result = staffService.updateProfileUsername(server, email, requestData.username());
             if (result.isEmpty()) {
                 return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
             }
@@ -163,7 +164,7 @@ public class PanelAuthController {
             return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin"));
         }
 
-        var staffOpt = staffService.getStaffByEmail(server, email);
+        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         if (staffOpt.isEmpty()) {
             return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
         }
@@ -187,7 +188,7 @@ public class PanelAuthController {
         }
 
         // Get staff member and their role
-        var staffOpt = staffService.getStaffByEmail(server, email);
+        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         if (staffOpt.isEmpty()) {
             return ResponseEntity.ok(Collections.emptyList());
         }

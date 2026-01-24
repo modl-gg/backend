@@ -1,5 +1,6 @@
 package gg.modl.backend.homepage.service;
 
+import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.homepage.data.HomepageCard;
@@ -118,7 +119,7 @@ public class HomepageCardService {
     public boolean deleteCard(Server server, String id) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("_id").is(id));
-        var result = template.remove(query, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);
+        DeleteResult result = template.remove(query, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);
         return result.getDeletedCount() > 0;
     }
 

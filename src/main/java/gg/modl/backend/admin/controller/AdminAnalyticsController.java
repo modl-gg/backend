@@ -54,7 +54,7 @@ public class AdminAnalyticsController {
             Aggregation userTicketAgg = Aggregation.newAggregation(
                     Aggregation.group().sum("userCount").as("totalUsers").sum("ticketCount").as("totalTickets")
             );
-            var userTicketResult = getTemplate().aggregate(userTicketAgg, CollectionName.MODL_SERVERS, Document.class).getUniqueMappedResult();
+            Document userTicketResult = getTemplate().aggregate(userTicketAgg, CollectionName.MODL_SERVERS, Document.class).getUniqueMappedResult();
             long totalUsers = userTicketResult != null ? userTicketResult.getInteger("totalUsers", 0) : 0;
             long totalTickets = userTicketResult != null ? userTicketResult.getInteger("totalTickets", 0) : 0;
 
@@ -71,14 +71,14 @@ public class AdminAnalyticsController {
                     Aggregation.group("plan").count().as("value"),
                     Aggregation.project().and("_id").as("name").and("value").as("value")
             );
-            var planResults = getTemplate().aggregate(planAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
+            List<Document> planResults = getTemplate().aggregate(planAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
 
             // Status distribution
             Aggregation statusAgg = Aggregation.newAggregation(
                     Aggregation.group("provisioningStatus").count().as("value"),
                     Aggregation.project().and("_id").as("name").and("value").as("value")
             );
-            var statusResults = getTemplate().aggregate(statusAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
+            List<Document> statusResults = getTemplate().aggregate(statusAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
 
             // Registration trend
             Aggregation regTrendAgg = Aggregation.newAggregation(
@@ -88,13 +88,13 @@ public class AdminAnalyticsController {
                     Aggregation.sort(Sort.Direction.ASC, "_id"),
                     Aggregation.project().and("_id").as("date").and("servers").as("servers")
             );
-            var regTrendResults = getTemplate().aggregate(regTrendAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
+            List<Document> regTrendResults = getTemplate().aggregate(regTrendAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
 
             // Top servers by users
             Query topServersQuery = new Query(Criteria.where("userCount").gt(0));
             topServersQuery.with(Sort.by(Sort.Direction.DESC, "userCount"));
             topServersQuery.limit(10);
-            var topServers = getTemplate().find(topServersQuery, Server.class, CollectionName.MODL_SERVERS);
+            List<Server> topServers = getTemplate().find(topServersQuery, Server.class, CollectionName.MODL_SERVERS);
 
             // Calculate averages
             long serversWithData = getTemplate().count(
@@ -213,7 +213,7 @@ public class AdminAnalyticsController {
                 );
             }
 
-            var results = getTemplate().aggregate(agg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
+            List<Document> results = getTemplate().aggregate(agg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
 
             return ResponseEntity.ok(Map.of(
                     "success", true,

@@ -1,5 +1,6 @@
 package gg.modl.backend.staff.service;
 
+import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
@@ -144,7 +145,7 @@ public class StaffService {
 
         // First check if it's an invitation
         Query invQuery = Query.query(Criteria.where("_id").is(id));
-        var deleteResult = template.remove(invQuery, Invitation.class, CollectionName.INVITATIONS);
+        DeleteResult deleteResult = template.remove(invQuery, Invitation.class, CollectionName.INVITATIONS);
         if (deleteResult.getDeletedCount() > 0) {
             return true;
         }

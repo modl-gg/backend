@@ -1,5 +1,6 @@
 package gg.modl.backend.role.service;
 
+import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.role.data.StaffRole;
@@ -157,7 +158,7 @@ public class RoleService {
         }
 
         Query deleteQuery = Query.query(Criteria.where("id").is(id));
-        var result = template.remove(deleteQuery, StaffRole.class, CollectionName.STAFF_ROLES);
+        DeleteResult result = template.remove(deleteQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
         return result.getDeletedCount() > 0;
     }
@@ -165,11 +166,11 @@ public class RoleService {
     public void reorderRoles(Server server, ReorderRolesRequest request) {
         MongoTemplate template = getTemplate(server);
 
-        for (var item : request.roleOrder()) {
+        request.roleOrder().forEach(item -> {
             Query query = Query.query(Criteria.where("id").is(item.id()));
             Update update = new Update().set("order", item.order());
             template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
-        }
+        });
     }
 
     public void createDefaultRoles(Server server) {

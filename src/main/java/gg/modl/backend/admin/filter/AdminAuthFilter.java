@@ -5,6 +5,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -39,7 +40,7 @@ public class AdminAuthFilter extends OncePerRequestFilter {
         }
 
         // Check authentication for all other admin endpoints
-        var sessionOpt = adminAuthController.getAuthenticatedSession(request);
+        Optional<AdminAuthController.AdminSession> sessionOpt = adminAuthController.getAuthenticatedSession(request);
         if (sessionOpt.isEmpty()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");

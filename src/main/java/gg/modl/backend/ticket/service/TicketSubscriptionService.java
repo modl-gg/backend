@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.service;
 
+import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
@@ -68,7 +69,7 @@ public class TicketSubscriptionService {
 
         Update update = new Update().set("subscribedTickets.$.active", false);
 
-        var result = template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+        UpdateResult result = template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
         return result.getModifiedCount() > 0;
     }
 
@@ -158,7 +159,7 @@ public class TicketSubscriptionService {
 
         Update update = new Update().set("subscribedTickets.$.lastReadAt", new Date());
 
-        var result = template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+        UpdateResult result = template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
         return result.getModifiedCount() > 0;
     }
 

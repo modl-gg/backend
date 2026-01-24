@@ -2,6 +2,7 @@ package gg.modl.backend.billing.service;
 
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
+import com.stripe.model.checkout.Session;
 import gg.modl.backend.billing.dto.response.*;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
@@ -33,7 +34,7 @@ public class BillingService {
             updateServerField(server.getId(), "stripe_customer_id", customerId);
         }
 
-        var session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
+        Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
         return new CheckoutSessionResponse(session.getId());
     }
 
@@ -42,7 +43,7 @@ public class BillingService {
             throw new IllegalStateException("Customer ID not found for server");
         }
 
-        var session = stripeService.createPortalSession(server.getStripeCustomerId(), server.getCustomDomain());
+        com.stripe.model.billingportal.Session session = stripeService.createPortalSession(server.getStripeCustomerId(), server.getCustomDomain());
         return new PortalSessionResponse(session.getUrl());
     }
 
