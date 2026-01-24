@@ -1,0 +1,58 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - draft
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    environment: staging
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add server to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.STAGING_IP }} >> ~/.ssh/known_hosts
+
+      - name: Deploy via SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
+          set -e
+          cd /home/modl/backend
+
+          # Pull latest code
+          git stash
+          git pull origin draft
+
+          # Run zero-downtime deployment
+          ./scripts/deploy.sh staging
+          '
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
+          # Check whichever container is running
+          if docker ps --filter "name=modl-backend-blue" --format "{{.Names}}" | grep -q blue; then
+            curl -sf http://localhost:8080/actuator/health || exit 1
+          else
+            curl -sf http://localhost:8081/actuator/health || exit 1
+          fi
+          echo "Health check passed"
+          '
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Staging deployment failed! Check the logs."

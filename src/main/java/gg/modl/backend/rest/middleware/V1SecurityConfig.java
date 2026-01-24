@@ -33,6 +33,7 @@ public class V1SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/v1").permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(RESTMappingV1.HEALTH).permitAll()
                         .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
                         .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
