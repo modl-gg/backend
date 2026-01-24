@@ -1,0 +1,178 @@
+package gg.modl.backend.ticket.controller;
+
+import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketReply;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.*;
+
+@RestController
+@RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
+@RequiredArgsConstructor
+public class MinecraftTicketsController {
+    private final DynamicMongoTemplateProvider mongoProvider;
+
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getAllTickets(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String type,
+            @RequestParam(defaultValue = "50") int limit,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Criteria criteria = new Criteria();
+        List<Criteria> conditions = new ArrayList<>();
+
+        // Filter by status if provided
+        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
+            conditions.add(Criteria.where("status").is(status));
+        }
+
+        // Filter by type if provided (support tickets vs reports)
+        if (type != null && !type.isBlank()) {
+            conditions.add(Criteria.where("type").is(type));
+        } else {
+            // Default to support tickets (exclude player reports)
+            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL", "STAFF", "OTHER"));
+        }
+
+        if (!conditions.isEmpty()) {
+            criteria = new Criteria().andOperator(conditions.toArray(new Criteria[0]));
+        }
+
+        Query query = Query.query(criteria);
+        query.with(Sort.by(Sort.Direction.DESC, "created"));
+        query.limit(Math.min(limit, 100));
+
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
+            boolean hasStaffResponse = false;
+            if (t.getReplies() != null) {
+                hasStaffResponse = t.getReplies().stream()
+                        .anyMatch(r -> r.isStaff());
+            }
+
+            Map<String, Object> ticket = new LinkedHashMap<>();
+            ticket.put("id", t.getId());
+            ticket.put("type", t.getType());
+            ticket.put("category", t.getCategory());
+            ticket.put("subject", t.getSubject());
+            ticket.put("status", t.getStatus());
+            ticket.put("playerName", t.getCreatorName());
+            ticket.put("playerUuid", t.getCreatorUuid());
+            ticket.put("priority", t.getPriority());
+            ticket.put("assignedTo", t.getAssignedTo());
+            ticket.put("createdAt", t.getCreated());
+            ticket.put("updatedAt", t.getUpdatedAt());
+            ticket.put("hasStaffResponse", hasStaffResponse);
+            ticket.put("replyCount", t.getReplies() != null ? t.getReplies().size() : 0);
+            ticket.put("locked", t.isLocked());
+            return ticket;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "tickets", ticketList
+        ));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getTicket(
+            @PathVariable String id,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("id").is(id));
+        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
+
+        if (ticket == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Ticket not found"
+            ));
+        }
+
+        List<Map<String, Object>> replies = new ArrayList<>();
+        if (ticket.getReplies() != null) {
+            for (TicketReply reply : ticket.getReplies()) {
+                Map<String, Object> r = new LinkedHashMap<>();
+                r.put("id", reply.getId());
+                r.put("content", reply.getContent());
+                r.put("authorName", reply.getName());
+                r.put("authorId", reply.getCreatorIdentifier());
+                r.put("isStaff", reply.isStaff());
+                r.put("createdAt", reply.getCreated());
+                replies.add(r);
+            }
+        }
+
+        Map<String, Object> ticketData = new LinkedHashMap<>();
+        ticketData.put("id", ticket.getId());
+        ticketData.put("type", ticket.getType());
+        ticketData.put("category", ticket.getCategory());
+        ticketData.put("subject", ticket.getSubject());
+        ticketData.put("status", ticket.getStatus());
+        ticketData.put("playerName", ticket.getCreatorName());
+        ticketData.put("playerUuid", ticket.getCreatorUuid());
+        ticketData.put("priority", ticket.getPriority());
+        ticketData.put("assignedTo", ticket.getAssignedTo());
+        ticketData.put("createdAt", ticket.getCreated());
+        ticketData.put("updatedAt", ticket.getUpdatedAt());
+        ticketData.put("locked", ticket.isLocked());
+        ticketData.put("replies", replies);
+        ticketData.put("chatMessages", ticket.getChatMessages());
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "ticket", ticketData
+        ));
+    }
+
+    @GetMapping("/player/{uuid}")
+    public ResponseEntity<Map<String, Object>> getPlayerTickets(
+            @PathVariable String uuid,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("creatorUuid").is(uuid));
+        query.with(Sort.by(Sort.Direction.DESC, "created"));
+        query.limit(50);
+
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
+            Map<String, Object> ticket = new LinkedHashMap<>();
+            ticket.put("id", t.getId());
+            ticket.put("type", t.getType());
+            ticket.put("subject", t.getSubject());
+            ticket.put("status", t.getStatus());
+            ticket.put("createdAt", t.getCreated());
+            return ticket;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "tickets", ticketList
+        ));
+    }
+}

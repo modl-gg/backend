@@ -103,6 +103,38 @@ public class MinecraftPlayerController {
         return ResponseEntity.ok(Map.of("status", 200, "success", true));
     }
 
+    @GetMapping("/online")
+    public ResponseEntity<Map<String, Object>> getOnlinePlayers(
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("data.isOnline").is(true));
+        query.limit(500);
+
+        List<Player> onlinePlayers = template.find(query, Player.class, CollectionName.PLAYERS);
+
+        List<Map<String, Object>> players = onlinePlayers.stream().map(player -> {
+            String username = player.getUsernames().isEmpty() ? "Unknown"
+                    : player.getUsernames().get(player.getUsernames().size() - 1).username();
+            Date joinedAt = player.getData() != null
+                    ? (Date) player.getData().get("lastLogin")
+                    : null;
+
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("uuid", player.getMinecraftUuid().toString());
+            p.put("username", username);
+            p.put("joinedAt", joinedAt);
+            return p;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "players", players
+        ));
+    }
+
     @GetMapping("/{uuid}")
     public ResponseEntity<Map<String, Object>> getPlayerByUuid(
             @PathVariable String uuid,

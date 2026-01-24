@@ -104,6 +104,11 @@ public final class RESTMappingV1 {
     public static final String MINECRAFT_STAFF = PREFIX_MINECRAFT + STAFF;
     private static final String NOTIFICATIONS = "/notifications";
     public static final String MINECRAFT_NOTIFICATIONS = PREFIX_MINECRAFT + NOTIFICATIONS;
+    private static final String REPORTS = "/reports";
+    public static final String MINECRAFT_REPORTS = PREFIX_MINECRAFT + REPORTS;
+    public static final String MINECRAFT_TICKETS = PREFIX_MINECRAFT + TICKETS;
+    public static final String MINECRAFT_DASHBOARD = PREFIX_MINECRAFT + DASHBOARD;
+    public static final String MINECRAFT_ROLES = PREFIX_MINECRAFT + ROLES;
 
     // Health check
     public static final String HEALTH = V1 + "/health";

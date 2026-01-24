@@ -75,13 +75,12 @@ public class MinecraftSyncController {
                     if (!isActive) continue;
 
                     boolean notStarted = punishment.getStarted() == null;
-                    boolean recentlyIssued = punishment.getIssued().toInstant().isAfter(lastSync);
                     boolean recentlyModified = punishment.getModifications().stream()
                             .anyMatch(m -> m.date() != null && m.date().toInstant().isAfter(lastSync));
 
                     Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
 
-                    if (notStarted || recentlyIssued) {
+                    if (notStarted) {
                         pendingPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,

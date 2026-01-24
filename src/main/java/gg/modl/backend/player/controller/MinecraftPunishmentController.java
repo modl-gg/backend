@@ -25,6 +25,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import gg.modl.backend.settings.data.PunishmentType;
+
 import java.util.*;
 
 @RestController
@@ -57,6 +59,57 @@ public class MinecraftPunishmentController {
                 "status", 200,
                 "message", "Punishment created",
                 "punishmentId", punishmentId
+        ));
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<Map<String, Object>> getRecentPunishments(
+            @RequestParam(defaultValue = "48") int hours,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
+
+        Query query = Query.query(Criteria.where("punishments.issued").gte(cutoff));
+        query.limit(100);
+
+        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+
+        List<Map<String, Object>> punishments = new ArrayList<>();
+        for (Player player : players) {
+            String username = player.getUsernames().isEmpty() ? "Unknown"
+                    : player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+            for (Punishment punishment : player.getPunishments()) {
+                if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
+                    String typeName = types.stream()
+                            .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                            .findFirst()
+                            .map(PunishmentType::getName)
+                            .orElse("Unknown");
+
+                    Map<String, Object> p = new LinkedHashMap<>();
+                    p.put("id", punishment.getId());
+                    p.put("type", typeName);
+                    p.put("playerName", username);
+                    p.put("playerUuid", player.getMinecraftUuid().toString());
+                    p.put("issuerName", punishment.getIssuerName());
+                    p.put("issuedAt", punishment.getIssued());
+                    p.put("reason", punishment.getData() != null ? punishment.getData().get("reason") : null);
+                    p.put("active", statusCalculator.isPunishmentActive(punishment));
+                    punishments.add(p);
+                }
+            }
+        }
+
+        punishments.sort((a, b) -> ((Date) b.get("issuedAt")).compareTo((Date) a.get("issuedAt")));
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "punishments", punishments
         ));
     }
 
