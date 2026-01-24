@@ -108,7 +108,7 @@ docker run -d \
     --name "$NEW_CONTAINER" \
     --restart unless-stopped \
     -p ${NEW_PORT}:8080 \
-    --env-file .env \
+    -v "$(pwd)/.env:/app/.env:ro" \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
     ${DEPLOY_IMAGE}
 

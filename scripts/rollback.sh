@@ -65,7 +65,7 @@ docker run -d \
     --name "$ROLLBACK_CONTAINER" \
     --restart unless-stopped \
     -p ${ROLLBACK_PORT}:8080 \
-    --env-file .env \
+    -v "$(pwd)/.env:/app/.env:ro" \
     -e SPRING_PROFILES_ACTIVE=staging \
     ${APP_NAME}:${ROLLBACK_COLOR}
 
