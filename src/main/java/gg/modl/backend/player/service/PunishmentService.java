@@ -9,6 +9,8 @@ import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.request.AddEvidenceRequest;
 import gg.modl.backend.player.dto.request.AddModificationRequest;
+import gg.modl.backend.player.dto.request.CreateEvidenceRequest;
+import gg.modl.backend.player.dto.request.CreateNoteRequest;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
@@ -57,15 +59,27 @@ public class PunishmentService {
 
         List<PunishmentNote> notes = new ArrayList<>();
         if (request.notes() != null) {
-            for (String noteText : request.notes()) {
-                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteText, now, request.issuerName()));
+            for (CreateNoteRequest noteRequest : request.notes()) {
+                String issuer = noteRequest.issuerName() != null ? noteRequest.issuerName() : request.issuerName();
+                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteRequest.text(), now, issuer));
             }
         }
 
         List<PunishmentEvidence> evidence = new ArrayList<>();
         if (request.evidence() != null) {
-            for (String evidenceText : request.evidence()) {
-                evidence.add(new PunishmentEvidence(evidenceText, null, "text", request.issuerName(), now, null, null, null));
+            for (CreateEvidenceRequest evidenceRequest : request.evidence()) {
+                String issuer = evidenceRequest.issuerName() != null ? evidenceRequest.issuerName() : request.issuerName();
+                String type = evidenceRequest.type() != null ? evidenceRequest.type() : "text";
+                evidence.add(new PunishmentEvidence(
+                        evidenceRequest.text(),
+                        evidenceRequest.fileUrl(),
+                        type,
+                        issuer,
+                        now,
+                        evidenceRequest.fileName(),
+                        evidenceRequest.fileType(),
+                        evidenceRequest.fileSize()
+                ));
             }
         }
 
