@@ -4,6 +4,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Invitation;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
@@ -37,6 +38,9 @@ public class InvitationService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+    private static final int FREE_TIER_STAFF_LIMIT = 5;
+    private static final int PREMIUM_TIER_STAFF_LIMIT = 100_000;
+
     public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail) {
         MongoTemplate template = getTemplate(server);
 
@@ -49,6 +53,29 @@ public class InvitationService {
 
         if (emailsToInvite.isEmpty()) {
             throw new IllegalArgumentException("No emails provided");
+        }
+
+        int staffLimit = server.getPlan() == ServerPlan.premium ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+        long currentStaffCount = template.count(new Query(), Staff.class, CollectionName.STAFF);
+        Query pendingQuery = Query.query(Criteria.where("status").is("pending"));
+        long pendingInvitationsCount = template.count(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
+        long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
+
+        if (totalCurrentMembers >= staffLimit) {
+            String planName = server.getPlan() == ServerPlan.premium ? "Premium" : "Free";
+            throw new IllegalStateException(
+                    String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
+                            "Please upgrade your plan or remove existing staff members to invite new ones.",
+                            planName, staffLimit)
+            );
+        }
+
+        int availableSlots = (int) (staffLimit - totalCurrentMembers);
+        if (emailsToInvite.size() > availableSlots) {
+            throw new IllegalStateException(
+                    String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
+                            emailsToInvite.size(), availableSlots)
+            );
         }
 
         List<String> success = new ArrayList<>();

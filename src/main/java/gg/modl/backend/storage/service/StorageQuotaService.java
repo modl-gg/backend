@@ -1,6 +1,7 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +13,8 @@ import org.springframework.stereotype.Service;
 public class StorageQuotaService {
     private final S3StorageService s3StorageService;
 
-    private static final long FREE_TIER_BYTES = 100L * 1024 * 1024;
-    private static final long PRO_TIER_BYTES = 1L * 1024 * 1024 * 1024;
+    private static final long FREE_TIER_BYTES = 2L * 1024 * 1024 * 1024;
+    private static final long PREMIUM_TIER_BYTES = 200L * 1024 * 1024 * 1024;
 
     public StorageQuotaResponse getQuota(Server server) {
         long usedBytes = s3StorageService.calculateStorageUsed(server);
@@ -36,7 +37,10 @@ public class StorageQuotaService {
     }
 
     private long getMaxBytesForServer(Server server) {
-        return PRO_TIER_BYTES;
+        if (server.getPlan() == ServerPlan.premium) {
+            return PREMIUM_TIER_BYTES;
+        }
+        return FREE_TIER_BYTES;
     }
 
     private String formatBytes(long bytes) {
