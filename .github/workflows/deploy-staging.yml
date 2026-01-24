@@ -28,6 +28,7 @@ jobs:
           cd /home/modl/backend
           git fetch origin draft
           git reset --hard origin/draft
+          chmod +x scripts/deploy.sh scripts/rollback.sh
           ./scripts/deploy.sh staging
           '
 
