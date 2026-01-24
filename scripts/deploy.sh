@@ -2,6 +2,7 @@
 set -e
 
 ENVIRONMENT=${1:-staging}
+IMAGE_TAG=${2:-}  # Optional: pre-built image tag from CI
 APP_NAME="modl-backend"
 BLUE_PORT=8080
 GREEN_PORT=8081
@@ -86,8 +87,17 @@ NEW_PORT=$(get_port_for_color $NEXT_COLOR)
 
 log "Current: $CURRENT_COLOR, Deploying: $NEXT_COLOR (port $NEW_PORT)"
 
-log "Building new Docker image..."
-docker build -t ${APP_NAME}:${NEXT_COLOR} .
+# Determine which image to use
+if [[ -n "$IMAGE_TAG" ]]; then
+    # Use pre-built image from CI
+    DEPLOY_IMAGE="$IMAGE_TAG"
+    log "Using pre-built image: $DEPLOY_IMAGE"
+else
+    # Build locally
+    DEPLOY_IMAGE="${APP_NAME}:${NEXT_COLOR}"
+    log "Building new Docker image..."
+    docker build -t ${DEPLOY_IMAGE} .
+fi
 
 log "Stopping and removing existing $NEXT_COLOR container if exists..."
 docker stop "$NEW_CONTAINER" 2>/dev/null || true
@@ -100,10 +110,11 @@ docker run -d \
     -p ${NEW_PORT}:8080 \
     --env-file .env \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
-    ${APP_NAME}:${NEXT_COLOR}
+    ${DEPLOY_IMAGE}
 
 if ! wait_for_health "$NEW_PORT"; then
     log "Rolling back: stopping failed container"
+    docker logs "$NEW_CONTAINER" --tail 50
     docker stop "$NEW_CONTAINER" 2>/dev/null || true
     docker rm "$NEW_CONTAINER" 2>/dev/null || true
     exit 1
