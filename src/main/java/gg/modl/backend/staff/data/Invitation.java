@@ -19,12 +19,12 @@ public class Invitation {
     @Id
     private String id;
 
-    @Indexed
+    @Indexed(name = "email_1")
     private String email;
 
     private String role;
 
-    @Indexed(unique = true)
+    @Indexed(name = "token_1", unique = true)
     private String token;
 
     private Date expiresAt;

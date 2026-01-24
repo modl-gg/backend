@@ -25,12 +25,12 @@ public class Server {
 
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-    @Indexed(unique = true)
+    @Indexed(name = "serverName_1", unique = true)
     private final String serverName;
 
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    @Indexed(unique = true)
+    @Indexed(name = "subdomain_1", unique = true)
     private final String customDomain;
 
     @Nullable
@@ -40,23 +40,23 @@ public class Server {
     // Admin & Verification
     @NotNull
     @Field(name = ServerField.ADMIN_EMAIL, targetType = FieldType.STRING)
-    @Indexed(unique = true)
+    @Indexed(name = "adminEmail_1", unique = true)
     private String adminEmail;
 
     @NotNull
     @Field(name = "emailVerified", targetType = FieldType.BOOLEAN)
-    @Indexed
+    @Indexed(name = "emailVerified_1")
     private Boolean emailVerified;
 
     @Nullable
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "emailVerificationToken_1", unique = true, sparse = true)
     private String emailVerificationToken;
 
     // Provisioning & Status
     @NotNull
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
-    @Indexed
+    @Indexed(name = "provisioningStatus_1")
     private ProvisioningStatus provisioningStatus;
 
     @Nullable
@@ -65,7 +65,7 @@ public class Server {
 
     @Nullable
     @Field(name = "provisioningSignInToken", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "provisioningSignInToken_1", unique = true, sparse = true)
     private String provisioningSignInToken;
 
     @Nullable
@@ -91,12 +91,12 @@ public class Server {
 
     @Nullable
     @Field(name = "stripe_customer_id", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "stripe_customer_id_1", unique = true, sparse = true)
     private String stripeCustomerId;
 
     @Nullable
     @Field(name = "stripe_subscription_id", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "stripe_subscription_id_1", unique = true, sparse = true)
     private String stripeSubscriptionId;
 
     // Usage Tracking & Billing
@@ -124,7 +124,7 @@ public class Server {
     // Custom Domain Management
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "customDomain_1", unique = true, sparse = true)
     private String customDomainOverride;
 
     @Nullable
@@ -141,13 +141,13 @@ public class Server {
 
     @Nullable
     @Field(name = "customDomain_cloudflareId", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "customDomain_cloudflareId_1", unique = true, sparse = true)
     private String customDomainCloudflareId;
 
     // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)
-    @Indexed(unique = true, sparse = true)
+    @Indexed(name = "apiKey_1", unique = true, sparse = true)
     private String apiKey;
 
     // Analytics/Stats
@@ -158,7 +158,7 @@ public class Server {
     // Timestamps
     @NotNull
     @Field(name = "createdAt", targetType = FieldType.DATE_TIME)
-    @Indexed
+    @Indexed(name = "createdAt_1")
     private Date createdAt;
 
     @NotNull

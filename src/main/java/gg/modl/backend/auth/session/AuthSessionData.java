@@ -16,13 +16,13 @@ public class AuthSessionData {
     private String id;
 
     @Field
-    @Indexed
+    @Indexed(name = "email_1")
     private String email;
 
     @Field
     private Instant createdAt;
 
     @Field
-    @Indexed(expireAfter = "0s")
+    @Indexed(name = "expiresAt_1", expireAfter = "0s")
     private Instant expiresAt;
 }

@@ -14,13 +14,13 @@ import java.time.Instant;
 public class AuthCode {
     @Id
     @Field
-    @Indexed(unique = true)
+    @Indexed(name = "email_1", unique = true)
     private String email;
 
     @Field
     private String codeHash;
 
     @Field
-    @Indexed(expireAfter = "0s")
+    @Indexed(name = "expiresAt_1", expireAfter = "0s")
     private Instant expiresAt;
 }

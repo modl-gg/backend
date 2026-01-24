@@ -23,15 +23,15 @@ public class Staff {
     @Id
     private String id;
 
-    @Indexed(unique = true)
+    @Indexed(name = "email_1", unique = true)
     private String email;
 
-    @Indexed(unique = true)
+    @Indexed(name = "username_1", unique = true)
     private String username;
 
     private String role;
 
-    @Indexed(sparse = true)
+    @Indexed(name = "assignedMinecraftUuid_1", sparse = true)
     private String assignedMinecraftUuid;
 
     private String assignedMinecraftUsername;

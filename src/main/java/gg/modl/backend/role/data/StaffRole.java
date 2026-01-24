@@ -21,7 +21,7 @@ public class StaffRole {
     @Id
     private String mongoId;
 
-    @Indexed(unique = true)
+    @Indexed(name = "id_1", unique = true)
     private String id;
 
     private String name;
