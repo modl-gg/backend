@@ -73,7 +73,7 @@ docker run -d \
 log "Waiting for rollback container to be healthy..."
 sleep 30
 
-if curl -sf "http://localhost:${ROLLBACK_PORT}/actuator/health" > /dev/null 2>&1; then
+if curl -sf "http://localhost:${ROLLBACK_PORT}/v1/health" > /dev/null 2>&1; then
     log "Rollback container is healthy"
     update_nginx $ROLLBACK_PORT
     sleep 5

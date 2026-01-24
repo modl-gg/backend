@@ -55,7 +55,7 @@ wait_for_health() {
 
     while [[ $retries -lt $MAX_HEALTH_RETRIES ]]; do
         # Use /v1 HEAD request as health check (faster than /actuator/health)
-        if curl -sf --head "http://localhost:${port}/v1" > /dev/null 2>&1; then
+        if curl -sf --head "http://localhost:${port}/v1/health" > /dev/null 2>&1; then
             log "Container on port $port is healthy"
             return 0
         fi
