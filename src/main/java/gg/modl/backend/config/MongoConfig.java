@@ -19,18 +19,19 @@ import java.util.List;
 public class MongoConfig {
 
     @Bean
-    public MongoMappingContext mongoMappingContext() {
-        MongoMappingContext context = new MongoMappingContext();
-        context.setAutoIndexCreation(false);
-        return context;
-    }
-
-    @Bean
     public MongoCustomConversions mongoCustomConversions() {
         return new MongoCustomConversions(List.of(
                 new IPEntryReadConverter(),
                 new ArrayListToIPEntryConverter()
         ));
+    }
+
+    @Bean
+    public MongoMappingContext mongoMappingContext(MongoCustomConversions mongoCustomConversions) {
+        MongoMappingContext context = new MongoMappingContext();
+        context.setSimpleTypeHolder(mongoCustomConversions.getSimpleTypeHolder());
+        context.setAutoIndexCreation(false);
+        return context;
     }
 
     @Bean
