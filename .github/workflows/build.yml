@@ -1,14 +1,10 @@
 name: Build
 
 on:
-  push:
-    branches-ignore:
-      - main
-      - dev
   pull_request:
     branches:
       - main
-      - dev
+      - draft
 
 jobs:
   build:

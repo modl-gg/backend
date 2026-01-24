@@ -5,17 +5,59 @@ on:
     branches:
       - main
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
 
-    environment: production
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=prod-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+
+    steps:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.7.0
         with:
@@ -27,23 +69,29 @@ jobs:
 
       - name: Deploy via SSH
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
           set -e
           cd /home/modl/backend
 
-          # Pull latest code
-          git stash
-          git pull origin main
+          # Login to GHCR
+          echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-          # Run zero-downtime deployment
-          ./scripts/deploy.sh production
-          '
+          # Pull new image
+          docker pull ${{ needs.build-and-push.outputs.image_tag }}
+
+          # Run deployment with pre-built image
+          ./scripts/deploy.sh production '${{ needs.build-and-push.outputs.image_tag }}'
+          "
 
       - name: Verify deployment
         run: |
-          sleep 10
+          sleep 5
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
-          curl -sf http://localhost:8080/actuator/health || exit 1
+          if docker ps --filter "name=modl-backend-blue" --format "{{.Names}}" | grep -q blue; then
+            curl -sf http://localhost:8080/actuator/health || exit 1
+          else
+            curl -sf http://localhost:8081/actuator/health || exit 1
+          fi
           echo "Health check passed"
           '
 
