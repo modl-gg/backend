@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.util.Date;
 import java.util.List;
@@ -15,6 +16,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class Punishment {
     @NotNull
+    @Field("_id")
     private String id;
 
     private int type_ordinal; // Name is formatted like this to fit existing database schema

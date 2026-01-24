@@ -3,8 +3,10 @@ package gg.modl.backend.config;
 import com.mongodb.client.MongoClient;
 import gg.modl.backend.config.converter.ArrayListToIPEntryConverter;
 import gg.modl.backend.config.converter.ArrayListToNoteEntryConverter;
+import gg.modl.backend.config.converter.ArrayListToPunishmentConverter;
 import gg.modl.backend.config.converter.IPEntryReadConverter;
 import gg.modl.backend.config.converter.NoteEntryReadConverter;
+import gg.modl.backend.config.converter.PunishmentReadConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -26,7 +28,9 @@ public class MongoConfig {
                 new IPEntryReadConverter(),
                 new ArrayListToIPEntryConverter(),
                 new NoteEntryReadConverter(),
-                new ArrayListToNoteEntryConverter()
+                new ArrayListToNoteEntryConverter(),
+                new PunishmentReadConverter(),
+                new ArrayListToPunishmentConverter()
         ));
     }
 
