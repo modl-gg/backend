@@ -107,10 +107,12 @@ public class MinecraftPunishmentController {
         }
 
         PunishmentModification modification = new PunishmentModification(
+                new ObjectId().toHexString(),
                 "MANUAL_PARDON",
                 new Date(),
                 request.issuerName(),
                 request.reason() != null ? request.reason() : "",
+                null,
                 null,
                 null
         );
@@ -152,7 +154,7 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        PunishmentNote note = new PunishmentNote(request.note(), new Date(), request.issuerName());
+        PunishmentNote note = new PunishmentNote(new ObjectId().toHexString(), request.note(), new Date(), request.issuerName());
 
         Query updateQuery = Query.query(
                 Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
@@ -232,11 +234,13 @@ public class MinecraftPunishmentController {
         }
 
         PunishmentModification modification = new PunishmentModification(
+                new ObjectId().toHexString(),
                 "DURATION_CHANGE",
                 new Date(),
                 request.issuerName(),
                 "Duration changed",
                 request.newDuration(),
+                null,
                 null
         );
 
@@ -332,7 +336,7 @@ public class MinecraftPunishmentController {
         List<PunishmentNote> notes = new ArrayList<>();
         if (request.notes() != null) {
             for (String noteText : request.notes()) {
-                notes.add(new PunishmentNote(noteText, now, request.issuerName()));
+                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteText, now, request.issuerName()));
             }
         }
 

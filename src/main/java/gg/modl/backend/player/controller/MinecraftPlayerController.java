@@ -20,6 +20,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -438,11 +439,11 @@ public class MinecraftPlayerController {
         List<Map<String, Object>> modifications = punishment.getModifications().stream()
                 .map(m -> {
                     Map<String, Object> mod = new LinkedHashMap<>();
-                    mod.put("id", m.getId());
-                    mod.put("type", m.getType());
-                    mod.put("date", m.getDate());
-                    mod.put("issuerName", m.getIssuerName());
-                    mod.put("data", m.getData());
+                    mod.put("id", m.id());
+                    mod.put("type", m.type());
+                    mod.put("date", m.date());
+                    mod.put("issuerName", m.issuerName());
+                    mod.put("data", m.data());
                     return mod;
                 }).toList();
         map.put("modifications", modifications);
@@ -451,10 +452,10 @@ public class MinecraftPlayerController {
         List<Map<String, Object>> notes = punishment.getNotes().stream()
                 .map(n -> {
                     Map<String, Object> note = new LinkedHashMap<>();
-                    note.put("id", n.getId());
-                    note.put("text", n.getText());
-                    note.put("issuerName", n.getIssuerName());
-                    note.put("date", n.getDate());
+                    note.put("id", n.id());
+                    note.put("text", n.text());
+                    note.put("issuerName", n.issuerName());
+                    note.put("date", n.date());
                     return note;
                 }).toList();
         map.put("notes", notes);
@@ -583,10 +584,12 @@ public class MinecraftPlayerController {
 
                 gg.modl.backend.player.data.punishment.PunishmentModification modification =
                         new gg.modl.backend.player.data.punishment.PunishmentModification(
+                                new ObjectId().toHexString(),
                                 "MANUAL_PARDON",
                                 new Date(),
                                 request.issuerName(),
                                 request.reason() != null ? request.reason() : "",
+                                null,
                                 null,
                                 null
                         );

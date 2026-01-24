@@ -58,7 +58,7 @@ public class PunishmentService {
         List<PunishmentNote> notes = new ArrayList<>();
         if (request.notes() != null) {
             for (String noteText : request.notes()) {
-                notes.add(new PunishmentNote(noteText, now, request.issuerName()));
+                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteText, now, request.issuerName()));
             }
         }
 
@@ -96,12 +96,14 @@ public class PunishmentService {
         );
 
         PunishmentModification modification = new PunishmentModification(
+                new ObjectId().toHexString(),
                 request.type(),
                 new Date(),
                 request.issuerName(),
                 request.reason() != null ? request.reason() : "",
                 request.effectiveDuration(),
-                request.appealTicketId()
+                request.appealTicketId(),
+                null
         );
 
         Update update = new Update().push("punishments.$.modifications", modification);
@@ -199,7 +201,7 @@ public class PunishmentService {
                         .and("punishments.id").is(punishmentId)
         );
 
-        PunishmentNote note = new PunishmentNote(text, new Date(), issuerName);
+        PunishmentNote note = new PunishmentNote(new ObjectId().toHexString(), text, new Date(), issuerName);
         Update update = new Update().push("punishments.$.notes", note);
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);

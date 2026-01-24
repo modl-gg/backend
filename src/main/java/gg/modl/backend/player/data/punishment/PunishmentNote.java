@@ -4,5 +4,10 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.Date;
 
-public record PunishmentNote(@NotNull String text, @NotNull Date date, @NotNull String issuerName) {
+public record PunishmentNote(
+        @NotNull String id,
+        @NotNull String text,
+        @NotNull Date date,
+        @NotNull String issuerName
+) {
 }

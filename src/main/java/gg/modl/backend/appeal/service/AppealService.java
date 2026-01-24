@@ -14,6 +14,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -260,12 +261,14 @@ public class AppealService {
         );
 
         PunishmentModification modification = new PunishmentModification(
+                new ObjectId().toHexString(),
                 "APPEAL_ACCEPT",
                 new Date(),
                 staffUsername != null ? staffUsername : "System",
                 "Appeal approved",
                 null,
-                appeal.getId()
+                appeal.getId(),
+                null
         );
 
         Update update = new Update()

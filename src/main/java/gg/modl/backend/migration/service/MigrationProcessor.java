@@ -13,6 +13,7 @@ import gg.modl.backend.player.data.punishment.*;
 import gg.modl.backend.server.data.Server;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -408,7 +409,7 @@ public class MigrationProcessor {
                         String noteIssuer = validator.sanitizeString((String) noteMap.get("issuerName"), 100);
 
                         if (text != null && date != null) {
-                            notes.add(new PunishmentNote(text, date, noteIssuer != null ? noteIssuer : "Unknown"));
+                            notes.add(new PunishmentNote(new ObjectId().toHexString(), text, date, noteIssuer != null ? noteIssuer : "Unknown"));
                         }
                     }
                 }
