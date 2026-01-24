@@ -7,6 +7,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
@@ -18,6 +19,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -57,6 +59,10 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
+        if (!isAuthorizedEmail(server, requestData.email())) {
+            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+        }
+
         try {
             authService.sendUserLoginCode(server, requestData.email());
         } catch (MessagingException | UnsupportedEncodingException e) {
@@ -80,6 +86,11 @@ public class PanelAuthController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+
+        if (!isAuthorizedEmail(server, requestData.email())) {
+            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+        }
+
         boolean valid = authService.verifyCode(server, requestData.email(), requestData.code());
 
         if (!valid) {
@@ -182,12 +193,10 @@ public class PanelAuthController {
         }
 
         String roleName = staffOpt.get().getRole();
-        var roleOpt = permissionService.getRoleByName(server, roleName);
-        if (roleOpt.isEmpty()) {
-            return ResponseEntity.ok(Collections.emptyList());
-        }
+        Optional<StaffRole> roleOpt = permissionService.getRoleByName(server, roleName);
 
-        return ResponseEntity.ok(roleOpt.get().getPermissions());
+        return roleOpt.map(staffRole -> ResponseEntity.ok(staffRole.getPermissions()))
+            .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));
     }
 
     private Cookie createSessionCookie(String sessionId) {
@@ -225,6 +234,13 @@ public class PanelAuthController {
                 .map(Cookie::getValue)
                 .findFirst()
                 .orElse(null);
+    }
+
+    private boolean isAuthorizedEmail(Server server, String email) {
+        if (permissionService.isSuperAdmin(server, email)) {
+            return true;
+        }
+        return staffService.getStaffByEmail(server, email).isPresent();
     }
 
     public record AuthResponse(boolean success, String message) {}
