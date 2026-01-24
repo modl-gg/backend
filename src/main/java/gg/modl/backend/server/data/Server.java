@@ -30,7 +30,7 @@ public class Server {
 
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "subdomain_1", unique = true)
+    @Indexed(name = "customDomain_1", unique = true)
     private final String customDomain;
 
     @Nullable
@@ -124,7 +124,7 @@ public class Server {
     // Custom Domain Management
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "customDomain_1", unique = true, sparse = true)
+    @Indexed(name = "customDomain_override_1", unique = true, sparse = true)
     private String customDomainOverride;
 
     @Nullable
