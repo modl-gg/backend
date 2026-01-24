@@ -3,17 +3,21 @@ FROM eclipse-temurin:21-jdk-alpine AS builder
 
 WORKDIR /app
 
+# Copy gradle files first for dependency caching
 COPY gradle gradle
-COPY gradlew .
-COPY build.gradle .
-COPY settings.gradle .
+COPY gradlew build.gradle settings.gradle ./
 
 RUN chmod +x gradlew
-RUN ./gradlew dependencies --no-daemon || true
 
+# Download dependencies (cached unless build.gradle changes)
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew dependencies --no-daemon
+
+# Copy source and build
 COPY src src
 
-RUN ./gradlew bootJar --no-daemon -x test
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew bootJar --no-daemon -x test
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine

@@ -5,55 +5,8 @@ on:
     branches:
       - draft
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-
-    outputs:
-      image_tag: ${{ steps.meta.outputs.tags }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=staging-
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          platforms: linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
-    needs: build-and-push
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: staging
@@ -69,22 +22,14 @@ jobs:
           ssh-keyscan -H ${{ secrets.STAGING_IP }} >> ~/.ssh/known_hosts
 
       - name: Deploy via SSH
-        env:
-          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} "
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
           set -e
           cd /home/modl/backend
-
-          # Login to GHCR
-          echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Pull new image
-          docker pull ${{ needs.build-and-push.outputs.image_tag }}
-
-          # Run deployment with pre-built image
-          ./scripts/deploy.sh staging '${{ needs.build-and-push.outputs.image_tag }}'
-          "
+          git fetch origin draft
+          git reset --hard origin/draft
+          ./scripts/deploy.sh staging
+          '
 
       - name: Verify deployment
         run: |
@@ -100,5 +45,4 @@ jobs:
 
       - name: Notify on failure
         if: failure()
-        run: |
-          echo "Staging deployment failed! Check the logs."
+        run: echo "Staging deployment failed!"
