@@ -2,7 +2,9 @@ package gg.modl.backend.config;
 
 import com.mongodb.client.MongoClient;
 import gg.modl.backend.config.converter.ArrayListToIPEntryConverter;
+import gg.modl.backend.config.converter.ArrayListToNoteEntryConverter;
 import gg.modl.backend.config.converter.IPEntryReadConverter;
+import gg.modl.backend.config.converter.NoteEntryReadConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.mongodb.MongoDatabaseFactory;
@@ -22,7 +24,9 @@ public class MongoConfig {
     public MongoCustomConversions mongoCustomConversions() {
         return new MongoCustomConversions(List.of(
                 new IPEntryReadConverter(),
-                new ArrayListToIPEntryConverter()
+                new ArrayListToIPEntryConverter(),
+                new NoteEntryReadConverter(),
+                new ArrayListToNoteEntryConverter()
         ));
     }
 

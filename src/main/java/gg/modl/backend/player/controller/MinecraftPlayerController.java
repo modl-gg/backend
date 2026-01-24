@@ -158,7 +158,7 @@ public class MinecraftPlayerController {
         ));
     }
 
-    @GetMapping("-name")
+    @GetMapping("/by-name")
     public ResponseEntity<Map<String, Object>> getPlayerByUsername(
             @RequestParam String username,
             HttpServletRequest httpRequest
@@ -358,27 +358,111 @@ public class MinecraftPlayerController {
     }
 
     private Map<String, Object> toPlayerProfile(Player player) {
-        String currentUsername = player.getUsernames().isEmpty() ? "Unknown"
-                : player.getUsernames().get(player.getUsernames().size() - 1).username();
+        // Convert usernames to the format expected by the plugin
+        List<Map<String, Object>> usernames = player.getUsernames().stream()
+                .map(u -> {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("username", u.username());
+                    entry.put("date", u.date());
+                    return entry;
+                }).toList();
 
-        List<String> previousUsernames = player.getUsernames().stream()
-                .map(u -> u.username())
-                .toList();
+        // Convert notes to the format expected by the plugin
+        List<Map<String, Object>> notes = player.getNotes().stream()
+                .map(n -> {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("id", n.getId());
+                    entry.put("text", n.getText());
+                    entry.put("date", n.getDate());
+                    entry.put("issuerName", n.getIssuerName());
+                    entry.put("issuerId", n.getIssuerId());
+                    return entry;
+                }).toList();
 
-        Date firstSeen = player.getUsernames().isEmpty() ? null
-                : player.getUsernames().get(0).date();
-        Date lastSeen = player.getUsernames().isEmpty() ? null
-                : player.getUsernames().get(player.getUsernames().size() - 1).date();
+        // Convert IP addresses (ipAddresses -> ipList for plugin compatibility)
+        List<Map<String, Object>> ipList = player.getIpAddresses().stream()
+                .map(ip -> {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("ipAddress", ip.getIpAddress());
+                    entry.put("country", ip.getCountry());
+                    entry.put("region", ip.getRegion());
+                    entry.put("asn", ip.getAsn());
+                    entry.put("proxy", ip.isProxy());
+                    entry.put("hosting", ip.isHosting());
+                    entry.put("firstLogin", ip.getFirstLogin());
+                    entry.put("logins", ip.getLogins());
+                    return entry;
+                }).toList();
+
+        // Convert punishments to the format expected by the plugin
+        List<Map<String, Object>> punishments = player.getPunishments().stream()
+                .map(this::toPunishmentMap).toList();
+
+        // Get pending notifications from player data
+        @SuppressWarnings("unchecked")
+        List<String> pendingNotifications = (List<String>) player.getData()
+                .getOrDefault("pendingNotifications", Collections.emptyList());
 
         Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("_id", player.getId());
         profile.put("minecraftUuid", player.getMinecraftUuid().toString());
-        profile.put("currentUsername", currentUsername);
-        profile.put("previousUsernames", previousUsernames);
-        profile.put("firstSeen", firstSeen);
-        profile.put("lastSeen", lastSeen);
-        profile.put("isOnline", player.getData().getOrDefault("isOnline", false));
+        profile.put("usernames", usernames);
+        profile.put("notes", notes);
+        profile.put("ipList", ipList);
+        profile.put("punishments", punishments);
+        profile.put("pendingNotifications", pendingNotifications);
 
         return profile;
+    }
+
+    private Map<String, Object> toPunishmentMap(Punishment punishment) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", punishment.getId());
+        map.put("issuerName", punishment.getIssuerName());
+        map.put("issued", punishment.getIssued());
+        map.put("started", punishment.getStarted());
+
+        // Convert type_ordinal to Type enum name for plugin compatibility
+        String typeName = switch (punishment.getType_ordinal()) {
+            case 0 -> "KICK";
+            case 1 -> "MUTE";
+            case 2 -> "BAN";
+            case 3 -> "SECURITY_BAN";
+            case 4 -> "LINKED_BAN";
+            case 5 -> "BLACKLIST";
+            default -> "KICK";
+        };
+        map.put("type", typeName);
+
+        // Convert modifications
+        List<Map<String, Object>> modifications = punishment.getModifications().stream()
+                .map(m -> {
+                    Map<String, Object> mod = new LinkedHashMap<>();
+                    mod.put("id", m.getId());
+                    mod.put("type", m.getType());
+                    mod.put("date", m.getDate());
+                    mod.put("issuerName", m.getIssuerName());
+                    mod.put("data", m.getData());
+                    return mod;
+                }).toList();
+        map.put("modifications", modifications);
+
+        // Convert notes
+        List<Map<String, Object>> notes = punishment.getNotes().stream()
+                .map(n -> {
+                    Map<String, Object> note = new LinkedHashMap<>();
+                    note.put("id", n.getId());
+                    note.put("text", n.getText());
+                    note.put("issuerName", n.getIssuerName());
+                    note.put("date", n.getDate());
+                    return note;
+                }).toList();
+        map.put("notes", notes);
+
+        map.put("attachedTicketIds", punishment.getAttachedTicketIds());
+        map.put("data", punishment.getData() != null ? punishment.getData() : Collections.emptyMap());
+
+        return map;
     }
 
     private Map<String, Object> buildLookupResponse(Server server, Player player, List<PunishmentType> types) {
