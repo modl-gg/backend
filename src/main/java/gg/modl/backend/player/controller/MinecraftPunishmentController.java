@@ -26,6 +26,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.data.DurationDetail;
+import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 
 import java.util.*;
 
@@ -111,6 +113,159 @@ public class MinecraftPunishmentController {
                 "status", 200,
                 "punishments", punishments
         ));
+    }
+
+    @GetMapping("/preview")
+    public ResponseEntity<PunishmentPreviewResponse> previewPunishment(
+            @RequestParam String playerUuid,
+            @RequestParam int typeOrdinal,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        // Find the player
+        Query query = Query.query(Criteria.where("minecraftUuid").is(playerUuid));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null) {
+            return ResponseEntity.ok(PunishmentPreviewResponse.error("Player not found"));
+        }
+
+        // Get punishment types
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        PunishmentType punishmentType = types.stream()
+                .filter(t -> t.getOrdinal() == typeOrdinal)
+                .findFirst()
+                .orElse(null);
+
+        if (punishmentType == null) {
+            return ResponseEntity.ok(PunishmentPreviewResponse.error("Punishment type not found"));
+        }
+
+        // Calculate player's current status
+        PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
+
+        // Determine offense level based on current points and punishment category
+        String category = punishmentType.getCategory();
+        int relevantPoints = punishmentType.isSocial() ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
+        String offenseLevel = calculateOffenseLevel(relevantPoints);
+
+        // Build preview response
+        PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()
+                .status(200)
+                .success(true)
+                .socialStatus(currentStatus.social())
+                .gameplayStatus(currentStatus.gameplay())
+                .socialPoints(currentStatus.socialPoints())
+                .gameplayPoints(currentStatus.gameplayPoints())
+                .offenseLevel(offenseLevel)
+                .singleSeverityPunishment(punishmentType.isSingleSeverityPunishment())
+                .permanentUntilUsernameChange(punishmentType.isPermanentUntilUsernameChange())
+                .permanentUntilSkinChange(punishmentType.isPermanentUntilSkinChange())
+                .canBeAltBlocking(punishmentType.isCanBeAltBlocking())
+                .canBeStatWiping(punishmentType.isCanBeStatWiping())
+                .category(category);
+
+        if (punishmentType.isSingleSeverityPunishment() ||
+            punishmentType.isPermanentUntilUsernameChange() ||
+            punishmentType.isPermanentUntilSkinChange()) {
+            // Single severity punishment
+            builder.singleSeverity(buildSeverityPreview(punishmentType, "regular", offenseLevel,
+                    currentStatus, punishmentType.isSocial()));
+        } else {
+            // Multi-severity punishment
+            builder.lenient(buildSeverityPreview(punishmentType, "low", offenseLevel,
+                    currentStatus, punishmentType.isSocial()));
+            builder.regular(buildSeverityPreview(punishmentType, "regular", offenseLevel,
+                    currentStatus, punishmentType.isSocial()));
+            builder.aggravated(buildSeverityPreview(punishmentType, "severe", offenseLevel,
+                    currentStatus, punishmentType.isSocial()));
+        }
+
+        return ResponseEntity.ok(builder.build());
+    }
+
+    private String calculateOffenseLevel(int currentPoints) {
+        if (currentPoints == 0) {
+            return "first";
+        } else if (currentPoints <= 2) {
+            return "medium";
+        } else {
+            return "habitual";
+        }
+    }
+
+    private PunishmentPreviewResponse.SeverityPreview buildSeverityPreview(
+            PunishmentType type, String severity, String offenseLevel,
+            PlayerStatusCalculator.PlayerStatus currentStatus, boolean isSocial) {
+
+        int points = type.getPointsForSeverity(severity);
+        DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
+
+        long durationMs = durationDetail != null ? durationDetail.toMilliseconds() : 0L;
+        boolean isPermanent = durationDetail != null && durationDetail.isPermanent();
+        String punishmentResultType = durationDetail != null ?
+                (durationDetail.isBan() ? "ban" : (durationDetail.isMute() ? "mute" : "kick")) : "unknown";
+
+        // Calculate new points after this punishment
+        int newSocialPoints = currentStatus.socialPoints() + (isSocial ? points : 0);
+        int newGameplayPoints = currentStatus.gameplayPoints() + (isSocial ? 0 : points);
+
+        return PunishmentPreviewResponse.SeverityPreview.builder()
+                .severity(severity)
+                .points(points)
+                .durationMs(durationMs)
+                .durationFormatted(formatDuration(durationMs, isPermanent))
+                .punishmentType(punishmentResultType)
+                .permanent(isPermanent)
+                .newSocialStatus(getStatusFromPoints(newSocialPoints))
+                .newGameplayStatus(getStatusFromPoints(newGameplayPoints))
+                .newSocialPoints(newSocialPoints)
+                .newGameplayPoints(newGameplayPoints)
+                .build();
+    }
+
+    private String getStatusFromPoints(int points) {
+        if (points == 0) {
+            return "Good";
+        } else if (points <= 2) {
+            return "Warning";
+        } else if (points <= 5) {
+            return "Restricted";
+        } else {
+            return "Banned";
+        }
+    }
+
+    private String formatDuration(long durationMs, boolean isPermanent) {
+        if (isPermanent || durationMs < 0) {
+            return "Permanent";
+        }
+        if (durationMs == 0) {
+            return "Instant";
+        }
+
+        long seconds = durationMs / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        long days = hours / 24;
+        long weeks = days / 7;
+        long months = days / 30;
+
+        if (months > 0) {
+            return months + (months == 1 ? " month" : " months");
+        } else if (weeks > 0) {
+            return weeks + (weeks == 1 ? " week" : " weeks");
+        } else if (days > 0) {
+            return days + (days == 1 ? " day" : " days");
+        } else if (hours > 0) {
+            return hours + (hours == 1 ? " hour" : " hours");
+        } else if (minutes > 0) {
+            return minutes + (minutes == 1 ? " minute" : " minutes");
+        } else {
+            return seconds + (seconds == 1 ? " second" : " seconds");
+        }
     }
 
     @PostMapping("/acknowledge")
