@@ -137,14 +137,16 @@ public class PanelAuthController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
         try {
-            Optional<Staff> result = staffService.updateProfileUsername(server, email, requestData.username());
+            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin);
             if (result.isEmpty()) {
                 return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
             }
             Staff staff = result.get();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), staff.getRole()));
+            String role = isSuperAdmin ? "Super Admin" : staff.getRole();
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
         }
@@ -158,19 +160,22 @@ public class PanelAuthController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
-        // Check if user is Super Admin (server admin) - they may not have a staff record
-        if (permissionService.isSuperAdmin(server, email)) {
+        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
+
+        if (staffOpt.isPresent()) {
+            Staff staff = staffOpt.get();
+            String role = isSuperAdmin ? "Super Admin" : staff.getRole();
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role));
+        }
+
+        // Super Admin without a staff record - return default username
+        if (isSuperAdmin) {
             return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin"));
         }
 
-        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
-        if (staffOpt.isEmpty()) {
-            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
-        }
-
-        Staff staff = staffOpt.get();
-        return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), staff.getRole()));
+        return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
     }
 
     @GetMapping("/permissions")

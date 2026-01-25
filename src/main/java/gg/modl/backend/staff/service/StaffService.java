@@ -303,12 +303,28 @@ public class StaffService {
     }
 
     public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
+        return updateOrCreateProfileUsername(server, email, newUsername, false);
+    }
+
+    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
         Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
 
         if (staff == null) {
-            return Optional.empty();
+            if (!createIfNotExists) {
+                return Optional.empty();
+            }
+            // Create a new Staff record for Super Admin
+            staff = Staff.builder()
+                    .email(email)
+                    .username(newUsername != null ? newUsername : "Admin")
+                    .role("Super Admin")
+                    .createdAt(new Date())
+                    .updatedAt(new Date())
+                    .build();
+            template.save(staff, CollectionName.STAFF);
+            return Optional.of(staff);
         }
 
         if (newUsername != null && !newUsername.equals(staff.getUsername())) {
