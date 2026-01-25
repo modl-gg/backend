@@ -25,11 +25,34 @@ public class PanelKnowledgebaseController {
     private final KnowledgebaseCategoryService categoryService;
     private final KnowledgebaseArticleService articleService;
 
+    public record CategoryWithArticlesResponse(
+            String id,
+            String name,
+            String slug,
+            String description,
+            int ordinal,
+            boolean isVisible,
+            List<KnowledgebaseArticle> articles
+    ) {}
+
     @GetMapping("/categories")
-    public ResponseEntity<List<KnowledgebaseCategory>> getCategories(HttpServletRequest request) {
+    public ResponseEntity<List<CategoryWithArticlesResponse>> getCategories(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<KnowledgebaseCategory> categories = categoryService.getAllCategories(server);
-        return ResponseEntity.ok(categories);
+
+        List<CategoryWithArticlesResponse> response = categories.stream()
+                .map(category -> new CategoryWithArticlesResponse(
+                        category.getId(),
+                        category.getName(),
+                        category.getSlug(),
+                        category.getDescription(),
+                        category.getOrdinal(),
+                        category.isVisible(),
+                        articleService.getArticlesByCategory(server, category.getId())
+                ))
+                .toList();
+
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/categories")
