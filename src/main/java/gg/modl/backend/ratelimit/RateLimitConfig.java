@@ -24,7 +24,8 @@ public class RateLimitConfig {
         AUTH(20, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
-        MIGRATION(5, Duration.ofHours(1));
+        MIGRATION(5, Duration.ofHours(1)),
+        MIGRATION_STATUS(60, Duration.ofMinutes(1));
 
         private final int capacity;
         private final Duration refillDuration;
@@ -84,6 +85,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/panel/migration/")) {
+            if (path.equals("/v1/panel/migration/status") && "GET".equalsIgnoreCase(method)) {
+                return RateLimitTier.MIGRATION_STATUS;
+            }
             return RateLimitTier.MIGRATION;
         }
 

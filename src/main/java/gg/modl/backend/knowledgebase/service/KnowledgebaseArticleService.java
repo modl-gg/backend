@@ -59,10 +59,11 @@ public class KnowledgebaseArticleService {
         MongoTemplate template = getTemplate(server);
 
         int maxOrdinal = getMaxOrdinalInCategory(template, categoryId);
+        String uniqueSlug = generateUniqueSlug(template, slugify.slugify(request.title()), null);
 
         KnowledgebaseArticle article = KnowledgebaseArticle.builder()
                 .title(request.title())
-                .slug(slugify.slugify(request.title()))
+                .slug(uniqueSlug)
                 .content(request.content())
                 .categoryId(categoryId)
                 .ordinal(maxOrdinal + 1)
@@ -88,7 +89,8 @@ public class KnowledgebaseArticleService {
 
         if (request.title() != null) {
             update.set("title", request.title());
-            update.set("slug", slugify.slugify(request.title()));
+            String uniqueSlug = generateUniqueSlug(template, slugify.slugify(request.title()), id);
+            update.set("slug", uniqueSlug);
         }
         if (request.content() != null) {
             update.set("content", request.content());
@@ -140,6 +142,27 @@ public class KnowledgebaseArticleService {
                 .limit(1);
         KnowledgebaseArticle highest = template.findOne(query, KnowledgebaseArticle.class, CollectionName.KNOWLEDGEBASE_ARTICLES);
         return highest != null ? highest.getOrdinal() : -1;
+    }
+
+    private String generateUniqueSlug(MongoTemplate template, String baseSlug, String excludeId) {
+        String slug = baseSlug;
+        int suffix = 1;
+
+        while (true) {
+            Criteria criteria = Criteria.where("slug").is(slug);
+            if (excludeId != null) {
+                criteria = criteria.and("_id").ne(excludeId);
+            }
+            Query query = Query.query(criteria);
+            boolean exists = template.exists(query, KnowledgebaseArticle.class, CollectionName.KNOWLEDGEBASE_ARTICLES);
+
+            if (!exists) {
+                return slug;
+            }
+
+            slug = baseSlug + "-" + suffix;
+            suffix++;
+        }
     }
 
     private MongoTemplate getTemplate(Server server) {
