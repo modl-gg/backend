@@ -121,49 +121,51 @@ public class MinecraftPunishmentController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        // First find the player with this punishment (same pattern as other methods)
-        // Try both field names since the storage might vary
-        Query findQuery = Query.query(Criteria.where("punishments._id").is(request.punishmentId()));
+        // Find player by UUID (same approach as sync - this is reliable)
+        Query findQuery = Query.query(Criteria.where("minecraftUuid").is(request.playerUuid()));
         Player player = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            // Fallback: try with 'id' field name
-            findQuery = Query.query(Criteria.where("punishments.id").is(request.punishmentId()));
-            player = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
-        }
 
         if (player == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
-                    "message", "Punishment not found: " + request.punishmentId()
+                    "message", "Player not found: " + request.playerUuid()
             ));
         }
 
-        // Build the update
+        // Verify the punishment exists in the player's punishments
+        Punishment targetPunishment = player.getPunishments().stream()
+                .filter(p -> p.getId().equals(request.punishmentId()))
+                .findFirst()
+                .orElse(null);
+
+        if (targetPunishment == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found: " + request.punishmentId() + " for player: " + request.playerUuid()
+            ));
+        }
+
+        // If already started, no need to update again
+        if (targetPunishment.getStarted() != null) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "message", "Punishment already acknowledged"
+            ));
+        }
+
+        // Update using array filter to target the specific punishment by index
+        int punishmentIndex = player.getPunishments().indexOf(targetPunishment);
+
         Update update = new Update()
-                .set("punishments.$.started", new Date())
-                .set("punishments.$.data.acknowledgedAt", request.executedAt())
-                .set("punishments.$.data.acknowledgedSuccess", request.success());
+                .set("punishments." + punishmentIndex + ".started", new Date())
+                .set("punishments." + punishmentIndex + ".data.acknowledgedAt", request.executedAt())
+                .set("punishments." + punishmentIndex + ".data.acknowledgedSuccess", request.success());
 
         if (request.errorMessage() != null) {
-            update.set("punishments.$.data.acknowledgeError", request.errorMessage());
+            update.set("punishments." + punishmentIndex + ".data.acknowledgeError", request.errorMessage());
         }
 
-        // Try update with _id first
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments._id").is(request.punishmentId())
-        );
-        var result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        // Fallback: try with 'id' field name if _id didn't match
-        if (result.getModifiedCount() == 0) {
-            updateQuery = Query.query(
-                    Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                            .and("punishments.id").is(request.punishmentId())
-            );
-            result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-        }
+        var result = template.updateFirst(findQuery, update, Player.class, CollectionName.PLAYERS);
 
         if (result.getModifiedCount() == 0) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
