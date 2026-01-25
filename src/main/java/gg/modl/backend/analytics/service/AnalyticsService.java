@@ -2,6 +2,7 @@ package gg.modl.backend.analytics.service;
 
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
+import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.CollectionName;
@@ -117,25 +118,104 @@ public class AnalyticsService {
         List<AuditLogsAnalyticsResponse.HourlyCount> hourlyTrend = new ArrayList<>();
         long now = System.currentTimeMillis();
         long hourMs = 60 * 60 * 1000L;
-        
+
         for (int i = 23; i >= 0; i--) {
             Date hourStart = new Date(now - (i + 1) * hourMs);
             Date hourEnd = new Date(now - i * hourMs);
-            
+
             long count = template.count(
                     Query.query(Criteria.where("created").gte(hourStart).lt(hourEnd)),
                     CollectionName.LOGS
             );
-            
+
             java.time.LocalTime time = java.time.Instant.ofEpochMilli(hourEnd.getTime())
                     .atZone(java.time.ZoneId.systemDefault())
                     .toLocalTime();
             String hourLabel = String.format("%02d:00", time.getHour());
-            
+
             hourlyTrend.add(new AuditLogsAnalyticsResponse.HourlyCount(hourLabel, (int) count));
         }
 
         return new AuditLogsAnalyticsResponse(byLevel, hourlyTrend);
+    }
+
+    public PlayerActivityResponse getPlayerActivityAnalytics(Server server, String period) {
+        MongoTemplate template = getTemplate(server);
+        Date startDate = getStartDate(period);
+
+        List<Player> players = template.findAll(Player.class, CollectionName.PLAYERS);
+
+        // Calculate new players trend (players whose first IP login is within the period)
+        Map<String, Integer> dailyNewPlayers = new TreeMap<>();
+        Map<String, Integer> countryLogins = new HashMap<>();
+        int proxyCount = 0;
+        int hostingCount = 0;
+
+        java.time.format.DateTimeFormatter dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd");
+
+        for (Player player : players) {
+            if (player.getIpAddresses() == null || player.getIpAddresses().isEmpty()) {
+                continue;
+            }
+
+            // Find the earliest first login date across all IP entries
+            Date earliestFirstLogin = player.getIpAddresses().stream()
+                    .map(ip -> ip.getFirstLogin())
+                    .filter(Objects::nonNull)
+                    .min(Date::compareTo)
+                    .orElse(null);
+
+            // Count as new player if their first login is within the period
+            if (earliestFirstLogin != null && earliestFirstLogin.after(startDate)) {
+                String dateKey = java.time.Instant.ofEpochMilli(earliestFirstLogin.getTime())
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                        .format(dateFormatter);
+                dailyNewPlayers.merge(dateKey, 1, Integer::sum);
+            }
+
+            // Process each IP entry for country stats and suspicious activity
+            for (var ipEntry : player.getIpAddresses()) {
+                // Count logins by country (only for logins within period)
+                if (ipEntry.getCountry() != null && !ipEntry.getCountry().isEmpty()) {
+                    long loginsInPeriod = ipEntry.getLogins() != null
+                            ? ipEntry.getLogins().stream().filter(d -> d.after(startDate)).count()
+                            : 0;
+                    if (loginsInPeriod > 0 || (ipEntry.getFirstLogin() != null && ipEntry.getFirstLogin().after(startDate))) {
+                        countryLogins.merge(ipEntry.getCountry(), (int) Math.max(1, loginsInPeriod), Integer::sum);
+                    }
+                }
+
+                // Check for logins within period for suspicious activity counting
+                boolean hasRecentLogin = (ipEntry.getFirstLogin() != null && ipEntry.getFirstLogin().after(startDate))
+                        || (ipEntry.getLogins() != null && ipEntry.getLogins().stream().anyMatch(d -> d.after(startDate)));
+
+                if (hasRecentLogin) {
+                    if (ipEntry.isProxy()) {
+                        proxyCount++;
+                    }
+                    if (ipEntry.isHosting()) {
+                        hostingCount++;
+                    }
+                }
+            }
+        }
+
+        // Convert to response format
+        List<PlayerActivityResponse.DailyCount> newPlayersTrend = dailyNewPlayers.entrySet().stream()
+                .map(e -> new PlayerActivityResponse.DailyCount(e.getKey(), e.getValue()))
+                .toList();
+
+        List<PlayerActivityResponse.CountryCount> loginsByCountry = countryLogins.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(20)
+                .map(e -> new PlayerActivityResponse.CountryCount(e.getKey(), e.getValue()))
+                .toList();
+
+        PlayerActivityResponse.SuspiciousActivity suspiciousActivity =
+                new PlayerActivityResponse.SuspiciousActivity(proxyCount, hostingCount);
+
+        return new PlayerActivityResponse(newPlayersTrend, loginsByCountry, suspiciousActivity);
     }
 
     private String normalizeCategory(String type) {

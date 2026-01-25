@@ -2,6 +2,7 @@ package gg.modl.backend.analytics.controller;
 
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
+import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.analytics.service.AnalyticsService;
@@ -67,10 +68,12 @@ public class AnalyticsController {
     }
 
     @GetMapping("/player-activity")
-    public ResponseEntity<?> getPlayerActivityAnalytics(
+    public ResponseEntity<PlayerActivityResponse> getPlayerActivityAnalytics(
             @RequestParam(defaultValue = "30d") String period,
             HttpServletRequest request
     ) {
-        return ResponseEntity.status(501).body(Map.of("message", "Player activity analytics not yet implemented"));
+        Server server = RequestUtil.getRequestServer(request);
+        PlayerActivityResponse analytics = analyticsService.getPlayerActivityAnalytics(server, period);
+        return ResponseEntity.ok(analytics);
     }
 }

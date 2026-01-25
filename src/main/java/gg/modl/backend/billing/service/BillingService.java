@@ -35,7 +35,7 @@ public class BillingService {
         }
 
         Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
-        return new CheckoutSessionResponse(session.getId());
+        return new CheckoutSessionResponse(session.getId(), session.getUrl());
     }
 
     public PortalSessionResponse createPortalSession(Server server) throws StripeException {
