@@ -153,19 +153,16 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        // Update using array filter to target the specific punishment by index
-        int punishmentIndex = player.getPunishments().indexOf(targetPunishment);
+        // Query that matches both the player AND the specific punishment in the array
+        // This allows the positional $ operator to work correctly
+        Query updateQuery = Query.query(
+                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                        .and("punishments").elemMatch(Criteria.where("_id").is(request.punishmentId()))
+        );
 
-        Update update = new Update()
-                .set("punishments." + punishmentIndex + ".started", new Date())
-                .set("punishments." + punishmentIndex + ".data.acknowledgedAt", request.executedAt())
-                .set("punishments." + punishmentIndex + ".data.acknowledgedSuccess", request.success());
+        Update update = new Update().set("punishments.$.started", new Date());
 
-        if (request.errorMessage() != null) {
-            update.set("punishments." + punishmentIndex + ".data.acknowledgeError", request.errorMessage());
-        }
-
-        var result = template.updateFirst(findQuery, update, Player.class, CollectionName.PLAYERS);
+        var result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
         if (result.getModifiedCount() == 0) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
