@@ -114,18 +114,32 @@ public class MinecraftPunishmentController {
     }
 
     @PostMapping("/acknowledge")
-    public ResponseEntity<Void> acknowledgePunishment(
+    public ResponseEntity<Map<String, Object>> acknowledgePunishment(
             @RequestBody AcknowledgeRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(
-                Criteria.where("minecraftUuid").is(request.playerUuid())
-                        .and("punishments.id").is(request.punishmentId())
-        );
+        // First find the player with this punishment (same pattern as other methods)
+        // Try both field names since the storage might vary
+        Query findQuery = Query.query(Criteria.where("punishments._id").is(request.punishmentId()));
+        Player player = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
 
+        if (player == null) {
+            // Fallback: try with 'id' field name
+            findQuery = Query.query(Criteria.where("punishments.id").is(request.punishmentId()));
+            player = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
+        }
+
+        if (player == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found: " + request.punishmentId()
+            ));
+        }
+
+        // Build the update
         Update update = new Update()
                 .set("punishments.$.started", new Date())
                 .set("punishments.$.data.acknowledgedAt", request.executedAt())
@@ -135,9 +149,33 @@ public class MinecraftPunishmentController {
             update.set("punishments.$.data.acknowledgeError", request.errorMessage());
         }
 
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+        // Try update with _id first
+        Query updateQuery = Query.query(
+                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                        .and("punishments._id").is(request.punishmentId())
+        );
+        var result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
-        return ResponseEntity.ok().build();
+        // Fallback: try with 'id' field name if _id didn't match
+        if (result.getModifiedCount() == 0) {
+            updateQuery = Query.query(
+                    Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                            .and("punishments.id").is(request.punishmentId())
+            );
+            result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
+        }
+
+        if (result.getModifiedCount() == 0) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                    "status", 500,
+                    "message", "Failed to update punishment - no documents modified"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", "Punishment acknowledged"
+        ));
     }
 
     @PostMapping("/{punishmentId}/pardon")
