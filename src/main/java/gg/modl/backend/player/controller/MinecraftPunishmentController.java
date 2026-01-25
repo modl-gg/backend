@@ -368,15 +368,25 @@ public class MinecraftPunishmentController {
             ));
         }
 
+        Date now = new Date();
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 "MANUAL_PARDON",
-                new Date(),
+                now,
                 request.issuerName(),
                 request.reason() != null ? request.reason() : "",
                 null,
                 null,
                 null
+        );
+
+        // Create automatic note for pardon
+        PunishmentNote pardonNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "pardoned punishment",
+                now,
+                request.issuerName()
         );
 
         Query updateQuery = Query.query(
@@ -386,7 +396,19 @@ public class MinecraftPunishmentController {
 
         Update update = new Update()
                 .push("punishments.$.modifications", modification)
+                .push("punishments.$.notes", pardonNote)
                 .set("punishments.$.data.active", false);
+
+        // Add separate note for reason if provided
+        if (request.reason() != null && !request.reason().isBlank()) {
+            PunishmentNote reasonNote = new PunishmentNote(
+                    new ObjectId().toHexString(),
+                    request.reason(),
+                    now,
+                    request.issuerName()
+            );
+            update.push("punishments.$.notes", reasonNote);
+        }
 
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
@@ -453,13 +475,23 @@ public class MinecraftPunishmentController {
             ));
         }
 
+        Date now = new Date();
+
         PunishmentEvidence evidence = new PunishmentEvidence(
                 null,
                 request.evidenceUrl(),
                 "url",
                 request.issuerName(),
-                new Date(),
+                now,
                 null, null, null
+        );
+
+        // Create automatic note for evidence addition
+        PunishmentNote evidenceNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "added evidence",
+                now,
+                request.issuerName()
         );
 
         Query updateQuery = Query.query(
@@ -467,7 +499,9 @@ public class MinecraftPunishmentController {
                         .and("punishments.id").is(punishmentId)
         );
 
-        Update update = new Update().push("punishments.$.evidence", evidence);
+        Update update = new Update()
+                .push("punishments.$.evidence", evidence)
+                .push("punishments.$.notes", evidenceNote);
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
         return ResponseEntity.ok(Map.of(
@@ -496,15 +530,26 @@ public class MinecraftPunishmentController {
             ));
         }
 
+        Date now = new Date();
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 "DURATION_CHANGE",
-                new Date(),
+                now,
                 request.issuerName(),
                 "Duration changed",
                 request.newDuration(),
                 null,
                 null
+        );
+
+        // Create automatic note for duration change
+        String durationText = request.newDuration() == null || request.newDuration() < 0 ? "permanent" : formatDuration(request.newDuration(), false);
+        PunishmentNote durationNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "changed duration to " + durationText,
+                now,
+                request.issuerName()
         );
 
         Query updateQuery = Query.query(
@@ -514,6 +559,7 @@ public class MinecraftPunishmentController {
 
         Update update = new Update()
                 .push("punishments.$.modifications", modification)
+                .push("punishments.$.notes", durationNote)
                 .set("punishments.$.data.duration", request.newDuration());
 
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
@@ -557,12 +603,27 @@ public class MinecraftPunishmentController {
             ));
         }
 
+        // Create automatic note for option toggle
+        String optionDisplayName = switch (request.option()) {
+            case "ALT_BLOCKING" -> "alt-blocking";
+            case "STAT_WIPE" -> "stat wipe";
+            default -> request.option().toLowerCase();
+        };
+        PunishmentNote toggleNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                (request.enabled() ? "enabled " : "disabled ") + optionDisplayName,
+                new Date(),
+                request.issuerName()
+        );
+
         Query updateQuery = Query.query(
                 Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
                         .and("punishments.id").is(punishmentId)
         );
 
-        Update update = new Update().set(fieldName, request.enabled());
+        Update update = new Update()
+                .set(fieldName, request.enabled())
+                .push("punishments.$.notes", toggleNote);
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
         return ResponseEntity.ok(Map.of(
@@ -654,6 +715,23 @@ public class MinecraftPunishmentController {
         data.putIfAbsent("active", true);
 
         List<PunishmentNote> notes = new ArrayList<>();
+        // Add automatic "issued" note
+        notes.add(new PunishmentNote(
+                new ObjectId().toHexString(),
+                "issued punishment",
+                now,
+                request.issuerName()
+        ));
+        // Add reason as a separate note if provided
+        if (request.reason() != null && !request.reason().isBlank()) {
+            notes.add(new PunishmentNote(
+                    new ObjectId().toHexString(),
+                    request.reason(),
+                    now,
+                    request.issuerName()
+            ));
+        }
+        // Add any additional notes from the request
         if (request.notes() != null) {
             for (String noteText : request.notes()) {
                 notes.add(new PunishmentNote(new ObjectId().toHexString(), noteText, now, request.issuerName()));

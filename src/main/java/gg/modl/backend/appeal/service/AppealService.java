@@ -8,6 +8,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -235,9 +236,50 @@ public class AppealService {
 
         if (shouldPardonPunishment(request.status(), request.resolution())) {
             pardonPunishment(template, appeal, request.staffUsername());
+        } else if (shouldRejectPunishment(request.status(), request.resolution())) {
+            addAppealRejectedNote(template, appeal, request.staffUsername());
         }
 
         return Optional.of(toTicketResponse(appeal));
+    }
+
+    private boolean shouldRejectPunishment(String status, String resolution) {
+        boolean isClosed = "Closed".equals(status) || "Resolved".equals(status);
+        boolean isRejected = "Denied".equals(resolution) || "Rejected".equals(resolution);
+        return isClosed && isRejected;
+    }
+
+    private void addAppealRejectedNote(MongoTemplate template, Ticket appeal, String staffUsername) {
+        Map<String, Object> data = appeal.getData();
+        if (data == null) return;
+
+        String punishmentId = (String) data.get("punishmentId");
+        String playerUuid = (String) data.get("playerUuid");
+
+        if (punishmentId == null || playerUuid == null) return;
+
+        Query playerQuery = Query.query(
+                Criteria.where("minecraftUuid").is(playerUuid)
+                        .and("punishments.id").is(punishmentId)
+        );
+
+        Date now = new Date();
+        String staffName = staffUsername != null ? staffUsername : "System";
+
+        // Create automatic note for appeal rejection
+        PunishmentNote appealRejectedNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "rejected appeal (#" + appeal.getId() + ")",
+                now,
+                staffName
+        );
+
+        Update update = new Update()
+                .push("punishments.$.notes", appealRejectedNote)
+                .set("punishments.$.data.appealOutcome", "Rejected")
+                .set("punishments.$.data.appealTicketId", appeal.getId());
+
+        template.updateFirst(playerQuery, update, Player.class, CollectionName.PLAYERS);
     }
 
     private boolean shouldPardonPunishment(String status, String resolution) {
@@ -260,19 +302,31 @@ public class AppealService {
                         .and("punishments.id").is(punishmentId)
         );
 
+        Date now = new Date();
+        String staffName = staffUsername != null ? staffUsername : "System";
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 "APPEAL_ACCEPT",
-                new Date(),
-                staffUsername != null ? staffUsername : "System",
+                now,
+                staffName,
                 "Appeal approved",
                 null,
                 appeal.getId(),
                 null
         );
 
+        // Create automatic note for appeal acceptance
+        PunishmentNote appealAcceptedNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "accepted appeal (#" + appeal.getId() + ")",
+                now,
+                staffName
+        );
+
         Update update = new Update()
                 .push("punishments.$.modifications", modification)
+                .push("punishments.$.notes", appealAcceptedNote)
                 .set("punishments.$.data.active", false)
                 .set("punishments.$.data.appealOutcome", "Approved")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
@@ -318,7 +372,18 @@ public class AppealService {
                 Criteria.where("minecraftUuid").is(playerUuid)
                         .and("punishments.id").is(punishmentId)
         );
-        Update update = new Update().push("punishments.$.attachedTicketIds", appealId);
+
+        // Create automatic note for appeal creation
+        PunishmentNote appealOpenedNote = new PunishmentNote(
+                new ObjectId().toHexString(),
+                "opened appeal (#" + appealId + ")",
+                new Date(),
+                "System"
+        );
+
+        Update update = new Update()
+                .push("punishments.$.attachedTicketIds", appealId)
+                .push("punishments.$.notes", appealOpenedNote);
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
     }
 
