@@ -68,6 +68,14 @@ public class MinecraftPlayerController {
 
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
+                // Skip kicks - they are instant punishments and shouldn't be "active"
+                PunishmentType punishmentType = types.stream()
+                        .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                        .findFirst()
+                        .orElse(null);
+                if (punishmentType != null && punishmentType.isKick()) {
+                    continue;
+                }
                 activePunishments.add(toSimplePunishment(punishment, types));
             }
         }
@@ -370,19 +378,24 @@ public class MinecraftPlayerController {
         Map<String, Object> data = punishment.getData();
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
 
-        String typeName = types.stream()
+        PunishmentType punishmentType = types.stream()
                 .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
                 .findFirst()
-                .map(PunishmentType::getName)
-                .orElse("Unknown");
+                .orElse(null);
 
-        boolean isBan = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .map(PunishmentType::isBan)
-                .orElse(false);
+        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
 
-        String category = isBan ? "BAN" : "OTHER";
+        // Determine category: BAN, MUTE, or OTHER
+        String category = "OTHER";
+        if (punishmentType != null) {
+            if (punishmentType.isBan()) {
+                category = "BAN";
+            } else if (punishmentType.isMute()) {
+                category = "MUTE";
+            }
+        }
+
+        String reason = data != null ? (String) data.get("reason") : null;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", punishment.getId());
@@ -391,7 +404,7 @@ public class MinecraftPlayerController {
         result.put("ordinal", punishment.getType_ordinal());
         result.put("started", punishment.getStarted() != null);
         result.put("expiration", expires != null ? expires.getTime() : null);
-        result.put("reason", data != null ? data.get("reason") : null);
+        result.put("description", reason != null ? reason : "No reason specified");
 
         return result;
     }
@@ -661,8 +674,9 @@ public class MinecraftPlayerController {
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "success", true,
-                "message", "Pardoned " + pardoned + " punishment(s)"
+                "success", pardoned > 0,
+                "pardonedCount", pardoned,
+                "message", pardoned > 0 ? "Pardoned " + pardoned + " punishment(s)" : "No active punishments found to pardon"
         ));
     }
 

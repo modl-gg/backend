@@ -154,12 +154,13 @@ public class MinecraftPunishmentController {
 
         // Determine offense level based on current points and punishment category
         String category = punishmentType.getCategory();
-        int relevantPoints = punishmentType.isSocial() ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
-        String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints);
+        boolean isSocial = punishmentType.isSocial();
+        int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
+        String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
 
-        // Calculate offender levels from points using configurable thresholds
-        String socialOffenderLevel = thresholds.getOffenderLevel(currentStatus.socialPoints());
-        String gameplayOffenderLevel = thresholds.getOffenderLevel(currentStatus.gameplayPoints());
+        // Calculate offender levels from points using configurable thresholds (separate for social/gameplay)
+        String socialOffenderLevel = thresholds.getSocialOffenderLevel(currentStatus.socialPoints());
+        String gameplayOffenderLevel = thresholds.getGameplayOffenderLevel(currentStatus.gameplayPoints());
 
         // Build preview response
         PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()
@@ -220,8 +221,8 @@ public class MinecraftPunishmentController {
                 .durationFormatted(formatDuration(durationMs, isPermanent))
                 .punishmentType(punishmentResultType)
                 .permanent(isPermanent)
-                .newSocialStatus(thresholds.getOffenderLevel(newSocialPoints))
-                .newGameplayStatus(thresholds.getOffenderLevel(newGameplayPoints))
+                .newSocialStatus(thresholds.getSocialOffenderLevel(newSocialPoints))
+                .newGameplayStatus(thresholds.getGameplayOffenderLevel(newGameplayPoints))
                 .newSocialPoints(newSocialPoints)
                 .newGameplayPoints(newGameplayPoints)
                 .build();
@@ -327,6 +328,29 @@ public class MinecraftPunishmentController {
             ));
         }
 
+        // Find the specific punishment and check if it's active
+        Punishment punishment = player.getPunishments().stream()
+                .filter(p -> punishmentId.equals(p.getId()))
+                .findFirst()
+                .orElse(null);
+
+        if (punishment == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        // Check if the punishment is already inactive/pardoned
+        if (!statusCalculator.isPunishmentActive(punishment)) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "success", false,
+                    "pardonedCount", 0,
+                    "message", "Punishment is already inactive or pardoned"
+            ));
+        }
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 "MANUAL_PARDON",
@@ -352,6 +376,7 @@ public class MinecraftPunishmentController {
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
+                "pardonedCount", 1,
                 "message", "Punishment pardoned"
         ));
     }

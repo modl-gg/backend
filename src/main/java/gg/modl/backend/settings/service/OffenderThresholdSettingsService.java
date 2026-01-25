@@ -19,38 +19,66 @@ import java.util.Map;
 @RequiredArgsConstructor
 @Slf4j
 public class OffenderThresholdSettingsService {
-    private static final String SETTINGS_TYPE_OFFENDER_THRESHOLDS = "offenderThresholds";
+    private static final String SETTINGS_TYPE_STATUS_THRESHOLDS = "statusThresholds";
 
     private final DynamicMongoTemplateProvider mongoProvider;
 
     public OffenderThresholdSettings getThresholdSettings(Server server) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_OFFENDER_THRESHOLDS));
+        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_STATUS_THRESHOLDS));
         Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
 
         if (settings == null || settings.getData() == null) {
             return OffenderThresholdSettings.defaults();
         }
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) settings.getData();
-        return OffenderThresholdSettings.builder()
-                .mediumThreshold(getIntValue(data, "mediumThreshold", 1))
-                .habitualThreshold(getIntValue(data, "habitualThreshold", 3))
-                .build();
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) settings.getData();
+
+            OffenderThresholdSettings.CategoryThresholds social = parseThresholds(data, "social", 4, 8);
+            OffenderThresholdSettings.CategoryThresholds gameplay = parseThresholds(data, "gameplay", 5, 10);
+
+            return OffenderThresholdSettings.builder()
+                    .social(social)
+                    .gameplay(gameplay)
+                    .build();
+        } catch (Exception e) {
+            log.warn("Failed to parse status thresholds, using defaults: {}", e.getMessage());
+            return OffenderThresholdSettings.defaults();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private OffenderThresholdSettings.CategoryThresholds parseThresholds(
+            Map<String, Object> data, String category, int defaultMedium, int defaultHabitual) {
+        Object categoryData = data.get(category);
+        if (categoryData instanceof Map) {
+            Map<String, Object> thresholds = (Map<String, Object>) categoryData;
+            int medium = getIntValue(thresholds, "medium", defaultMedium);
+            int habitual = getIntValue(thresholds, "habitual", defaultHabitual);
+            return new OffenderThresholdSettings.CategoryThresholds(medium, habitual);
+        }
+        return new OffenderThresholdSettings.CategoryThresholds(defaultMedium, defaultHabitual);
     }
 
     public OffenderThresholdSettings updateThresholdSettings(Server server, OffenderThresholdSettings newSettings) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_OFFENDER_THRESHOLDS));
+        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_STATUS_THRESHOLDS));
 
         Map<String, Object> data = Map.of(
-                "mediumThreshold", newSettings.getMediumThreshold(),
-                "habitualThreshold", newSettings.getHabitualThreshold()
+                "social", Map.of(
+                        "medium", newSettings.getSocial().getMedium(),
+                        "habitual", newSettings.getSocial().getHabitual()
+                ),
+                "gameplay", Map.of(
+                        "medium", newSettings.getGameplay().getMedium(),
+                        "habitual", newSettings.getGameplay().getHabitual()
+                )
         );
 
         Update update = new Update()
-                .set("type", SETTINGS_TYPE_OFFENDER_THRESHOLDS)
+                .set("type", SETTINGS_TYPE_STATUS_THRESHOLDS)
                 .set("data", data);
 
         template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
