@@ -72,24 +72,29 @@ public class MinecraftSyncController {
 
                 for (Punishment punishment : player.getPunishments()) {
                     boolean isActive = statusCalculator.isPunishmentActive(punishment);
-                    if (!isActive) continue;
 
-                    boolean notStarted = punishment.getStarted() == null;
+                    // Check for recent modifications (including pardons on now-inactive punishments)
                     boolean recentlyModified = punishment.getModifications().stream()
                             .anyMatch(m -> m.date() != null && m.date().toInstant().isAfter(lastSync));
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
-
-                    if (notStarted) {
-                        pendingPunishments.add(Map.of(
+                    // Include recently modified punishments even if inactive (e.g., pardons)
+                    if (recentlyModified) {
+                        Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                        recentlyModifiedPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
                                 "punishment", simplePunishment
                         ));
                     }
 
-                    if (recentlyModified) {
-                        recentlyModifiedPunishments.add(Map.of(
+                    // For pending/new punishments, only include active ones
+                    if (!isActive) continue;
+
+                    boolean notStarted = punishment.getStarted() == null;
+                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+
+                    if (notStarted) {
+                        pendingPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
                                 "punishment", simplePunishment

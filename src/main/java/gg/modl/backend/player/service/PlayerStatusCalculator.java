@@ -72,6 +72,7 @@ public class PlayerStatusCalculator {
             }
         }
 
+        // Check legacy "expires" field first
         Object expiresObj = data.get("expires");
         if (expiresObj != null) {
             Date expires;
@@ -86,6 +87,13 @@ public class PlayerStatusCalculator {
             if (expires.before(new Date())) {
                 return false;
             }
+            return true;
+        }
+
+        // Check duration-based expiry
+        Date effectiveExpiry = getEffectiveExpiry(punishment);
+        if (effectiveExpiry != null && effectiveExpiry.before(new Date())) {
+            return false;
         }
 
         return true;
@@ -110,10 +118,16 @@ public class PlayerStatusCalculator {
                 duration = (Long) durationObj;
             } else if (durationObj instanceof Integer) {
                 duration = ((Integer) durationObj).longValue();
+            } else if (durationObj instanceof Double) {
+                duration = ((Double) durationObj).longValue();
+            } else if (durationObj instanceof Number) {
+                // Catch-all for any other numeric type
+                duration = ((Number) durationObj).longValue();
             }
         }
 
-        if (duration == null || duration == 0) {
+        // null, 0, or negative (-1L) indicates permanent (no expiry)
+        if (duration == null || duration <= 0) {
             return null;
         }
 

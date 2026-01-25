@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.*;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.DefaultPunishmentTypes;
+import gg.modl.backend.util.IdGenerator;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 
@@ -204,6 +206,21 @@ public class MinecraftPunishmentController {
 
         int points = type.getPointsForSeverity(severity);
         DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
+
+        // If no duration detail or points from stored type, fall back to defaults
+        PunishmentType defaultType = null;
+        if (durationDetail == null || points == 0) {
+            defaultType = DefaultPunishmentTypes.getAll().stream()
+                    .filter(t -> t.getOrdinal() == type.getOrdinal())
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (durationDetail == null && defaultType != null) {
+            durationDetail = defaultType.getDurationDetail(severity, offenseLevel);
+        }
+        if (points == 0 && defaultType != null) {
+            points = defaultType.getPointsForSeverity(severity);
+        }
 
         long durationMs = durationDetail != null ? durationDetail.toMilliseconds() : 0L;
         boolean isPermanent = durationDetail != null && durationDetail.isPermanent();
@@ -574,8 +591,65 @@ public class MinecraftPunishmentController {
         if (request.status() != null) {
             data.put("status", request.status());
         }
-        if (request.duration() != null) {
-            data.put("duration", request.duration());
+
+        // Calculate duration from severity if not explicitly provided
+        Long calculatedDuration = request.duration();
+        if (calculatedDuration == null && request.severity() != null) {
+            // Get punishment type and calculate duration based on severity and offense level
+            List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+            PunishmentType punishmentType = types.stream()
+                    .filter(t -> t.getOrdinal() == request.typeOrdinal())
+                    .findFirst()
+                    .orElse(null);
+
+            if (punishmentType != null) {
+                // Calculate player's current offense level
+                OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
+                PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
+
+                boolean isSocial = punishmentType.isSocial();
+                int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
+                String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
+
+                // Map severity string to internal severity used by getDurationDetail
+                String internalSeverity = switch (request.severity().toLowerCase()) {
+                    case "lenient" -> "low";
+                    case "regular" -> "regular";
+                    case "aggravated", "severe" -> "severe";
+                    default -> "regular";
+                };
+
+                DurationDetail durationDetail = punishmentType.getDurationDetail(internalSeverity, offenseLevel);
+
+                // If no duration detail from stored type, fall back to defaults
+                if (durationDetail == null) {
+                    PunishmentType defaultType = DefaultPunishmentTypes.getAll().stream()
+                            .filter(t -> t.getOrdinal() == request.typeOrdinal())
+                            .findFirst()
+                            .orElse(null);
+                    if (defaultType != null) {
+                        durationDetail = defaultType.getDurationDetail(internalSeverity, offenseLevel);
+                    }
+                }
+
+                if (durationDetail != null) {
+                    long durationMs = durationDetail.toMilliseconds();
+                    // toMilliseconds returns -1 for permanent, positive for timed
+                    // Don't accept 0 as valid (would be treated as permanent anyway)
+                    if (durationMs != 0) {
+                        calculatedDuration = durationMs;
+                    }
+                }
+            }
+        }
+
+        // Only store duration if we have a valid value
+        // -1 = permanent, positive = timed duration in ms
+        if (calculatedDuration != null && calculatedDuration != 0) {
+            data.put("duration", calculatedDuration);
+        }
+        if (request.reason() != null && !request.reason().isBlank()) {
+            data.put("reason", request.reason());
         }
         data.putIfAbsent("active", true);
 
@@ -586,7 +660,7 @@ public class MinecraftPunishmentController {
             }
         }
 
-        String punishmentId = new ObjectId().toHexString();
+        String punishmentId = IdGenerator.generatePunishmentId();
 
         Punishment punishment = new Punishment(
                 punishmentId,

@@ -8,7 +8,10 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -24,6 +27,127 @@ import java.util.*;
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
     private final DynamicMongoTemplateProvider mongoProvider;
+
+    /**
+     * Create a finished ticket (e.g., player report with all info provided)
+     */
+    @PostMapping
+    public ResponseEntity<Map<String, Object>> createTicket(
+            @RequestBody @Valid CreateTicketRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        String ticketId = new ObjectId().toHexString();
+        Date now = new Date();
+
+        // Map chat messages to the expected format
+        List<Map<String, Object>> chatMessages = null;
+        if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
+            chatMessages = request.chatMessages().stream()
+                    .map(msg -> Map.<String, Object>of("content", msg, "timestamp", now))
+                    .toList();
+        }
+
+        Ticket ticket = Ticket.builder()
+                .id(ticketId)
+                .type(mapTicketType(request.type()))
+                .category(request.type())
+                .subject(request.subject())
+                .status("open")
+                .creator(request.creatorUuid())
+                .creatorUuid(request.creatorUuid())
+                .creatorName(request.creatorName())
+                .reportedPlayer(request.reportedPlayerName())
+                .reportedPlayerUuid(request.reportedPlayerUuid())
+                .tags(request.tags() != null ? request.tags() : new ArrayList<>())
+                .replies(new ArrayList<>())
+                .notes(new ArrayList<>())
+                .chatMessages(chatMessages)
+                .priority(request.priority() != null ? request.priority() : "normal")
+                .created(now)
+                .updatedAt(now)
+                .build();
+
+        // Add initial description as first reply if provided
+        if (request.description() != null && !request.description().isBlank()) {
+            TicketReply initialReply = TicketReply.builder()
+                    .id(new ObjectId().toHexString())
+                    .content(request.description())
+                    .name(request.creatorName())
+                    .creatorIdentifier(request.creatorUuid())
+                    .staff(false)
+                    .created(now)
+                    .build();
+            ticket.getReplies().add(initialReply);
+        }
+
+        template.save(ticket, CollectionName.TICKETS);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "ticketId", ticketId,
+                "message", "Ticket created successfully"
+        ));
+    }
+
+    /**
+     * Create an unfinished ticket (e.g., staff application that needs form completion)
+     */
+    @PostMapping("/unfinished")
+    public ResponseEntity<Map<String, Object>> createUnfinishedTicket(
+            @RequestBody @Valid CreateTicketRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        String ticketId = new ObjectId().toHexString();
+        Date now = new Date();
+
+        Ticket ticket = Ticket.builder()
+                .id(ticketId)
+                .type(mapTicketType(request.type()))
+                .category(request.type())
+                .subject(request.subject())
+                .status("draft") // Unfinished tickets start as draft
+                .creator(request.creatorUuid())
+                .creatorUuid(request.creatorUuid())
+                .creatorName(request.creatorName())
+                .tags(request.tags() != null ? request.tags() : new ArrayList<>())
+                .replies(new ArrayList<>())
+                .notes(new ArrayList<>())
+                .priority(request.priority() != null ? request.priority() : "normal")
+                .created(now)
+                .updatedAt(now)
+                .build();
+
+        template.save(ticket, CollectionName.TICKETS);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "ticketId", ticketId,
+                "message", "Ticket draft created - complete the form on the panel"
+        ));
+    }
+
+    /**
+     * Map plugin ticket type to internal type
+     */
+    private String mapTicketType(String type) {
+        if (type == null) return "OTHER";
+        return switch (type.toLowerCase()) {
+            case "player", "chat" -> "REPORT";
+            case "staff" -> "STAFF";
+            case "bug" -> "BUG";
+            case "support" -> "SUPPORT";
+            case "appeal" -> "APPEAL";
+            default -> "OTHER";
+        };
+    }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllTickets(
@@ -175,4 +299,20 @@ public class MinecraftTicketsController {
                 "tickets", ticketList
         ));
     }
+
+    /**
+     * Request record for creating tickets from the Minecraft plugin
+     */
+    public record CreateTicketRequest(
+            @NotBlank String creatorUuid,
+            String creatorName,
+            @NotBlank String type,
+            String subject,
+            String description,
+            String reportedPlayerUuid,
+            String reportedPlayerName,
+            List<String> chatMessages,
+            List<String> tags,
+            String priority
+    ) {}
 }

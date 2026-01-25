@@ -16,6 +16,7 @@ import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
@@ -84,7 +85,7 @@ public class PunishmentService {
         }
 
         Punishment punishment = new Punishment(
-                new ObjectId().toHexString(),
+                IdGenerator.generatePunishmentId(),
                 request.typeOrdinal(),
                 request.issuerName(),
                 now,
