@@ -133,25 +133,16 @@ public class MinecraftSyncController {
         Map<String, Object> data = punishment.getData();
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
 
-        String typeName = types.stream()
+        PunishmentType punishmentType = types.stream()
                 .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
                 .findFirst()
-                .map(PunishmentType::getName)
-                .orElse("Unknown");
+                .orElse(null);
 
-        boolean isBan = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .map(PunishmentType::isBan)
-                .orElse(false);
-
-        boolean isMute = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .map(PunishmentType::isMute)
-                .orElse(false);
-
+        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
+        boolean isBan = punishmentType != null && punishmentType.isBan();
+        boolean isMute = punishmentType != null && punishmentType.isMute();
         String category = isBan ? "BAN" : (isMute ? "MUTE" : "OTHER");
+        String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", punishment.getId());
@@ -164,6 +155,7 @@ public class MinecraftSyncController {
         result.put("reason", data != null ? data.get("reason") : null);
         result.put("issuerName", punishment.getIssuerName());
         result.put("issuedAt", punishment.getIssued().getTime());
+        result.put("playerDescription", playerDescription);
         result.put("modifications", punishment.getModifications().stream().map(m -> Map.of(
                 "type", m.type(),
                 "timestamp", m.date() != null ? m.date().getTime() : null,

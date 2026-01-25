@@ -384,6 +384,7 @@ public class MinecraftPlayerController {
                 .orElse(null);
 
         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
+        String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
 
         // Determine category: BAN, MUTE, or OTHER
         String category = "OTHER";
@@ -405,6 +406,9 @@ public class MinecraftPlayerController {
         result.put("started", punishment.getStarted() != null);
         result.put("expiration", expires != null ? expires.getTime() : null);
         result.put("description", reason != null ? reason : "No reason specified");
+        result.put("issuerName", punishment.getIssuerName());
+        result.put("issuedAt", punishment.getIssued().getTime());
+        result.put("playerDescription", playerDescription);
 
         return result;
     }

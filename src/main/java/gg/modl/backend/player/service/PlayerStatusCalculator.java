@@ -55,6 +55,11 @@ public class PlayerStatusCalculator {
     }
 
     public boolean isPunishmentActive(Punishment punishment) {
+        // Kicks (ordinal 0) are instant and never considered "active"
+        if (punishment.getType_ordinal() == 0) {
+            return false;
+        }
+
         Map<String, Object> data = punishment.getData();
         if (data == null) {
             return false;
