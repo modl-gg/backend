@@ -19,6 +19,7 @@ public class Punishment {
     @Field("_id")
     private String id;
 
+    @Field("type_ordinal")
     private int type_ordinal; // Name is formatted like this to fit existing database schema
 
     @NotNull

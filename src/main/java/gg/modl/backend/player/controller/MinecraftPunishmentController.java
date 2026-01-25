@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.*;
 
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.DurationDetail;
+import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 
 import java.util.*;
@@ -38,6 +40,7 @@ public class MinecraftPunishmentController {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final OffenderThresholdSettingsService thresholdSettingsService;
 
     @PostMapping("/create")
     public ResponseEntity<Void> createPunishment(
@@ -143,20 +146,27 @@ public class MinecraftPunishmentController {
             return ResponseEntity.ok(PunishmentPreviewResponse.error("Punishment type not found"));
         }
 
+        // Get offender threshold settings from database
+        OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
+
         // Calculate player's current status
         PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
 
         // Determine offense level based on current points and punishment category
         String category = punishmentType.getCategory();
         int relevantPoints = punishmentType.isSocial() ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
-        String offenseLevel = calculateOffenseLevel(relevantPoints);
+        String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints);
+
+        // Calculate offender levels from points using configurable thresholds
+        String socialOffenderLevel = thresholds.getOffenderLevel(currentStatus.socialPoints());
+        String gameplayOffenderLevel = thresholds.getOffenderLevel(currentStatus.gameplayPoints());
 
         // Build preview response
         PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()
                 .status(200)
                 .success(true)
-                .socialStatus(currentStatus.social())
-                .gameplayStatus(currentStatus.gameplay())
+                .socialStatus(socialOffenderLevel)
+                .gameplayStatus(gameplayOffenderLevel)
                 .socialPoints(currentStatus.socialPoints())
                 .gameplayPoints(currentStatus.gameplayPoints())
                 .offenseLevel(offenseLevel)
@@ -172,33 +182,24 @@ public class MinecraftPunishmentController {
             punishmentType.isPermanentUntilSkinChange()) {
             // Single severity punishment
             builder.singleSeverity(buildSeverityPreview(punishmentType, "regular", offenseLevel,
-                    currentStatus, punishmentType.isSocial()));
+                    currentStatus, punishmentType.isSocial(), thresholds));
         } else {
             // Multi-severity punishment
             builder.lenient(buildSeverityPreview(punishmentType, "low", offenseLevel,
-                    currentStatus, punishmentType.isSocial()));
+                    currentStatus, punishmentType.isSocial(), thresholds));
             builder.regular(buildSeverityPreview(punishmentType, "regular", offenseLevel,
-                    currentStatus, punishmentType.isSocial()));
+                    currentStatus, punishmentType.isSocial(), thresholds));
             builder.aggravated(buildSeverityPreview(punishmentType, "severe", offenseLevel,
-                    currentStatus, punishmentType.isSocial()));
+                    currentStatus, punishmentType.isSocial(), thresholds));
         }
 
         return ResponseEntity.ok(builder.build());
     }
 
-    private String calculateOffenseLevel(int currentPoints) {
-        if (currentPoints == 0) {
-            return "first";
-        } else if (currentPoints <= 2) {
-            return "medium";
-        } else {
-            return "habitual";
-        }
-    }
-
     private PunishmentPreviewResponse.SeverityPreview buildSeverityPreview(
             PunishmentType type, String severity, String offenseLevel,
-            PlayerStatusCalculator.PlayerStatus currentStatus, boolean isSocial) {
+            PlayerStatusCalculator.PlayerStatus currentStatus, boolean isSocial,
+            OffenderThresholdSettings thresholds) {
 
         int points = type.getPointsForSeverity(severity);
         DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
@@ -219,23 +220,11 @@ public class MinecraftPunishmentController {
                 .durationFormatted(formatDuration(durationMs, isPermanent))
                 .punishmentType(punishmentResultType)
                 .permanent(isPermanent)
-                .newSocialStatus(getStatusFromPoints(newSocialPoints))
-                .newGameplayStatus(getStatusFromPoints(newGameplayPoints))
+                .newSocialStatus(thresholds.getOffenderLevel(newSocialPoints))
+                .newGameplayStatus(thresholds.getOffenderLevel(newGameplayPoints))
                 .newSocialPoints(newSocialPoints)
                 .newGameplayPoints(newGameplayPoints)
                 .build();
-    }
-
-    private String getStatusFromPoints(int points) {
-        if (points == 0) {
-            return "Good";
-        } else if (points <= 2) {
-            return "Warning";
-        } else if (points <= 5) {
-            return "Restricted";
-        } else {
-            return "Banned";
-        }
     }
 
     private String formatDuration(long durationMs, boolean isPermanent) {

@@ -153,9 +153,12 @@ public class MinecraftPlayerController {
             ));
         }
 
+        // Get punishment types for name lookup
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "profile", toPlayerProfile(player)
+                "profile", toPlayerProfile(player, punishmentTypes)
         ));
     }
 
@@ -184,10 +187,11 @@ public class MinecraftPlayerController {
             ));
         }
 
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "message", "Player found",
-                "player", toPlayerProfile(player)
+                "player", toPlayerProfile(player, types)
         ));
     }
 
@@ -209,10 +213,11 @@ public class MinecraftPlayerController {
             ));
         }
 
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "message", "Player found",
-                "player", toPlayerProfile(player)
+                "player", toPlayerProfile(player, types)
         ));
     }
 
@@ -308,6 +313,7 @@ public class MinecraftPlayerController {
                 .map(ip -> ip.getIpAddress())
                 .toList();
 
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> linkedAccounts = new ArrayList<>();
         if (!ips.isEmpty()) {
             Query ipQuery = Query.query(
@@ -318,7 +324,7 @@ public class MinecraftPlayerController {
 
             List<Player> related = template.find(ipQuery, Player.class, CollectionName.PLAYERS);
             for (Player p : related) {
-                linkedAccounts.add(toPlayerProfile(p));
+                linkedAccounts.add(toPlayerProfile(p, types));
             }
         }
 
@@ -390,7 +396,7 @@ public class MinecraftPlayerController {
         return result;
     }
 
-    private Map<String, Object> toPlayerProfile(Player player) {
+    private Map<String, Object> toPlayerProfile(Player player, List<PunishmentType> punishmentTypes) {
         // Convert usernames to the format expected by the plugin
         List<Map<String, Object>> usernames = player.getUsernames().stream()
                 .map(u -> {
@@ -429,7 +435,7 @@ public class MinecraftPlayerController {
 
         // Convert punishments to the format expected by the plugin
         List<Map<String, Object>> punishments = player.getPunishments().stream()
-                .map(this::toPunishmentMap).toList();
+                .map(p -> toPunishmentMap(p, punishmentTypes)).toList();
 
         // Get pending notifications from player data
         @SuppressWarnings("unchecked")
@@ -448,24 +454,42 @@ public class MinecraftPlayerController {
         return profile;
     }
 
-    private Map<String, Object> toPunishmentMap(Punishment punishment) {
+    private Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", punishment.getId());
         map.put("issuerName", punishment.getIssuerName());
         map.put("issued", punishment.getIssued());
         map.put("started", punishment.getStarted());
 
-        // Convert type_ordinal to Type enum name for plugin compatibility
-        String typeName = switch (punishment.getType_ordinal()) {
+        // Include the actual type ordinal for proper lookup
+        int ordinal = punishment.getType_ordinal();
+        map.put("typeOrdinal", ordinal);
+
+        // Look up the actual punishment type name from the configured types
+        String actualTypeName = punishmentTypes.stream()
+                .filter(t -> t.getOrdinal() == ordinal)
+                .findFirst()
+                .map(PunishmentType::getName)
+                .orElse(null);
+
+        // Convert type_ordinal to Type enum name for plugin compatibility (legacy)
+        String legacyTypeName = switch (ordinal) {
             case 0 -> "KICK";
             case 1 -> "MUTE";
             case 2 -> "BAN";
             case 3 -> "SECURITY_BAN";
             case 4 -> "LINKED_BAN";
             case 5 -> "BLACKLIST";
-            default -> "KICK";
+            default -> "KICK"; // Legacy fallback
         };
-        map.put("type", typeName);
+        map.put("type", legacyTypeName);
+
+        // Include the actual type name in the data map for display
+        Map<String, Object> dataWithTypeName = punishment.getData() != null ?
+                new LinkedHashMap<>(punishment.getData()) : new LinkedHashMap<>();
+        if (actualTypeName != null) {
+            dataWithTypeName.put("typeName", actualTypeName);
+        }
 
         // Convert modifications
         List<Map<String, Object>> modifications = punishment.getModifications().stream()
@@ -493,7 +517,7 @@ public class MinecraftPlayerController {
         map.put("notes", notes);
 
         map.put("attachedTicketIds", punishment.getAttachedTicketIds());
-        map.put("data", punishment.getData() != null ? punishment.getData() : Collections.emptyMap());
+        map.put("data", dataWithTypeName);
 
         return map;
     }
