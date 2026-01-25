@@ -153,23 +153,10 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        // Query that matches both the player AND the specific punishment in the array
-        // This allows the positional $ operator to work correctly
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments").elemMatch(Criteria.where("_id").is(request.punishmentId()))
-        );
-
-        Update update = new Update().set("punishments.$.started", new Date());
-
-        var result = template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        if (result.getModifiedCount() == 0) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "status", 500,
-                    "message", "Failed to update punishment - no documents modified"
-            ));
-        }
+        // Update the punishment in-memory and save the whole player
+        // This is less efficient but avoids MongoDB array query issues
+        targetPunishment.setStarted(new Date());
+        template.save(player, CollectionName.PLAYERS);
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
