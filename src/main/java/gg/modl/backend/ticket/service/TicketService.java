@@ -63,7 +63,12 @@ public class TicketService {
         }
 
         if (type != null && !type.isBlank() && !type.equals("all")) {
-            query.addCriteria(Criteria.where("type").is(type));
+            // Check both type and category fields (category preserves original type for player/chat -> REPORT mappings)
+            Criteria typeCriteria = new Criteria().orOperator(
+                    Criteria.where("type").regex("^" + type + "$", "i"),
+                    Criteria.where("category").regex("^" + type + "$", "i")
+            );
+            query.addCriteria(typeCriteria);
         }
 
         long totalTickets = template.count(query, Ticket.class, CollectionName.TICKETS);
