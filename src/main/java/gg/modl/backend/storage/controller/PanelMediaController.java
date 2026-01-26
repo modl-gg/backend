@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -27,6 +28,45 @@ public class PanelMediaController {
     private final S3StorageService s3StorageService;
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
+
+    private static final long EVIDENCE_SIZE_LIMIT = 100L * 1024 * 1024;
+    private static final long TICKETS_SIZE_LIMIT = 10L * 1024 * 1024;
+    private static final long APPEALS_SIZE_LIMIT = 10L * 1024 * 1024;
+    private static final long ARTICLES_SIZE_LIMIT = 50L * 1024 * 1024;
+    private static final long SERVER_ICONS_SIZE_LIMIT = 5L * 1024 * 1024;
+
+    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif");
+    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "video/mp4", "application/pdf");
+    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg");
+
+    @GetMapping("/config")
+    public ResponseEntity<Map<String, Object>> getMediaConfig() {
+        boolean isConfigured = s3StorageService.isConfigured();
+
+        Map<String, Object> supportedTypes = Map.of(
+                "evidence", isConfigured ? DOCUMENT_TYPES : List.of(),
+                "tickets", isConfigured ? DOCUMENT_TYPES : List.of(),
+                "appeals", isConfigured ? DOCUMENT_TYPES : List.of(),
+                "articles", isConfigured ? IMAGE_TYPES : List.of(),
+                "server-icons", isConfigured ? ICON_TYPES : List.of()
+        );
+
+        Map<String, Object> fileSizeLimits = Map.of(
+                "evidence", isConfigured ? EVIDENCE_SIZE_LIMIT : 0L,
+                "tickets", isConfigured ? TICKETS_SIZE_LIMIT : 0L,
+                "appeals", isConfigured ? APPEALS_SIZE_LIMIT : 0L,
+                "articles", isConfigured ? ARTICLES_SIZE_LIMIT : 0L,
+                "server-icons", isConfigured ? SERVER_ICONS_SIZE_LIMIT : 0L
+        );
+
+        Map<String, Object> response = Map.of(
+                "backblazeConfigured", isConfigured,
+                "supportedTypes", supportedTypes,
+                "fileSizeLimits", fileSizeLimits
+        );
+
+        return ResponseEntity.ok(response);
+    }
 
     @PostMapping("/upload/{type}")
     public ResponseEntity<?> uploadFile(

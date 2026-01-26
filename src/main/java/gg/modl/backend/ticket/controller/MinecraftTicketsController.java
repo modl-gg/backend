@@ -75,9 +75,10 @@ public class MinecraftTicketsController {
             TicketReply initialReply = TicketReply.builder()
                     .id(new ObjectId().toHexString())
                     .content(request.description())
-                    .name(request.creatorName())
+                    .name(request.creatorName() != null ? request.creatorName() : "Player")
                     .creatorIdentifier(request.creatorUuid())
                     .staff(false)
+                    .type("user")
                     .created(now)
                     .build();
             ticket.getReplies().add(initialReply);
