@@ -7,6 +7,7 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -20,6 +21,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.SecureRandom;
 import java.util.*;
 
 @RestController
@@ -27,6 +29,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
      * Create a finished ticket (e.g., player report with all info provided)
@@ -39,7 +42,8 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        String ticketId = new ObjectId().toHexString();
+        TicketType ticketType = TicketType.fromId(request.type());
+        String ticketId = generateTicketId(template, ticketType);
         Date now = new Date();
 
         // Map chat messages to the expected format
@@ -105,7 +109,8 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        String ticketId = new ObjectId().toHexString();
+        TicketType ticketType = TicketType.fromId(request.type());
+        String ticketId = generateTicketId(template, ticketType);
         Date now = new Date();
 
         Ticket ticket = Ticket.builder()
@@ -148,6 +153,23 @@ public class MinecraftTicketsController {
             case "appeal" -> "APPEAL";
             default -> "OTHER";
         };
+    }
+
+    /**
+     * Generate a readable ticket ID like SUPPORT-123456
+     */
+    private String generateTicketId(MongoTemplate template, TicketType type) {
+        String prefix = TicketType.getPrefix(type);
+        String ticketId;
+        int attempts = 0;
+
+        do {
+            int randomId = 100000 + RANDOM.nextInt(900000);
+            ticketId = prefix + "-" + randomId;
+            attempts++;
+        } while (template.exists(Query.query(Criteria.where("_id").is(ticketId)), Ticket.class, CollectionName.TICKETS) && attempts < 10);
+
+        return ticketId;
     }
 
     @GetMapping

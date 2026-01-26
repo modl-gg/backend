@@ -213,6 +213,7 @@ public class TicketService {
             TicketReply newReply = TicketReply.builder()
                     .id(UUID.randomUUID().toString())
                     .name(request.newReply().name())
+                    .avatar(request.newReply().avatar())
                     .content(request.newReply().content())
                     .type(request.newReply().type() != null ? request.newReply().type() : "public")
                     .created(new Date())
@@ -533,6 +534,9 @@ public class TicketService {
     }
 
     private TicketResponse toTicketResponse(Ticket ticket) {
+        // Ensure all replies have proper names
+        List<TicketReply> processedReplies = processRepliesWithNames(ticket);
+
         return new TicketResponse(
                 ticket.getId(),
                 ticket.getType(),
@@ -546,13 +550,34 @@ public class TicketService {
                 ticket.getReportedPlayerUuid(),
                 ticket.getCreated(),
                 ticket.isLocked(),
-                ticket.getReplies(),
+                processedReplies,
                 ticket.getNotes(),
                 ticket.getTags(),
                 ticket.getFormData(),
                 ticket.getData(),
                 ticket.getChatMessages()
         );
+    }
+
+    private List<TicketReply> processRepliesWithNames(Ticket ticket) {
+        if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
+            return ticket.getReplies();
+        }
+
+        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
+
+        return ticket.getReplies().stream().map(reply -> {
+            if (reply.getName() == null || reply.getName().isBlank()) {
+                // Set fallback name based on whether it's staff or user
+                String fallbackName = reply.isStaff() ? "Staff" : creatorName;
+                reply.setName(fallbackName);
+            }
+            // Ensure type is set
+            if (reply.getType() == null || reply.getType().isBlank()) {
+                reply.setType(reply.isStaff() ? "staff" : "user");
+            }
+            return reply;
+        }).toList();
     }
 
     private MongoTemplate getTemplate(Server server) {
