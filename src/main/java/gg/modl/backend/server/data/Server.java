@@ -164,4 +164,12 @@ public class Server {
     @NotNull
     @Field(name = "updatedAt", targetType = FieldType.DATE_TIME)
     private Date updatedAt;
+
+    @Nullable
+    @Field(name = "staffPermissionsUpdatedAt", targetType = FieldType.DATE_TIME)
+    private Date staffPermissionsUpdatedAt;
+
+    @Nullable
+    @Field(name = "punishmentTypesUpdatedAt", targetType = FieldType.DATE_TIME)
+    private Date punishmentTypesUpdatedAt;
 }

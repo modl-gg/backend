@@ -122,6 +122,10 @@ public class MinecraftSyncController {
         data.put("recentlyModifiedPunishments", recentlyModifiedPunishments);
         data.put("playerNotifications", playerNotifications);
         data.put("activeStaffMembers", activeStaffMembers);
+        data.put("staffPermissionsUpdatedAt", server.getStaffPermissionsUpdatedAt() != null
+                ? server.getStaffPermissionsUpdatedAt().getTime() : null);
+        data.put("punishmentTypesUpdatedAt", server.getPunishmentTypesUpdatedAt() != null
+                ? server.getPunishmentTypesUpdatedAt().getTime() : null);
 
         return ResponseEntity.ok(Map.of(
                 "timestamp", now.toString(),

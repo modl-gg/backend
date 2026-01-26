@@ -9,6 +9,7 @@ import gg.modl.backend.role.dto.request.ReorderRolesRequest;
 import gg.modl.backend.role.dto.request.UpdateRoleRequest;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.service.ServerTimestampService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -29,6 +30,7 @@ import java.util.stream.Collectors;
 public class RoleService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PermissionService permissionService;
+    private final ServerTimestampService serverTimestampService;
 
     public List<RoleResponse> getAllRoles(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -131,6 +133,8 @@ public class RoleService {
         if (updated == null) {
             return Optional.empty();
         }
+
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         int staffCount = getStaffCountForRole(server, updated.getName());
         return Optional.of(toRoleResponse(updated, staffCount));

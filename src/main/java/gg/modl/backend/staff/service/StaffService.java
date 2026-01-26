@@ -6,6 +6,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
@@ -32,6 +33,7 @@ import java.util.Optional;
 public class StaffService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PermissionService permissionService;
+    private final ServerTimestampService serverTimestampService;
 
     public List<StaffResponse> getAllStaff(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -170,6 +172,7 @@ public class StaffService {
         }
 
         template.remove(staffQuery, Staff.class, CollectionName.STAFF);
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
 
@@ -199,6 +202,7 @@ public class StaffService {
                 .set("updatedAt", new Date());
 
         template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         return Optional.of(toStaffResponse(staff, "Active"));
     }
@@ -221,6 +225,7 @@ public class StaffService {
                     .unset("assignedMinecraftUsername")
                     .set("updatedAt", new Date());
             template.updateFirst(staffQuery, update, Staff.class, CollectionName.STAFF);
+            serverTimestampService.updateStaffPermissionsTimestamp(server);
 
             staff.setAssignedMinecraftUuid(null);
             staff.setAssignedMinecraftUsername(null);
@@ -259,6 +264,7 @@ public class StaffService {
                 .set("updatedAt", new Date());
 
         template.updateFirst(staffQuery, update, Staff.class, CollectionName.STAFF);
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         staff.setAssignedMinecraftUuid(player.getMinecraftUuid().toString());
         staff.setAssignedMinecraftUsername(currentUsername);

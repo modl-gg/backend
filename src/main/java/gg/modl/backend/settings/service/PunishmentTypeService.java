@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.Settings;
@@ -28,6 +29,7 @@ public class PunishmentTypeService {
 
     private final DynamicMongoTemplateProvider mongoProvider;
     private final ObjectMapper objectMapper;
+    private final ServerTimestampService serverTimestampService;
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
@@ -69,6 +71,7 @@ public class PunishmentTypeService {
                 .set("data", types);
 
         template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        serverTimestampService.updatePunishmentTypesTimestamp(server);
         return types;
     }
 
