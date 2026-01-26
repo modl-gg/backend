@@ -70,15 +70,26 @@ public class DashboardService {
         List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
 
         return tickets.stream()
-                .map(t -> new RecentTicketResponse(
-                        t.getId(),
-                        t.getSubject() != null ? t.getSubject() : "No Subject",
-                        t.getType(),
-                        t.getStatus(),
-                        t.getCreator(),
-                        t.getCreated(),
-                        t.isLocked()
-                ))
+                .map(t -> {
+                    String initialMessage = null;
+                    if (t.getReplies() != null && !t.getReplies().isEmpty()) {
+                        TicketReply firstReply = t.getReplies().get(0);
+                        if (firstReply.getContent() != null) {
+                            initialMessage = firstReply.getContent();
+                        }
+                    }
+
+                    return new RecentTicketResponse(
+                            t.getId(),
+                            t.getSubject() != null ? t.getSubject() : "No Subject",
+                            initialMessage,
+                            t.getStatus() != null ? t.getStatus().toLowerCase() : "open",
+                            t.getPriority() != null ? t.getPriority().toLowerCase() : "medium",
+                            t.getCreated(),
+                            t.getCreatorName() != null ? t.getCreatorName() : "Unknown",
+                            t.getType() != null ? t.getType().toLowerCase() : "support"
+                    );
+                })
                 .toList();
     }
 

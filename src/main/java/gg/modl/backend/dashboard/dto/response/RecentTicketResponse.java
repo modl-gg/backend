@@ -4,11 +4,12 @@ import java.util.Date;
 
 public record RecentTicketResponse(
         String id,
-        String subject,
-        String type,
+        String title,
+        String initialMessage,
         String status,
-        String creator,
-        Date created,
-        boolean locked
+        String priority,
+        Date createdAt,
+        String playerName,
+        String type
 ) {
 }
