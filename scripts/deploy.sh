@@ -132,8 +132,9 @@ if [[ "$CURRENT_COLOR" != "none" ]]; then
     docker rm "$CURRENT_CONTAINER" 2>/dev/null || true
 fi
 
-log "Cleaning up old images..."
+log "Cleaning up old images and build cache..."
 docker image prune -f
+docker builder prune -f --filter until=168h
 
 log "Deployment complete! Active: $NEW_CONTAINER on port $NEW_PORT"
 docker ps --filter "name=${APP_NAME}"
