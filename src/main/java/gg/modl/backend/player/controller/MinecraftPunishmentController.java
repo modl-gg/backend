@@ -92,32 +92,107 @@ public class MinecraftPunishmentController {
 
             for (Punishment punishment : player.getPunishments()) {
                 if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
-                    String typeName = types.stream()
-                            .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                            .findFirst()
-                            .map(PunishmentType::getName)
-                            .orElse("Unknown");
-
-                    Map<String, Object> p = new LinkedHashMap<>();
-                    p.put("id", punishment.getId());
-                    p.put("type", typeName);
+                    // Use full punishment format (same as toPunishmentMap in MinecraftPlayerController)
+                    Map<String, Object> p = toPunishmentMap(punishment, types);
+                    // Add player info
                     p.put("playerName", username);
                     p.put("playerUuid", player.getMinecraftUuid().toString());
-                    p.put("issuerName", punishment.getIssuerName());
-                    p.put("issuedAt", punishment.getIssued());
-                    p.put("reason", punishment.getData() != null ? punishment.getData().get("reason") : null);
-                    p.put("active", statusCalculator.isPunishmentActive(punishment));
                     punishments.add(p);
                 }
             }
         }
 
-        punishments.sort((a, b) -> ((Date) b.get("issuedAt")).compareTo((Date) a.get("issuedAt")));
+        punishments.sort((a, b) -> ((Date) b.get("issued")).compareTo((Date) a.get("issued")));
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "punishments", punishments
         ));
+    }
+
+    /**
+     * Convert a Punishment to a map format for API responses.
+     * Same format as MinecraftPlayerController.toPunishmentMap.
+     */
+    private Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("id", punishment.getId());
+        map.put("issuerName", punishment.getIssuerName());
+        map.put("issued", punishment.getIssued());
+        map.put("started", punishment.getStarted());
+
+        int ordinal = punishment.getType_ordinal();
+        map.put("typeOrdinal", ordinal);
+
+        String actualTypeName = punishmentTypes.stream()
+                .filter(t -> t.getOrdinal() == ordinal)
+                .findFirst()
+                .map(PunishmentType::getName)
+                .orElse(null);
+
+        String legacyTypeName = switch (ordinal) {
+            case 0 -> "KICK";
+            case 1 -> "MUTE";
+            case 2 -> "BAN";
+            case 3 -> "SECURITY_BAN";
+            case 4 -> "LINKED_BAN";
+            case 5 -> "BLACKLIST";
+            default -> "KICK";
+        };
+        map.put("type", legacyTypeName);
+
+        Map<String, Object> dataWithTypeName = punishment.getData() != null ?
+                new LinkedHashMap<>(punishment.getData()) : new LinkedHashMap<>();
+        if (actualTypeName != null) {
+            dataWithTypeName.put("typeName", actualTypeName);
+        }
+
+        // Convert modifications with effectiveDuration
+        List<Map<String, Object>> modifications = punishment.getModifications().stream()
+                .map(m -> {
+                    Map<String, Object> mod = new LinkedHashMap<>();
+                    mod.put("id", m.id());
+                    mod.put("type", m.type());
+                    mod.put("date", m.date());
+                    mod.put("issuerName", m.issuerName());
+                    mod.put("effectiveDuration", m.effectiveDuration());
+                    mod.put("data", m.data());
+                    return mod;
+                }).toList();
+        map.put("modifications", modifications);
+
+        // Convert notes
+        List<Map<String, Object>> notes = punishment.getNotes().stream()
+                .map(n -> {
+                    Map<String, Object> note = new LinkedHashMap<>();
+                    note.put("id", n.id());
+                    note.put("text", n.text());
+                    note.put("issuerName", n.issuerName());
+                    note.put("date", n.date());
+                    return note;
+                }).toList();
+        map.put("notes", notes);
+
+        // Convert evidence
+        List<Map<String, Object>> evidence = punishment.getEvidence().stream()
+                .map(e -> {
+                    Map<String, Object> ev = new LinkedHashMap<>();
+                    ev.put("text", e.text());
+                    ev.put("url", e.url());
+                    ev.put("type", e.type());
+                    ev.put("uploadedBy", e.uploadedBy());
+                    ev.put("uploadedAt", e.uploadedAt());
+                    ev.put("fileName", e.fileName());
+                    ev.put("fileType", e.fileType());
+                    ev.put("fileSize", e.fileSize());
+                    return ev;
+                }).toList();
+        map.put("evidence", evidence);
+
+        map.put("attachedTicketIds", punishment.getAttachedTicketIds());
+        map.put("data", dataWithTypeName);
+
+        return map;
     }
 
     @GetMapping("/preview")
