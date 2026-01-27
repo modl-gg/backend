@@ -534,7 +534,7 @@ public class MinecraftPunishmentController {
 
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
-                "DURATION_CHANGE",
+                "MANUAL_DURATION_CHANGE",
                 now,
                 request.issuerName(),
                 "Duration changed",
