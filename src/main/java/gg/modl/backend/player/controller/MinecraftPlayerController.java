@@ -396,7 +396,11 @@ public class MinecraftPlayerController {
             }
         }
 
+        // Get reason from data map first, fall back to first note for manual punishments
         String reason = data != null ? (String) data.get("reason") : null;
+        if (reason == null && punishment.getNotes() != null && !punishment.getNotes().isEmpty()) {
+            reason = punishment.getNotes().get(0).text();
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", punishment.getId());
@@ -636,10 +640,21 @@ public class MinecraftPlayerController {
         int pardoned = 0;
 
         for (Punishment punishment : player.getPunishments()) {
-            if (!statusCalculator.isPunishmentActive(punishment)) continue;
+            // Check if already pardoned (has MANUAL_PARDON or APPEAL_ACCEPT modification)
+            boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
+                    .anyMatch(m -> "MANUAL_PARDON".equals(m.getType()) || "APPEAL_ACCEPT".equals(m.getType()));
+            if (alreadyPardoned) continue;
 
-            boolean shouldPardon = request.punishmentType() == null;
-            if (!shouldPardon && request.punishmentType() != null) {
+            // For active punishments, always allow pardon
+            // For expired punishments, only pardon if explicitly targeting this type (to remove points)
+            boolean isActive = statusCalculator.isPunishmentActive(punishment);
+
+            boolean shouldPardon = false;
+            if (request.punishmentType() == null) {
+                // General pardon - only pardon active punishments
+                shouldPardon = isActive;
+            } else {
+                // Specific type pardon (unban/unmute) - pardon both active and expired punishments of matching type
                 String pType = request.punishmentType().toLowerCase();
                 int ordinal = punishment.getType_ordinal();
                 boolean isBan = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isBan).orElse(false);
@@ -704,7 +719,7 @@ public class MinecraftPlayerController {
                 "status", 200,
                 "success", pardoned > 0,
                 "pardonedCount", pardoned,
-                "message", pardoned > 0 ? "Pardoned " + pardoned + " punishment(s)" : "No active punishments found to pardon"
+                "message", pardoned > 0 ? "Pardoned " + pardoned + " punishment(s)" : "No punishments found to pardon"
         ));
     }
 

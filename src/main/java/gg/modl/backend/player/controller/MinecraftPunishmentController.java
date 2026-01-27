@@ -358,13 +358,16 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        // Check if the punishment is already inactive/pardoned
-        if (!statusCalculator.isPunishmentActive(punishment)) {
+        // Check if the punishment has already been pardoned (has MANUAL_PARDON or APPEAL_ACCEPT modification)
+        boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
+                .anyMatch(m -> "MANUAL_PARDON".equals(m.getType()) || "APPEAL_ACCEPT".equals(m.getType()));
+
+        if (alreadyPardoned) {
             return ResponseEntity.ok(Map.of(
                     "status", 200,
                     "success", false,
                     "pardonedCount", 0,
-                    "message", "Punishment is already inactive or pardoned"
+                    "message", "Punishment has already been pardoned"
             ));
         }
 
