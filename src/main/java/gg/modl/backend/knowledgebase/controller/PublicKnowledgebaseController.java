@@ -22,11 +22,46 @@ public class PublicKnowledgebaseController {
     private final KnowledgebaseCategoryService categoryService;
     private final KnowledgebaseArticleService articleService;
 
+    public record ArticleStub(String id, String title, String slug, int ordinal) {}
+
+    public record CategoryWithArticlesResponse(
+            String id,
+            String name,
+            String slug,
+            String description,
+            int ordinal,
+            List<ArticleStub> articles
+    ) {}
+
     @GetMapping("/categories")
-    public ResponseEntity<List<KnowledgebaseCategory>> getCategories(HttpServletRequest request) {
+    public ResponseEntity<List<CategoryWithArticlesResponse>> getCategories(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<KnowledgebaseCategory> categories = categoryService.getVisibleCategories(server);
-        return ResponseEntity.ok(categories);
+
+        List<CategoryWithArticlesResponse> response = categories.stream()
+                .map(category -> {
+                    List<ArticleStub> articleStubs = articleService.getVisibleArticlesByCategory(server, category.getId())
+                            .stream()
+                            .map(article -> new ArticleStub(
+                                    article.getId(),
+                                    article.getTitle(),
+                                    article.getSlug(),
+                                    article.getOrdinal()
+                            ))
+                            .toList();
+
+                    return new CategoryWithArticlesResponse(
+                            category.getId(),
+                            category.getName(),
+                            category.getSlug(),
+                            category.getDescription(),
+                            category.getOrdinal(),
+                            articleStubs
+                    );
+                })
+                .toList();
+
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/categories/{categoryId}/articles")
