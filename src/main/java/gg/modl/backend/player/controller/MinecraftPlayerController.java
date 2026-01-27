@@ -650,6 +650,8 @@ public class MinecraftPlayerController {
             }
 
             if (shouldPardon) {
+                Date now = new Date();
+
                 Query updateQuery = Query.query(
                         Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
                                 .and("punishments.id").is(punishment.getId())
@@ -659,7 +661,7 @@ public class MinecraftPlayerController {
                         new gg.modl.backend.player.data.punishment.PunishmentModification(
                                 new ObjectId().toHexString(),
                                 "MANUAL_PARDON",
-                                new Date(),
+                                now,
                                 request.issuerName(),
                                 request.reason() != null ? request.reason() : "",
                                 null,
@@ -667,9 +669,31 @@ public class MinecraftPlayerController {
                                 null
                         );
 
+                // Create automatic note for pardon
+                gg.modl.backend.player.data.punishment.PunishmentNote pardonNote =
+                        new gg.modl.backend.player.data.punishment.PunishmentNote(
+                                new ObjectId().toHexString(),
+                                "pardoned punishment",
+                                now,
+                                request.issuerName()
+                        );
+
                 Update update = new Update()
                         .push("punishments.$.modifications", modification)
+                        .push("punishments.$.notes", pardonNote)
                         .set("punishments.$.data.active", false);
+
+                // Add separate note for reason if provided
+                if (request.reason() != null && !request.reason().isBlank()) {
+                    gg.modl.backend.player.data.punishment.PunishmentNote reasonNote =
+                            new gg.modl.backend.player.data.punishment.PunishmentNote(
+                                    new ObjectId().toHexString(),
+                                    request.reason(),
+                                    now,
+                                    request.issuerName()
+                            );
+                    update.push("punishments.$.notes", reasonNote);
+                }
 
                 template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
                 pardoned++;
