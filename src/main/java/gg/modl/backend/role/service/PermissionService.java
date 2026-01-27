@@ -94,8 +94,8 @@ public class PermissionService {
             return false;
         }
 
-        // Super Admin has all permissions
-        if ("super-admin".equals(role.getId())) {
+        // Super Admin has all permissions - check both ID and name for robustness
+        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
             return true;
         }
 

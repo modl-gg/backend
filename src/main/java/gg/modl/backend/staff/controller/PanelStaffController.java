@@ -154,6 +154,8 @@ public class PanelStaffController {
             } else {
                 return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(result);
             }
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

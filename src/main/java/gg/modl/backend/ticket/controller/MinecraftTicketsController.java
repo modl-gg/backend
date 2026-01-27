@@ -59,7 +59,7 @@ public class MinecraftTicketsController {
                 .type(mapTicketType(request.type()))
                 .category(request.type())
                 .subject(request.subject())
-                .status("open")
+                .status("Open")
                 .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
@@ -118,7 +118,7 @@ public class MinecraftTicketsController {
                 .type(mapTicketType(request.type()))
                 .category(request.type())
                 .subject(request.subject())
-                .status("draft") // Unfinished tickets start as draft
+                .status("Unfinished") // Unfinished tickets start as Unfinished
                 .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
