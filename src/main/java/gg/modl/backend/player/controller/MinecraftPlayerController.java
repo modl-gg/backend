@@ -642,7 +642,7 @@ public class MinecraftPlayerController {
         for (Punishment punishment : player.getPunishments()) {
             // Check if already pardoned (has MANUAL_PARDON or APPEAL_ACCEPT modification)
             boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
-                    .anyMatch(m -> "MANUAL_PARDON".equals(m.getType()) || "APPEAL_ACCEPT".equals(m.getType()));
+                    .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()));
             if (alreadyPardoned) continue;
 
             // For active punishments, always allow pardon
