@@ -28,6 +28,9 @@ public class KnowledgebaseArticle {
     @JsonProperty("is_visible")
     private boolean isVisible;
 
+    @JsonProperty("created_at")
     private Date createdAt;
+
+    @JsonProperty("updated_at")
     private Date updatedAt;
 }

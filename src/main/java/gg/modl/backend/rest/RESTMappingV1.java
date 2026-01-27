@@ -101,6 +101,10 @@ public final class RESTMappingV1 {
     // Minecraft API endpoints
     private static final String PUNISHMENTS = "/punishments";
     public static final String MINECRAFT_PUNISHMENTS = PREFIX_MINECRAFT + PUNISHMENTS;
+
+    // Public punishment endpoint
+    private static final String PUNISHMENT = "/punishment";
+    public static final String PUBLIC_PUNISHMENT = PREFIX_PUBLIC + PUNISHMENT;
     public static final String MINECRAFT_STAFF = PREFIX_MINECRAFT + STAFF;
     private static final String NOTIFICATIONS = "/notifications";
     public static final String MINECRAFT_NOTIFICATIONS = PREFIX_MINECRAFT + NOTIFICATIONS;

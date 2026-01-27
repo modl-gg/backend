@@ -110,6 +110,18 @@ public class PanelKnowledgebaseController {
         return ResponseEntity.ok(articles);
     }
 
+    @GetMapping("/categories/{categoryId}/articles/{articleId}")
+    public ResponseEntity<KnowledgebaseArticle> getArticle(
+            @PathVariable String categoryId,
+            @PathVariable String articleId,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        return articleService.getArticleById(server, articleId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping("/categories/{categoryId}/articles")
     public ResponseEntity<KnowledgebaseArticle> createArticle(
             @PathVariable String categoryId,
