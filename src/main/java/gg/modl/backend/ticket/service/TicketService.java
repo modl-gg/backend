@@ -458,12 +458,48 @@ public class TicketService {
             update.set("formData", request.formData());
             ticket.setData(existingData);
             ticket.setFormData(request.formData());
+
+            // Create initial reply from form data (only if no replies exist yet)
+            if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
+                String content = buildFormDataContent(request.formData());
+                if (!content.isBlank()) {
+                    TicketReply initialReply = TicketReply.builder()
+                            .id(UUID.randomUUID().toString())
+                            .name(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player")
+                            .content(content)
+                            .type("user")
+                            .created(new Date())
+                            .staff(false)
+                            .creatorIdentifier(request.creatorIdentifier())
+                            .build();
+                    update.push("replies", initialReply);
+                    ticket.getReplies().add(initialReply);
+                }
+            }
         }
 
         ticket.setStatus("Open");
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
         return Optional.of(toTicketResponse(ticket));
+    }
+
+    /**
+     * Builds content from form data for the initial ticket message.
+     */
+    private String buildFormDataContent(Map<String, Object> formData) {
+        if (formData == null || formData.isEmpty()) {
+            return "";
+        }
+
+        StringBuilder content = new StringBuilder();
+        for (Map.Entry<String, Object> entry : formData.entrySet()) {
+            if (entry.getValue() != null && !entry.getValue().toString().isBlank()) {
+                String formattedKey = formatFormDataKey(entry.getKey());
+                content.append("**").append(formattedKey).append(":** ").append(entry.getValue()).append("\n\n");
+            }
+        }
+        return content.toString().trim();
     }
 
     private String generateTicketId(MongoTemplate template, TicketType type) {
