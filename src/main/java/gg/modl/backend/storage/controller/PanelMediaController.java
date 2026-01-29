@@ -15,9 +15,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,13 +34,14 @@ public class PanelMediaController {
     private static final long ARTICLES_SIZE_LIMIT = 50L * 1024 * 1024;
     private static final long SERVER_ICONS_SIZE_LIMIT = 5L * 1024 * 1024;
 
-    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif");
-    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "video/mp4", "application/pdf");
-    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg");
+    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp");
+    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf");
+    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg", "image/webp");
 
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> getMediaConfig() {
         boolean isConfigured = s3StorageService.isConfigured();
+        String cdnDomain = s3StorageService.getCdnDomain();
 
         Map<String, Object> supportedTypes = Map.of(
                 "evidence", isConfigured ? DOCUMENT_TYPES : List.of(),
@@ -59,40 +59,13 @@ public class PanelMediaController {
                 "server-icons", isConfigured ? SERVER_ICONS_SIZE_LIMIT : 0L
         );
 
-        Map<String, Object> response = Map.of(
-                "backblazeConfigured", isConfigured,
-                "supportedTypes", supportedTypes,
-                "fileSizeLimits", fileSizeLimits
-        );
+        Map<String, Object> response = new HashMap<>();
+        response.put("backblazeConfigured", isConfigured);
+        response.put("supportedTypes", supportedTypes);
+        response.put("fileSizeLimits", fileSizeLimits);
+        response.put("cdnDomain", cdnDomain != null && !cdnDomain.isBlank() ? cdnDomain : null);
 
         return ResponseEntity.ok(response);
-    }
-
-    @PostMapping("/upload/{type}")
-    public ResponseEntity<?> uploadFile(
-            @PathVariable String type,
-            @RequestParam("file") MultipartFile file,
-            HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-
-        MediaValidationService.ValidationResult validation = validationService.validate(file, type);
-        if (!validation.valid()) {
-            return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
-        }
-
-        if (!quotaService.canUpload(server, file.getSize())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
-        }
-
-        try {
-            UploadResponse response = s3StorageService.uploadFile(server, file, type);
-            return ResponseEntity.ok(response);
-        } catch (IOException e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file"));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
     }
 
     @DeleteMapping("/{*key}")

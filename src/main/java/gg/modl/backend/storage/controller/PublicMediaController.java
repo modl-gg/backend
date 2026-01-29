@@ -3,8 +3,10 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.PresignUploadRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
+import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
@@ -14,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,19 +31,20 @@ public class PublicMediaController {
 
     private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "appeal");
 
-    private static final long EVIDENCE_SIZE_LIMIT = 100L * 1024 * 1024; // 100MB (authenticated users only)
-    private static final long TICKETS_SIZE_LIMIT = 10L * 1024 * 1024;   // 10MB for public ticket uploads
-    private static final long APPEALS_SIZE_LIMIT = 10L * 1024 * 1024;   // 10MB
-    private static final long ARTICLES_SIZE_LIMIT = 50L * 1024 * 1024;  // 50MB (authenticated users only)
-    private static final long SERVER_ICONS_SIZE_LIMIT = 5L * 1024 * 1024; // 5MB (authenticated users only)
+    private static final long EVIDENCE_SIZE_LIMIT = 100L * 1024 * 1024;
+    private static final long TICKETS_SIZE_LIMIT = 10L * 1024 * 1024;
+    private static final long APPEALS_SIZE_LIMIT = 10L * 1024 * 1024;
+    private static final long ARTICLES_SIZE_LIMIT = 50L * 1024 * 1024;
+    private static final long SERVER_ICONS_SIZE_LIMIT = 5L * 1024 * 1024;
 
-    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif");
-    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "video/mp4", "application/pdf");
-    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg");
+    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp");
+    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf");
+    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg", "image/webp");
 
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> getMediaConfig() {
         boolean isConfigured = s3StorageService.isConfigured();
+        String cdnDomain = s3StorageService.getCdnDomain();
 
         Map<String, Object> supportedTypes = Map.of(
                 "evidence", isConfigured ? DOCUMENT_TYPES : List.of(),
@@ -58,11 +62,11 @@ public class PublicMediaController {
                 "server-icons", isConfigured ? SERVER_ICONS_SIZE_LIMIT : 0L
         );
 
-        Map<String, Object> response = Map.of(
-                "backblazeConfigured", isConfigured,
-                "supportedTypes", supportedTypes,
-                "fileSizeLimits", fileSizeLimits
-        );
+        Map<String, Object> response = new HashMap<>();
+        response.put("backblazeConfigured", isConfigured);
+        response.put("supportedTypes", supportedTypes);
+        response.put("fileSizeLimits", fileSizeLimits);
+        response.put("cdnDomain", cdnDomain != null && !cdnDomain.isBlank() ? cdnDomain : null);
 
         return ResponseEntity.ok(response);
     }
@@ -107,5 +111,40 @@ public class PublicMediaController {
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @PostMapping("/confirm")
+    public ResponseEntity<?> confirmUpload(
+            @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String key = confirmRequest.key();
+
+        if (!key.startsWith(server.getDatabaseName() + "/")) {
+            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+        }
+
+        String uploadType = extractUploadType(key);
+        if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(uploadType)) {
+            return ResponseEntity.status(403).body(Map.of(
+                    "error", "Upload type not allowed for public confirmation"
+            ));
+        }
+
+        UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
+        if (uploadDetails == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Upload not found",
+                    "message", "The file was not uploaded or the presigned URL expired"
+            ));
+        }
+
+        return ResponseEntity.ok(uploadDetails);
+    }
+
+    private String extractUploadType(String key) {
+        String[] parts = key.split("/");
+        return parts.length >= 2 ? parts[1] : "";
     }
 }

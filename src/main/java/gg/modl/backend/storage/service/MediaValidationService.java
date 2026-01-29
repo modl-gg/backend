@@ -21,19 +21,19 @@ public class MediaValidationService {
     );
 
     private static final Map<String, Set<String>> ALLOWED_TYPES = Map.of(
-            "evidence", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm"),
-            "ticket", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"),
-            "appeal", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf"),
+            "evidence", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
+            "ticket", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
+            "appeal", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
             "article", Set.of("image/png", "image/jpeg", "image/gif", "image/webp"),
-            "server-icon", Set.of("image/png", "image/jpeg", "image/webp", "image/svg+xml")
+            "server-icon", Set.of("image/png", "image/jpeg", "image/webp")
     );
 
     private static final Map<String, Long> MAX_SIZES = Map.of(
-            "evidence", 50L * 1024 * 1024,
+            "evidence", 100L * 1024 * 1024,
             "ticket", 10L * 1024 * 1024,
             "appeal", 10L * 1024 * 1024,
-            "article", 5L * 1024 * 1024,
-            "server-icon", 2L * 1024 * 1024
+            "article", 50L * 1024 * 1024,
+            "server-icon", 5L * 1024 * 1024
     );
 
     public ValidationResult validate(MultipartFile file, String uploadType) {

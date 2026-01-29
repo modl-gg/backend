@@ -4,12 +4,9 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -17,7 +14,6 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -42,29 +38,22 @@ public class S3StorageService {
     @Value("${modl.storage.bucket-name:}")
     private String bucketName;
 
+    @Value("${modl.storage.cdn-domain:}")
+    private String cdnDomain;
+
     public boolean isConfigured() {
         return s3Client != null && bucketName != null && !bucketName.isBlank();
     }
 
-    public UploadResponse uploadFile(Server server, MultipartFile file, String uploadType) throws IOException {
-        if (s3Client == null) {
-            throw new IllegalStateException("S3 storage is not configured");
+    public String getCdnDomain() {
+        return cdnDomain;
+    }
+
+    public String getCdnUrl(String key) {
+        if (cdnDomain == null || cdnDomain.isBlank()) {
+            return getPresignedUrl(key);
         }
-
-        String fileName = file.getOriginalFilename();
-        String key = buildKey(server, uploadType, fileName);
-
-        PutObjectRequest request = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(key)
-                .contentType(file.getContentType())
-                .build();
-
-        s3Client.putObject(request, RequestBody.fromInputStream(file.getInputStream(), file.getSize()));
-
-        String url = getPresignedUrl(key);
-
-        return new UploadResponse(key, url, fileName, file.getSize(), file.getContentType());
+        return String.format("https://%s/%s", cdnDomain, key);
     }
 
     public boolean deleteFile(String key) {
@@ -108,7 +97,7 @@ public class S3StorageService {
                         obj.size(),
                         "application/octet-stream",
                         Date.from(obj.lastModified()),
-                        getPresignedUrl(obj.key())
+                        getCdnUrl(obj.key())
                 ))
                 .toList();
     }
@@ -206,7 +195,7 @@ public class S3StorageService {
                     .build();
 
             HeadObjectResponse response = s3Client.headObject(headRequest);
-            String url = getPresignedUrl(key);
+            String url = getCdnUrl(key);
             String fileName = extractFileName(key);
 
             return new UploadResponse(
