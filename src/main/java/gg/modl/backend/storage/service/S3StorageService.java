@@ -137,7 +137,6 @@ public class S3StorageService {
                 .bucket(bucketName)
                 .key(key)
                 .contentType(contentType)
-                .contentLength(fileSize)
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
@@ -151,7 +150,6 @@ public class S3StorageService {
 
         Map<String, String> requiredHeaders = new HashMap<>();
         requiredHeaders.put("Content-Type", contentType);
-        requiredHeaders.put("Content-Length", String.valueOf(fileSize));
 
         return new PresignUploadResponse(
                 presignedRequest.url().toString(),
