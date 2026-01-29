@@ -222,7 +222,7 @@ public class TicketService {
                     .created(new Date())
                     .staff(request.newReply().staff())
                     .action(request.newReply().action())
-                    .attachments(request.newReply().attachments())
+                    .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
                     .build();
 
             update.push("replies", newReply);
@@ -269,7 +269,7 @@ public class TicketService {
                 .created(new Date())
                 .staff(request.staff())
                 .action(request.action())
-                .attachments(request.attachments())
+                .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
                 .creatorIdentifier(request.creatorIdentifier())
                 .build();
 
