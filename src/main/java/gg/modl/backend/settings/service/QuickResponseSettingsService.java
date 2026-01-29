@@ -60,4 +60,17 @@ public class QuickResponseSettingsService {
 
         return null;
     }
+
+    public void updateQuickResponseSettings(Server server, Map<String, Object> quickResponses) {
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("type").is("quickResponses"));
+
+        org.springframework.data.mongodb.core.query.Update update =
+                new org.springframework.data.mongodb.core.query.Update()
+                        .set("type", "quickResponses")
+                        .set("data", quickResponses);
+
+        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+    }
 }

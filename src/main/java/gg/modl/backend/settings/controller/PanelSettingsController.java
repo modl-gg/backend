@@ -25,6 +25,7 @@ public class PanelSettingsController {
     private final WebhookSettingsService webhookSettingsService;
     private final TicketFormSettingsService ticketFormSettingsService;
     private final DomainSettingsService domainSettingsService;
+    private final QuickResponseSettingsService quickResponseSettingsService;
 
     @GetMapping("/punishment-types")
     public ResponseEntity<List<PunishmentType>> getPunishmentTypes(HttpServletRequest request) {
@@ -287,12 +288,34 @@ public class PanelSettingsController {
     @DeleteMapping("/domain")
     public ResponseEntity<?> removeDomain(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        
+
         try {
             domainSettingsService.removeDomain(server);
             return ResponseEntity.ok(Map.of("message", "Domain removed successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
+    }
+
+    @GetMapping("/quick-responses")
+    public ResponseEntity<?> getQuickResponses(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        var settings = quickResponseSettingsService.getQuickResponseSettings(server);
+
+        if (settings == null) {
+            return ResponseEntity.ok(Map.of("categories", List.of()));
+        }
+
+        return ResponseEntity.ok(settings);
+    }
+
+    @PutMapping("/quick-responses")
+    public ResponseEntity<?> updateQuickResponses(
+            @RequestBody Map<String, Object> quickResponses,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        quickResponseSettingsService.updateQuickResponseSettings(server, quickResponses);
+        return ResponseEntity.ok(Map.of("message", "Quick responses updated successfully"));
     }
 }

@@ -21,7 +21,9 @@ public class QuickResponseSettings {
     public static class Category {
         private String id;
         private String name;
+        private List<String> ticketTypes;
         private List<Action> actions;
+        private Integer order;
     }
 
     @Data
@@ -32,8 +34,10 @@ public class QuickResponseSettings {
         private String id;
         private String name;
         private String message;
-        private Boolean issuePunishment;
-        private String appealAction;
+        private Integer order;
         private Boolean closeTicket;
+        private Boolean showPunishment;
+        private Boolean issuePunishment; // Legacy field, same as showPunishment
+        private String appealAction;
     }
 }
