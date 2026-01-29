@@ -148,13 +148,16 @@ public class TicketService {
             replies.add(initialReply);
         }
 
+        String creatorDisplayName = request.creatorName() != null ? request.creatorName() : "API User";
+
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
                 .type(request.type())
                 .category(request.type())
                 .subject(subject)
                 .status(ticketStatus)
-                .creator(request.creatorName() != null ? request.creatorName() : "API User")
+                .creator(creatorDisplayName)
+                .creatorName(creatorDisplayName)
                 .creatorUuid(request.creatorUuid())
                 .reportedPlayer(request.reportedPlayerName())
                 .reportedPlayerUuid(request.reportedPlayerUuid())

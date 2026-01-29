@@ -47,12 +47,23 @@ public class MinecraftTicketsController {
         String ticketId = generateTicketId(template, ticketType);
         Date now = new Date();
 
-        // Map chat messages to the expected format
+        // Parse chat messages from JSON strings to Maps
+        // Plugin sends messages as: {"username":"Name","message":"Text","timestamp":"2024-..."}
         List<Map<String, Object>> chatMessages = null;
         if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
-            chatMessages = request.chatMessages().stream()
-                    .map(msg -> Map.<String, Object>of("content", msg, "timestamp", now))
-                    .toList();
+            chatMessages = new ArrayList<>();
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            for (String msg : request.chatMessages()) {
+                try {
+                    // Parse the JSON string into a Map
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> parsed = mapper.readValue(msg, Map.class);
+                    chatMessages.add(parsed);
+                } catch (Exception e) {
+                    // If parsing fails, store as raw content
+                    chatMessages.add(Map.of("content", msg, "timestamp", now));
+                }
+            }
         }
 
         Ticket ticket = Ticket.builder()
@@ -327,6 +338,7 @@ public class MinecraftTicketsController {
     /**
      * Claim an unlinked ticket by linking it to a Minecraft account.
      * This allows players to claim tickets created via web form.
+     * Also updates all reply names from "{name} (Web User)" to the verified player name.
      */
     @PostMapping("/{id}/claim")
     public ResponseEntity<Map<String, Object>> claimTicket(
@@ -357,12 +369,37 @@ public class MinecraftTicketsController {
             ));
         }
 
+        // Store the old creator name to update replies
+        // Check both creatorName and creator fields (TicketService uses creator for name)
+        String oldCreatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator();
+
+        // Update all replies that match the old creator name (Web User format)
+        // This changes "{name} (Web User)" to the verified player name
+        List<TicketReply> updatedReplies = null;
+        if (ticket.getReplies() != null && oldCreatorName != null) {
+            updatedReplies = ticket.getReplies().stream()
+                    .map(reply -> {
+                        // Update replies that match the old web user name and are not staff
+                        if (!reply.isStaff() && oldCreatorName.equals(reply.getName())) {
+                            reply.setName(request.playerName());
+                        }
+                        return reply;
+                    })
+                    .toList();
+        }
+
         // Update the ticket with the player's information
+        // Note: creator field stores the display name, creatorUuid stores the UUID
         Update update = new Update()
                 .set("creatorUuid", request.playerUuid())
                 .set("creatorName", request.playerName())
-                .set("creator", request.playerUuid())
+                .set("creator", request.playerName())
                 .set("updatedAt", new Date());
+
+        // Update replies if we modified them
+        if (updatedReplies != null) {
+            update.set("replies", updatedReplies);
+        }
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 

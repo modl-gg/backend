@@ -35,10 +35,14 @@ public class MinecraftReportsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Criteria criteria = Criteria.where("type").in("PLAYER", "CHAT", "CHEATING", "BEHAVIOR", "OTHER");
+        // Reports are stored with type = "REPORT" and category = "player"/"chat"/etc.
+        // Query for REPORT type tickets (player reports and chat reports)
+        Criteria criteria = Criteria.where("type").is("REPORT");
 
         if (!"all".equalsIgnoreCase(status)) {
-            criteria = criteria.and("status").is(status);
+            // Handle case-insensitive status matching (Open vs open)
+            String capitalizedStatus = status.substring(0, 1).toUpperCase() + status.substring(1).toLowerCase();
+            criteria = criteria.and("status").in(status, capitalizedStatus);
         }
 
         Query query = Query.query(criteria);
@@ -49,16 +53,20 @@ public class MinecraftReportsController {
         List<Map<String, Object>> reports = tickets.stream().map(t -> {
             Map<String, Object> report = new LinkedHashMap<>();
             report.put("id", t.getId());
-            report.put("type", t.getType());
-            report.put("reporterName", t.getCreatorName());
+            report.put("type", t.getCategory() != null ? t.getCategory() : t.getType()); // Use category (player/chat) as the type
+            report.put("category", t.getCategory()); // Original report category
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
             report.put("reporterUuid", t.getCreatorUuid());
             report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
             report.put("reportedPlayerName", t.getReportedPlayer());
             report.put("subject", t.getSubject());
+            report.put("content", t.getReplies() != null && !t.getReplies().isEmpty()
+                    ? t.getReplies().get(0).getContent() : null); // First reply is the report content
             report.put("status", t.getStatus());
             report.put("priority", t.getPriority());
             report.put("createdAt", t.getCreated());
             report.put("assignedTo", t.getAssignedTo());
+            report.put("chatMessages", t.getChatMessages()); // Include chat messages for chat reports
             return report;
         }).toList();
 
@@ -148,6 +156,59 @@ public class MinecraftReportsController {
                 "status", 200,
                 "success", true,
                 "message", "Report resolved"
+        ));
+    }
+
+    /**
+     * Get reports filed against a specific player
+     */
+    @GetMapping("/player/{uuid}")
+    public ResponseEntity<Map<String, Object>> getPlayerReports(
+            @PathVariable String uuid,
+            @RequestParam(defaultValue = "all") String status,
+            @RequestParam(defaultValue = "50") int limit,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        // Query for reports against this player
+        Criteria criteria = Criteria.where("type").is("REPORT")
+                .and("reportedPlayerUuid").is(uuid);
+
+        if (!"all".equalsIgnoreCase(status)) {
+            String capitalizedStatus = status.substring(0, 1).toUpperCase() + status.substring(1).toLowerCase();
+            criteria = criteria.and("status").in(status, capitalizedStatus);
+        }
+
+        Query query = Query.query(criteria);
+        query.limit(Math.min(limit, 100));
+
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> reports = tickets.stream().map(t -> {
+            Map<String, Object> report = new LinkedHashMap<>();
+            report.put("id", t.getId());
+            report.put("type", t.getCategory() != null ? t.getCategory() : t.getType());
+            report.put("category", t.getCategory());
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
+            report.put("reporterUuid", t.getCreatorUuid());
+            report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
+            report.put("reportedPlayerName", t.getReportedPlayer());
+            report.put("subject", t.getSubject());
+            report.put("content", t.getReplies() != null && !t.getReplies().isEmpty()
+                    ? t.getReplies().get(0).getContent() : null);
+            report.put("status", t.getStatus());
+            report.put("priority", t.getPriority());
+            report.put("createdAt", t.getCreated());
+            report.put("assignedTo", t.getAssignedTo());
+            report.put("chatMessages", t.getChatMessages());
+            return report;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "reports", reports
         ));
     }
 
