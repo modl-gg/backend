@@ -52,7 +52,6 @@ public class StripeWebhookController {
         Event event;
         try {
             event = Webhook.constructEvent(payload, sigHeader, config.getWebhookSecret());
-            log.info("Received Stripe webhook event: {}", event.getType());
         } catch (SignatureVerificationException e) {
             log.error("Webhook signature verification failed: {}", e.getMessage());
             return ResponseEntity.badRequest().body("Webhook Error: " + e.getMessage());
@@ -77,7 +76,6 @@ public class StripeWebhookController {
             case "customer.subscription.deleted" -> handleSubscriptionDeleted(event, globalDb);
             case "invoice.payment_failed" -> handlePaymentFailed(event, globalDb);
             case "invoice.payment_succeeded" -> handlePaymentSucceeded(event, globalDb);
-            case "customer.subscription.trial_will_end" -> log.info("Trial will end soon for subscription");
             default -> log.debug("Unhandled event type: {}", event.getType());
         }
     }
@@ -87,8 +85,6 @@ public class StripeWebhookController {
         if (!(stripeObject instanceof com.stripe.model.checkout.Session session)) {
             return;
         }
-
-        log.info("Checkout session completed for customer: {}", session.getCustomer());
 
         if (session.getCustomer() != null && session.getSubscription() != null) {
             Server server = findServerByCustomerId(globalDb, session.getCustomer());
@@ -111,7 +107,6 @@ public class StripeWebhookController {
                     }
 
                     updateServer(globalDb, server.getId(), update);
-                    log.info("Updated server {} with new subscription", server.getServerName());
                 } catch (Exception e) {
                     log.error("Error retrieving subscription details", e);
                 }
@@ -126,8 +121,6 @@ public class StripeWebhookController {
         if (!(stripeObject instanceof Subscription subscription)) {
             return;
         }
-
-        log.info("Subscription created: {}", subscription.getId());
 
         Server server = findServerByCustomerId(globalDb, subscription.getCustomer());
         if (server != null) {
@@ -153,7 +146,6 @@ public class StripeWebhookController {
             }
 
             updateServer(globalDb, server.getId(), update);
-            log.info("Updated server {} for subscription.created", server.getServerName());
         }
     }
 
@@ -162,8 +154,6 @@ public class StripeWebhookController {
         if (!(stripeObject instanceof Subscription subscription)) {
             return;
         }
-
-        log.info("Subscription updated: {}", subscription.getId());
 
         Server server = findServerBySubscriptionId(globalDb, subscription.getId());
         if (server != null) {
@@ -189,10 +179,6 @@ public class StripeWebhookController {
             }
 
             updateServer(globalDb, server.getId(), update);
-
-            if ("canceled".equals(effectiveStatus)) {
-                log.info("Subscription {} marked as cancelled, access until {}", subscription.getId(), periodEndDate);
-            }
         } else {
             log.warn("No server found for subscription: {}", subscription.getId());
         }
@@ -204,8 +190,6 @@ public class StripeWebhookController {
             return;
         }
 
-        log.info("Subscription deleted: {}", subscription.getId());
-
         Server server = findServerBySubscriptionId(globalDb, subscription.getId());
         if (server != null) {
             Update update = new Update()
@@ -215,7 +199,6 @@ public class StripeWebhookController {
 
             updateServer(globalDb, server.getId(), update);
             usageTrackingService.resetUsageCounters(server.getId());
-            log.info("Downgraded server {} to free after subscription deletion", server.getServerName());
         }
     }
 
@@ -224,8 +207,6 @@ public class StripeWebhookController {
         if (!(stripeObject instanceof Invoice invoice)) {
             return;
         }
-
-        log.info("Payment failed for invoice: {}", invoice.getId());
 
         String customerId = invoice.getCustomer();
         if (customerId != null) {
@@ -236,7 +217,6 @@ public class StripeWebhookController {
                         .set("plan", ServerPlan.free);
 
                 updateServer(globalDb, server.getId(), update);
-                log.info("Downgraded server {} to free after payment failure", server.getServerName());
             }
         }
     }
@@ -247,8 +227,6 @@ public class StripeWebhookController {
             return;
         }
 
-        log.info("Payment succeeded for invoice: {}", invoice.getId());
-
         String customerId = invoice.getCustomer();
         if (customerId != null) {
             Server server = findServerByCustomerId(globalDb, customerId);
@@ -258,7 +236,6 @@ public class StripeWebhookController {
                         .set("plan", ServerPlan.premium);
 
                 updateServer(globalDb, server.getId(), update);
-                log.info("Restored server {} to premium after payment success", server.getServerName());
             }
         }
     }

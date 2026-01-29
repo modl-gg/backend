@@ -68,7 +68,6 @@ public class PublicRegistrationController {
         }
 
         String clientIp = getClientIp(request);
-        log.info("Registration attempt from IP: {}", clientIp);
 
         // Check rate limit
         long now = System.currentTimeMillis();

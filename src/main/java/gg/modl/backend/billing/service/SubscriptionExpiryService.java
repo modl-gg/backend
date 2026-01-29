@@ -37,7 +37,6 @@ public class SubscriptionExpiryService {
             List<Server> cancelledServers = globalDb.find(query, Server.class, CollectionName.MODL_SERVERS);
 
             Date now = new Date();
-            int expiredCount = 0;
 
             for (Server server : cancelledServers) {
                 Date endDate = server.getCurrentPeriodEnd();
@@ -51,14 +50,7 @@ public class SubscriptionExpiryService {
                     globalDb.updateFirst(updateQuery, update, CollectionName.MODL_SERVERS);
 
                     usageTrackingService.resetUsageCounters(server.getId());
-
-                    expiredCount++;
-                    log.info("Server {} subscription expired and downgraded to free", server.getServerName());
                 }
-            }
-
-            if (expiredCount > 0) {
-                log.info("Expired and downgraded {} cancelled subscriptions", expiredCount);
             }
         } catch (Exception e) {
             log.error("Error checking for expired subscriptions", e);
