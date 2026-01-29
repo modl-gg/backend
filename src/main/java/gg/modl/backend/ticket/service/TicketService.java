@@ -213,6 +213,7 @@ public class TicketService {
         }
 
         if (request.newReply() != null) {
+            log.info("Adding reply to ticket {}. Attachments: {}", ticketId, request.newReply().attachments());
             TicketReply newReply = TicketReply.builder()
                     .id(UUID.randomUUID().toString())
                     .name(request.newReply().name())
@@ -259,6 +260,8 @@ public class TicketService {
         if (ticket.isLocked()) {
             throw new IllegalStateException("Ticket is locked and cannot accept new replies");
         }
+
+        log.info("Adding standalone reply to ticket {}. Attachments: {}", ticketId, request.attachments());
 
         TicketReply newReply = TicketReply.builder()
                 .id(UUID.randomUUID().toString())
