@@ -46,6 +46,7 @@ public class MinecraftReportsController {
         }
 
         Query query = Query.query(criteria);
+        query.with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "created"));
         query.limit(Math.min(limit, 100));
 
         List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
