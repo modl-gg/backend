@@ -324,6 +324,65 @@ public class MinecraftTicketsController {
     }
 
     /**
+     * Claim an unlinked ticket by linking it to a Minecraft account.
+     * This allows players to claim tickets created via web form.
+     */
+    @PostMapping("/{id}/claim")
+    public ResponseEntity<Map<String, Object>> claimTicket(
+            @PathVariable String id,
+            @RequestBody @Valid ClaimTicketRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("_id").is(id));
+        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
+
+        if (ticket == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "success", false,
+                    "message", "Ticket not found"
+            ));
+        }
+
+        // Check if ticket is already claimed
+        if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "status", 409,
+                    "success", false,
+                    "message", "Ticket is already linked to a Minecraft account"
+            ));
+        }
+
+        // Update the ticket with the player's information
+        Update update = new Update()
+                .set("creatorUuid", request.playerUuid())
+                .set("creatorName", request.playerName())
+                .set("creator", request.playerUuid())
+                .set("updatedAt", new Date());
+
+        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "message", "Ticket successfully linked to your account",
+                "ticketId", id,
+                "subject", ticket.getSubject()
+        ));
+    }
+
+    /**
+     * Request record for claiming a ticket
+     */
+    public record ClaimTicketRequest(
+            @NotBlank String playerUuid,
+            @NotBlank String playerName
+    ) {}
+
+    /**
      * Request record for creating tickets from the Minecraft plugin
      */
     public record CreateTicketRequest(

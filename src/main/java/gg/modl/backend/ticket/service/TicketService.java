@@ -484,7 +484,7 @@ public class TicketService {
         StringBuilder content = new StringBuilder();
 
         if (request.description() != null && !request.description().isBlank()) {
-            content.append("Description: ").append(request.description()).append("\n\n");
+            content.append("**Description:** ").append(request.description()).append("\n\n");
         }
 
         if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
@@ -501,12 +501,56 @@ public class TicketService {
         if (request.formData() != null && !request.formData().isEmpty()) {
             for (Map.Entry<String, Object> entry : request.formData().entrySet()) {
                 if (entry.getValue() != null && !entry.getValue().toString().isBlank()) {
-                    content.append("**").append(entry.getKey()).append(":** ").append(entry.getValue()).append("\n\n");
+                    String formattedKey = formatFormDataKey(entry.getKey());
+                    content.append("**").append(formattedKey).append(":** ").append(entry.getValue()).append("\n\n");
                 }
             }
         }
 
         return content.toString().trim();
+    }
+
+    /**
+     * Formats a form data key into a human-readable title.
+     * Converts snake_case or camelCase to Title Case with spaces.
+     * Example: "contact_email" -> "Contact Email", "bugDescription" -> "Bug Description"
+     */
+    private String formatFormDataKey(String key) {
+        if (key == null || key.isBlank()) {
+            return key;
+        }
+
+        // Replace underscores with spaces
+        String formatted = key.replace("_", " ");
+
+        // Insert spaces before uppercase letters (for camelCase)
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < formatted.length(); i++) {
+            char c = formatted.charAt(i);
+            if (i > 0 && Character.isUpperCase(c) && !Character.isWhitespace(formatted.charAt(i - 1))) {
+                result.append(' ');
+            }
+            result.append(c);
+        }
+        formatted = result.toString();
+
+        // Capitalize first letter of each word (Title Case)
+        String[] words = formatted.split("\\s+");
+        StringBuilder titleCase = new StringBuilder();
+        for (int i = 0; i < words.length; i++) {
+            String word = words[i];
+            if (!word.isEmpty()) {
+                titleCase.append(Character.toUpperCase(word.charAt(0)));
+                if (word.length() > 1) {
+                    titleCase.append(word.substring(1).toLowerCase());
+                }
+                if (i < words.length - 1) {
+                    titleCase.append(" ");
+                }
+            }
+        }
+
+        return titleCase.toString();
     }
 
     private TicketListItemResponse toListItemResponse(Ticket ticket) {
