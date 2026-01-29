@@ -10,7 +10,7 @@ public record AddReplyRequest(
         String type,
         boolean staff,
         String avatar,
-        List<String> attachments,
+        List<Object> attachments,
         String action,
         String creatorIdentifier
 ) {

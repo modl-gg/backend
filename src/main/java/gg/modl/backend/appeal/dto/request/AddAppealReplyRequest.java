@@ -11,6 +11,6 @@ public record AddAppealReplyRequest(
         boolean staff,
         String action,
         String avatar,
-        List<String> attachments
+        List<Object> attachments
 ) {
 }

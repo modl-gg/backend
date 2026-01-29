@@ -13,7 +13,7 @@ public record CreateAppealRequest(
         String reason,
         String evidence,
         Map<String, Object> additionalData,
-        List<String> attachments,
+        List<Object> attachments,
         Map<String, String> fieldLabels
 ) {
 }

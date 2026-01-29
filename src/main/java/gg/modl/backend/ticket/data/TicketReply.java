@@ -21,6 +21,6 @@ public class TicketReply {
     private Date created;
     private boolean staff;
     private String action;
-    private List<String> attachments;
+    private List<Object> attachments;
     private String creatorIdentifier;
 }
