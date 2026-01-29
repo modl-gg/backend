@@ -12,13 +12,17 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_MEDIA)
@@ -28,41 +32,15 @@ public class PanelMediaController {
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
 
-    private static final long EVIDENCE_SIZE_LIMIT = 100L * 1024 * 1024;
-    private static final long TICKETS_SIZE_LIMIT = 10L * 1024 * 1024;
-    private static final long APPEALS_SIZE_LIMIT = 10L * 1024 * 1024;
-    private static final long ARTICLES_SIZE_LIMIT = 50L * 1024 * 1024;
-    private static final long SERVER_ICONS_SIZE_LIMIT = 5L * 1024 * 1024;
-
-    private static final List<String> IMAGE_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp");
-    private static final List<String> DOCUMENT_TYPES = List.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf");
-    private static final List<String> ICON_TYPES = List.of("image/png", "image/jpeg", "image/webp");
-
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> getMediaConfig() {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
 
-        Map<String, Object> supportedTypes = Map.of(
-                "evidence", isConfigured ? DOCUMENT_TYPES : List.of(),
-                "tickets", isConfigured ? DOCUMENT_TYPES : List.of(),
-                "appeals", isConfigured ? DOCUMENT_TYPES : List.of(),
-                "articles", isConfigured ? IMAGE_TYPES : List.of(),
-                "server-icons", isConfigured ? ICON_TYPES : List.of()
-        );
-
-        Map<String, Object> fileSizeLimits = Map.of(
-                "evidence", isConfigured ? EVIDENCE_SIZE_LIMIT : 0L,
-                "tickets", isConfigured ? TICKETS_SIZE_LIMIT : 0L,
-                "appeals", isConfigured ? APPEALS_SIZE_LIMIT : 0L,
-                "articles", isConfigured ? ARTICLES_SIZE_LIMIT : 0L,
-                "server-icons", isConfigured ? SERVER_ICONS_SIZE_LIMIT : 0L
-        );
-
         Map<String, Object> response = new HashMap<>();
         response.put("backblazeConfigured", isConfigured);
-        response.put("supportedTypes", supportedTypes);
-        response.put("fileSizeLimits", fileSizeLimits);
+        response.put("supportedTypes", validationService.getAllSupportedTypes());
+        response.put("fileSizeLimits", validationService.getAllSizeLimits());
         response.put("cdnDomain", cdnDomain != null && !cdnDomain.isBlank() ? cdnDomain : null);
 
         return ResponseEntity.ok(response);

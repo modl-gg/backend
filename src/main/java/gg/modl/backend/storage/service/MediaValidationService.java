@@ -1,18 +1,15 @@
 package gg.modl.backend.storage.service;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
 public class MediaValidationService {
-
-    private static final long MAX_FILE_SIZE_BYTES = 100L * 1024 * 1024;
+    private static final long DEFAULT_MAX_FILE_SIZE = 10L * 1024 * 1024; // 10 MB
 
     private static final Set<String> DANGEROUS_EXTENSIONS = Set.of(
             ".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".pif",
@@ -21,54 +18,23 @@ public class MediaValidationService {
     );
 
     private static final Map<String, Set<String>> ALLOWED_TYPES = Map.of(
-            "evidence", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
-            "ticket", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
-            "appeal", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "video/mp4", "video/webm", "application/pdf"),
-            "article", Set.of("image/png", "image/jpeg", "image/gif", "image/webp"),
-            "server-icon", Set.of("image/png", "image/jpeg", "image/webp")
+            "evidence", Set.of("image/png", "image/jpeg", "image/gif", "image/apng", "image/webp", "video/mp4", "video/webm", "video/quicktime",
+            "video/x-matroska", "application/pdf", "text/plain", "text/markdown"),
+            "ticket", Set.of("image/png", "image/jpeg", "image/gif", "image/apng", "image/webp", "video/mp4", "video/webm", "video/quicktime",
+            "video/x-matroska", "application/pdf", "text/plain", "text/markdown"),
+            "appeal", Set.of("image/png", "image/jpeg", "image/gif", "image/apng", "image/webp", "video/mp4", "video/webm", "video/quicktime",
+            "video/x-matroska", "application/pdf", "text/plain", "text/markdown"),
+            "article", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "image/apng", "text/plain", "text/markdown"),
+            "server-icon", Set.of("image/png", "image/jpeg", "image/webp", "image/gif", "image/apng")
     );
 
     private static final Map<String, Long> MAX_SIZES = Map.of(
-            "evidence", 100L * 1024 * 1024,
-            "ticket", 10L * 1024 * 1024,
-            "appeal", 10L * 1024 * 1024,
-            "article", 50L * 1024 * 1024,
-            "server-icon", 5L * 1024 * 1024
+            "evidence", 100L * 1024 * 1024, // 100 mb
+            "ticket", 100L * 1024 * 1024, // 100 mb
+            "appeal", 50L * 1024 * 1024, // 50 mb
+            "article", 50L * 1024 * 1024, // 50 mb
+            "server-icon", 10L * 1024 * 1024 //  10 mb
     );
-
-    public ValidationResult validate(MultipartFile file, String uploadType) {
-        if (file == null || file.isEmpty()) {
-            return new ValidationResult(false, "No file provided");
-        }
-
-        String filename = file.getOriginalFilename();
-        if (filename != null) {
-            String lowerFilename = filename.toLowerCase();
-            for (String ext : DANGEROUS_EXTENSIONS) {
-                if (lowerFilename.endsWith(ext)) {
-                    log.warn("Blocked upload of potentially dangerous file: {}", filename);
-                    return new ValidationResult(false, "File type not allowed");
-                }
-            }
-        }
-
-        Set<String> allowedTypes = ALLOWED_TYPES.getOrDefault(uploadType, Set.of());
-        if (allowedTypes.isEmpty()) {
-            return new ValidationResult(false, "Invalid upload type");
-        }
-
-        String contentType = file.getContentType();
-        if (contentType == null || !allowedTypes.contains(contentType)) {
-            return new ValidationResult(false, "File type not allowed for " + uploadType + ". Allowed: " + allowedTypes);
-        }
-
-        long maxSize = MAX_SIZES.getOrDefault(uploadType, MAX_FILE_SIZE_BYTES);
-        if (file.getSize() > maxSize) {
-            return new ValidationResult(false, "File exceeds maximum size of " + formatBytes(maxSize));
-        }
-
-        return new ValidationResult(true, null);
-    }
 
     private String formatBytes(long bytes) {
         if (bytes < 1024 * 1024) {
@@ -95,7 +61,7 @@ public class MediaValidationService {
             }
         }
 
-        Set<String> allowedTypes = ALLOWED_TYPES.getOrDefault(uploadType, Set.of());
+        Set<String> allowedTypes = getAllowedTypes(uploadType);
         if (allowedTypes.isEmpty()) {
             return new ValidationResult(false, "Invalid upload type");
         }
@@ -104,7 +70,7 @@ public class MediaValidationService {
             return new ValidationResult(false, "File type not allowed for " + uploadType + ". Allowed: " + allowedTypes);
         }
 
-        long maxSize = MAX_SIZES.getOrDefault(uploadType, MAX_FILE_SIZE_BYTES);
+        long maxSize = getMaxSize(uploadType);
         if (fileSize > maxSize) {
             return new ValidationResult(false, "File exceeds maximum size of " + formatBytes(maxSize));
         }
@@ -121,7 +87,27 @@ public class MediaValidationService {
     }
 
     public long getMaxSize(String uploadType) {
-        return MAX_SIZES.getOrDefault(uploadType, MAX_FILE_SIZE_BYTES);
+        return MAX_SIZES.getOrDefault(uploadType, DEFAULT_MAX_FILE_SIZE);
+    }
+
+    public Map<String, Object> getAllSupportedTypes() {
+        return Map.of(
+                "evidence", List.copyOf(ALLOWED_TYPES.get("evidence")),
+                "tickets", List.copyOf(ALLOWED_TYPES.get("ticket")),
+                "appeals", List.copyOf(ALLOWED_TYPES.get("appeal")),
+                "articles", List.copyOf(ALLOWED_TYPES.get("article")),
+                "server-icons", List.copyOf(ALLOWED_TYPES.get("server-icon"))
+        );
+    }
+
+    public Map<String, Object> getAllSizeLimits() {
+        return Map.of(
+                "evidence", MAX_SIZES.get("evidence"),
+                "tickets", MAX_SIZES.get("ticket"),
+                "appeals", MAX_SIZES.get("appeal"),
+                "articles", MAX_SIZES.get("article"),
+                "server-icons", MAX_SIZES.get("server-icon")
+        );
     }
 
     public record ValidationResult(boolean valid, String error) {}

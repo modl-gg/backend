@@ -137,6 +137,7 @@ public class S3StorageService {
                 .bucket(bucketName)
                 .key(key)
                 .contentType(contentType)
+                .contentLength(fileSize)
                 .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
