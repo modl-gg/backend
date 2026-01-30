@@ -2,8 +2,6 @@ package gg.modl.backend.settings.data;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonSetter;
-import com.fasterxml.jackson.annotation.Nulls;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,13 +17,11 @@ public class PunishmentType {
     private Integer id;
     private String name;
     private String category;
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean customizable;
     private Integer ordinal;
 
     private PunishmentDurations durations;
 
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean singleSeverityPunishment;
     private OffenseLevelDurations singleSeverityDurations;
     private Integer singleSeverityPoints;
@@ -36,16 +32,11 @@ public class PunishmentType {
     private String staffDescription;
     private String playerDescription;
 
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean canBeAltBlocking;
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean canBeStatWiping;
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean appealable;
 
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean permanentUntilSkinChange;
-    @JsonSetter(nulls = Nulls.SKIP)
     private boolean permanentUntilUsernameChange;
 
     public boolean isSocial() {
