@@ -112,6 +112,29 @@ public class PunishmentTypeService {
         return true;
     }
 
+    public PunishmentType createPunishmentType(@NotNull Server server, @NotNull PunishmentType newType) {
+        List<PunishmentType> types = new java.util.ArrayList<>(getPunishmentTypes(server));
+
+        int maxOrdinal = types.stream()
+                .mapToInt(PunishmentType::getOrdinal)
+                .max()
+                .orElse(5);
+
+        int maxId = types.stream()
+                .mapToInt(PunishmentType::getId)
+                .max()
+                .orElse(5);
+
+        newType.setOrdinal(maxOrdinal + 1);
+        newType.setId(maxId + 1);
+        newType.setCustomizable(true);
+
+        types.add(newType);
+        savePunishmentTypes(server, types);
+
+        return newType;
+    }
+
     public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
         List<PunishmentType> defaultTypes = DefaultPunishmentTypes.getAll();
         return savePunishmentTypes(server, defaultTypes);

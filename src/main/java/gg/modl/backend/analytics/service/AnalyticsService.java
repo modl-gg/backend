@@ -8,7 +8,9 @@ import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +29,7 @@ import java.util.*;
 @Slf4j
 public class AnalyticsService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final PunishmentTypeService punishmentTypeService;
 
     public OverviewResponse getOverview(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -79,8 +82,28 @@ public class AnalyticsService {
                 .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
                 .toList();
 
+        // Generate daily ticket counts
+        Map<String, Integer> dailyCountMap = new TreeMap<>();
+        java.time.format.DateTimeFormatter dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd");
+
+        Query ticketQuery = Query.query(Criteria.where("created").gte(startDate).and("status").ne("Unfinished"));
+        List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
+
+        for (Ticket ticket : tickets) {
+            if (ticket.getCreated() != null) {
+                String dateKey = java.time.Instant.ofEpochMilli(ticket.getCreated().getTime())
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                        .format(dateFormatter);
+                dailyCountMap.merge(dateKey, 1, Integer::sum);
+            }
+        }
+
+        List<TicketAnalyticsResponse.DailyTicket> dailyTickets = dailyCountMap.entrySet().stream()
+                .map(e -> new TicketAnalyticsResponse.DailyTicket(e.getKey(), e.getValue()))
+                .toList();
+
         List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
-        List<TicketAnalyticsResponse.DailyTicket> dailyTickets = Collections.emptyList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
     }
@@ -89,10 +112,59 @@ public class AnalyticsService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        List<PunishmentAnalyticsResponse.TypeCount> byType = Collections.emptyList();
+        // Query players with recent punishments
+        Query query = Query.query(Criteria.where("punishments.issued").gte(startDate));
+        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+
+        // Aggregate punishment data
+        Map<String, Integer> typeCountMap = new HashMap<>();
+        Map<String, Integer> staffCountMap = new HashMap<>();
+        Map<String, Integer> dailyCountMap = new TreeMap<>();
+
+        java.time.format.DateTimeFormatter dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd");
+
+        for (Player player : players) {
+            if (player.getPunishments() == null) continue;
+
+            for (Punishment p : player.getPunishments()) {
+                if (p.getIssued() == null || p.getIssued().before(startDate)) continue;
+
+                // Count by type
+                String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
+                typeCountMap.merge(typeName, 1, Integer::sum);
+
+                // Count by staff
+                String issuer = p.getIssuerName() != null ? p.getIssuerName() : "Unknown";
+                staffCountMap.merge(issuer, 1, Integer::sum);
+
+                // Count by day
+                String dateKey = java.time.Instant.ofEpochMilli(p.getIssued().getTime())
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .toLocalDate()
+                        .format(dateFormatter);
+                dailyCountMap.merge(dateKey, 1, Integer::sum);
+            }
+        }
+
+        // Convert to response format
+        List<PunishmentAnalyticsResponse.TypeCount> byType = typeCountMap.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .map(e -> new PunishmentAnalyticsResponse.TypeCount(e.getKey(), e.getValue()))
+                .toList();
+
+        List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet().stream()
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .limit(20)
+                .map(e -> new PunishmentAnalyticsResponse.StaffPunishment(e.getKey(), e.getValue()))
+                .toList();
+
+        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyCountMap.entrySet().stream()
+                .map(e -> new PunishmentAnalyticsResponse.DailyPunishment(e.getKey(), e.getValue()))
+                .toList();
+
+        // For severity, we would need to extract it from the punishment data
+        // For now, return an empty list as severity info may not be stored in the current schema
         List<PunishmentAnalyticsResponse.SeverityCount> bySeverity = Collections.emptyList();
-        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = Collections.emptyList();
-        List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = Collections.emptyList();
 
         return new PunishmentAnalyticsResponse(byType, bySeverity, dailyPunishments, byStaff);
     }

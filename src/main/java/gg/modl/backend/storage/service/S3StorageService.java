@@ -257,7 +257,7 @@ public class S3StorageService {
 
     private String categorizeFile(String key) {
         if (key.contains("/evidence/")) return "evidence";
-        if (key.contains("/tickets/")) return "ticket";
+        if (key.contains("/ticket/")) return "ticket";
         if (key.contains("/logs/")) return "logs";
         if (key.contains("/backup/")) return "backup";
         return "other";

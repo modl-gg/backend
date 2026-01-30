@@ -65,6 +65,16 @@ public class PanelSettingsController {
         }
     }
 
+    @PostMapping("/punishment-types")
+    public ResponseEntity<PunishmentType> createPunishmentType(
+            @RequestBody @Valid PunishmentType newType,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        PunishmentType created = punishmentTypeService.createPunishmentType(server, newType);
+        return ResponseEntity.ok(created);
+    }
+
     @PostMapping("/punishment-types/reset")
     public ResponseEntity<List<PunishmentType>> resetPunishmentTypes(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);

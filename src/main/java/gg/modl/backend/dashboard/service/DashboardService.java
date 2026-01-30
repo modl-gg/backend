@@ -9,6 +9,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -27,6 +28,7 @@ import java.util.*;
 @Slf4j
 public class DashboardService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final PunishmentTypeService punishmentTypeService;
 
     public DashboardMetricsResponse getMetrics(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -115,7 +117,7 @@ public class DashboardService {
                 if (p.getIssued() != null && p.getIssued().after(cutoff)) {
                     String reason = "";
                     boolean active = false;
-                    String typeName = "Type " + p.getType_ordinal();
+                    String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
 
                     if (p.getData() != null) {
                         Object reasonObj = p.getData().get("reason");
@@ -245,13 +247,14 @@ public class DashboardService {
                         if (staffUsername.equals(punishment.getIssuerName())
                                 && punishment.getIssued() != null
                                 && punishment.getIssued().after(cutoffDate)) {
+                            String punishmentTypeName = punishmentTypeService.getPunishmentTypeName(server, punishment.getType_ordinal());
                             activities.add(new ActivityItemResponse(
                                     "punishment-" + punishment.getId(),
                                     "new_punishment",
                                     "red",
-                                    "Applied punishment to " + username,
+                                    "Applied " + punishmentTypeName + " to " + username,
                                     punishment.getIssued(),
-                                    "Applied punishment (Type: " + punishment.getType_ordinal() + ")",
+                                    "Applied " + punishmentTypeName + " punishment",
                                     List.of(new ActivityItemResponse.ActivityAction("View Player", "/panel/players/" + player.getMinecraftUuid(), true))
                             ));
                         }
