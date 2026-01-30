@@ -17,12 +17,12 @@ public class PunishmentType {
     private Integer id;
     private String name;
     private String category;
-    private boolean customizable;
+    private Boolean customizable; // no primitive booleans to prevent null errors during deserialization
     private Integer ordinal;
 
     private PunishmentDurations durations;
 
-    private boolean singleSeverityPunishment;
+    private Boolean singleSeverityPunishment;
     private OffenseLevelDurations singleSeverityDurations;
     private Integer singleSeverityPoints;
 
@@ -32,12 +32,12 @@ public class PunishmentType {
     private String staffDescription;
     private String playerDescription;
 
-    private boolean canBeAltBlocking;
-    private boolean canBeStatWiping;
-    private boolean appealable;
+    private Boolean canBeAltBlocking;
+    private Boolean canBeStatWiping;
+    private Boolean appealable;
 
-    private boolean permanentUntilSkinChange;
-    private boolean permanentUntilUsernameChange;
+    private Boolean permanentUntilSkinChange;
+    private Boolean permanentUntilUsernameChange;
 
     public boolean isSocial() {
         return "Social".equalsIgnoreCase(category);
@@ -96,5 +96,33 @@ public class PunishmentType {
             return durations.getDuration(severity, offenseLevel);
         }
         return null;
+    }
+
+    public boolean isCustomizable() {
+        return customizable != null && customizable;
+    }
+
+    public boolean isSingleSeverityPunishment() {
+        return singleSeverityPunishment != null && singleSeverityPunishment;
+    }
+
+    public boolean isCanBeAltBlocking() {
+        return canBeAltBlocking != null && canBeAltBlocking;
+    }
+
+    public boolean isCanBeStatWiping() {
+        return canBeStatWiping != null && canBeStatWiping;
+    }
+
+    public boolean isAppealable() {
+        return appealable != null && appealable;
+    }
+
+    public boolean isPermanentUntilSkinChange() {
+        return permanentUntilSkinChange != null && permanentUntilSkinChange;
+    }
+
+    public boolean isPermanentUntilUsernameChange() {
+        return permanentUntilUsernameChange != null && permanentUntilUsernameChange;
     }
 }
