@@ -94,7 +94,68 @@ public class DashboardService {
     }
 
     public List<RecentPunishmentResponse> getRecentPunishments(Server server, int limit) {
-        return Collections.emptyList();
+        MongoTemplate template = getTemplate(server);
+
+        long cutoffMs = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000);
+        Date cutoff = new Date(cutoffMs);
+
+        Query query = Query.query(Criteria.where("punishments.issued").gte(cutoff))
+                .limit(100);
+
+        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+        List<RecentPunishmentResponse> results = new ArrayList<>();
+
+        for (Player player : players) {
+            if (player.getPunishments() == null) continue;
+
+            String playerName = getPlayerUsername(player);
+            String playerUuid = player.getMinecraftUuid() != null ? player.getMinecraftUuid().toString() : "";
+
+            for (Punishment p : player.getPunishments()) {
+                if (p.getIssued() != null && p.getIssued().after(cutoff)) {
+                    String reason = "";
+                    boolean active = false;
+                    String typeName = "Type " + p.getType_ordinal();
+
+                    if (p.getData() != null) {
+                        Object reasonObj = p.getData().get("reason");
+                        if (reasonObj != null) {
+                            reason = reasonObj.toString();
+                        }
+                        Object activeObj = p.getData().get("active");
+                        if (activeObj instanceof Boolean) {
+                            active = (Boolean) activeObj;
+                        }
+                    }
+
+                    results.add(new RecentPunishmentResponse(
+                            p.getId(),
+                            playerName,
+                            playerUuid,
+                            typeName,
+                            reason,
+                            p.getIssuerName(),
+                            p.getIssued(),
+                            active
+                    ));
+                }
+            }
+        }
+
+        results.sort((a, b) -> b.issued().compareTo(a.issued()));
+
+        if (results.size() > limit) {
+            return results.subList(0, limit);
+        }
+
+        return results;
+    }
+
+    private String getPlayerUsername(Player player) {
+        if (player.getUsernames() != null && !player.getUsernames().isEmpty()) {
+            return player.getUsernames().get(player.getUsernames().size() - 1).username();
+        }
+        return "Unknown";
     }
 
     private static final int MAX_ACTIVITY_LIMIT = 100;

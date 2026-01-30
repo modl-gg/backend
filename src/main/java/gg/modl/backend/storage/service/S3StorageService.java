@@ -213,8 +213,19 @@ public class S3StorageService {
     }
 
     public long calculateStorageUsed(Server server) {
+        return calculateStorageByType(server).values().stream().mapToLong(Long::longValue).sum();
+    }
+
+    public Map<String, Long> calculateStorageByType(Server server) {
+        Map<String, Long> byType = new HashMap<>();
+        byType.put("ticket", 0L);
+        byType.put("evidence", 0L);
+        byType.put("logs", 0L);
+        byType.put("backup", 0L);
+        byType.put("other", 0L);
+
         if (s3Client == null) {
-            return 0;
+            return byType;
         }
 
         String prefix = server.getDatabaseName() + "/";
@@ -224,7 +235,6 @@ public class S3StorageService {
                 .prefix(prefix)
                 .build();
 
-        long totalSize = 0;
         ListObjectsV2Response response;
         String continuationToken = null;
 
@@ -234,11 +244,23 @@ public class S3StorageService {
             }
 
             response = s3Client.listObjectsV2(request);
-            totalSize += response.contents().stream().mapToLong(S3Object::size).sum();
+            for (S3Object obj : response.contents()) {
+                String key = obj.key();
+                String type = categorizeFile(key);
+                byType.merge(type, obj.size(), Long::sum);
+            }
             continuationToken = response.nextContinuationToken();
         } while (response.isTruncated());
 
-        return totalSize;
+        return byType;
+    }
+
+    private String categorizeFile(String key) {
+        if (key.contains("/evidence/")) return "evidence";
+        if (key.contains("/tickets/")) return "ticket";
+        if (key.contains("/logs/")) return "logs";
+        if (key.contains("/backup/")) return "backup";
+        return "other";
     }
 
     public int bulkDelete(List<String> keys) {

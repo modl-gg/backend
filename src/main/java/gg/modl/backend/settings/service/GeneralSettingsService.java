@@ -13,6 +13,9 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -34,6 +37,9 @@ public class GeneralSettingsService {
                     .discordWebhookUrl("")
                     .homepageIconUrl("")
                     .panelIconUrl("")
+                    .bugReportTags(new ArrayList<>())
+                    .playerReportTags(new ArrayList<>())
+                    .appealTags(new ArrayList<>())
                     .build();
         }
 
@@ -44,6 +50,9 @@ public class GeneralSettingsService {
                 .discordWebhookUrl(getStringValue(data, "discordWebhookUrl"))
                 .homepageIconUrl(getStringValue(data, "homepageIconUrl"))
                 .panelIconUrl(getStringValue(data, "panelIconUrl"))
+                .bugReportTags(getStringListValue(data, "bugReportTags"))
+                .playerReportTags(getStringListValue(data, "playerReportTags"))
+                .appealTags(getStringListValue(data, "appealTags"))
                 .build();
     }
 
@@ -51,12 +60,14 @@ public class GeneralSettingsService {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
         Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_GENERAL));
 
-        Map<String, Object> data = Map.of(
-                "serverDisplayName", newSettings.getServerDisplayName() != null ? newSettings.getServerDisplayName() : "",
-                "discordWebhookUrl", newSettings.getDiscordWebhookUrl() != null ? newSettings.getDiscordWebhookUrl() : "",
-                "homepageIconUrl", newSettings.getHomepageIconUrl() != null ? newSettings.getHomepageIconUrl() : "",
-                "panelIconUrl", newSettings.getPanelIconUrl() != null ? newSettings.getPanelIconUrl() : ""
-        );
+        Map<String, Object> data = new HashMap<>();
+        data.put("serverDisplayName", newSettings.getServerDisplayName() != null ? newSettings.getServerDisplayName() : "");
+        data.put("discordWebhookUrl", newSettings.getDiscordWebhookUrl() != null ? newSettings.getDiscordWebhookUrl() : "");
+        data.put("homepageIconUrl", newSettings.getHomepageIconUrl() != null ? newSettings.getHomepageIconUrl() : "");
+        data.put("panelIconUrl", newSettings.getPanelIconUrl() != null ? newSettings.getPanelIconUrl() : "");
+        data.put("bugReportTags", newSettings.getBugReportTags() != null ? newSettings.getBugReportTags() : new ArrayList<>());
+        data.put("playerReportTags", newSettings.getPlayerReportTags() != null ? newSettings.getPlayerReportTags() : new ArrayList<>());
+        data.put("appealTags", newSettings.getAppealTags() != null ? newSettings.getAppealTags() : new ArrayList<>());
 
         Update update = new Update()
                 .set("type", SETTINGS_TYPE_GENERAL)
@@ -70,5 +81,14 @@ public class GeneralSettingsService {
     private String getStringValue(Map<String, Object> data, String key) {
         Object value = data.get(key);
         return value instanceof String ? (String) value : "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> getStringListValue(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        if (value instanceof List) {
+            return new ArrayList<>((List<String>) value);
+        }
+        return new ArrayList<>();
     }
 }

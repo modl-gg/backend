@@ -30,13 +30,13 @@ public class PanelStorageController {
     }
 
     @GetMapping("/files")
-    public ResponseEntity<List<StorageFileResponse>> getFiles(
+    public ResponseEntity<Map<String, Object>> getFiles(
             @RequestParam(required = false) String prefix,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<StorageFileResponse> files = s3StorageService.listFiles(server, prefix);
-        return ResponseEntity.ok(files);
+        return ResponseEntity.ok(Map.of("files", files));
     }
 
     @PostMapping("/bulk-delete")

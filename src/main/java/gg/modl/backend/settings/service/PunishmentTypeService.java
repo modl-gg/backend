@@ -94,6 +94,24 @@ public class PunishmentTypeService {
         return updatedType;
     }
 
+    public boolean deletePunishmentType(@NotNull Server server, int ordinal) {
+        if (ordinal < 6) {
+            throw new IllegalArgumentException("Cannot delete core administrative punishment types");
+        }
+
+        List<PunishmentType> types = getPunishmentTypes(server);
+        List<PunishmentType> filtered = types.stream()
+                .filter(pt -> pt.getOrdinal() != ordinal)
+                .toList();
+
+        if (filtered.size() == types.size()) {
+            return false;
+        }
+
+        savePunishmentTypes(server, new java.util.ArrayList<>(filtered));
+        return true;
+    }
+
     public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
         List<PunishmentType> defaultTypes = DefaultPunishmentTypes.getAll();
         return savePunishmentTypes(server, defaultTypes);

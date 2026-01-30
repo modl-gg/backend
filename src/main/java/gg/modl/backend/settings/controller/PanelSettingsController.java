@@ -72,6 +72,29 @@ public class PanelSettingsController {
         return ResponseEntity.ok(types);
     }
 
+    @DeleteMapping("/punishment-types/{ordinal}")
+    public ResponseEntity<?> deletePunishmentType(
+            @PathVariable int ordinal,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        if (ordinal < 6) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete core administrative punishment types"));
+        }
+
+        try {
+            boolean deleted = punishmentTypeService.deletePunishmentType(server, ordinal);
+            if (deleted) {
+                return ResponseEntity.ok(Map.of("message", "Punishment type deleted successfully"));
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/general")
     public ResponseEntity<GeneralSettings> getGeneralSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);

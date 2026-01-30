@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -14,4 +16,7 @@ public class GeneralSettings {
     private String discordWebhookUrl;
     private String homepageIconUrl;
     private String panelIconUrl;
+    private List<String> bugReportTags;
+    private List<String> playerReportTags;
+    private List<String> appealTags;
 }
