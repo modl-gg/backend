@@ -14,11 +14,11 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PunishmentType {
     @JsonAlias("_id")
-    private int id;
+    private Integer id;
     private String name;
     private String category;
     private boolean customizable;
-    private int ordinal;
+    private Integer ordinal;
 
     private PunishmentDurations durations;
 
