@@ -24,12 +24,18 @@ public class CustomErrorController implements ErrorController {
         if (statusCode == HttpStatus.NOT_FOUND.value()) {
             error = "Not Found";
             errorMessage = "The requested resource was not found.";
+        } else if (statusCode == HttpStatus.FORBIDDEN.value()) {
+            error = "Forbidden";
+            errorMessage = "You do not have permission to access this resource.";
+        } else if (statusCode == HttpStatus.UNAUTHORIZED.value()) {
+            error = "Unauthorized";
+            errorMessage = "Authentication is required to access this resource.";
         } else if (statusCode == HttpStatus.INTERNAL_SERVER_ERROR.value()) {
             error = "Internal Server Error";
             errorMessage = "An internal server error occurred.";
         } else {
             error = "Error";
-            errorMessage = "Your request is missing required data.";
+            errorMessage = "Your request could not be processed.";
         }
         
         ErrorResponse errorResponse = new ErrorResponse(

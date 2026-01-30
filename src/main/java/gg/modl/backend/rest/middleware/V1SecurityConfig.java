@@ -1,5 +1,6 @@
 package gg.modl.backend.rest.middleware;
 
+import gg.modl.backend.admin.filter.AdminAuthFilter;
 import gg.modl.backend.auth.filter.SessionAuthenticationFilter;
 import gg.modl.backend.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.rest.RESTMappingV1;
@@ -21,6 +22,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class V1SecurityConfig {
     private final SessionAuthenticationFilter sessionAuthenticationFilter;
     private final ApiKeyFilter apiKeyFilter;
+    private final AdminAuthFilter adminAuthFilter;
     private final DynamicCorsConfigurationSource dynamicCorsConfigurationSource;
 
     @Bean
@@ -46,6 +48,7 @@ public class V1SecurityConfig {
                 )
                 .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .build();

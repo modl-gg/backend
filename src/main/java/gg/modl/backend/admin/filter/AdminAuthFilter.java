@@ -1,20 +1,23 @@
 package gg.modl.backend.admin.filter;
 
 import gg.modl.backend.admin.controller.AdminAuthController;
+import gg.modl.backend.rest.RESTSecurityRole;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.annotation.Order;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
 @Component
-@Order(2)
 @RequiredArgsConstructor
 public class AdminAuthFilter extends OncePerRequestFilter {
     public static final String ADMIN_SESSION_ATTR = "adminSession";
@@ -27,29 +30,28 @@ public class AdminAuthFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // Only filter /v1/admin/* paths
-        if (!path.startsWith("/v1/admin/")) {
-            filterChain.doFilter(request, response);
-            return;
+        // Only process /v1/admin/* paths (excluding auth endpoints)
+        if (path.startsWith("/v1/admin/") && !path.startsWith("/v1/admin/auth/")) {
+            Optional<AdminAuthController.AdminSession> sessionOpt = adminAuthController.getAuthenticatedSession(request);
+            if (sessionOpt.isPresent()) {
+                AdminAuthController.AdminSession session = sessionOpt.get();
+                request.setAttribute(ADMIN_SESSION_ATTR, session);
+
+                List<SimpleGrantedAuthority> authorities = List.of(
+                        new SimpleGrantedAuthority(RESTSecurityRole.ADMIN)
+                );
+
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                session.email(),
+                                null,
+                                authorities
+                        );
+                authentication.setDetails(session);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            }
         }
 
-        // Allow auth endpoints without authentication
-        if (path.startsWith("/v1/admin/auth/")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        // Check authentication for all other admin endpoints
-        Optional<AdminAuthController.AdminSession> sessionOpt = adminAuthController.getAuthenticatedSession(request);
-        if (sessionOpt.isEmpty()) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"error\":\"Not authenticated\"}");
-            return;
-        }
-
-        // Store session in request for use by controllers
-        request.setAttribute(ADMIN_SESSION_ATTR, sessionOpt.get());
         filterChain.doFilter(request, response);
     }
 }
