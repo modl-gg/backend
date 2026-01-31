@@ -3,6 +3,8 @@ package gg.modl.backend.settings.service;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.domain.external.CloudflareClient;
+import gg.modl.backend.server.ServerField;
+import gg.modl.backend.server.data.CustomDomainStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
@@ -15,6 +17,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,6 +39,11 @@ public class DomainSettingsService {
         boolean accessingFromCustomDomain = false;
 
         if (settings == null || settings.getData() == null) {
+            // Check if Server document has custom domain data that needs to be migrated
+            if (server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isEmpty()) {
+                return migrateAndReturnDomainSettings(server, template, query, requestHost, modlSubdomainUrl);
+            }
+
             return DomainSettings.builder()
                     .customDomain(null)
                     .status(null)
@@ -47,6 +55,12 @@ public class DomainSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) settings.getData();
         String customDomain = getStringValue(data, "customDomain");
+
+        // If settings collection has no domain but Server document does, migrate it
+        if ((customDomain == null || customDomain.isEmpty()) &&
+            server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isEmpty()) {
+            return migrateAndReturnDomainSettings(server, template, query, requestHost, modlSubdomainUrl);
+        }
 
         if (customDomain != null && !customDomain.isEmpty() && requestHost != null) {
             accessingFromCustomDomain = requestHost.equalsIgnoreCase(customDomain);
@@ -76,9 +90,74 @@ public class DomainSettingsService {
                 .build();
     }
 
+    private DomainSettings migrateAndReturnDomainSettings(Server server, MongoTemplate template, Query query,
+                                                           String requestHost, String modlSubdomainUrl) {
+        String customDomain = server.getCustomDomainOverride();
+        CustomDomainStatus serverStatus = server.getCustomDomainStatus();
+        String cloudflareId = server.getCustomDomainCloudflareId();
+        String error = server.getCustomDomainError();
+        Date lastChecked = server.getCustomDomainLastChecked();
+
+        String statusString = serverStatus != null ? serverStatus.name() : "pending";
+        boolean cnameConfigured = "active".equals(statusString);
+
+        DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
+                .domain(customDomain)
+                .status(statusString)
+                .cnameConfigured(cnameConfigured)
+                .sslStatus(cnameConfigured ? "active" : "pending")
+                .lastChecked(lastChecked != null ? lastChecked.toInstant().toString() : Instant.now().toString())
+                .error(error)
+                .build();
+
+        Map<String, Object> statusMap = new HashMap<>();
+        statusMap.put("domain", status.getDomain());
+        statusMap.put("status", status.getStatus());
+        statusMap.put("cnameConfigured", status.isCnameConfigured());
+        statusMap.put("sslStatus", status.getSslStatus());
+        statusMap.put("lastChecked", status.getLastChecked());
+        statusMap.put("error", status.getError());
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("customDomain", customDomain);
+        data.put("status", statusMap);
+        data.put("cloudflareHostnameId", cloudflareId);
+
+        Update update = new Update()
+                .set("type", SETTINGS_TYPE_DOMAIN)
+                .set("data", data);
+
+        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        log.info("Migrated custom domain settings from Server document to settings collection for domain: {}", customDomain);
+
+        boolean accessingFromCustomDomain = requestHost != null && requestHost.equalsIgnoreCase(customDomain);
+
+        return DomainSettings.builder()
+                .customDomain(customDomain)
+                .status(status)
+                .accessingFromCustomDomain(accessingFromCustomDomain)
+                .modlSubdomainUrl(modlSubdomainUrl)
+                .build();
+    }
+
     public DomainSettings configureDomain(Server server, String customDomain) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
+        Query settingsQuery = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
+
+        // Check if the domain is the same as currently configured
+        String currentDomain = server.getCustomDomainOverride();
+        if (currentDomain == null) {
+            Settings existingSettings = template.findOne(settingsQuery, Settings.class, CollectionName.SETTINGS);
+            if (existingSettings != null && existingSettings.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
+                currentDomain = getStringValue(data, "customDomain");
+            }
+        }
+
+        if (currentDomain != null && currentDomain.equalsIgnoreCase(customDomain)) {
+            throw new IllegalArgumentException("This domain is already configured. Please verify the existing configuration or remove it first.");
+        }
 
         CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
         if (existingHostname != null) {
@@ -128,11 +207,14 @@ public class DomainSettingsService {
         data.put("status", statusMap);
         data.put("cloudflareHostnameId", cloudflareHostnameId);
 
-        Update update = new Update()
+        Update settingsUpdate = new Update()
                 .set("type", SETTINGS_TYPE_DOMAIN)
                 .set("data", data);
 
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        template.upsert(settingsQuery, settingsUpdate, Settings.class, CollectionName.SETTINGS);
+
+        // Update the main Server document in the global database
+        updateServerDocument(server.getId(), customDomain, initialStatus, cloudflareHostnameId, error);
 
         return DomainSettings.builder()
                 .customDomain(customDomain)
@@ -140,6 +222,30 @@ public class DomainSettingsService {
                 .accessingFromCustomDomain(false)
                 .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
                 .build();
+    }
+
+    private void updateServerDocument(String serverId, String customDomain, String status,
+                                       String cloudflareHostnameId, String error) {
+        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+        Query serverQuery = new Query(Criteria.where("_id").is(serverId));
+
+        CustomDomainStatus domainStatus = switch (status) {
+            case "active" -> CustomDomainStatus.active;
+            case "error" -> CustomDomainStatus.error;
+            case "verifying" -> CustomDomainStatus.verifying;
+            default -> CustomDomainStatus.pending;
+        };
+
+        Update serverUpdate = new Update()
+                .set(ServerField.CUSTOM_DOMAIN, customDomain)
+                .set(ServerField.CUSTOM_DOMAIN_STATUS, domainStatus.name())
+                .set("customDomain_cloudflareId", cloudflareHostnameId)
+                .set("customDomain_lastChecked", new Date())
+                .set("customDomain_error", error)
+                .set("updatedAt", new Date());
+
+        globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
+        log.info("Updated Server document with custom domain: {} status: {}", customDomain, status);
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
@@ -224,6 +330,9 @@ public class DomainSettingsService {
 
         template.updateFirst(query, update, Settings.class, CollectionName.SETTINGS);
 
+        // Update the main Server document in the global database
+        updateServerDocument(server.getId(), domain, verifiedStatus, cloudflareHostnameId, error);
+
         return DomainSettings.builder()
                 .customDomain(domain)
                 .status(status)
@@ -262,6 +371,25 @@ public class DomainSettingsService {
         }
 
         template.remove(query, Settings.class, CollectionName.SETTINGS);
+
+        // Clear custom domain fields from the main Server document
+        clearServerDomainFields(server.getId());
+    }
+
+    private void clearServerDomainFields(String serverId) {
+        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+        Query serverQuery = new Query(Criteria.where("_id").is(serverId));
+
+        Update serverUpdate = new Update()
+                .unset(ServerField.CUSTOM_DOMAIN)
+                .unset(ServerField.CUSTOM_DOMAIN_STATUS)
+                .unset("customDomain_cloudflareId")
+                .unset("customDomain_lastChecked")
+                .unset("customDomain_error")
+                .set("updatedAt", new Date());
+
+        globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
+        log.info("Cleared custom domain fields from Server document: {}", serverId);
     }
 
     private String mapCloudflareStatus(String cfStatus) {

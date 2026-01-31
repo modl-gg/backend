@@ -53,13 +53,13 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
         }
 
         if (serverDomain == null || serverDomain.isBlank()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "");
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing server domain (X-Server-Domain)");
             return;
         }
 
         Server server = serverService.getServerFromDomain(serverDomain);
         if (server == null) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND, "");
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid server domain: " + serverDomain);
             return;
         }
 
