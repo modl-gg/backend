@@ -130,6 +130,10 @@ Icon
 # Thumbnails
 ._*
 **/.*
+.*
+!.gitignore
+!.git/
+!.github/
 
 # Files that might appear in the root of a volume
 .DocumentRevisions-V100
