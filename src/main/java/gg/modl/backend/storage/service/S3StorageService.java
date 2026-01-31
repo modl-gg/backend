@@ -290,4 +290,37 @@ public class S3StorageService {
     private String extractFileName(String key) {
         return key.substring(key.lastIndexOf("/") + 1);
     }
+
+    /**
+     * Upload a file directly to S3 (for small files like icons).
+     * @param server The server for namespacing
+     * @param uploadType The type of upload (e.g., "icons")
+     * @param fileName The original file name
+     * @param contentType The MIME type
+     * @param data The file bytes
+     * @return The CDN URL of the uploaded file
+     */
+    public String uploadFile(Server server, String uploadType, String fileName, String contentType, byte[] data) {
+        if (s3Client == null) {
+            throw new IllegalStateException("S3 storage is not configured");
+        }
+
+        String key = buildKey(server, uploadType, fileName);
+
+        try {
+            PutObjectRequest putRequest = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .contentType(contentType)
+                    .contentLength((long) data.length)
+                    .build();
+
+            s3Client.putObject(putRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data));
+
+            return getCdnUrl(key);
+        } catch (Exception e) {
+            log.error("Error uploading file: {}", key, e);
+            throw new RuntimeException("Failed to upload file", e);
+        }
+    }
 }
