@@ -48,10 +48,16 @@ public class MinecraftPlayerController {
             HttpServletRequest httpRequest
     ) {
         if (bindingResult.hasErrors()) {
+            String errors = bindingResult.getFieldErrors().stream()
+                    .map(e -> e.getField() + ": '" + e.getRejectedValue() + "' - " + e.getDefaultMessage())
+                    .reduce((a, b) -> a + "; " + b)
+                    .orElse("Unknown validation error");
+            System.err.println("[LOGIN] Validation failed: " + errors);
             return ResponseEntity.badRequest().body(Map.of(
                     "status", 400,
                     "success", false,
-                    "message", PlayerResponseMessage.LOGIN_INVALID_SCHEMA
+                    "message", PlayerResponseMessage.LOGIN_INVALID_SCHEMA,
+                    "errors", errors
             ));
         }
 
