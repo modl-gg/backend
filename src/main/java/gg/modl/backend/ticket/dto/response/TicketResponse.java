@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.dto.response;
 
+import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 
@@ -25,6 +26,7 @@ public record TicketResponse(
         List<String> tags,
         Map<String, Object> formData,
         Map<String, Object> data,
-        List<Map<String, Object>> chatMessages
+        List<Map<String, Object>> chatMessages,
+        AIAnalysisResult aiAnalysis
 ) {
 }

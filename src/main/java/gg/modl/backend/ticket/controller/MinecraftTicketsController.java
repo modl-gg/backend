@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
@@ -30,6 +31,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final AITicketAnalysisService aiTicketAnalysisService;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
@@ -101,6 +103,10 @@ public class MinecraftTicketsController {
         }
 
         template.save(ticket, CollectionName.TICKETS);
+
+        if ("chat".equalsIgnoreCase(request.type()) && chatMessages != null && !chatMessages.isEmpty()) {
+            aiTicketAnalysisService.analyzeTicketAsync(server, ticketId);
+        }
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,

@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.data;
 
+import gg.modl.backend.ai.data.AIAnalysisResult;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -54,4 +55,6 @@ public class Ticket {
 
     private Date created;
     private Date updatedAt;
+
+    private AIAnalysisResult aiAnalysis;
 }

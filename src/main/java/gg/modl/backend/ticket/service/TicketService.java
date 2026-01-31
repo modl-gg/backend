@@ -638,7 +638,8 @@ public class TicketService {
                 ticket.getTags(),
                 ticket.getFormData(),
                 ticket.getData(),
-                ticket.getChatMessages()
+                ticket.getChatMessages(),
+                ticket.getAiAnalysis()
         );
     }
 
