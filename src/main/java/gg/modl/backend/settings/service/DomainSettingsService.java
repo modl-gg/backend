@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.service;
 
+import gg.modl.backend.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.domain.external.CloudflareClient;
@@ -29,6 +30,7 @@ public class DomainSettingsService {
 
     private final DynamicMongoTemplateProvider mongoProvider;
     private final CloudflareClient cloudflareClient;
+    private final DynamicCorsConfigurationSource corsConfigurationSource;
 
     public DomainSettings getDomainSettings(Server server, String requestHost) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
@@ -129,6 +131,9 @@ public class DomainSettingsService {
 
         template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
         log.info("Migrated custom domain settings from Server document to settings collection for domain: {}", customDomain);
+
+        // Invalidate CORS cache to ensure migrated domain is recognized
+        corsConfigurationSource.invalidateCache(customDomain);
 
         boolean accessingFromCustomDomain = requestHost != null && requestHost.equalsIgnoreCase(customDomain);
 
@@ -246,6 +251,10 @@ public class DomainSettingsService {
 
         globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
         log.info("Updated Server document with custom domain: {} status: {}", customDomain, status);
+
+        // Invalidate CORS cache so the new domain status is recognized immediately
+        corsConfigurationSource.invalidateCache(customDomain);
+        log.debug("Invalidated CORS cache for domain: {}", customDomain);
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
@@ -346,11 +355,13 @@ public class DomainSettingsService {
         Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
         Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
 
+        String customDomain = null;
+
         if (settings != null && settings.getData() != null) {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) settings.getData();
             String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
-            String customDomain = getStringValue(data, "customDomain");
+            customDomain = getStringValue(data, "customDomain");
 
             if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
                 boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
@@ -370,10 +381,21 @@ public class DomainSettingsService {
             }
         }
 
+        // Also check if domain is stored in Server document
+        if (customDomain == null && server.getCustomDomainOverride() != null) {
+            customDomain = server.getCustomDomainOverride();
+        }
+
         template.remove(query, Settings.class, CollectionName.SETTINGS);
 
         // Clear custom domain fields from the main Server document
         clearServerDomainFields(server.getId());
+
+        // Invalidate CORS cache for the removed domain
+        if (customDomain != null && !customDomain.isEmpty()) {
+            corsConfigurationSource.invalidateCache(customDomain);
+            log.debug("Invalidated CORS cache for removed domain: {}", customDomain);
+        }
     }
 
     private void clearServerDomainFields(String serverId) {

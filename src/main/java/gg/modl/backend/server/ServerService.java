@@ -86,9 +86,13 @@ public class ServerService {
             return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
         }
 
+        // Look for custom domain with active status, or legacy domains where status is not set
         Criteria customDomainCriteria = new Criteria().andOperator(
                 Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain),
-                Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.active.name().toLowerCase())
+                new Criteria().orOperator(
+                        Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.active.name()),
+                        Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).exists(false)
+                )
         );
         return db.findOne(new Query(customDomainCriteria), Server.class, CollectionName.MODL_SERVERS);
     }
