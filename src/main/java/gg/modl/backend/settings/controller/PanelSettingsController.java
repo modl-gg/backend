@@ -5,14 +5,18 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.*;
 import gg.modl.backend.settings.service.*;
+import gg.modl.backend.storage.service.S3StorageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
@@ -26,6 +30,12 @@ public class PanelSettingsController {
     private final TicketFormSettingsService ticketFormSettingsService;
     private final DomainSettingsService domainSettingsService;
     private final QuickResponseSettingsService quickResponseSettingsService;
+    private final S3StorageService s3StorageService;
+
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+            "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
+    );
+    private static final long MAX_ICON_SIZE = 2 * 1024 * 1024; // 2MB
 
     @GetMapping("/punishment-types")
     public ResponseEntity<List<PunishmentType>> getPunishmentTypes(HttpServletRequest request) {
@@ -350,5 +360,57 @@ public class PanelSettingsController {
         Server server = RequestUtil.getRequestServer(request);
         quickResponseSettingsService.updateQuickResponseSettings(server, quickResponses);
         return ResponseEntity.ok(Map.of("message", "Quick responses updated successfully"));
+    }
+
+    @PostMapping("/upload-icon")
+    public ResponseEntity<?> uploadIcon(
+            @RequestParam("icon") MultipartFile file,
+            @RequestParam("iconType") String iconType,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        // Validate icon type
+        if (!iconType.equals("homepage") && !iconType.equals("panel")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid icon type. Must be 'homepage' or 'panel'."));
+        }
+
+        // Validate file
+        if (file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No file uploaded"));
+        }
+
+        // Validate content type
+        String contentType = file.getContentType();
+        if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP, SVG"));
+        }
+
+        // Validate file size
+        if (file.getSize() > MAX_ICON_SIZE) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File too large. Maximum size is 2MB."));
+        }
+
+        // Check if S3 is configured
+        if (!s3StorageService.isConfigured()) {
+            return ResponseEntity.status(503).body(Map.of("error", "File storage is not configured"));
+        }
+
+        try {
+            String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "icon";
+            String url = s3StorageService.uploadFile(
+                    server,
+                    "icons/" + iconType,
+                    fileName,
+                    contentType,
+                    file.getBytes()
+            );
+
+            return ResponseEntity.ok(Map.of("url", url));
+        } catch (IOException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to read file"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file: " + e.getMessage()));
+        }
     }
 }
