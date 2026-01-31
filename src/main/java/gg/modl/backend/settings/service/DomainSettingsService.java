@@ -2,6 +2,7 @@ package gg.modl.backend.settings.service;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.domain.external.CloudflareClient;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
@@ -24,6 +25,7 @@ public class DomainSettingsService {
     private static final String SETTINGS_TYPE_DOMAIN = "domain";
 
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final CloudflareClient cloudflareClient;
 
     public DomainSettings getDomainSettings(Server server, String requestHost) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
@@ -45,8 +47,7 @@ public class DomainSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) settings.getData();
         String customDomain = getStringValue(data, "customDomain");
-        
-        // Check if accessing from custom domain
+
         if (customDomain != null && !customDomain.isEmpty() && requestHost != null) {
             accessingFromCustomDomain = requestHost.equalsIgnoreCase(customDomain);
         }
@@ -79,13 +80,39 @@ public class DomainSettingsService {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
         Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
 
+        CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
+        if (existingHostname != null) {
+            cloudflareClient.deleteCustomHostname(existingHostname.id());
+        }
+
+        CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.createCustomHostname(customDomain);
+
+        String initialStatus = "pending";
+        String sslStatus = "pending";
+        String error = null;
+        String cloudflareHostnameId = null;
+
+        if (cfResult == null) {
+            initialStatus = "error";
+            sslStatus = "error";
+            error = "Failed to create custom hostname in Cloudflare. Please check your configuration.";
+            log.error("Failed to create Cloudflare custom hostname for domain: {}", customDomain);
+        } else {
+            cloudflareHostnameId = cfResult.id();
+            initialStatus = mapCloudflareStatus(cfResult.status());
+            if (cfResult.ssl() != null) {
+                sslStatus = mapCloudflareStatus(cfResult.ssl().status());
+            }
+            log.info("Created Cloudflare custom hostname for domain: {} with ID: {}", customDomain, cloudflareHostnameId);
+        }
+
         DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
                 .domain(customDomain)
-                .status("pending")
+                .status(initialStatus)
                 .cnameConfigured(false)
-                .sslStatus("pending")
+                .sslStatus(sslStatus)
                 .lastChecked(Instant.now().toString())
-                .error(null)
+                .error(error)
                 .build();
 
         Map<String, Object> statusMap = new HashMap<>();
@@ -99,6 +126,7 @@ public class DomainSettingsService {
         Map<String, Object> data = new HashMap<>();
         data.put("customDomain", customDomain);
         data.put("status", statusMap);
+        data.put("cloudflareHostnameId", cloudflareHostnameId);
 
         Update update = new Update()
                 .set("type", SETTINGS_TYPE_DOMAIN)
@@ -126,20 +154,56 @@ public class DomainSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) settings.getData();
         String configuredDomain = getStringValue(data, "customDomain");
+        String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
 
         if (!domain.equalsIgnoreCase(configuredDomain)) {
             throw new IllegalArgumentException("Domain does not match configured domain");
         }
 
-        // For now, we'll simulate verification by setting status to active
-        // In production, this would involve actual DNS verification via Cloudflare API
+        String verifiedStatus = "pending";
+        String sslStatus = "pending";
+        boolean cnameConfigured = false;
+        String error = null;
+
+        CloudflareClient.CustomHostnameResult cfResult = null;
+
+        if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
+            cfResult = cloudflareClient.getCustomHostname(cloudflareHostnameId);
+        } else {
+            cfResult = cloudflareClient.findCustomHostnameByName(domain);
+            if (cfResult != null) {
+                cloudflareHostnameId = cfResult.id();
+            }
+        }
+
+        if (cfResult != null) {
+            verifiedStatus = mapCloudflareStatus(cfResult.status());
+            cnameConfigured = "active".equals(verifiedStatus);
+
+            if (cfResult.ssl() != null) {
+                sslStatus = mapCloudflareStatus(cfResult.ssl().status());
+            }
+
+            if ("blocked".equals(cfResult.status()) || "moved".equals(cfResult.status())) {
+                error = "Domain verification failed. Status: " + cfResult.status();
+            }
+
+            log.info("Verified Cloudflare custom hostname for domain: {} - status: {}, ssl: {}",
+                    domain, cfResult.status(), cfResult.ssl() != null ? cfResult.ssl().status() : "unknown");
+        } else {
+            verifiedStatus = "error";
+            sslStatus = "error";
+            error = "Custom hostname not found in Cloudflare. Please reconfigure the domain.";
+            log.warn("Custom hostname not found in Cloudflare for domain: {}", domain);
+        }
+
         DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
                 .domain(domain)
-                .status("active")
-                .cnameConfigured(true)
-                .sslStatus("active")
+                .status(verifiedStatus)
+                .cnameConfigured(cnameConfigured)
+                .sslStatus(sslStatus)
                 .lastChecked(Instant.now().toString())
-                .error(null)
+                .error(error)
                 .build();
 
         Map<String, Object> statusMap = new HashMap<>();
@@ -151,6 +215,9 @@ public class DomainSettingsService {
         statusMap.put("error", status.getError());
 
         data.put("status", statusMap);
+        if (cloudflareHostnameId != null) {
+            data.put("cloudflareHostnameId", cloudflareHostnameId);
+        }
 
         Update update = new Update()
                 .set("data", data);
@@ -168,7 +235,46 @@ public class DomainSettingsService {
     public void removeDomain(Server server) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
         Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
+        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+
+        if (settings != null && settings.getData() != null) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> data = (Map<String, Object>) settings.getData();
+            String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
+            String customDomain = getStringValue(data, "customDomain");
+
+            if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
+                boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
+                if (deleted) {
+                    log.info("Deleted Cloudflare custom hostname for domain: {}", customDomain);
+                } else {
+                    log.warn("Failed to delete Cloudflare custom hostname for domain: {}", customDomain);
+                }
+            } else if (customDomain != null && !customDomain.isEmpty()) {
+                CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(customDomain);
+                if (cfResult != null) {
+                    boolean deleted = cloudflareClient.deleteCustomHostname(cfResult.id());
+                    if (deleted) {
+                        log.info("Deleted Cloudflare custom hostname for domain: {}", customDomain);
+                    }
+                }
+            }
+        }
+
         template.remove(query, Settings.class, CollectionName.SETTINGS);
+    }
+
+    private String mapCloudflareStatus(String cfStatus) {
+        if (cfStatus == null) {
+            return "pending";
+        }
+        return switch (cfStatus.toLowerCase()) {
+            case "active" -> "active";
+            case "pending", "pending_validation", "pending_issuance", "pending_deployment", "initializing" -> "pending";
+            case "pending_deletion", "deleted" -> "pending";
+            case "blocked", "moved" -> "error";
+            default -> "pending";
+        };
     }
 
     private String getStringValue(Map<String, Object> data, String key) {

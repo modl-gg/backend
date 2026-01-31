@@ -39,15 +39,29 @@ public class DomainService {
             );
         }
 
-        boolean dnsConfigured = cloudflareClient.verifyDnsRecord(customDomain);
+        CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(customDomain);
+
+        if (cfResult != null) {
+            boolean isActive = "active".equalsIgnoreCase(cfResult.status());
+            boolean sslActive = cfResult.ssl() != null && "active".equalsIgnoreCase(cfResult.ssl().status());
+
+            return new DomainStatusResponse(
+                    customDomain,
+                    isActive ? "active" : "pending",
+                    isActive,
+                    sslActive,
+                    baseDomain,
+                    isActive ? "Domain is active" : "Domain is pending verification. Please configure your CNAME."
+            );
+        }
 
         return new DomainStatusResponse(
                 customDomain,
-                dnsConfigured ? "active" : "pending",
-                dnsConfigured,
-                dnsConfigured,
+                "pending",
+                false,
+                false,
                 baseDomain,
-                dnsConfigured ? "Domain is active" : "DNS record not found. Please configure your CNAME."
+                "Custom hostname not found. Please configure your domain."
         );
     }
 
@@ -66,33 +80,91 @@ public class DomainService {
             throw new IllegalArgumentException("Cannot use a subdomain of " + baseDomain);
         }
 
-        boolean success = cloudflareClient.addDnsRecord(domain, baseDomain);
+        CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(domain);
+        if (existingHostname != null) {
+            cloudflareClient.deleteCustomHostname(existingHostname.id());
+        }
+
+        CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.createCustomHostname(domain);
+
+        if (cfResult == null) {
+            return new DomainStatusResponse(
+                    domain,
+                    "error",
+                    false,
+                    false,
+                    baseDomain,
+                    "Failed to create custom hostname in Cloudflare"
+            );
+        }
+
+        log.info("Created Cloudflare custom hostname for domain: {} with ID: {}", domain, cfResult.id());
 
         return new DomainStatusResponse(
                 domain,
-                success ? "pending" : "error",
+                "pending",
                 false,
                 false,
                 baseDomain,
-                success ? "Domain added. DNS propagation may take up to 24 hours." : "Failed to add domain"
+                "Domain added. Please configure your CNAME to point to " + baseDomain
         );
     }
 
     public DomainStatusResponse verifyDomain(Server server, String domain) {
-        boolean verified = cloudflareClient.verifyDnsRecord(domain);
+        CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(domain);
+
+        if (cfResult == null) {
+            return new DomainStatusResponse(
+                    domain,
+                    "error",
+                    false,
+                    false,
+                    baseDomain,
+                    "Custom hostname not found in Cloudflare. Please reconfigure your domain."
+            );
+        }
+
+        boolean isActive = "active".equalsIgnoreCase(cfResult.status());
+        boolean sslActive = cfResult.ssl() != null && "active".equalsIgnoreCase(cfResult.ssl().status());
+
+        String message;
+        if (isActive && sslActive) {
+            message = "Domain verified successfully with active SSL";
+        } else if (isActive) {
+            message = "Domain verified. SSL certificate is being provisioned.";
+        } else {
+            message = "Domain verification pending. Please ensure your CNAME is configured correctly.";
+        }
+
+        log.info("Verified Cloudflare custom hostname for domain: {} - status: {}, ssl: {}",
+                domain, cfResult.status(), cfResult.ssl() != null ? cfResult.ssl().status() : "unknown");
 
         return new DomainStatusResponse(
                 domain,
-                verified ? "active" : "pending",
-                verified,
-                verified,
+                isActive ? "active" : "pending",
+                isActive,
+                sslActive,
                 baseDomain,
-                verified ? "Domain verified successfully" : "DNS record not yet propagated"
+                message
         );
     }
 
     public boolean deleteDomain(Server server, String domain) {
-        return cloudflareClient.deleteDnsRecord(domain);
+        CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(domain);
+
+        if (cfResult == null) {
+            log.warn("Custom hostname not found in Cloudflare for domain: {}", domain);
+            return true;
+        }
+
+        boolean deleted = cloudflareClient.deleteCustomHostname(cfResult.id());
+        if (deleted) {
+            log.info("Deleted Cloudflare custom hostname for domain: {}", domain);
+        } else {
+            log.warn("Failed to delete Cloudflare custom hostname for domain: {}", domain);
+        }
+
+        return deleted;
     }
 
     public DomainInstructionsResponse getInstructions() {

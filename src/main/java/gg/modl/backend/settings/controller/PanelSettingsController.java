@@ -300,16 +300,28 @@ public class PanelSettingsController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String domain = body.get("domain");
-        
+
         if (domain == null || domain.trim().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Domain is required"));
         }
-        
+
         try {
             DomainSettings settings = domainSettingsService.verifyDomain(server, domain.trim());
+            DomainSettings.DomainStatus status = settings.getStatus();
+
+            String message = switch (status.getStatus()) {
+                case "active" -> status.getSslStatus().equals("active")
+                        ? "Domain verified successfully with active SSL!"
+                        : "Domain verified! SSL certificate is being provisioned.";
+                case "error" -> status.getError() != null
+                        ? status.getError()
+                        : "Domain verification failed";
+                default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
+            };
+
             return ResponseEntity.ok(Map.of(
-                    "status", settings.getStatus(),
-                    "message", "Domain verified successfully"
+                    "status", status,
+                    "message", message
             ));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
