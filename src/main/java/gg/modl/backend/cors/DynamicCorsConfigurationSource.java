@@ -21,10 +21,10 @@ import java.util.stream.Collectors;
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
 
-    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://cobl.gg,https://admin.cobl.gg}")
+    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://modl.top,https://admin.modl.top}")
     private String systemOrigins;
 
-    @Value("${modl.cors.app-domains:modl.gg,cobl.gg}")
+    @Value("${modl.cors.app-domains:modl.gg,modl.top}")
     private String appDomains;
 
     private final ConcurrentHashMap<String, CachedOrigin> originCache = new ConcurrentHashMap<>();
