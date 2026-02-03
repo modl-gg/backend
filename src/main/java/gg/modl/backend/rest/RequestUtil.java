@@ -24,4 +24,18 @@ public final class RequestUtil {
         AuthSessionData session = getSession(request);
         return session != null ? session.getEmail() : null;
     }
+
+    /**
+     * Get the current username from the session.
+     * Falls back to email if username lookup fails.
+     */
+    @NotNull
+    public static String getCurrentUsername(HttpServletRequest request) {
+        AuthSessionData session = getSession(request);
+        if (session == null || session.getEmail() == null) {
+            return "Unknown";
+        }
+        // Use email as username fallback - the service layer should resolve actual username if needed
+        return session.getEmail();
+    }
 }

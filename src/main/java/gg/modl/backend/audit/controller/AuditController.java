@@ -1,5 +1,6 @@
 package gg.modl.backend.audit.controller;
 
+import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
@@ -61,8 +62,7 @@ public class AuditController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get current user from session
-        String performerUsername = "";
+        String performerUsername = RequestUtil.getCurrentUsername(request);
 
         try {
             String reason = rollbackRequest != null ? rollbackRequest.reason() : "Admin rollback";
@@ -86,8 +86,55 @@ public class AuditController {
             @RequestBody(required = false) RollbackRequest rollbackRequest,
             HttpServletRequest request
     ) {
-        // TODO: Implement bulk rollback for all punishments by a staff member
-        return ResponseEntity.status(501).body(Map.of("message", "Bulk rollback not yet implemented"));
+        Server server = RequestUtil.getRequestServer(request);
+        String performerUsername = RequestUtil.getCurrentUsername(request);
+
+        try {
+            String reason = rollbackRequest != null ? rollbackRequest.reason() : "Bulk rollback by admin";
+            int count = auditService.rollbackAllPunishmentsByStaff(server, username, reason, performerUsername);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "count", count,
+                    "message", "Successfully rolled back " + count + " punishments"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/staff/{username}/rollback-date-range")
+    public ResponseEntity<?> rollbackByDateRange(
+            @PathVariable String username,
+            @RequestBody DateRangeRollbackRequest rollbackRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String performerUsername = RequestUtil.getCurrentUsername(request);
+
+        if (rollbackRequest.startDate() == null || rollbackRequest.endDate() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Start date and end date are required"));
+        }
+
+        try {
+            String reason = rollbackRequest.reason() != null ? rollbackRequest.reason() : "Bulk rollback by admin";
+            int count = auditService.rollbackPunishmentsByDateRange(
+                    server,
+                    username,
+                    rollbackRequest.startDate(),
+                    rollbackRequest.endDate(),
+                    reason,
+                    performerUsername
+            );
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "count", count,
+                    "message", "Successfully rolled back " + count + " punishments"
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     @PostMapping("/punishments/bulk-rollback")

@@ -297,6 +297,137 @@ public class AuditService {
         );
     }
 
+    /**
+     * Rollback all punishments issued by a staff member.
+     */
+    public int rollbackAllPunishmentsByStaff(Server server, String staffUsername, String reason, String performerUsername) {
+        MongoTemplate template = getTemplate(server);
+        return rollbackPunishmentsInternal(template, staffUsername, null, null, reason, performerUsername);
+    }
+
+    /**
+     * Rollback punishments issued by a staff member within a date range.
+     */
+    public int rollbackPunishmentsByDateRange(Server server, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
+        MongoTemplate template = getTemplate(server);
+        return rollbackPunishmentsInternal(template, staffUsername, startDate, endDate, reason, performerUsername);
+    }
+
+    private int rollbackPunishmentsInternal(MongoTemplate template, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
+        int rollbackCount = 0;
+
+        try {
+            // Build criteria for finding punishments
+            Criteria criteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i");
+
+            if (startDate != null && endDate != null) {
+                criteria = criteria.and("punishments.issued").gte(startDate).lte(endDate);
+            }
+
+            // Find all players with matching punishments
+            Query findQuery = Query.query(Criteria.where("punishments").elemMatch(
+                    Criteria.where("issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i")
+            ));
+
+            List<Document> players = template.find(findQuery, Document.class, CollectionName.PLAYERS);
+
+            Date now = new Date();
+            Map<String, Object> rollbackModification = new HashMap<>();
+            rollbackModification.put("type", "ROLLBACK");
+            rollbackModification.put("timestamp", now);
+            rollbackModification.put("performedBy", performerUsername);
+            rollbackModification.put("reason", reason);
+
+            for (Document player : players) {
+                String playerId = player.getString("_id");
+                List<Document> punishments = player.getList("punishments", Document.class);
+
+                if (punishments == null) continue;
+
+                // Get player name for audit log
+                String playerName = "Unknown";
+                List<Document> usernames = player.getList("usernames", Document.class);
+                if (usernames != null && !usernames.isEmpty()) {
+                    playerName = usernames.get(0).getString("username");
+                    if (playerName == null) playerName = "Unknown";
+                }
+
+                for (Document punishment : punishments) {
+                    String issuerName = punishment.getString("issuerName");
+                    Date issued = punishment.getDate("issued");
+                    String punishmentId = punishment.getString("_id");
+
+                    // Check if this punishment matches our criteria
+                    if (issuerName == null || !issuerName.equalsIgnoreCase(staffUsername)) {
+                        continue;
+                    }
+
+                    if (startDate != null && endDate != null) {
+                        if (issued == null || issued.before(startDate) || issued.after(endDate)) {
+                            continue;
+                        }
+                    }
+
+                    // Check if already rolled back
+                    List<Document> modifications = punishment.getList("modifications", Document.class);
+                    boolean alreadyRolledBack = false;
+                    if (modifications != null) {
+                        for (Document mod : modifications) {
+                            if ("ROLLBACK".equalsIgnoreCase(mod.getString("type"))) {
+                                alreadyRolledBack = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (alreadyRolledBack) {
+                        continue;
+                    }
+
+                    // Add rollback modification to this punishment
+                    Update update = new Update().push("punishments.$.modifications", rollbackModification);
+                    Query updateQuery = Query.query(
+                            Criteria.where("_id").is(playerId)
+                                    .and("punishments._id").is(punishmentId)
+                    );
+                    template.updateFirst(updateQuery, update, CollectionName.PLAYERS);
+
+                    // Create audit log for this rollback
+                    int typeOrdinal = punishment.getInteger("type_ordinal", 0);
+                    String typeName = getTypeNameFromOrdinal(typeOrdinal);
+
+                    AuditLog rollbackLog = AuditLog.builder()
+                            .created(now)
+                            .level("moderation")
+                            .source(performerUsername)
+                            .description("Bulk rollback: " + typeName + " for " + playerName + " (issued by " + staffUsername + ")")
+                            .metadata(Map.of(
+                                    "punishmentId", punishmentId != null ? punishmentId : "",
+                                    "playerId", playerId != null ? playerId : "",
+                                    "playerName", playerName,
+                                    "staffUsername", staffUsername,
+                                    "rollbackReason", reason != null ? reason : "Bulk rollback",
+                                    "punishmentType", typeName,
+                                    "bulkRollback", true
+                            ))
+                            .build();
+
+                    template.save(rollbackLog, CollectionName.LOGS);
+                    rollbackCount++;
+                }
+            }
+
+            log.info("Bulk rollback completed: {} punishments by {} rolled back by {}",
+                    rollbackCount, staffUsername, performerUsername);
+
+        } catch (Exception e) {
+            log.error("Error during bulk rollback for staff {}: {}", staffUsername, e.getMessage());
+            throw new RuntimeException("Failed to rollback punishments: " + e.getMessage());
+        }
+
+        return rollbackCount;
+    }
+
     private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(MongoTemplate template, String username, Date startDate) {
         List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
 
