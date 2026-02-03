@@ -34,6 +34,10 @@ public class AuditService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
+        // First, get all staff members
+        List<Staff> allStaff = template.findAll(Staff.class, CollectionName.STAFF);
+
+        // Aggregate log activity by source (username)
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(Criteria.where("created").gte(startDate).and("source").ne("system")),
                 Aggregation.group("source")
@@ -47,30 +51,108 @@ public class AuditService {
                 Aggregation.sort(Sort.Direction.DESC, "totalActions")
         );
 
-        List<Document> results = template.aggregate(aggregation, CollectionName.LOGS, Document.class).getMappedResults();
+        List<Document> logResults = template.aggregate(aggregation, CollectionName.LOGS, Document.class).getMappedResults();
+
+        // Create a map of username -> log activity
+        Map<String, Document> activityByUsername = new HashMap<>();
+        for (Document doc : logResults) {
+            String username = doc.getString("_id");
+            if (username != null) {
+                activityByUsername.put(username.toLowerCase(), doc);
+            }
+        }
+
+        // Also count ticket responses from the tickets collection
+        Map<String, Integer> ticketResponsesByStaff = countTicketResponsesByStaff(template, startDate);
+
+        // Also count punishments issued from punishments/logs
+        Map<String, Integer> punishmentsByStaff = countPunishmentsByStaff(template, startDate);
 
         List<StaffPerformanceResponse> performanceList = new ArrayList<>();
 
-        for (Document doc : results) {
-            String username = doc.getString("_id");
+        for (Staff staff : allStaff) {
+            String username = staff.getUsername();
+            if (username == null) continue;
 
-            Query staffQuery = Query.query(Criteria.where("username").is(username));
-            Staff staff = template.findOne(staffQuery, Staff.class, CollectionName.STAFF);
-            String role = staff != null && staff.getRole() != null ? staff.getRole() : "User";
+            Document activity = activityByUsername.get(username.toLowerCase());
+
+            int totalActions = activity != null ? activity.getInteger("totalActions", 0) : 0;
+            int ticketActions = ticketResponsesByStaff.getOrDefault(username.toLowerCase(), 0);
+            int moderationActions = punishmentsByStaff.getOrDefault(username.toLowerCase(), 0);
+            Date lastActive = activity != null ? activity.getDate("lastActive") : staff.getUpdatedAt();
+
+            // Add ticket and moderation actions to total if they weren't counted in logs
+            if (ticketActions > 0 || moderationActions > 0) {
+                totalActions = Math.max(totalActions, ticketActions + moderationActions);
+            }
 
             performanceList.add(new StaffPerformanceResponse(
-                    doc.getString("_id"),
+                    staff.getId(),
                     username,
-                    role,
-                    doc.getInteger("totalActions", 0),
-                    doc.getInteger("ticketActions", 0),
-                    doc.getInteger("moderationActions", 0),
+                    staff.getRole() != null ? staff.getRole() : "User",
+                    totalActions,
+                    ticketActions,
+                    moderationActions,
                     60,
-                    doc.getDate("lastActive")
+                    lastActive != null ? lastActive : new Date()
             ));
         }
 
+        // Sort by total actions descending
+        performanceList.sort((a, b) -> Integer.compare(b.totalActions(), a.totalActions()));
+
         return performanceList;
+    }
+
+    private Map<String, Integer> countTicketResponsesByStaff(MongoTemplate template, Date startDate) {
+        Map<String, Integer> counts = new HashMap<>();
+
+        try {
+            // Count staff replies in tickets
+            Aggregation aggregation = Aggregation.newAggregation(
+                    Aggregation.unwind("replies"),
+                    Aggregation.match(Criteria.where("replies.staff").is(true)
+                            .and("replies.created").gte(startDate)),
+                    Aggregation.group("replies.name").count().as("count")
+            );
+
+            List<Document> results = template.aggregate(aggregation, CollectionName.TICKETS, Document.class).getMappedResults();
+            for (Document doc : results) {
+                String name = doc.getString("_id");
+                if (name != null) {
+                    counts.put(name.toLowerCase(), doc.getInteger("count", 0));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error counting ticket responses: {}", e.getMessage());
+        }
+
+        return counts;
+    }
+
+    private Map<String, Integer> countPunishmentsByStaff(MongoTemplate template, Date startDate) {
+        Map<String, Integer> counts = new HashMap<>();
+
+        try {
+            // Count punishments by issuerName from the players collection (punishments are embedded)
+            Aggregation aggregation = Aggregation.newAggregation(
+                    Aggregation.unwind("punishments"),
+                    Aggregation.match(Criteria.where("punishments.issued").gte(startDate)),
+                    Aggregation.group("punishments.issuerName").count().as("count")
+            );
+
+            List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
+            for (Document doc : results) {
+                String issuerName = doc.getString("_id");
+                if (issuerName != null) {
+                    counts.put(issuerName.toLowerCase(), doc.getInteger("count", 0));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error counting punishments: {}", e.getMessage());
+        }
+
+        return counts;
     }
 
     public StaffDetailsResponse getStaffDetails(Server server, String username, String period) {
