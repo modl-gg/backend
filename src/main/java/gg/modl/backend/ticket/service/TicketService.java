@@ -32,6 +32,7 @@ import java.util.*;
 public class TicketService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final QuickResponseSettingsService quickResponseSettingsService;
+    private final TicketNotificationService notificationService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -212,8 +213,9 @@ public class TicketService {
             ticket.setData(existingData);
         }
 
+        TicketReply newReply = null;
         if (request.newReply() != null) {
-            TicketReply newReply = TicketReply.builder()
+            newReply = TicketReply.builder()
                     .id(UUID.randomUUID().toString())
                     .name(request.newReply().name())
                     .avatar(request.newReply().avatar())
@@ -242,6 +244,11 @@ public class TicketService {
         }
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+
+        // Send notifications for staff replies
+        if (newReply != null && newReply.isStaff()) {
+            notificationService.notifyTicketReply(server, ticket, newReply);
+        }
 
         return Optional.of(toTicketResponse(ticket));
     }
@@ -278,6 +285,11 @@ public class TicketService {
                 .set("updatedAt", new Date());
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+
+        // Send notifications for staff replies
+        if (request.staff()) {
+            notificationService.notifyTicketReply(server, ticket, newReply);
+        }
 
         return Optional.of(newReply);
     }
@@ -411,6 +423,9 @@ public class TicketService {
         }
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+
+        // Send notifications for the quick response (which is a staff reply)
+        notificationService.notifyTicketReply(server, ticket, responseReply);
 
         return new QuickResponseResult(
                 true,
