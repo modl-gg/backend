@@ -106,9 +106,7 @@ public class MinecraftTicketsController {
 
         template.save(ticket, CollectionName.TICKETS);
 
-        log.info("TEST");
         if ("chat".equalsIgnoreCase(request.type()) && chatMessages != null && !chatMessages.isEmpty()) {
-            log.info("TEST 2");
             aiTicketAnalysisService.analyzeTicketAsync(server, ticketId);
         }
 
