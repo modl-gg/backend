@@ -52,7 +52,7 @@ public class AITicketAnalysisService {
 
     public AIAnalysisResult analyzeTicket(Server server, String ticketId) {
         if (!shouldAnalyze(server)) {
-            log.debug("Skipping AI analysis for ticket {}: preconditions not met", ticketId);
+            log.info("Skipping AI analysis for ticket {}: preconditions not met", ticketId);
             return null;
         }
 
@@ -61,17 +61,17 @@ public class AITicketAnalysisService {
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
         if (ticket == null) {
-            log.warn("Ticket {} not found for AI analysis", ticketId);
+            log.info("Ticket {} not found for AI analysis", ticketId);
             return null;
         }
 
         if (!isChatReport(ticket)) {
-            log.debug("Skipping AI analysis for ticket {}: not a chat report", ticketId);
+            log.info("Skipping AI analysis for ticket {}: not a chat report", ticketId);
             return null;
         }
 
         if (ticket.getChatMessages() == null || ticket.getChatMessages().isEmpty()) {
-            log.debug("Skipping AI analysis for ticket {}: no chat messages", ticketId);
+            log.info("Skipping AI analysis for ticket {}: no chat messages", ticketId);
             return null;
         }
 
@@ -81,6 +81,7 @@ public class AITicketAnalysisService {
         String fullPrompt = buildPrompt(systemPrompt, formattedMessages, settings);
 
         log.info("Analyzing chat report ticket {} with AI (strictness: {})", ticketId, settings.getStrictnessLevel());
+        log.debug("LLM PROMPT: {}", fullPrompt);
 
         String rawResponse;
         try {
