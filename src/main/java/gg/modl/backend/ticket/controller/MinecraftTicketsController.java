@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 import java.security.SecureRandom;
 import java.util.*;
 
+@Slf4j
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
 @RequiredArgsConstructor
@@ -104,7 +106,9 @@ public class MinecraftTicketsController {
 
         template.save(ticket, CollectionName.TICKETS);
 
+        log.info("TEST");
         if ("chat".equalsIgnoreCase(request.type()) && chatMessages != null && !chatMessages.isEmpty()) {
+            log.info("TEST 2");
             aiTicketAnalysisService.analyzeTicketAsync(server, ticketId);
         }
 

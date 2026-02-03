@@ -81,7 +81,7 @@ public class AITicketAnalysisService {
         String fullPrompt = buildPrompt(systemPrompt, formattedMessages, settings);
 
         log.info("Analyzing chat report ticket {} with AI (strictness: {})", ticketId, settings.getStrictnessLevel());
-        log.debug("LLM PROMPT: {}", fullPrompt);
+        log.info("LLM PROMPT: {}", fullPrompt);
 
         String rawResponse;
         try {
