@@ -7,6 +7,7 @@ import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class AuditService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final PunishmentTypeService punishmentTypeService;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
         MongoTemplate template = getTemplate(server);
@@ -176,10 +178,10 @@ public class AuditService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(template, username, startDate);
+        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, username, startDate);
         List<StaffDetailsResponse.TicketDetail> tickets = getTicketDetails(template, username, startDate);
         List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, username, startDate);
-        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(template, username, startDate);
+        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, username, startDate);
 
         long evidenceUploads = countEvidenceUploads(template, username, startDate);
 
@@ -319,7 +321,7 @@ public class AuditService {
      */
     public int rollbackAllPunishmentsByStaff(Server server, String staffUsername, String reason, String performerUsername) {
         MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(template, staffUsername, null, null, reason, performerUsername);
+        return rollbackPunishmentsInternal(server, template, staffUsername, null, null, reason, performerUsername);
     }
 
     /**
@@ -327,10 +329,10 @@ public class AuditService {
      */
     public int rollbackPunishmentsByDateRange(Server server, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
         MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(template, staffUsername, startDate, endDate, reason, performerUsername);
+        return rollbackPunishmentsInternal(server, template, staffUsername, startDate, endDate, reason, performerUsername);
     }
 
-    private int rollbackPunishmentsInternal(MongoTemplate template, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
+    private int rollbackPunishmentsInternal(Server server, MongoTemplate template, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
         int rollbackCount = 0;
 
         try {
@@ -411,7 +413,7 @@ public class AuditService {
 
                     // Create audit log for this rollback
                     int typeOrdinal = punishment.getInteger("type_ordinal", 0);
-                    String typeName = getTypeNameFromOrdinal(typeOrdinal);
+                    String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
 
                     AuditLog rollbackLog = AuditLog.builder()
                             .created(now)
@@ -445,7 +447,7 @@ public class AuditService {
         return rollbackCount;
     }
 
-    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(MongoTemplate template, String username, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, String username, Date startDate) {
         List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
 
         try {
@@ -463,7 +465,7 @@ public class AuditService {
                     Aggregation.limit(50),
                     Aggregation.project()
                             .and("punishments._id").as("punishmentId")
-                            .and("_id").as("playerId")
+                            .and("minecraftUuid").as("playerId") // Use minecraftUuid instead of _id
                             .and("punishments.type_ordinal").as("typeOrdinal")
                             .and("punishments.issued").as("issued")
                             .and("punishments.started").as("started")
@@ -497,8 +499,8 @@ public class AuditService {
                 boolean active = isPunishmentActive(doc);
                 boolean rolledBack = isPunishmentRolledBack(doc);
 
-                // Map type ordinal to type name
-                String typeName = getTypeNameFromOrdinal(typeOrdinal);
+                // Map type ordinal to type name using the server's punishment type settings
+                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
 
                 details.add(new StaffDetailsResponse.PunishmentDetail(
                         punishmentId,
@@ -641,7 +643,7 @@ public class AuditService {
                 .toList();
     }
 
-    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(MongoTemplate template, String username, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, String username, Date startDate) {
         List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
 
         try {
@@ -664,7 +666,8 @@ public class AuditService {
             for (Document doc : results) {
                 Integer typeOrdinal = doc.getInteger("_id");
                 int count = doc.getInteger("count", 0);
-                String typeName = getTypeNameFromOrdinal(typeOrdinal != null ? typeOrdinal : 0);
+                // Use punishment type service to get the actual type name from server settings
+                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal != null ? typeOrdinal : 0);
 
                 breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, count));
             }
@@ -704,19 +707,6 @@ public class AuditService {
             }
         }
         return false;
-    }
-
-    private String getTypeNameFromOrdinal(int ordinal) {
-        // Common punishment type ordinals - these should ideally come from settings
-        return switch (ordinal) {
-            case 0 -> "Warning";
-            case 1 -> "Mute";
-            case 2 -> "Kick";
-            case 3 -> "Temporary Ban";
-            case 4 -> "Permanent Ban";
-            case 5 -> "Blacklist";
-            default -> "Type " + ordinal;
-        };
     }
 
     private long countEvidenceUploads(MongoTemplate template, String username, Date startDate) {

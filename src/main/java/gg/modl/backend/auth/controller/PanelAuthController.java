@@ -146,7 +146,10 @@ public class PanelAuthController {
             }
             Staff staff = result.get();
             String role = isSuperAdmin ? "Super Admin" : staff.getRole();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role));
+            String minecraftUsername = staff.getAssignedMinecraftUsername() != null
+                ? staff.getAssignedMinecraftUsername()
+                : staff.getUsername();
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
         }
@@ -167,12 +170,16 @@ public class PanelAuthController {
         if (staffOpt.isPresent()) {
             Staff staff = staffOpt.get();
             String role = isSuperAdmin ? "Super Admin" : staff.getRole();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role));
+            // Include Minecraft username if assigned, fall back to panel username
+            String minecraftUsername = staff.getAssignedMinecraftUsername() != null
+                ? staff.getAssignedMinecraftUsername()
+                : staff.getUsername();
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername));
         }
 
         // Super Admin without a staff record - return default username
         if (isSuperAdmin) {
-            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin"));
+            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin", "Admin"));
         }
 
         return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
@@ -257,5 +264,5 @@ public class PanelAuthController {
 
     public record UpdateProfileRequest(String username) {}
 
-    public record ProfileResponse(String id, String email, String username, String role) {}
+    public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername) {}
 }
