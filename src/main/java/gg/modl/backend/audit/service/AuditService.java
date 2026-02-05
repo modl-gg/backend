@@ -192,10 +192,10 @@ public class AuditService {
         usernamesToSearch.add(username);
 
         staffService.getStaffByUsername(server, username).ifPresent(staff -> {
-            if (staff.getAssignedMinecraftUsername() != null && !staff.getAssignedMinecraftUsername().isEmpty()) {
+            if (staff.assignedMinecraftUsername() != null && !staff.assignedMinecraftUsername().isEmpty()) {
                 // Add the Minecraft username if it's different from the panel username
-                if (!staff.getAssignedMinecraftUsername().equalsIgnoreCase(username)) {
-                    usernamesToSearch.add(staff.getAssignedMinecraftUsername());
+                if (!staff.assignedMinecraftUsername().equalsIgnoreCase(username)) {
+                    usernamesToSearch.add(staff.assignedMinecraftUsername());
                 }
             }
         });
@@ -514,9 +514,9 @@ public class AuditService {
 
                 // Get player name from first username entry (most recent)
                 String playerName = "Unknown";
-                List<?> usernames = doc.getList("usernames", Document.class);
-                if (usernames != null && !usernames.isEmpty()) {
-                    Document firstUsername = (Document) usernames.get(0);
+                List<?> playerUsernames = doc.getList("usernames", Document.class);
+                if (playerUsernames != null && !playerUsernames.isEmpty()) {
+                    Document firstUsername = (Document) playerUsernames.get(0);
                     playerName = firstUsername.getString("username");
                     if (playerName == null) playerName = "Unknown";
                 }
@@ -541,7 +541,7 @@ public class AuditService {
                 ));
             }
         } catch (Exception e) {
-            log.debug("Error fetching punishment details for {}: {}", username, e.getMessage());
+            log.debug("Error fetching punishment details for {}: {}", usernames, e.getMessage());
         }
 
         return details;
@@ -666,7 +666,7 @@ public class AuditService {
                 }
             }
         } catch (Exception e) {
-            log.debug("Error fetching daily activity for {}: {}", username, e.getMessage());
+            log.debug("Error fetching daily activity for {}: {}", usernames, e.getMessage());
         }
 
         return activityByDate.values().stream()
@@ -707,7 +707,7 @@ public class AuditService {
                 breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, count));
             }
         } catch (Exception e) {
-            log.debug("Error fetching punishment type breakdown for {}: {}", username, e.getMessage());
+            log.debug("Error fetching punishment type breakdown for {}: {}", usernames, e.getMessage());
         }
 
         return breakdown;
