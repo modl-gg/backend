@@ -20,7 +20,7 @@ public record PaginatedTicketsResponse(
     public record FiltersInfo(
             String search,
             String status,
-            String type
+            List<String> types
     ) {
     }
 }

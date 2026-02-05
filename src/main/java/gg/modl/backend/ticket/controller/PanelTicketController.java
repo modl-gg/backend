@@ -35,10 +35,10 @@ public class PanelTicketController {
             @RequestParam(defaultValue = "10") int limit,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String type,
+            @RequestParam(required = false) List<String> type,
             @RequestParam(required = false) String author,
             @RequestParam(required = false) List<String> labels,
-            @RequestParam(required = false) String assignee,
+            @RequestParam(required = false) List<String> assignee,
             @RequestParam(defaultValue = "newest") String sort,
             HttpServletRequest request
     ) {
@@ -51,10 +51,10 @@ public class PanelTicketController {
     @GetMapping("/counts")
     public ResponseEntity<Map<String, Long>> getTicketCounts(
             @RequestParam(required = false) String search,
-            @RequestParam(required = false) String type,
+            @RequestParam(required = false) List<String> type,
             @RequestParam(required = false) String author,
             @RequestParam(required = false) List<String> labels,
-            @RequestParam(required = false) String assignee,
+            @RequestParam(required = false) List<String> assignee,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

@@ -37,11 +37,12 @@ public class TicketService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type) {
-        return searchTickets(server, page, limit, search, status, type, null, null, null, "newest");
+        List<String> types = type != null && !type.isBlank() ? List.of(type) : null;
+        return searchTickets(server, page, limit, search, status, types, null, null, null, "newest");
     }
 
-    public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type,
-                                                   String author, List<String> labels, String assignee, String sort) {
+    public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, List<String> types,
+                                                   String author, List<String> labels, List<String> assignees, String sort) {
         MongoTemplate template = getTemplate(server);
 
         Query query = new Query();
@@ -68,13 +69,20 @@ public class TicketService {
             }
         }
 
-        if (type != null && !type.isBlank() && !type.equals("all")) {
-            // Check both type and category fields (category preserves original type for player/chat -> REPORT mappings)
-            Criteria typeCriteria = new Criteria().orOperator(
-                    Criteria.where("type").regex("^" + type + "$", "i"),
-                    Criteria.where("category").regex("^" + type + "$", "i")
-            );
-            query.addCriteria(typeCriteria);
+        // Filter by types (OR logic for multiple types)
+        if (types != null && !types.isEmpty()) {
+            List<String> validTypes = types.stream()
+                    .filter(t -> t != null && !t.isBlank() && !t.equals("all"))
+                    .toList();
+            if (!validTypes.isEmpty()) {
+                List<Criteria> typeCriteriaList = validTypes.stream()
+                        .flatMap(type -> java.util.stream.Stream.of(
+                                Criteria.where("type").regex("^" + type + "$", "i"),
+                                Criteria.where("category").regex("^" + type + "$", "i")
+                        ))
+                        .toList();
+                query.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
+            }
         }
 
         // Filter by author (creator name)
@@ -88,15 +96,21 @@ public class TicketService {
             query.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        // Filter by assignee
-        if (assignee != null && !assignee.isBlank()) {
-            if (assignee.equals("none")) {
-                query.addCriteria(new Criteria().orOperator(
-                        Criteria.where("assignedTo").is(null),
-                        Criteria.where("assignedTo").is("")
-                ));
-            } else {
-                query.addCriteria(Criteria.where("assignedTo").is(assignee));
+        // Filter by assignees (OR logic for multiple assignees)
+        if (assignees != null && !assignees.isEmpty()) {
+            List<Criteria> assigneeCriteriaList = new ArrayList<>();
+            for (String assignee : assignees) {
+                if (assignee != null && !assignee.isBlank()) {
+                    if (assignee.equals("none")) {
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
+                    } else {
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(assignee));
+                    }
+                }
+            }
+            if (!assigneeCriteriaList.isEmpty()) {
+                query.addCriteria(new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0])));
             }
         }
 
@@ -132,11 +146,11 @@ public class TicketService {
                         page < totalPages,
                         page > 1
                 ),
-                new PaginatedTicketsResponse.FiltersInfo(search, status, type)
+                new PaginatedTicketsResponse.FiltersInfo(search, status, types)
         );
     }
 
-    public Map<String, Long> getTicketCounts(Server server, String search, String type, String author, List<String> labels, String assignee) {
+    public Map<String, Long> getTicketCounts(Server server, String search, List<String> types, String author, List<String> labels, List<String> assignees) {
         MongoTemplate template = getTemplate(server);
 
         // Build base query without status filter
@@ -154,12 +168,20 @@ public class TicketService {
             baseQuery.addCriteria(searchCriteria);
         }
 
-        if (type != null && !type.isBlank() && !type.equals("all")) {
-            Criteria typeCriteria = new Criteria().orOperator(
-                    Criteria.where("type").regex("^" + type + "$", "i"),
-                    Criteria.where("category").regex("^" + type + "$", "i")
-            );
-            baseQuery.addCriteria(typeCriteria);
+        // Filter by types (OR logic for multiple types)
+        if (types != null && !types.isEmpty()) {
+            List<String> validTypes = types.stream()
+                    .filter(t -> t != null && !t.isBlank() && !t.equals("all"))
+                    .toList();
+            if (!validTypes.isEmpty()) {
+                List<Criteria> typeCriteriaList = validTypes.stream()
+                        .flatMap(type -> java.util.stream.Stream.of(
+                                Criteria.where("type").regex("^" + type + "$", "i"),
+                                Criteria.where("category").regex("^" + type + "$", "i")
+                        ))
+                        .toList();
+                baseQuery.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
+            }
         }
 
         if (author != null && !author.isBlank()) {
@@ -171,14 +193,21 @@ public class TicketService {
             baseQuery.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        if (assignee != null && !assignee.isBlank()) {
-            if (assignee.equals("none")) {
-                baseQuery.addCriteria(new Criteria().orOperator(
-                        Criteria.where("assignedTo").is(null),
-                        Criteria.where("assignedTo").is("")
-                ));
-            } else {
-                baseQuery.addCriteria(Criteria.where("assignedTo").is(assignee));
+        // Filter by assignees (OR logic for multiple assignees)
+        if (assignees != null && !assignees.isEmpty()) {
+            List<Criteria> assigneeCriteriaList = new ArrayList<>();
+            for (String assignee : assignees) {
+                if (assignee != null && !assignee.isBlank()) {
+                    if (assignee.equals("none")) {
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
+                    } else {
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(assignee));
+                    }
+                }
+            }
+            if (!assigneeCriteriaList.isEmpty()) {
+                baseQuery.addCriteria(new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0])));
             }
         }
 
