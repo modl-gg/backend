@@ -9,6 +9,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -31,6 +32,7 @@ import java.util.regex.Pattern;
 public class AuditService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
+    private final StaffService staffService;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
         MongoTemplate template = getTemplate(server);
@@ -86,7 +88,14 @@ public class AuditService {
 
             int totalActions = activity != null ? activity.getInteger("totalActions", 0) : 0;
             int ticketActions = ticketResponsesByStaff.getOrDefault(username.toLowerCase(), 0);
+
+            // Count punishments by both panel username AND Minecraft username (if linked)
             int moderationActions = punishmentsByStaff.getOrDefault(username.toLowerCase(), 0);
+            String mcUsername = staff.getAssignedMinecraftUsername();
+            if (mcUsername != null && !mcUsername.isEmpty() && !mcUsername.equalsIgnoreCase(username)) {
+                moderationActions += punishmentsByStaff.getOrDefault(mcUsername.toLowerCase(), 0);
+            }
+
             Date lastActive = activity != null ? activity.getDate("lastActive") : staff.getUpdatedAt();
 
             // Add ticket and moderation actions to total if they weren't counted in logs
@@ -178,10 +187,23 @@ public class AuditService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, username, startDate);
+        // Get the staff member's Minecraft username if they have one linked
+        List<String> usernamesToSearch = new ArrayList<>();
+        usernamesToSearch.add(username);
+
+        staffService.getStaffByUsername(server, username).ifPresent(staff -> {
+            if (staff.getAssignedMinecraftUsername() != null && !staff.getAssignedMinecraftUsername().isEmpty()) {
+                // Add the Minecraft username if it's different from the panel username
+                if (!staff.getAssignedMinecraftUsername().equalsIgnoreCase(username)) {
+                    usernamesToSearch.add(staff.getAssignedMinecraftUsername());
+                }
+            }
+        });
+
+        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, usernamesToSearch, startDate);
         List<StaffDetailsResponse.TicketDetail> tickets = getTicketDetails(template, username, startDate);
-        List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, username, startDate);
-        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, username, startDate);
+        List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, usernamesToSearch, startDate);
+        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, usernamesToSearch, startDate);
 
         long evidenceUploads = countEvidenceUploads(template, username, startDate);
 
@@ -447,12 +469,16 @@ public class AuditService {
         return rollbackCount;
     }
 
-    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, String username, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
         List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
 
         try {
-            // Build criteria - include date filter only if startDate is not null
-            Criteria matchCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            // Build criteria to match any of the usernames (panel username OR minecraft username)
+            List<Criteria> usernameCriteria = usernames.stream()
+                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
+                    .toList();
+
+            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
             if (startDate != null) {
                 matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
             }
@@ -581,12 +607,16 @@ public class AuditService {
         return details;
     }
 
-    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(MongoTemplate template, String username, Date startDate) {
+    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(MongoTemplate template, List<String> usernames, Date startDate) {
         Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
 
         try {
-            // Build punishment criteria - include date filter only if startDate is not null
-            Criteria punishmentCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            // Build punishment criteria to match any of the usernames
+            List<Criteria> usernameCriteria = usernames.stream()
+                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
+                    .toList();
+
+            Criteria punishmentCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
             if (startDate != null) {
                 punishmentCriteria = punishmentCriteria.and("punishments.issued").gte(startDate);
             }
@@ -607,9 +637,10 @@ public class AuditService {
                 activityByDate.put(date, new StaffDetailsResponse.DailyActivity(date, count, 0, 0));
             }
 
-            // Build ticket criteria - include date filter only if startDate is not null
+            // Build ticket criteria - use just the first (panel) username for tickets
+            String panelUsername = usernames.get(0);
             Criteria ticketCriteria = Criteria.where("replies.staff").is(true)
-                    .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i");
+                    .and("replies.name").regex("^" + Pattern.quote(panelUsername) + "$", "i");
             if (startDate != null) {
                 ticketCriteria = ticketCriteria.and("replies.created").gte(startDate);
             }
@@ -643,12 +674,16 @@ public class AuditService {
                 .toList();
     }
 
-    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, String username, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
         List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
 
         try {
-            // Build criteria - include date filter only if startDate is not null
-            Criteria matchCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            // Build criteria to match any of the usernames
+            List<Criteria> usernameCriteria = usernames.stream()
+                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
+                    .toList();
+
+            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
             if (startDate != null) {
                 matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
             }
