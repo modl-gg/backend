@@ -3,6 +3,7 @@ package gg.modl.backend.ticket.dto.response;
 import gg.modl.backend.ticket.data.TicketReply;
 
 import java.util.Date;
+import java.util.List;
 
 public record TicketListItemResponse(
         String id,
@@ -15,6 +16,8 @@ public record TicketListItemResponse(
         boolean locked,
         String type,
         TicketReply lastReply,
-        int replyCount
+        int replyCount,
+        List<String> tags,
+        String assignedTo
 ) {
 }

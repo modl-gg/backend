@@ -37,6 +37,11 @@ public class TicketService {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type) {
+        return searchTickets(server, page, limit, search, status, type, null, null, null, "newest");
+    }
+
+    public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type,
+                                                   String author, List<String> labels, String assignee, String sort) {
         MongoTemplate template = getTemplate(server);
 
         Query query = new Query();
@@ -72,10 +77,41 @@ public class TicketService {
             query.addCriteria(typeCriteria);
         }
 
+        // Filter by author (creator name)
+        if (author != null && !author.isBlank()) {
+            String escapedAuthor = java.util.regex.Pattern.quote(author);
+            query.addCriteria(Criteria.where("creatorName").regex(escapedAuthor, "i"));
+        }
+
+        // Filter by labels (tags)
+        if (labels != null && !labels.isEmpty()) {
+            query.addCriteria(Criteria.where("tags").all(labels));
+        }
+
+        // Filter by assignee
+        if (assignee != null && !assignee.isBlank()) {
+            if (assignee.equals("none")) {
+                query.addCriteria(new Criteria().orOperator(
+                        Criteria.where("assignedTo").is(null),
+                        Criteria.where("assignedTo").is("")
+                ));
+            } else {
+                query.addCriteria(Criteria.where("assignedTo").is(assignee));
+            }
+        }
+
         long totalTickets = template.count(query, Ticket.class, CollectionName.TICKETS);
 
         int skip = (page - 1) * limit;
-        query.with(Sort.by(Sort.Direction.DESC, "created"));
+
+        // Apply sorting
+        Sort sorting = switch (sort != null ? sort : "newest") {
+            case "oldest" -> Sort.by(Sort.Direction.ASC, "created");
+            case "recently-updated" -> Sort.by(Sort.Direction.DESC, "updatedAt");
+            case "least-recently-updated" -> Sort.by(Sort.Direction.ASC, "updatedAt");
+            default -> Sort.by(Sort.Direction.DESC, "created"); // "newest"
+        };
+        query.with(sorting);
         query.skip(skip).limit(limit);
 
         List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
@@ -98,6 +134,130 @@ public class TicketService {
                 ),
                 new PaginatedTicketsResponse.FiltersInfo(search, status, type)
         );
+    }
+
+    public Map<String, Long> getTicketCounts(Server server, String search, String type, String author, List<String> labels, String assignee) {
+        MongoTemplate template = getTemplate(server);
+
+        // Build base query without status filter
+        Query baseQuery = new Query();
+        baseQuery.addCriteria(Criteria.where("status").ne("Unfinished"));
+
+        if (search != null && !search.isBlank()) {
+            String escapedSearch = java.util.regex.Pattern.quote(search);
+            Criteria searchCriteria = new Criteria().orOperator(
+                    Criteria.where("_id").regex(escapedSearch, "i"),
+                    Criteria.where("subject").regex(escapedSearch, "i"),
+                    Criteria.where("creator").regex(escapedSearch, "i"),
+                    Criteria.where("creatorName").regex(escapedSearch, "i")
+            );
+            baseQuery.addCriteria(searchCriteria);
+        }
+
+        if (type != null && !type.isBlank() && !type.equals("all")) {
+            Criteria typeCriteria = new Criteria().orOperator(
+                    Criteria.where("type").regex("^" + type + "$", "i"),
+                    Criteria.where("category").regex("^" + type + "$", "i")
+            );
+            baseQuery.addCriteria(typeCriteria);
+        }
+
+        if (author != null && !author.isBlank()) {
+            String escapedAuthor = java.util.regex.Pattern.quote(author);
+            baseQuery.addCriteria(Criteria.where("creatorName").regex(escapedAuthor, "i"));
+        }
+
+        if (labels != null && !labels.isEmpty()) {
+            baseQuery.addCriteria(Criteria.where("tags").all(labels));
+        }
+
+        if (assignee != null && !assignee.isBlank()) {
+            if (assignee.equals("none")) {
+                baseQuery.addCriteria(new Criteria().orOperator(
+                        Criteria.where("assignedTo").is(null),
+                        Criteria.where("assignedTo").is("")
+                ));
+            } else {
+                baseQuery.addCriteria(Criteria.where("assignedTo").is(assignee));
+            }
+        }
+
+        // Count open tickets
+        Query openQuery = Query.of(baseQuery);
+        openQuery.addCriteria(Criteria.where("locked").ne(true));
+        long openCount = template.count(openQuery, Ticket.class, CollectionName.TICKETS);
+
+        // Count closed tickets
+        Query closedQuery = Query.of(baseQuery);
+        closedQuery.addCriteria(Criteria.where("locked").is(true));
+        long closedCount = template.count(closedQuery, Ticket.class, CollectionName.TICKETS);
+
+        Map<String, Long> counts = new HashMap<>();
+        counts.put("open", openCount);
+        counts.put("closed", closedCount);
+        return counts;
+    }
+
+    public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
+        MongoTemplate template = getTemplate(server);
+        int updatedCount = 0;
+
+        for (String ticketId : request.ticketIds()) {
+            Query query = Query.query(Criteria.where("_id").is(ticketId));
+            Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
+
+            if (ticket == null) {
+                continue;
+            }
+
+            Update update = new Update().set("updatedAt", new Date());
+            boolean hasChanges = false;
+
+            // Update locked status
+            if (request.locked() != null) {
+                update.set("locked", request.locked());
+                if (request.locked()) {
+                    update.set("status", "Closed");
+                } else {
+                    update.set("status", "Open");
+                }
+                hasChanges = true;
+            }
+
+            // Add labels (tags)
+            if (request.addLabels() != null && !request.addLabels().isEmpty()) {
+                List<String> currentTags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
+                for (String label : request.addLabels()) {
+                    if (!currentTags.contains(label)) {
+                        currentTags.add(label);
+                    }
+                }
+                update.set("tags", currentTags);
+                hasChanges = true;
+            }
+
+            // Remove labels (tags)
+            if (request.removeLabels() != null && !request.removeLabels().isEmpty()) {
+                List<String> currentTags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
+                currentTags.removeAll(request.removeLabels());
+                update.set("tags", currentTags);
+                hasChanges = true;
+            }
+
+            // Update assignee
+            if (request.assignTo() != null) {
+                String assignee = request.assignTo().equals("none") ? null : request.assignTo();
+                update.set("assignedTo", assignee);
+                hasChanges = true;
+            }
+
+            if (hasChanges) {
+                template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+                updatedCount++;
+            }
+        }
+
+        return updatedCount;
     }
 
     public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
@@ -627,7 +787,9 @@ public class TicketService {
                 ticket.isLocked(),
                 ticket.getType(),
                 lastReply,
-                replyCount
+                replyCount,
+                ticket.getTags() != null ? ticket.getTags() : new ArrayList<>(),
+                ticket.getAssignedTo()
         );
     }
 

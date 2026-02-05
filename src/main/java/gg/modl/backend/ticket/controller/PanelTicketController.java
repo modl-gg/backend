@@ -36,11 +36,46 @@ public class PanelTicketController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String type,
+            @RequestParam(required = false) String author,
+            @RequestParam(required = false) List<String> labels,
+            @RequestParam(required = false) String assignee,
+            @RequestParam(defaultValue = "newest") String sort,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        PaginatedTicketsResponse response = ticketService.searchTickets(server, page, limit, search, status, type);
+        PaginatedTicketsResponse response = ticketService.searchTickets(
+                server, page, limit, search, status, type, author, labels, assignee, sort);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/counts")
+    public ResponseEntity<Map<String, Long>> getTicketCounts(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) String author,
+            @RequestParam(required = false) List<String> labels,
+            @RequestParam(required = false) String assignee,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        Map<String, Long> counts = ticketService.getTicketCounts(server, search, type, author, labels, assignee);
+        return ResponseEntity.ok(counts);
+    }
+
+    @PostMapping("/bulk")
+    public ResponseEntity<?> bulkUpdateTickets(
+            @RequestBody @Valid BulkTicketUpdateRequest bulkRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String staffEmail = RequestUtil.getSessionEmail(request);
+
+        if (bulkRequest.ticketIds() == null || bulkRequest.ticketIds().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "No ticket IDs provided"));
+        }
+
+        int updatedCount = ticketService.bulkUpdateTickets(server, bulkRequest, staffEmail);
+        return ResponseEntity.ok(Map.of("updated", updatedCount, "message", "Successfully updated " + updatedCount + " tickets"));
     }
 
     @GetMapping("/{id}")

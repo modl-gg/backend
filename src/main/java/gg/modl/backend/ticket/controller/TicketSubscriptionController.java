@@ -83,4 +83,20 @@ public class TicketSubscriptionController {
         boolean result = subscriptionService.markAsRead(server, staffEmail, updateId);
         return ResponseEntity.ok(Map.of("message", "Update marked as read", "modified", result));
     }
+
+    @GetMapping("/assigned-updates")
+    public ResponseEntity<List<SubscriptionUpdateResponse>> getAssignedUpdates(
+            @RequestParam(defaultValue = "10") int limit,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String staffEmail = RequestUtil.getSessionEmail(request);
+
+        if (staffEmail == null || staffEmail.isBlank()) {
+            return ResponseEntity.status(401).build();
+        }
+
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, limit);
+        return ResponseEntity.ok(updates);
+    }
 }

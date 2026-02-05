@@ -205,6 +205,83 @@ public class TicketSubscriptionService {
         template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
     }
 
+    /**
+     * Gets updates for tickets assigned to the specified staff member.
+     * Similar to getUpdates but filters by assignedTo instead of subscriptions.
+     */
+    public List<SubscriptionUpdateResponse> getAssignedTicketUpdates(Server server, String staffEmail, int limit) {
+        MongoTemplate template = getTemplate(server);
+
+        // Find staff to get their username for matching assignedTo
+        Query staffQuery = Query.query(Criteria.where("email").is(staffEmail));
+        Staff staff = template.findOne(staffQuery, Staff.class, CollectionName.STAFF);
+
+        if (staff == null) {
+            return Collections.emptyList();
+        }
+
+        // Get staff username or email prefix for matching assignedTo
+        String staffIdentifier = staff.getUsername() != null ? staff.getUsername() : staffEmail.split("@")[0];
+
+        // Find tickets assigned to this staff member
+        Query ticketQuery = Query.query(
+                Criteria.where("assignedTo").is(staffIdentifier)
+                        .and("replies.0").exists(true)
+                        .and("status").ne("Unfinished")
+        );
+
+        List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
+
+        List<SubscriptionUpdateResponse> updates = new ArrayList<>();
+
+        // Get the staff's last seen timestamp for assigned tickets (we'll track this per-ticket via subscription)
+        Map<String, Date> lastSeenMap = new HashMap<>();
+        if (staff.getSubscribedTickets() != null) {
+            for (Staff.TicketSubscription sub : staff.getSubscribedTickets()) {
+                if (sub.getLastReadAt() != null) {
+                    lastSeenMap.put(sub.getTicketId(), sub.getLastReadAt());
+                }
+            }
+        }
+
+        for (Ticket ticket : tickets) {
+            if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
+                continue;
+            }
+
+            Date lastSeen = lastSeenMap.get(ticket.getId());
+
+            // Get recent replies that the staff hasn't seen
+            List<TicketReply> unreadReplies = ticket.getReplies().stream()
+                    .filter(reply -> reply.getCreated() != null)
+                    .filter(reply -> !reply.isStaff() || !staffIdentifier.equals(reply.getName()))  // Exclude own replies
+                    .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
+                    .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
+                    .toList();
+
+            if (!unreadReplies.isEmpty()) {
+                TicketReply latestReply = unreadReplies.get(0);
+                String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
+
+                updates.add(new SubscriptionUpdateResponse(
+                        ticket.getId() + "-" + latestReply.getId(),
+                        ticket.getId(),
+                        ticketTitle,
+                        latestReply.getContent(),
+                        latestReply.getName(),
+                        latestReply.getCreated(),
+                        latestReply.isStaff(),
+                        false,
+                        unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
+                ));
+            }
+        }
+
+        // Sort by most recent and limit
+        updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
+        return updates.stream().limit(limit).toList();
+    }
+
     private MongoTemplate getTemplate(Server server) {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
