@@ -19,6 +19,7 @@ public class RateLimitConfig {
         MINECRAFT_STANDARD(1000, Duration.ofMinutes(1)),
         PANEL_STANDARD(100, Duration.ofMinutes(1)),
         PANEL_HEAVY(20, Duration.ofMinutes(1)),
+        PANEL_AUDIT(200, Duration.ofMinutes(1)), // Higher limit for audit/analytics pages
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
@@ -92,6 +93,10 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/panel/")) {
+            // Audit and analytics endpoints get their own higher limit
+            if (path.contains("/audit/") || path.contains("/analytics/")) {
+                return RateLimitTier.PANEL_AUDIT;
+            }
             if (isHeavyPanelOperation(path, method)) {
                 return RateLimitTier.PANEL_HEAVY;
             }
@@ -117,6 +122,10 @@ public class RateLimitConfig {
                 return true;
             }
             if (path.contains("/settings")) {
+                return true;
+            }
+            // Linked account search is expensive (scans IPs across players)
+            if (path.contains("/find-linked")) {
                 return true;
             }
         }

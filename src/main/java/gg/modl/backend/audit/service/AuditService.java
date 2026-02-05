@@ -37,9 +37,15 @@ public class AuditService {
         // First, get all staff members
         List<Staff> allStaff = template.findAll(Staff.class, CollectionName.STAFF);
 
+        // Build criteria - include date filter only if startDate is not null
+        Criteria logCriteria = Criteria.where("source").ne("system");
+        if (startDate != null) {
+            logCriteria = logCriteria.and("created").gte(startDate);
+        }
+
         // Aggregate log activity by source (username)
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("created").gte(startDate).and("source").ne("system")),
+                Aggregation.match(logCriteria),
                 Aggregation.group("source")
                         .count().as("totalActions")
                         .sum(ConditionalOperators.when(Criteria.where("description").regex(Pattern.compile("ticket", Pattern.CASE_INSENSITIVE))).then(1).otherwise(0)).as("ticketActions")
@@ -108,11 +114,16 @@ public class AuditService {
         Map<String, Integer> counts = new HashMap<>();
 
         try {
+            // Build criteria - include date filter only if startDate is not null
+            Criteria replyCriteria = Criteria.where("replies.staff").is(true);
+            if (startDate != null) {
+                replyCriteria = replyCriteria.and("replies.created").gte(startDate);
+            }
+
             // Count staff replies in tickets
             Aggregation aggregation = Aggregation.newAggregation(
                     Aggregation.unwind("replies"),
-                    Aggregation.match(Criteria.where("replies.staff").is(true)
-                            .and("replies.created").gte(startDate)),
+                    Aggregation.match(replyCriteria),
                     Aggregation.group("replies.name").count().as("count")
             );
 
@@ -134,12 +145,18 @@ public class AuditService {
         Map<String, Integer> counts = new HashMap<>();
 
         try {
-            // Count punishments by issuerName from the players collection (punishments are embedded)
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind("punishments"),
-                    Aggregation.match(Criteria.where("punishments.issued").gte(startDate)),
-                    Aggregation.group("punishments.issuerName").count().as("count")
-            );
+            // Build aggregation stages
+            List<AggregationOperation> stages = new ArrayList<>();
+            stages.add(Aggregation.unwind("punishments"));
+
+            // Add date filter only if startDate is not null
+            if (startDate != null) {
+                stages.add(Aggregation.match(Criteria.where("punishments.issued").gte(startDate)));
+            }
+
+            stages.add(Aggregation.group("punishments.issuerName").count().as("count"));
+
+            Aggregation aggregation = Aggregation.newAggregation(stages);
 
             List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
             for (Document doc : results) {
@@ -432,11 +449,16 @@ public class AuditService {
         List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
 
         try {
+            // Build criteria - include date filter only if startDate is not null
+            Criteria matchCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            if (startDate != null) {
+                matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
+            }
+
             // Query players collection and unwind punishments issued by this staff member
             Aggregation aggregation = Aggregation.newAggregation(
                     Aggregation.unwind("punishments"),
-                    Aggregation.match(Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i")
-                            .and("punishments.issued").gte(startDate)),
+                    Aggregation.match(matchCriteria),
                     Aggregation.sort(Sort.Direction.DESC, "punishments.issued"),
                     Aggregation.limit(50),
                     Aggregation.project()
@@ -501,12 +523,17 @@ public class AuditService {
         List<StaffDetailsResponse.TicketDetail> details = new ArrayList<>();
 
         try {
+            // Build criteria - include date filter only if startDate is not null
+            Criteria matchCriteria = Criteria.where("replies.staff").is(true)
+                    .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i");
+            if (startDate != null) {
+                matchCriteria = matchCriteria.and("replies.created").gte(startDate);
+            }
+
             // Find tickets where this staff member has replied
             Aggregation aggregation = Aggregation.newAggregation(
                     Aggregation.unwind("replies"),
-                    Aggregation.match(Criteria.where("replies.staff").is(true)
-                            .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i")
-                            .and("replies.created").gte(startDate)),
+                    Aggregation.match(matchCriteria),
                     Aggregation.sort(Sort.Direction.DESC, "replies.created"),
                     Aggregation.group("_id")
                             .first("subject").as("subject")
@@ -556,11 +583,16 @@ public class AuditService {
         Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
 
         try {
+            // Build punishment criteria - include date filter only if startDate is not null
+            Criteria punishmentCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            if (startDate != null) {
+                punishmentCriteria = punishmentCriteria.and("punishments.issued").gte(startDate);
+            }
+
             // Get daily punishment counts
             Aggregation punishmentAgg = Aggregation.newAggregation(
                     Aggregation.unwind("punishments"),
-                    Aggregation.match(Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i")
-                            .and("punishments.issued").gte(startDate)),
+                    Aggregation.match(punishmentCriteria),
                     Aggregation.project()
                             .andExpression("dateToString('%Y-%m-%d', punishments.issued)").as("date"),
                     Aggregation.group("date").count().as("count")
@@ -573,12 +605,17 @@ public class AuditService {
                 activityByDate.put(date, new StaffDetailsResponse.DailyActivity(date, count, 0, 0));
             }
 
+            // Build ticket criteria - include date filter only if startDate is not null
+            Criteria ticketCriteria = Criteria.where("replies.staff").is(true)
+                    .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i");
+            if (startDate != null) {
+                ticketCriteria = ticketCriteria.and("replies.created").gte(startDate);
+            }
+
             // Get daily ticket response counts
             Aggregation ticketAgg = Aggregation.newAggregation(
                     Aggregation.unwind("replies"),
-                    Aggregation.match(Criteria.where("replies.staff").is(true)
-                            .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i")
-                            .and("replies.created").gte(startDate)),
+                    Aggregation.match(ticketCriteria),
                     Aggregation.project()
                             .andExpression("dateToString('%Y-%m-%d', replies.created)").as("date"),
                     Aggregation.group("date").count().as("count")
@@ -608,11 +645,16 @@ public class AuditService {
         List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
 
         try {
+            // Build criteria - include date filter only if startDate is not null
+            Criteria matchCriteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i");
+            if (startDate != null) {
+                matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
+            }
+
             // Aggregate punishments by type_ordinal
             Aggregation aggregation = Aggregation.newAggregation(
                     Aggregation.unwind("punishments"),
-                    Aggregation.match(Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(username) + "$", "i")
-                            .and("punishments.issued").gte(startDate)),
+                    Aggregation.match(matchCriteria),
                     Aggregation.group("punishments.type_ordinal").count().as("count"),
                     Aggregation.sort(Sort.Direction.DESC, "count")
             );
@@ -678,18 +720,26 @@ public class AuditService {
     }
 
     private long countEvidenceUploads(MongoTemplate template, String username, Date startDate) {
+        // Build criteria - include date filter only if startDate is not null
+        Criteria baseCriteria = Criteria.where("source").is(username);
+        if (startDate != null) {
+            baseCriteria = baseCriteria.and("created").gte(startDate);
+        }
+
         Query query = Query.query(
-                Criteria.where("source").is(username)
-                        .and("created").gte(startDate)
-                        .orOperator(
-                                Criteria.where("description").regex(Pattern.compile("evidence|upload|file", Pattern.CASE_INSENSITIVE)),
-                                Criteria.where("level").is("info").and("description").regex(Pattern.compile("uploaded|attachment", Pattern.CASE_INSENSITIVE))
-                        )
+                baseCriteria.orOperator(
+                        Criteria.where("description").regex(Pattern.compile("evidence|upload|file", Pattern.CASE_INSENSITIVE)),
+                        Criteria.where("level").is("info").and("description").regex(Pattern.compile("uploaded|attachment", Pattern.CASE_INSENSITIVE))
+                )
         );
         return template.count(query, AuditLog.class, CollectionName.LOGS);
     }
 
     private Date getStartDate(String period) {
+        if ("all".equals(period)) {
+            return null; // No date filter for all time
+        }
+
         long now = System.currentTimeMillis();
         long daysInMs = 24 * 60 * 60 * 1000L;
 

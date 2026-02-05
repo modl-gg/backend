@@ -64,8 +64,14 @@ public class AnalyticsService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
+        // Build criteria - include date filter only if startDate is not null
+        Criteria baseCriteria = Criteria.where("status").ne("Unfinished");
+        if (startDate != null) {
+            baseCriteria = baseCriteria.and("created").gte(startDate);
+        }
+
         Aggregation statusAgg = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("created").gte(startDate).and("status").ne("Unfinished")),
+                Aggregation.match(baseCriteria),
                 Aggregation.group("status").count().as("count")
         );
         List<Document> statusResults = template.aggregate(statusAgg, CollectionName.TICKETS, Document.class).getMappedResults();
@@ -74,7 +80,7 @@ public class AnalyticsService {
                 .toList();
 
         Aggregation categoryAgg = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("created").gte(startDate).and("status").ne("Unfinished")),
+                Aggregation.match(baseCriteria),
                 Aggregation.group("type").count().as("count")
         );
         List<Document> categoryResults = template.aggregate(categoryAgg, CollectionName.TICKETS, Document.class).getMappedResults();
@@ -86,7 +92,7 @@ public class AnalyticsService {
         Map<String, Integer> dailyCountMap = new TreeMap<>();
         java.time.format.DateTimeFormatter dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd");
 
-        Query ticketQuery = Query.query(Criteria.where("created").gte(startDate).and("status").ne("Unfinished"));
+        Query ticketQuery = Query.query(baseCriteria);
         List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
         for (Ticket ticket : tickets) {
@@ -112,8 +118,13 @@ public class AnalyticsService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        // Query players with recent punishments
-        Query query = Query.query(Criteria.where("punishments.issued").gte(startDate));
+        // Query players with punishments (filter by date if startDate is not null)
+        Query query;
+        if (startDate != null) {
+            query = Query.query(Criteria.where("punishments.issued").gte(startDate));
+        } else {
+            query = Query.query(Criteria.where("punishments").exists(true));
+        }
         List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
 
         // Aggregate punishment data
@@ -127,7 +138,8 @@ public class AnalyticsService {
             if (player.getPunishments() == null) continue;
 
             for (Punishment p : player.getPunishments()) {
-                if (p.getIssued() == null || p.getIssued().before(startDate)) continue;
+                if (p.getIssued() == null) continue;
+                if (startDate != null && p.getIssued().before(startDate)) continue;
 
                 // Count by type
                 String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
@@ -173,9 +185,15 @@ public class AnalyticsService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
+        // Build criteria - include date filter only if startDate is not null
+        Criteria logCriteria = new Criteria();
+        if (startDate != null) {
+            logCriteria = Criteria.where("created").gte(startDate);
+        }
+
         // Aggregate logs by level
         Aggregation levelAgg = Aggregation.newAggregation(
-                Aggregation.match(Criteria.where("created").gte(startDate)),
+                Aggregation.match(logCriteria),
                 Aggregation.group("level").count().as("count")
         );
         List<Document> levelResults = template.aggregate(levelAgg, CollectionName.LOGS, Document.class).getMappedResults();
@@ -237,8 +255,8 @@ public class AnalyticsService {
                     .min(Date::compareTo)
                     .orElse(null);
 
-            // Count as new player if their first login is within the period
-            if (earliestFirstLogin != null && earliestFirstLogin.after(startDate)) {
+            // Count as new player if their first login is within the period (or all time if startDate is null)
+            if (earliestFirstLogin != null && (startDate == null || earliestFirstLogin.after(startDate))) {
                 String dateKey = java.time.Instant.ofEpochMilli(earliestFirstLogin.getTime())
                         .atZone(java.time.ZoneId.systemDefault())
                         .toLocalDate()
@@ -248,18 +266,20 @@ public class AnalyticsService {
 
             // Process each IP entry for country stats and suspicious activity
             for (var ipEntry : player.getIpAddresses()) {
-                // Count logins by country (only for logins within period)
+                // Count logins by country (only for logins within period, or all if startDate is null)
                 if (ipEntry.getCountry() != null && !ipEntry.getCountry().isEmpty()) {
                     long loginsInPeriod = ipEntry.getLogins() != null
-                            ? ipEntry.getLogins().stream().filter(d -> d.after(startDate)).count()
+                            ? (startDate == null ? ipEntry.getLogins().size() : ipEntry.getLogins().stream().filter(d -> d.after(startDate)).count())
                             : 0;
-                    if (loginsInPeriod > 0 || (ipEntry.getFirstLogin() != null && ipEntry.getFirstLogin().after(startDate))) {
+                    boolean firstLoginInPeriod = ipEntry.getFirstLogin() != null && (startDate == null || ipEntry.getFirstLogin().after(startDate));
+                    if (loginsInPeriod > 0 || firstLoginInPeriod) {
                         countryLogins.merge(ipEntry.getCountry(), (int) Math.max(1, loginsInPeriod), Integer::sum);
                     }
                 }
 
-                // Check for logins within period for suspicious activity counting
-                boolean hasRecentLogin = (ipEntry.getFirstLogin() != null && ipEntry.getFirstLogin().after(startDate))
+                // Check for logins within period for suspicious activity counting (or all if startDate is null)
+                boolean hasRecentLogin = startDate == null
+                        || (ipEntry.getFirstLogin() != null && ipEntry.getFirstLogin().after(startDate))
                         || (ipEntry.getLogins() != null && ipEntry.getLogins().stream().anyMatch(d -> d.after(startDate)));
 
                 if (hasRecentLogin) {
@@ -304,6 +324,10 @@ public class AnalyticsService {
     }
 
     private Date getStartDate(String period) {
+        if ("all".equals(period)) {
+            return null; // No date filter for all time
+        }
+
         long now = System.currentTimeMillis();
         long daysMs = 24 * 60 * 60 * 1000L;
 
