@@ -13,6 +13,7 @@ import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.AIModerationSettings;
+import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.ticket.data.Ticket;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +29,21 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AITicketAnalysisService {
-    private static final String PROMPTS_COLLECTION = "system_prompts";
+    private static final String PROMPTS_COLLECTION = "systemprompts";
+    private static final String JSON_FORMAT = """
+            {
+              "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
+              "suggestedAction": {
+                "punishmentTypeId": "<punishment_type_id>",
+                "severity": "low|regular|severe"
+              } OR null if no action needed
+            }""";
 
     private final LLMService llmService;
     private final AIModerationSettingsService aiModerationSettingsService;
@@ -77,11 +87,10 @@ public class AITicketAnalysisService {
 
         AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
         String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
-        String formattedMessages = formatChatMessages(ticket.getChatMessages(), ticket.getReportedPlayer());
-        String fullPrompt = buildPrompt(systemPrompt, formattedMessages, settings);
+        String chatLog = formatChatMessages(ticket.getChatMessages());
+        String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
 
         log.info("Analyzing chat report ticket {} with AI (strictness: {})", ticketId, settings.getStrictnessLevel());
-        log.info("LLM PROMPT: {}", fullPrompt);
 
         String rawResponse;
         try {
@@ -92,18 +101,17 @@ public class AITicketAnalysisService {
         }
 
         AIAnalysisResult result = parseResponse(rawResponse);
-        result.setAnalyzedAt(new Date());
+        result.setCreatedAt(new Date());
         result.setRawResponse(rawResponse);
 
-        if (settings.isEnableAutomatedActions() && result.isViolationDetected()) {
+        if (settings.isEnableAutomatedActions() && result.hasViolation()) {
             executeAutomatedAction(server, ticket, result, settings);
         }
 
         Update update = new Update().set("aiAnalysis", result).set("updatedAt", new Date());
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
-        log.info("AI analysis complete for ticket {}: violation={}, severity={}",
-                ticketId, result.isViolationDetected(), result.getSeverity());
+        log.info("AI analysis complete for ticket {}: violation={}", ticketId, result.hasViolation());
 
         return result;
     }
@@ -144,25 +152,70 @@ public class AITicketAnalysisService {
         return getDefaultPrompt(strictnessLevel);
     }
 
-    private String getDefaultPrompt(String level) {
-        String common = """
-            You are an AI moderator analyzing Minecraft server chat logs for rule violations.
-            Analyze the provided chat transcript and determine if any moderation action is needed.
-            """;
+    public String getDefaultPrompt(String level) {
+        String modeInstruction = switch (level) {
+            case "lenient" ->
+                """
+                LENIENT MODE - Additional Guidelines:
+                - Give players the benefit of the doubt when context is unclear
+                - Only suggest action for clear, obvious rule violations
+                - Prefer warnings and lighter punishments for first-time offenses
+                - Consider context and intent - friendly banter may not require action
+                - Be more forgiving of minor language issues
+                - Focus on patterns of behavior rather than isolated incidents
 
-        return switch (level) {
-            case "lenient" -> common + "\n\nLENIENT MODE: Give players significant benefit of the doubt. Only suggest action for clear, obvious rule violations.";
-            case "strict" -> common + "\n\nSTRICT MODE: Enforce rules rigorously with minimal tolerance for violations. Prefer higher severity punishments.";
-            default -> common + "\n\nSTANDARD MODE: Apply consistent moderation based on community standards. Balance individual player behavior with overall server atmosphere.";
+                If there's any ambiguity about whether something violates rules, err on the side of no action.
+                """;
+            case "strict" ->
+                """
+                STRICT MODE - Additional Guidelines:
+                - Enforce rules rigorously with zero tolerance for violations
+                - Take action on borderline cases that could negatively impact the community
+                - Prefer higher severity punishments to maintain server standards
+                - Consider even minor infractions as worthy of moderation action
+                - Prioritize community safety and positive environment over individual leniency
+                - Be proactive in preventing escalation of problematic behavior
+
+                When in doubt, err on the side of taking moderation action to maintain high community standards.
+                """;
+            default ->
+                """
+                STANDARD MODE - Additional Guidelines:
+                - Apply consistent moderation based on clear rule violations
+                - Consider the severity and impact of violations on the community
+                - Balance player behavior with server standards
+                - Escalate punishment severity for repeat offenses when evident
+                - Take context into account but enforce rules fairly
+                - Focus on maintaining a positive gaming environment
+
+                Apply appropriate action when rules are clearly violated, using good judgment for edge cases.
+                """;
         };
+
+        return """
+               You are an AI moderator analyzing Minecraft server chat logs for rule violations. Analyze the provided chat transcript and determine if any moderation action is needed.
+
+               RESPONSE FORMAT:
+               You must respond with a valid JSON object in this exact format:
+               {{JSON_FORMAT}}
+
+               PUNISHMENT SEVERITY GUIDELINES:
+               - "low": Minor infractions, first-time offenses, borderline cases
+               - "regular": Clear rule violations, repeat minor offenses
+               - "severe": Serious violations, multiple rule breaks, toxic behavior
+
+               AVAILABLE PUNISHMENT TYPES:
+               {{PUNISHMENT_TYPES}}
+
+               Choose the most appropriate punishment type from the provided list based on the violation category and severity. Use the descriptions provided to understand when each punishment type is appropriate.
+
+               %s
+               """
+            .formatted(modeInstruction);
     }
 
-    private String formatChatMessages(List<Map<String, Object>> chatMessages, String reportedPlayer) {
+    private String formatChatMessages(List<Map<String, Object>> chatMessages) {
         StringBuilder sb = new StringBuilder();
-        sb.append("=== CHAT LOG ===\n");
-        if (reportedPlayer != null) {
-            sb.append("Reported Player: ").append(reportedPlayer).append("\n\n");
-        }
 
         for (Map<String, Object> msg : chatMessages) {
             String username = msg.getOrDefault("username", "Unknown").toString();
@@ -178,85 +231,93 @@ public class AITicketAnalysisService {
         return sb.toString();
     }
 
-    private String buildPrompt(String systemPrompt, String chatLog, AIModerationSettings settings) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(systemPrompt).append("\n\n");
-        sb.append(chatLog).append("\n\n");
+    private String buildPrompt(String systemPrompt, String chatLog, String reportedPlayer, AIModerationSettings settings) {
+        String punishmentTypes = formatPunishmentTypes(settings);
 
-        sb.append("=== AVAILABLE ACTIONS ===\n");
-        if (settings.getAiPunishmentConfigs() != null && !settings.getAiPunishmentConfigs().isEmpty()) {
-            for (Map.Entry<String, AIModerationSettings.AIPunishmentConfig> entry : settings.getAiPunishmentConfigs().entrySet()) {
-                AIModerationSettings.AIPunishmentConfig config = entry.getValue();
-                if (config.isEnabled()) {
-                    sb.append("- ").append(config.getName());
-                    if (config.getAiDescription() != null && !config.getAiDescription().isBlank()) {
-                        sb.append(": ").append(config.getAiDescription());
-                    }
-                    sb.append(" (id: ").append(config.getId()).append(")\n");
-                }
-            }
-        } else {
-            sb.append("- warn: Issue a warning\n");
-            sb.append("- mute: Temporarily mute the player\n");
-            sb.append("- kick: Kick the player from the server\n");
-            sb.append("- ban: Ban the player from the server\n");
+        if (systemPrompt.contains("{{")) {
+            systemPrompt = systemPrompt
+                    .replace("{{PUNISHMENT_TYPES}}", punishmentTypes)
+                    .replace("{{JSON_FORMAT}}", JSON_FORMAT);
         }
 
-        sb.append("\n=== RESPONSE FORMAT ===\n");
-        sb.append("""
-            Respond with a JSON object containing:
-            {
-              "violationDetected": true/false,
-              "violationType": "type of violation if any (e.g., harassment, spam, hate speech, advertising)",
-              "severity": "none/low/medium/high/critical",
-              "recommendedAction": "action id or 'none'",
-              "explanation": "brief explanation of your analysis",
-              "confidence": 0.0-1.0
-            }
+        return """
+                %s
 
-            Only output the JSON object, no additional text.
-            """);
+                CHAT TRANSCRIPT TO ANALYZE:
+                ```
+                %s
+                ```
 
-        return sb.toString();
+                REPORTED PLAYER: %s
+
+                Please analyze the chat transcript and respond with a JSON object following the exact format specified in the system prompt.
+                """.formatted(systemPrompt, chatLog, reportedPlayer);
+    }
+
+    private String formatPunishmentTypes(AIModerationSettings settings) {
+        if (settings.getAiPunishmentConfigs() == null || settings.getAiPunishmentConfigs().isEmpty()) {
+            return "No punishment types configured";
+        }
+
+        return settings.getAiPunishmentConfigs().values().stream()
+                .filter(AIPunishmentConfig::isEnabled)
+                .map(config -> {
+                    String description = config.getAiDescription();
+                    return "%s: %s".formatted(
+                            config.getId(),
+                            description != null && !description.isBlank() ? description : config.getName()
+                    );
+                })
+                .collect(Collectors.joining("\n"));
     }
 
     private AIAnalysisResult parseResponse(String rawResponse) {
-        AIAnalysisResult result = AIAnalysisResult.builder()
-                .violationDetected(false)
-                .severity("none")
-                .recommendedAction("none")
-                .confidence(0.0)
-                .actionTaken(false)
-                .build();
-
         try {
             String jsonContent = extractJson(rawResponse);
             JsonNode json = objectMapper.readTree(jsonContent);
 
-            if (json.has("violationDetected")) {
-                result.setViolationDetected(json.get("violationDetected").asBoolean(false));
-            }
-            if (json.has("violationType")) {
-                result.setViolationType(json.get("violationType").asText());
-            }
-            if (json.has("severity")) {
-                result.setSeverity(json.get("severity").asText("none"));
-            }
-            if (json.has("recommendedAction")) {
-                result.setRecommendedAction(json.get("recommendedAction").asText("none"));
-            }
-            if (json.has("explanation")) {
-                result.setExplanation(json.get("explanation").asText());
-            }
-            if (json.has("confidence")) {
-                result.setConfidence(json.get("confidence").asDouble(0.0));
-            }
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to parse AI response as JSON: {}", rawResponse, e);
-            result.setExplanation("Failed to parse AI response");
-        }
+            String analysis = json.has("analysis") ? json.get("analysis").asText() : null;
 
-        return result;
+            AIAnalysisResult.SuggestedAction suggestedAction = null;
+            if (json.has("suggestedAction") && !json.get("suggestedAction").isNull()) {
+                JsonNode actionNode = json.get("suggestedAction");
+                suggestedAction = AIAnalysisResult.SuggestedAction.builder()
+                        .punishmentTypeId(parseIntField(actionNode, "punishmentTypeId"))
+                        .severity(actionNode.has("severity") ? actionNode.get("severity").asText() : null)
+                        .build();
+            }
+
+            return AIAnalysisResult.builder()
+                    .analysis(analysis)
+                    .suggestedAction(suggestedAction)
+                    .wasAppliedAutomatically(false)
+                    .build();
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse AI response: {}", rawResponse, e);
+            return AIAnalysisResult.builder()
+                    .analysis("Failed to parse AI response")
+                    .wasAppliedAutomatically(false)
+                    .build();
+        }
+    }
+
+    private Integer parseIntField(JsonNode node, String field) {
+        if (!node.has(field) || node.get(field).isNull()) {
+            return null;
+        }
+        JsonNode value = node.get(field);
+        if (value.isNumber()) {
+            return value.asInt();
+        }
+        if (value.isTextual()) {
+            try {
+                return Integer.parseInt(value.asText());
+            } catch (NumberFormatException e) {
+                log.warn("Non-numeric value for {}: {}", field, value.asText());
+                return null;
+            }
+        }
+        return null;
     }
 
     private String extractJson(String response) {
@@ -270,8 +331,8 @@ public class AITicketAnalysisService {
     }
 
     private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
-        String recommendedAction = result.getRecommendedAction();
-        if (recommendedAction == null || "none".equalsIgnoreCase(recommendedAction)) {
+        AIAnalysisResult.SuggestedAction suggestion = result.getSuggestedAction();
+        if (suggestion == null || suggestion.getPunishmentTypeId() == null) {
             return;
         }
 
@@ -280,26 +341,16 @@ public class AITicketAnalysisService {
             return;
         }
 
-        AIModerationSettings.AIPunishmentConfig punishmentConfig = null;
-        Integer typeOrdinal = null;
-
-        if (settings.getAiPunishmentConfigs() != null) {
-            for (Map.Entry<String, AIModerationSettings.AIPunishmentConfig> entry : settings.getAiPunishmentConfigs().entrySet()) {
-                AIModerationSettings.AIPunishmentConfig config = entry.getValue();
-                if (config.isEnabled() && config.getId() != null && config.getId().equals(recommendedAction)) {
-                    punishmentConfig = config;
-                    try {
-                        typeOrdinal = Integer.parseInt(entry.getKey());
-                    } catch (NumberFormatException e) {
-                        log.warn("Invalid punishment type ordinal: {}", entry.getKey());
-                    }
-                    break;
-                }
-            }
+        if (settings.getAiPunishmentConfigs() == null) {
+            log.warn("No punishment configs available for automated action on ticket {}", ticket.getId());
+            return;
         }
 
-        if (typeOrdinal == null) {
-            log.warn("Could not find punishment config for action: {}", recommendedAction);
+        String typeKey = String.valueOf(suggestion.getPunishmentTypeId());
+        AIPunishmentConfig punishmentConfig = settings.getAiPunishmentConfigs().get(typeKey);
+
+        if (punishmentConfig == null || !punishmentConfig.isEnabled()) {
+            log.warn("Punishment config not found or disabled for type ordinal {}", typeKey);
             return;
         }
 
@@ -307,32 +358,25 @@ public class AITicketAnalysisService {
             UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
             CreatePunishmentRequest request = new CreatePunishmentRequest(
                     "AI Moderator",
-                    typeOrdinal,
+                    suggestion.getPunishmentTypeId(),
                     null,
                     null,
                     List.of(ticket.getId()),
-                    result.getSeverity(),
+                    suggestion.getSeverity(),
                     "active",
                     Map.of(
-                            "reason", result.getViolationType() != null ? result.getViolationType() : "AI-detected violation",
-                            "aiGenerated", true,
-                            "confidence", result.getConfidence()
+                            "reason", result.getAnalysis() != null ? result.getAnalysis() : "AI-detected violation",
+                            "aiGenerated", true
                     )
             );
 
             punishmentService.createPunishment(server, playerUuid, request);
-
-            result.setActionTaken(true);
-            result.setActionDetails("Applied punishment: " + punishmentConfig.getName());
-            result.setPunishmentId(ticket.getId());
+            result.setWasAppliedAutomatically(true);
 
             log.info("Automated punishment applied for ticket {}: {} on player {}",
                     ticket.getId(), punishmentConfig.getName(), ticket.getReportedPlayer());
-
         } catch (Exception e) {
             log.error("Failed to apply automated punishment for ticket {}", ticket.getId(), e);
-            result.setActionTaken(false);
-            result.setActionDetails("Failed to apply punishment: " + e.getMessage());
         }
     }
 }

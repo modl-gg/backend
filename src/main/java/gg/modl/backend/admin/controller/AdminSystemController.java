@@ -2,6 +2,7 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.admin.data.SystemPrompt;
+import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import lombok.RequiredArgsConstructor;
@@ -23,9 +24,10 @@ import java.util.Map;
 @Slf4j
 public class AdminSystemController {
     private static final String CONFIG_COLLECTION = "system_config";
-    private static final String PROMPTS_COLLECTION = "system_prompts";
+    private static final String PROMPTS_COLLECTION = "systemprompts";
 
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final AITicketAnalysisService ticketAnalysisService;
 
     private MongoTemplate getTemplate() {
         return mongoProvider.getGlobalDatabase();
@@ -213,7 +215,7 @@ public class AdminSystemController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
 
-            String defaultPrompt = getDefaultPrompt(strictnessLevel);
+            String defaultPrompt = ticketAnalysisService.getDefaultPrompt(strictnessLevel);
 
             Query query = Query.query(Criteria.where("strictnessLevel").is(strictnessLevel));
             Update update = new Update()
@@ -261,18 +263,5 @@ public class AdminSystemController {
             log.error("Service restart error for {}", service, e);
             return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to restart service"));
         }
-    }
-
-    private String getDefaultPrompt(String level) {
-        String common = """
-            You are an AI moderator analyzing Minecraft server chat logs for rule violations.
-            Analyze the provided chat transcript and determine if any moderation action is needed.
-            """;
-
-        return switch (level) {
-            case "lenient" -> common + "\n\nLENIENT MODE: Give players significant benefit of the doubt. Only suggest action for clear, obvious rule violations.";
-            case "strict" -> common + "\n\nSTRICT MODE: Enforce rules rigorously with minimal tolerance for violations. Prefer higher severity punishments.";
-            default -> common + "\n\nSTANDARD MODE: Apply consistent moderation based on community standards. Balance individual player behavior with overall server atmosphere.";
-        };
     }
 }

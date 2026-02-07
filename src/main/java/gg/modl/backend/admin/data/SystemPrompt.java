@@ -7,13 +7,19 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.Date;
 
 @Data
-@Document(collection = "system_prompts")
+@Document(collection = "systemprompts")
 public class SystemPrompt {
     @Id
     private String id;
-    private String strictnessLevel; // lenient, standard, strict
+    private StrictnessLevel strictnessLevel; // lenient, standard, strict
     private String prompt;
     private boolean isActive = true;
     private Date createdAt = new Date();
     private Date updatedAt = new Date();
+
+    public enum StrictnessLevel {
+        lenient,
+        standard,
+        strict;
+    }
 }

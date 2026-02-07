@@ -12,15 +12,23 @@ import java.util.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AIAnalysisResult {
-    private boolean violationDetected;
-    private String violationType;
-    private String severity;
-    private String recommendedAction;
-    private String explanation;
-    private Double confidence;
-    private boolean actionTaken;
-    private String actionDetails;
-    private String punishmentId;
-    private Date analyzedAt;
+    private String analysis;
+    private SuggestedAction suggestedAction;
+    private boolean wasAppliedAutomatically;
+    private boolean dismissed;
+    private Date createdAt;
     private String rawResponse;
+
+    public boolean hasViolation() {
+        return suggestedAction != null && suggestedAction.getPunishmentTypeId() != null;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class SuggestedAction {
+        private Integer punishmentTypeId;
+        private String severity;
+    }
 }
