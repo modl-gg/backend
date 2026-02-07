@@ -24,6 +24,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -354,8 +355,8 @@ public class TicketService {
                 .tags(tags)
                 .replies(replies)
                 .notes(new ArrayList<>())
-                .chatMessages(request.chatMessages().stream()
-                    .map(x -> new Ticket.ChatMessage((String) x.get("content"), (Date) x.get("timestamp")))
+                .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : request.chatMessages().stream()
+                    .map(x -> new Ticket.ChatMessage((String) x.get("content"), parseTimestamp(x.get("timestamp"))))
                     .toList()
                 )
                 .formData(request.formData())
@@ -871,6 +872,12 @@ public class TicketService {
             }
             return reply;
         }).toList();
+    }
+
+    private static Date parseTimestamp(Object value) {
+        if (value instanceof Date date) return date;
+        if (value instanceof String str) return Date.from(Instant.parse(str));
+        return new Date();
     }
 
     private MongoTemplate getTemplate(Server server) {

@@ -59,6 +59,7 @@ public class Ticket {
     private AIAnalysisResult aiAnalysis;
 
     @Data
+    @NoArgsConstructor
     @AllArgsConstructor
     public static class ChatMessage {
         private String content;
