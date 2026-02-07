@@ -2,12 +2,12 @@ package gg.modl.backend.ticket.controller;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.player.data.Player;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.service.TicketNotificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -29,6 +29,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class MinecraftReportsController {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final TicketNotificationService ticketNotificationService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllReports(
@@ -114,7 +115,8 @@ public class MinecraftReportsController {
                 .build();
 
         Update update = new Update()
-                .set("status", "closed")
+                .set("status", "Closed")
+                .set("locked", true)
                 .set("updatedAt", new Date())
                 .push("replies", reply);
 
@@ -128,9 +130,8 @@ public class MinecraftReportsController {
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
-        // Notify the reporter that their report was reviewed
-        notifyReporter(template, ticket, "REPORT_DISMISSED",
-                "Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.");
+        // Notify the reporter via the standard ticket notification system
+        ticketNotificationService.notifyTicketReply(server, ticket, reply);
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -172,7 +173,8 @@ public class MinecraftReportsController {
                 .build();
 
         Update update = new Update()
-                .set("status", "closed")
+                .set("status", "Closed")
+                .set("locked", true)
                 .set("updatedAt", new Date())
                 .push("replies", reply);
 
@@ -189,47 +191,14 @@ public class MinecraftReportsController {
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
-        // Notify the reporter that their report was accepted
-        notifyReporter(template, ticket, "REPORT_RESOLVED", replyContent);
+        // Notify the reporter via the standard ticket notification system
+        ticketNotificationService.notifyTicketReply(server, ticket, reply);
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
                 "message", "Report resolved"
         ));
-    }
-
-    /**
-     * Send an in-game notification to the reporter about their report outcome.
-     */
-    private void notifyReporter(MongoTemplate template, Ticket ticket, String notificationType, String message) {
-        try {
-            String reporterUuid = ticket.getCreatorUuid();
-            if (reporterUuid == null || reporterUuid.isBlank()) {
-                return;
-            }
-
-            Query playerQuery = Query.query(Criteria.where("minecraftUuid").is(reporterUuid));
-            Player player = template.findOne(playerQuery, Player.class, CollectionName.PLAYERS);
-            if (player == null) {
-                return;
-            }
-
-            Map<String, Object> notification = new HashMap<>();
-            notification.put("id", UUID.randomUUID().toString());
-            notification.put("type", notificationType);
-            notification.put("message", message);
-            notification.put("timestamp", System.currentTimeMillis());
-
-            Map<String, Object> notificationData = new HashMap<>();
-            notificationData.put("reportId", ticket.getId());
-            notification.put("data", notificationData);
-
-            Update playerUpdate = new Update().push("data.pendingNotifications", notification);
-            template.updateFirst(playerQuery, playerUpdate, Player.class, CollectionName.PLAYERS);
-        } catch (Exception e) {
-            log.error("Failed to notify reporter for ticket {}: {}", ticket.getId(), e.getMessage());
-        }
     }
 
     /**
