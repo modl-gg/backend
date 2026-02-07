@@ -7,6 +7,7 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketReply;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -99,9 +100,23 @@ public class MinecraftReportsController {
             ));
         }
 
+        String staffName = request.dismissedBy() != null ? request.dismissedBy() : "Staff";
+        String replyContent = "Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.";
+
+        TicketReply reply = TicketReply.builder()
+                .id(UUID.randomUUID().toString())
+                .name(staffName)
+                .content(replyContent)
+                .type("reply")
+                .created(new Date())
+                .staff(true)
+                .action("close")
+                .build();
+
         Update update = new Update()
-                .set("status", "dismissed")
-                .set("updatedAt", new Date());
+                .set("status", "closed")
+                .set("updatedAt", new Date())
+                .push("replies", reply);
 
         if (request.reason() != null && !request.reason().isBlank()) {
             update.set("data.dismissReason", request.reason());
@@ -112,6 +127,10 @@ public class MinecraftReportsController {
         }
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+
+        // Notify the reporter that their report was reviewed
+        notifyReporter(template, ticket, "REPORT_DISMISSED",
+                "Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.");
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -139,9 +158,23 @@ public class MinecraftReportsController {
             ));
         }
 
+        String staffName = request.resolvedBy() != null ? request.resolvedBy() : "Staff";
+        String replyContent = "Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.";
+
+        TicketReply reply = TicketReply.builder()
+                .id(UUID.randomUUID().toString())
+                .name(staffName)
+                .content(replyContent)
+                .type("reply")
+                .created(new Date())
+                .staff(true)
+                .action("close")
+                .build();
+
         Update update = new Update()
-                .set("status", "resolved")
-                .set("updatedAt", new Date());
+                .set("status", "closed")
+                .set("updatedAt", new Date())
+                .push("replies", reply);
 
         if (request.resolution() != null && !request.resolution().isBlank()) {
             update.set("data.resolution", request.resolution());
@@ -157,9 +190,7 @@ public class MinecraftReportsController {
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
         // Notify the reporter that their report was accepted
-        if (request.punishmentId() != null) {
-            notifyReporter(template, ticket);
-        }
+        notifyReporter(template, ticket, "REPORT_RESOLVED", replyContent);
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -169,9 +200,9 @@ public class MinecraftReportsController {
     }
 
     /**
-     * Send an in-game notification to the reporter that their report was accepted.
+     * Send an in-game notification to the reporter about their report outcome.
      */
-    private void notifyReporter(MongoTemplate template, Ticket ticket) {
+    private void notifyReporter(MongoTemplate template, Ticket ticket, String notificationType, String message) {
         try {
             String reporterUuid = ticket.getCreatorUuid();
             if (reporterUuid == null || reporterUuid.isBlank()) {
@@ -186,8 +217,8 @@ public class MinecraftReportsController {
 
             Map<String, Object> notification = new HashMap<>();
             notification.put("id", UUID.randomUUID().toString());
-            notification.put("type", "REPORT_RESOLVED");
-            notification.put("message", "Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.");
+            notification.put("type", notificationType);
+            notification.put("message", message);
             notification.put("timestamp", System.currentTimeMillis());
 
             Map<String, Object> notificationData = new HashMap<>();
