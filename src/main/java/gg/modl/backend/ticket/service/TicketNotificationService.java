@@ -85,7 +85,6 @@ public class TicketNotificationService {
             );
 
             emailService.send(toEmail, email);
-            log.info("Sent ticket reply email to {} for ticket {}", toEmail, ticketId);
         } catch (Exception e) {
             log.error("Failed to send ticket reply email to {} for ticket {}: {}",
                     toEmail, ticket.getId(), e.getMessage());
@@ -126,8 +125,6 @@ public class TicketNotificationService {
             // Add to player's pending notifications
             Update update = new Update().push("data.pendingNotifications", notification);
             template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-
-            log.info("Created in-game notification for player {} for ticket {}", playerUuid, ticket.getId());
         } catch (Exception e) {
             log.error("Failed to create in-game notification for player {} for ticket {}: {}",
                     playerUuid, ticket.getId(), e.getMessage());

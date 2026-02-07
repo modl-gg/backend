@@ -130,7 +130,6 @@ public class DomainSettingsService {
                 .set("data", data);
 
         template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
-        log.info("Migrated custom domain settings from Server document to settings collection for domain: {}", customDomain);
 
         // Invalidate CORS cache to ensure migrated domain is recognized
         corsConfigurationSource.invalidateCache(customDomain);
@@ -187,7 +186,6 @@ public class DomainSettingsService {
             if (cfResult.ssl() != null) {
                 sslStatus = mapCloudflareStatus(cfResult.ssl().status());
             }
-            log.info("Created Cloudflare custom hostname for domain: {} with ID: {}", customDomain, cloudflareHostnameId);
         }
 
         DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
@@ -250,7 +248,6 @@ public class DomainSettingsService {
                 .set("updatedAt", new Date());
 
         globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
-        log.info("Updated Server document with custom domain: {} status: {}", customDomain, status);
 
         // Invalidate CORS cache so the new domain status is recognized immediately
         corsConfigurationSource.invalidateCache(customDomain);
@@ -302,9 +299,6 @@ public class DomainSettingsService {
             if ("blocked".equals(cfResult.status()) || "moved".equals(cfResult.status())) {
                 error = "Domain verification failed. Status: " + cfResult.status();
             }
-
-            log.info("Verified Cloudflare custom hostname for domain: {} - status: {}, ssl: {}",
-                    domain, cfResult.status(), cfResult.ssl() != null ? cfResult.ssl().status() : "unknown");
         } else {
             verifiedStatus = "error";
             sslStatus = "error";
@@ -365,18 +359,13 @@ public class DomainSettingsService {
 
             if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
                 boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
-                if (deleted) {
-                    log.info("Deleted Cloudflare custom hostname for domain: {}", customDomain);
-                } else {
+                if (!deleted) {
                     log.warn("Failed to delete Cloudflare custom hostname for domain: {}", customDomain);
                 }
             } else if (customDomain != null && !customDomain.isEmpty()) {
                 CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(customDomain);
                 if (cfResult != null) {
-                    boolean deleted = cloudflareClient.deleteCustomHostname(cfResult.id());
-                    if (deleted) {
-                        log.info("Deleted Cloudflare custom hostname for domain: {}", customDomain);
-                    }
+                    cloudflareClient.deleteCustomHostname(cfResult.id());
                 }
             }
         }
@@ -411,7 +400,6 @@ public class DomainSettingsService {
                 .set("updatedAt", new Date());
 
         globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
-        log.info("Cleared custom domain fields from Server document: {}", serverId);
     }
 
     private String mapCloudflareStatus(String cfStatus) {

@@ -98,8 +98,6 @@ public class DomainService {
             );
         }
 
-        log.info("Created Cloudflare custom hostname for domain: {} with ID: {}", domain, cfResult.id());
-
         return new DomainStatusResponse(
                 domain,
                 "pending",
@@ -136,9 +134,6 @@ public class DomainService {
             message = "Domain verification pending. Please ensure your CNAME is configured correctly.";
         }
 
-        log.info("Verified Cloudflare custom hostname for domain: {} - status: {}, ssl: {}",
-                domain, cfResult.status(), cfResult.ssl() != null ? cfResult.ssl().status() : "unknown");
-
         return new DomainStatusResponse(
                 domain,
                 isActive ? "active" : "pending",
@@ -158,9 +153,7 @@ public class DomainService {
         }
 
         boolean deleted = cloudflareClient.deleteCustomHostname(cfResult.id());
-        if (deleted) {
-            log.info("Deleted Cloudflare custom hostname for domain: {}", domain);
-        } else {
+        if (!deleted) {
             log.warn("Failed to delete Cloudflare custom hostname for domain: {}", domain);
         }
 

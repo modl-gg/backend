@@ -457,10 +457,6 @@ public class AuditService {
                     rollbackCount++;
                 }
             }
-
-            log.info("Bulk rollback completed: {} punishments by {} rolled back by {}",
-                    rollbackCount, staffUsername, performerUsername);
-
         } catch (Exception e) {
             log.error("Error during bulk rollback for staff {}: {}", staffUsername, e.getMessage());
             throw new RuntimeException("Failed to rollback punishments: " + e.getMessage());

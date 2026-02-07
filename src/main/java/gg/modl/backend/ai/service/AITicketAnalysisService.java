@@ -353,9 +353,6 @@ public class AITicketAnalysisService {
 
             punishmentService.createPunishment(server, playerUuid, request);
             result.setWasAppliedAutomatically(true);
-
-            log.info("Automated punishment applied for ticket {}: {} on player {}",
-                    ticket.getId(), punishmentConfig.getName(), ticket.getReportedPlayer());
         } catch (Exception e) {
             log.error("Failed to apply automated punishment for ticket {}", ticket.getId(), e);
         }
