@@ -87,10 +87,13 @@ public class AITicketAnalysisService {
 
         AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
         String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
+        log.info("PRE_CHAT LOG: {}", ticket.getChatMessages());
         String chatLog = formatChatMessages(ticket.getChatMessages());
+        log.info("CHAT LOG: {}", chatLog);
         String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
 
         log.info("Analyzing chat report ticket {} with AI (strictness: {})", ticketId, settings.getStrictnessLevel());
+        log.info("LLM PROMPT: {}", fullPrompt);
 
         String rawResponse;
         try {
@@ -99,6 +102,7 @@ public class AITicketAnalysisService {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return null;
         }
+        log.info("LLM RESPONSE: {}", rawResponse);
 
         AIAnalysisResult result = parseResponse(rawResponse);
         result.setCreatedAt(new Date());

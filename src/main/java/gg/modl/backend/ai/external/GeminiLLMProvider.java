@@ -3,6 +3,8 @@ package gg.modl.backend.ai.external;
 import com.google.genai.Client;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.ThinkingConfig;
+import com.google.genai.types.ThinkingLevel;
 import gg.modl.backend.ai.LLMConfiguration;
 import org.jetbrains.annotations.NotNull;
 
@@ -27,6 +29,10 @@ public class GeminiLLMProvider implements LLMProvider {
                 .temperature(configuration.getGeminiTemperature())
                 .topP(configuration.getGeminiTopP())
                 .maxOutputTokens(configuration.getGeminiMaxOutputTokens())
+                .thinkingConfig(ThinkingConfig.builder()
+                    .thinkingLevel(ThinkingLevel.Known.LOW)
+                    .includeThoughts(false)
+                    .build())
                 .build());
 
         return Objects.requireNonNull(result.text(), "Failed to get response from Gemini API.");
