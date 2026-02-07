@@ -473,7 +473,7 @@ public class MinecraftPlayerController {
 
         // Get pending notifications from player data
         @SuppressWarnings("unchecked")
-        List<String> pendingNotifications = (List<String>) player.getData()
+        List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>) player.getData()
                 .getOrDefault("pendingNotifications", Collections.emptyList());
 
         Map<String, Object> profile = new LinkedHashMap<>();

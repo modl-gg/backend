@@ -2,6 +2,7 @@ package gg.modl.backend.ticket.controller;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.player.data.Player;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -10,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
 
+@Slf4j
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_REPORTS)
 @RequiredArgsConstructor
@@ -153,11 +156,49 @@ public class MinecraftReportsController {
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
+        // Notify the reporter that their report was accepted
+        if (request.punishmentId() != null) {
+            notifyReporter(template, ticket);
+        }
+
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
                 "message", "Report resolved"
         ));
+    }
+
+    /**
+     * Send an in-game notification to the reporter that their report was accepted.
+     */
+    private void notifyReporter(MongoTemplate template, Ticket ticket) {
+        try {
+            String reporterUuid = ticket.getCreatorUuid();
+            if (reporterUuid == null || reporterUuid.isBlank()) {
+                return;
+            }
+
+            Query playerQuery = Query.query(Criteria.where("minecraftUuid").is(reporterUuid));
+            Player player = template.findOne(playerQuery, Player.class, CollectionName.PLAYERS);
+            if (player == null) {
+                return;
+            }
+
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("id", UUID.randomUUID().toString());
+            notification.put("type", "REPORT_RESOLVED");
+            notification.put("message", "Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.");
+            notification.put("timestamp", System.currentTimeMillis());
+
+            Map<String, Object> notificationData = new HashMap<>();
+            notificationData.put("reportId", ticket.getId());
+            notification.put("data", notificationData);
+
+            Update playerUpdate = new Update().push("data.pendingNotifications", notification);
+            template.updateFirst(playerQuery, playerUpdate, Player.class, CollectionName.PLAYERS);
+        } catch (Exception e) {
+            log.error("Failed to notify reporter for ticket {}: {}", ticket.getId(), e.getMessage());
+        }
     }
 
     /**
