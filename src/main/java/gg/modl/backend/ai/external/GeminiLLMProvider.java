@@ -29,10 +29,6 @@ public class GeminiLLMProvider implements LLMProvider {
                 .temperature(configuration.getGeminiTemperature())
                 .topP(configuration.getGeminiTopP())
                 .maxOutputTokens(configuration.getGeminiMaxOutputTokens())
-                .thinkingConfig(ThinkingConfig.builder()
-                    .thinkingLevel(ThinkingLevel.Known.LOW)
-                    .includeThoughts(false)
-                    .build())
                 .build());
 
         return Objects.requireNonNull(result.text(), "Failed to get response from Gemini API.");
