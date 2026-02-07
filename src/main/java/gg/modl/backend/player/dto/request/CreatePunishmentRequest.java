@@ -15,6 +15,8 @@ public record CreatePunishmentRequest(
         @Nullable List<String> attachedTicketIds,
         @Nullable String severity,
         @Nullable String status,
-        @Nullable Map<String, Object> data
+        @Nullable Map<String, Object> data,
+        @Nullable String reason,
+        @Nullable Long duration
 ) {
 }

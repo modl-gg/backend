@@ -15,6 +15,11 @@ import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.DefaultPunishmentTypes;
+import gg.modl.backend.settings.data.DurationDetail;
+import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
@@ -42,10 +47,16 @@ public class PunishmentService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final OffenderThresholdSettingsService thresholdSettingsService;
 
-    public Player createPunishment(Server server, UUID playerUuid, CreatePunishmentRequest request) {
+    public String createPunishment(Server server, UUID playerUuid, CreatePunishmentRequest request) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("minecraftUuid").is(playerUuid.toString()));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null) {
+            throw new IllegalArgumentException("Player not found");
+        }
 
         Date now = new Date();
         Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
@@ -56,9 +67,78 @@ public class PunishmentService {
         if (request.status() != null) {
             data.put("status", request.status());
         }
+
+        // Calculate duration from severity if not explicitly provided
+        Long calculatedDuration = request.duration();
+        if (calculatedDuration == null && request.severity() != null) {
+            List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+            PunishmentType punishmentType = types.stream()
+                    .filter(t -> t.getOrdinal() == request.typeOrdinal())
+                    .findFirst()
+                    .orElse(null);
+
+            if (punishmentType != null) {
+                OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
+                PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
+
+                boolean isSocial = punishmentType.isSocial();
+                int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
+                String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
+
+                String internalSeverity = switch (request.severity().toLowerCase()) {
+                    case "low", "lenient" -> "low";
+                    case "regular" -> "regular";
+                    case "aggravated", "severe" -> "severe";
+                    default -> "regular";
+                };
+
+                DurationDetail durationDetail = punishmentType.getDurationDetail(internalSeverity, offenseLevel);
+
+                if (durationDetail == null) {
+                    PunishmentType defaultType = DefaultPunishmentTypes.getAll().stream()
+                            .filter(t -> t.getOrdinal() == request.typeOrdinal())
+                            .findFirst()
+                            .orElse(null);
+                    if (defaultType != null) {
+                        durationDetail = defaultType.getDurationDetail(internalSeverity, offenseLevel);
+                    }
+                }
+
+                data.put("offenseLevel", offenseLevel);
+
+                if (durationDetail != null) {
+                    long durationMs = durationDetail.toMilliseconds();
+                    if (durationMs != 0) {
+                        calculatedDuration = durationMs;
+                    }
+                }
+            }
+        }
+
+        if (calculatedDuration != null && calculatedDuration != 0) {
+            data.put("duration", calculatedDuration);
+        }
+        if (request.reason() != null && !request.reason().isBlank()) {
+            data.put("reason", request.reason());
+        }
         data.putIfAbsent("active", true);
 
+        // Build notes
         List<PunishmentNote> notes = new ArrayList<>();
+        notes.add(new PunishmentNote(
+                new ObjectId().toHexString(),
+                "issued punishment",
+                now,
+                request.issuerName()
+        ));
+        if (request.reason() != null && !request.reason().isBlank()) {
+            notes.add(new PunishmentNote(
+                    new ObjectId().toHexString(),
+                    request.reason(),
+                    now,
+                    request.issuerName()
+            ));
+        }
         if (request.notes() != null) {
             for (CreateNoteRequest noteRequest : request.notes()) {
                 String issuer = noteRequest.issuerName() != null ? noteRequest.issuerName() : request.issuerName();
@@ -66,6 +146,7 @@ public class PunishmentService {
             }
         }
 
+        // Build evidence
         List<PunishmentEvidence> evidence = new ArrayList<>();
         if (request.evidence() != null) {
             for (CreateEvidenceRequest evidenceRequest : request.evidence()) {
@@ -84,8 +165,10 @@ public class PunishmentService {
             }
         }
 
+        String punishmentId = IdGenerator.generatePunishmentId();
+
         Punishment punishment = new Punishment(
-                IdGenerator.generatePunishmentId(),
+                punishmentId,
                 request.typeOrdinal(),
                 request.issuerName(),
                 now,
@@ -100,7 +183,7 @@ public class PunishmentService {
         Update update = new Update().push("punishments", punishment);
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
-        return findPlayerByUuid(template, playerUuid);
+        return punishmentId;
     }
 
     public Player addModification(Server server, UUID playerUuid, String punishmentId, AddModificationRequest request) {
@@ -182,9 +265,9 @@ public class PunishmentService {
                 boolean matches = punishment.getId().contains(searchQuery) ||
                         pattern.matcher(punishment.getIssuerName()).find();
 
-                Map<String, Object> data = punishment.getData();
-                if (data != null) {
-                    String reason = (String) data.get("reason");
+                Map<String, Object> pData = punishment.getData();
+                if (pData != null) {
+                    String reason = (String) pData.get("reason");
                     if (reason != null && pattern.matcher(reason).find()) {
                         matches = true;
                     }

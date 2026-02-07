@@ -129,8 +129,9 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentService.createPunishment(server, UUID.fromString(uuid), createRequest);
-        if (player == null) {
+        try {
+            punishmentService.createPunishment(server, UUID.fromString(uuid), createRequest);
+        } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
 

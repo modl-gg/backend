@@ -7,7 +7,9 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -30,7 +32,6 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
-import gg.modl.backend.util.IdGenerator;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 
@@ -44,10 +45,11 @@ public class MinecraftPunishmentController {
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
+    private final PunishmentService punishmentService;
 
     @PostMapping("/create")
     public ResponseEntity<Void> createPunishment(
-            @RequestBody @Valid CreatePunishmentRequest request,
+            @RequestBody @Valid MinecraftCreatePunishmentRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -57,7 +59,7 @@ public class MinecraftPunishmentController {
 
     @PostMapping("/dynamic")
     public ResponseEntity<Map<String, Object>> createPunishmentDynamic(
-            @RequestBody @Valid CreatePunishmentRequest request,
+            @RequestBody @Valid MinecraftCreatePunishmentRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -712,133 +714,34 @@ public class MinecraftPunishmentController {
         ));
     }
 
-    private String createPunishmentInternal(Server server, CreatePunishmentRequest request) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+    private String createPunishmentInternal(Server server, MinecraftCreatePunishmentRequest request) {
+        UUID playerUuid = UUID.fromString(request.targetUuid());
 
-        Query query = Query.query(Criteria.where("minecraftUuid").is(request.targetUuid()));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            throw new IllegalArgumentException("Player not found");
-        }
-
-        Date now = new Date();
-        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
-
-        if (request.severity() != null) {
-            data.put("severity", request.severity());
-        }
-        if (request.status() != null) {
-            data.put("status", request.status());
-        }
-
-        // Calculate duration from severity if not explicitly provided
-        Long calculatedDuration = request.duration();
-        if (calculatedDuration == null && request.severity() != null) {
-            // Get punishment type and calculate duration based on severity and offense level
-            List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-            PunishmentType punishmentType = types.stream()
-                    .filter(t -> t.getOrdinal() == request.typeOrdinal())
-                    .findFirst()
-                    .orElse(null);
-
-            if (punishmentType != null) {
-                // Calculate player's current offense level
-                OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
-                PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
-
-                boolean isSocial = punishmentType.isSocial();
-                int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
-                String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
-
-                // Map severity string to internal severity used by getDurationDetail
-                String internalSeverity = switch (request.severity().toLowerCase()) {
-                    case "lenient" -> "low";
-                    case "regular" -> "regular";
-                    case "aggravated", "severe" -> "severe";
-                    default -> "regular";
-                };
-
-                DurationDetail durationDetail = punishmentType.getDurationDetail(internalSeverity, offenseLevel);
-
-                // If no duration detail from stored type, fall back to defaults
-                if (durationDetail == null) {
-                    PunishmentType defaultType = DefaultPunishmentTypes.getAll().stream()
-                            .filter(t -> t.getOrdinal() == request.typeOrdinal())
-                            .findFirst()
-                            .orElse(null);
-                    if (defaultType != null) {
-                        durationDetail = defaultType.getDurationDetail(internalSeverity, offenseLevel);
-                    }
-                }
-
-                if (durationDetail != null) {
-                    long durationMs = durationDetail.toMilliseconds();
-                    // toMilliseconds returns -1 for permanent, positive for timed
-                    // Don't accept 0 as valid (would be treated as permanent anyway)
-                    if (durationMs != 0) {
-                        calculatedDuration = durationMs;
-                    }
-                }
-            }
-        }
-
-        // Only store duration if we have a valid value
-        // -1 = permanent, positive = timed duration in ms
-        if (calculatedDuration != null && calculatedDuration != 0) {
-            data.put("duration", calculatedDuration);
-        }
-        if (request.reason() != null && !request.reason().isBlank()) {
-            data.put("reason", request.reason());
-        }
-        data.putIfAbsent("active", true);
-
-        List<PunishmentNote> notes = new ArrayList<>();
-        // Add automatic "issued" note
-        notes.add(new PunishmentNote(
-                new ObjectId().toHexString(),
-                "issued punishment",
-                now,
-                request.issuerName()
-        ));
-        // Add reason as a separate note if provided
-        if (request.reason() != null && !request.reason().isBlank()) {
-            notes.add(new PunishmentNote(
-                    new ObjectId().toHexString(),
-                    request.reason(),
-                    now,
-                    request.issuerName()
-            ));
-        }
-        // Add any additional notes from the request
+        // Map Minecraft-specific notes (List<String>) to CreateNoteRequest format
+        List<gg.modl.backend.player.dto.request.CreateNoteRequest> noteRequests = null;
         if (request.notes() != null) {
-            for (String noteText : request.notes()) {
-                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteText, now, request.issuerName()));
-            }
+            noteRequests = request.notes().stream()
+                    .map(text -> new gg.modl.backend.player.dto.request.CreateNoteRequest(text, request.issuerName(), null))
+                    .toList();
         }
 
-        String punishmentId = IdGenerator.generatePunishmentId();
-
-        Punishment punishment = new Punishment(
-                punishmentId,
-                request.typeOrdinal(),
+        CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
                 request.issuerName(),
-                now,
+                request.typeOrdinal(),
+                noteRequests,
                 null,
-                new ArrayList<>(),
-                notes,
-                new ArrayList<>(),
-                request.attachedTicketIds() != null ? request.attachedTicketIds() : new ArrayList<>(),
-                data
+                request.attachedTicketIds(),
+                request.severity(),
+                request.status(),
+                request.data(),
+                request.reason(),
+                request.duration()
         );
 
-        Update update = new Update().push("punishments", punishment);
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-
-        return punishmentId;
+        return punishmentService.createPunishment(server, playerUuid, serviceRequest);
     }
 
-    public record CreatePunishmentRequest(
+    public record MinecraftCreatePunishmentRequest(
             @NotBlank String targetUuid,
             @NotBlank String issuerName,
             @JsonProperty("type_ordinal") int typeOrdinal,

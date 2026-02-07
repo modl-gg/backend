@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -14,9 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
@@ -31,6 +30,7 @@ public class PanelSettingsController {
     private final DomainSettingsService domainSettingsService;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
+    private final AITicketAnalysisService aiTicketAnalysisService;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
@@ -424,5 +424,35 @@ public class PanelSettingsController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file: " + e.getMessage()));
         }
+    }
+
+    @PostMapping("/ai-apply-punishment/{ticketId}")
+    public ResponseEntity<?> applyAIPunishment(
+            @PathVariable String ticketId,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String staffName = body.getOrDefault("staffName", "Staff");
+
+        var result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, staffName);
+        if (!result.success()) {
+            return ResponseEntity.badRequest().body(Map.of("error", result.error()));
+        }
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    @PostMapping("/ai-dismiss-suggestion/{ticketId}")
+    public ResponseEntity<?> dismissAISuggestion(
+            @PathVariable String ticketId,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        var result = aiTicketAnalysisService.dismissAISuggestion(server, ticketId);
+        if (!result.success()) {
+            return ResponseEntity.badRequest().body(Map.of("error", result.error()));
+        }
+        return ResponseEntity.ok(Map.of("success", true));
     }
 }
