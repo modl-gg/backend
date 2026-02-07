@@ -87,13 +87,10 @@ public class AITicketAnalysisService {
 
         AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
         String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
-        log.info("PRE_CHAT LOG: {}", ticket.getChatMessages());
-        String chatLog = formatChatMessages(ticket.getChatMessages());
-        log.info("CHAT LOG: {}", chatLog);
+        String chatLog = ticket.getChatMessages() != null ? ticket.getChatMessages().stream()
+            .map(Ticket.ChatMessage::getContent)
+            .collect(Collectors.joining("\n")) : "";
         String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
-
-        log.info("Analyzing chat report ticket {} with AI (strictness: {})", ticketId, settings.getStrictnessLevel());
-        log.info("LLM PROMPT: {}", fullPrompt);
 
         String rawResponse;
         try {
@@ -102,7 +99,6 @@ public class AITicketAnalysisService {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return null;
         }
-        log.info("LLM RESPONSE: {}", rawResponse);
 
         AIAnalysisResult result = parseResponse(rawResponse);
         result.setCreatedAt(new Date());
@@ -114,8 +110,6 @@ public class AITicketAnalysisService {
 
         Update update = new Update().set("aiAnalysis", result).set("updatedAt", new Date());
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
-
-        log.info("AI analysis complete for ticket {}: violation={}", ticketId, result.hasViolation());
 
         return result;
     }
@@ -216,23 +210,6 @@ public class AITicketAnalysisService {
                %s
                """
             .formatted(modeInstruction);
-    }
-
-    private String formatChatMessages(List<Map<String, Object>> chatMessages) {
-        StringBuilder sb = new StringBuilder();
-
-        for (Map<String, Object> msg : chatMessages) {
-            String username = msg.getOrDefault("username", "Unknown").toString();
-            String message = msg.getOrDefault("message", "").toString();
-            String timestamp = msg.containsKey("timestamp") ? msg.get("timestamp").toString() : "";
-
-            if (!timestamp.isEmpty()) {
-                sb.append("[").append(timestamp).append("] ");
-            }
-            sb.append(username).append(": ").append(message).append("\n");
-        }
-
-        return sb.toString();
     }
 
     private String buildPrompt(String systemPrompt, String chatLog, String reportedPlayer, AIModerationSettings settings) {

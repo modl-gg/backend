@@ -51,22 +51,10 @@ public class MinecraftTicketsController {
         String ticketId = generateTicketId(template, ticketType);
         Date now = new Date();
 
-        // Parse chat messages from JSON strings to Maps
-        // Plugin sends messages as: {"username":"Name","message":"Text","timestamp":"2024-..."}
-        List<Map<String, Object>> chatMessages = null;
+        List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
         if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
-            chatMessages = new ArrayList<>();
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             for (String msg : request.chatMessages()) {
-                try {
-                    // Parse the JSON string into a Map
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> parsed = mapper.readValue(msg, Map.class);
-                    chatMessages.add(parsed);
-                } catch (Exception e) {
-                    // If parsing fails, store as raw content
-                    chatMessages.add(Map.of("content", msg, "timestamp", now));
-                }
+                chatMessages.add(new Ticket.ChatMessage(msg, now));
             }
         }
 

@@ -44,7 +44,7 @@ public class Ticket {
     @Builder.Default
     private List<TicketNote> notes = new ArrayList<>();
 
-    private List<Map<String, Object>> chatMessages;
+    private List<ChatMessage> chatMessages;
 
     private Map<String, Object> formData;
     private Map<String, Object> data;
@@ -57,4 +57,11 @@ public class Ticket {
     private Date updatedAt;
 
     private AIAnalysisResult aiAnalysis;
+
+    @Data
+    @AllArgsConstructor
+    public static class ChatMessage {
+        private String content;
+        private Date timestamp;
+    }
 }
