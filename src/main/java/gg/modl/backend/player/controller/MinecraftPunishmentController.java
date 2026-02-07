@@ -13,6 +13,7 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import jakarta.servlet.http.HttpServletRequest;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -840,7 +841,7 @@ public class MinecraftPunishmentController {
     public record CreatePunishmentRequest(
             @NotBlank String targetUuid,
             @NotBlank String issuerName,
-            int typeOrdinal,
+            @JsonProperty("type_ordinal") int typeOrdinal,
             String reason,
             Long duration,
             Map<String, Object> data,
