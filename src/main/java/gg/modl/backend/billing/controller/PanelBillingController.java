@@ -8,6 +8,7 @@ import gg.modl.backend.billing.service.StripeService;
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class PanelBillingController {
     private final BillingService billingService;
     private final StripeService stripeService;
     private final UsageTrackingService usageTrackingService;
+    private final PermissionService permissionService;
 
     @PostMapping("/checkout-session")
     public ResponseEntity<?> createCheckoutSession(HttpServletRequest request) {
@@ -33,6 +35,10 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
 
         try {
             CheckoutSessionResponse response = billingService.createCheckoutSession(server);
@@ -50,6 +56,10 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
 
         try {
             PortalSessionResponse response = billingService.createPortalSession(server);
@@ -69,6 +79,10 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
 
         try {
             CancelResponse response = billingService.cancelSubscription(server);
@@ -88,6 +102,10 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
 
         try {
             ResubscribeResponse response = billingService.resubscribe(server);
@@ -132,6 +150,10 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
 
         try {
             UsageBillingSettingsResponse response = usageTrackingService.updateUsageBillingSettings(server, settingsRequest.enabled());
