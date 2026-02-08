@@ -436,9 +436,9 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        // Check if the punishment has already been pardoned (has MANUAL_PARDON or APPEAL_ACCEPT modification)
+        // Check if the punishment has already been pardoned
         boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
-                .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()));
+                .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()) || "SYSTEM_PARDON".equals(m.type()));
 
         if (alreadyPardoned) {
             return ResponseEntity.ok(Map.of(
@@ -491,6 +491,12 @@ public class MinecraftPunishmentController {
         }
 
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
+
+        // Cascade pardon linked bans if this was an alt-blocking ban
+        Map<String, Object> pData = punishment.getData();
+        if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
+            punishmentService.cascadePardonLinkedBans(server, punishmentId);
+        }
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -643,6 +649,27 @@ public class MinecraftPunishmentController {
                 .set("punishments.$.data.duration", request.newDuration());
 
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
+
+        // Cascade duration change to linked bans if this is an alt-blocking punishment
+        Punishment targetPunishment = player.getPunishments().stream()
+                .filter(p -> punishmentId.equals(p.getId()))
+                .findFirst()
+                .orElse(null);
+
+        if (targetPunishment != null) {
+            Map<String, Object> pData = targetPunishment.getData();
+            if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
+                int cascaded = punishmentService.cascadeDurationChangeToLinkedBans(
+                        server, punishmentId, request.newDuration(), request.issuerName());
+                if (cascaded > 0) {
+                    return ResponseEntity.ok(Map.of(
+                            "status", 200,
+                            "success", true,
+                            "message", "Duration changed (cascaded to " + cascaded + " linked ban" + (cascaded > 1 ? "s" : "") + ")"
+                    ));
+                }
+            }
+        }
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,

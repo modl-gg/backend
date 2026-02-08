@@ -239,6 +239,27 @@ public class PanelPlayerController {
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
+    @PostMapping("/{uuid}/punishments/{punishmentId}/tickets")
+    public ResponseEntity<SimpleResponse> modifyPunishmentTickets(
+            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+            @PathVariable String punishmentId,
+            @RequestBody @Valid ModifyPunishmentTicketsRequest ticketRequest,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        Player player = punishmentService.modifyPunishmentTickets(
+                server,
+                UUID.fromString(uuid),
+                punishmentId,
+                ticketRequest
+        );
+        if (player == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        return ResponseEntity.ok(new SimpleResponse(true));
+    }
+
     @GetMapping("/{uuid}/linked")
     public ResponseEntity<List<LinkedAccountResponse>> getLinkedAccounts(
             @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
@@ -251,6 +272,16 @@ public class PanelPlayerController {
         );
 
         return ResponseEntity.ok(linkedAccounts);
+    }
+
+    @GetMapping("/punishments/{punishmentId}/linked-bans")
+    public ResponseEntity<List<Map<String, Object>>> getLinkedBans(
+            @PathVariable String punishmentId,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        List<Map<String, Object>> linkedBans = punishmentService.getLinkedBansForParent(server, punishmentId);
+        return ResponseEntity.ok(linkedBans);
     }
 
     @PostMapping("/{uuid}/find-linked")

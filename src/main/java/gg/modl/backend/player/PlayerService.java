@@ -92,21 +92,25 @@ public class PlayerService {
     }
 
     public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip) {
-        return loginPlayer(server, minecraftUuid, username, ip, null);
+        return loginPlayer(server, minecraftUuid, username, ip, null, null);
     }
 
     public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo) {
+        return loginPlayer(server, minecraftUuid, username, ip, ipInfo, null);
+    }
+
+    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash) {
         MongoTemplate template = getTemplate(server);
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
 
         if (existingPlayer.isPresent()) {
             Player player = existingPlayer.get();
-            updatePlayerOnLogin(template, player, username, ip, ipInfo);
+            updatePlayerOnLogin(template, player, username, ip, ipInfo, skinHash);
             return findByMinecraftUuid(server, minecraftUuid).orElse(player);
         } else {
             Player player = createPlayer(server, minecraftUuid, username);
             addIpToPlayer(template, player, ip, ipInfo);
-            updatePlayerDataOnLogin(template, player);
+            updatePlayerDataOnLogin(template, player, skinHash);
             return findByMinecraftUuid(server, minecraftUuid).orElse(player);
         }
     }
@@ -194,7 +198,7 @@ public class PlayerService {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 
-    private void updatePlayerOnLogin(MongoTemplate template, Player player, String username, String ip, Map<String, Object> ipInfo) {
+    private void updatePlayerOnLogin(MongoTemplate template, Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash) {
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
 
         String currentUsername = player.getUsernames().isEmpty() ? null :
@@ -206,7 +210,7 @@ public class PlayerService {
         }
 
         addIpToPlayer(template, player, ip, ipInfo);
-        updatePlayerDataOnLogin(template, player);
+        updatePlayerDataOnLogin(template, player, skinHash);
     }
 
     private void addIpToPlayer(MongoTemplate template, Player player, String ipAddress, Map<String, Object> ipInfo) {
@@ -244,7 +248,7 @@ public class PlayerService {
         }
     }
 
-    private void updatePlayerDataOnLogin(MongoTemplate template, Player player) {
+    private void updatePlayerDataOnLogin(MongoTemplate template, Player player, String skinHash) {
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
         Date now = new Date();
 
@@ -254,6 +258,10 @@ public class PlayerService {
 
         if (player.getData() == null || !player.getData().containsKey("firstJoin")) {
             update.set("data.firstJoin", now);
+        }
+
+        if (skinHash != null && !skinHash.isBlank()) {
+            update.set("data.lastSkinHash", skinHash);
         }
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);

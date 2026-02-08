@@ -82,7 +82,7 @@ public class PlayerStatusCalculator {
 
         for (PunishmentModification mod : punishment.getModifications()) {
             String type = mod.type();
-            if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type)) {
+            if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
                 log.info("[isPunishmentActive] {} -> false (pardoned: {})", pId, type);
                 return false;
             }

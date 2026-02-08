@@ -170,7 +170,7 @@ public class MinecraftSyncController {
                 for (Punishment punishment : player.getPunishments()) {
                     boolean recentlyPardoned = punishment.getModifications().stream()
                             .anyMatch(m -> m.date() != null && m.date().toInstant().isAfter(lastSync)
-                                    && ("MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type())));
+                                    && ("MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()) || "SYSTEM_PARDON".equals(m.type())));
                     if (recentlyPardoned) {
                         String cat = statusCalculator.getEffectiveCategory(punishment, types);
                         if (cat != null) pardonedCategories.add(cat);
@@ -362,7 +362,7 @@ public class MinecraftSyncController {
             if (modifications != null) {
                 for (Map<String, Object> mod : modifications) {
                     String modType = (String) mod.get("type");
-                    if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType)) {
+                    if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType) || "SYSTEM_PARDON".equals(modType)) {
                         Map<String, Object> notif = new LinkedHashMap<>();
                         notif.put("id", "pardon_" + punishment.get("id"));
                         notif.put("type", "PUNISHMENT_PARDONED");

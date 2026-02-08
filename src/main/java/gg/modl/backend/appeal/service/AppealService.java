@@ -9,6 +9,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -30,6 +31,7 @@ import java.util.*;
 @Slf4j
 public class AppealService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final PunishmentService punishmentService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String APPEAL_TYPE = "appeal";
@@ -324,6 +326,20 @@ public class AppealService {
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 
         template.updateFirst(playerQuery, update, Player.class, CollectionName.PLAYERS);
+
+        // Cascade pardon linked bans if the appealed punishment had alt-blocking enabled
+        Player player = template.findOne(Query.query(Criteria.where("minecraftUuid").is(playerUuid)), Player.class, CollectionName.PLAYERS);
+        if (player != null) {
+            Punishment appealedPunishment = player.getPunishments().stream()
+                    .filter(p -> punishmentId.equals(p.getId()))
+                    .findFirst()
+                    .orElse(null);
+            if (appealedPunishment != null && appealedPunishment.getData() != null
+                    && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
+                String dbName = template.getDb().getName();
+                punishmentService.cascadePardonLinkedBans(dbName, punishmentId);
+            }
+        }
     }
 
     private TicketReply createSystemReply(String staffUsername, String content, String action) {

@@ -7,6 +7,7 @@ import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.service.AccountLinkingService;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
@@ -44,6 +45,7 @@ public class MinecraftPlayerController {
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
     private final PunishmentService punishmentService;
+    private final AccountLinkingService accountLinkingService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
@@ -66,20 +68,37 @@ public class MinecraftPlayerController {
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
+        UUID playerUuid = UUID.fromString(request.minecraftUUID());
+
         Player player = playerService.loginPlayer(
                 server,
-                UUID.fromString(request.minecraftUUID()),
+                playerUuid,
                 request.username(),
                 request.ip(),
-                request.ipInfo()
+                request.ipInfo(),
+                request.skinHash()
         );
+
+        // Link accounts by shared IPs
+        accountLinkingService.findAndLinkAccounts(server, playerUuid);
+
+        // Re-fetch player to get updated linked accounts data
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        Query refetchQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUUID()));
+        player = template.findOne(refetchQuery, Player.class, CollectionName.PLAYERS);
 
         // Promote queued punishments if previous ones expired or were pardoned
         List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
-        if (!promoted.isEmpty()) {
+
+        // Check restriction auto-pardons (Bad Username / Bad Skin)
+        List<String> autoPardoned = punishmentService.checkRestrictionAutoPardons(
+                server, player, request.username(), request.skinHash());
+
+        // Enforce alt-blocking bans: create LinkedBan if linked account has alt-blocking ban
+        List<String> linkedBans = punishmentService.enforceAltBlockingBans(server, player);
+
+        if (!promoted.isEmpty() || !autoPardoned.isEmpty() || !linkedBans.isEmpty()) {
             // Re-fetch player to get updated punishment data
-            MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-            Query refetchQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUUID()));
             player = template.findOne(refetchQuery, Player.class, CollectionName.PLAYERS);
         }
 
@@ -722,9 +741,9 @@ public class MinecraftPlayerController {
         int pardoned = 0;
 
         for (Punishment punishment : player.getPunishments()) {
-            // Check if already pardoned (has MANUAL_PARDON or APPEAL_ACCEPT modification)
+            // Check if already pardoned
             boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
-                    .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()));
+                    .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()) || "SYSTEM_PARDON".equals(m.type()));
             if (alreadyPardoned) continue;
 
             // For active punishments, always allow pardon
@@ -793,6 +812,13 @@ public class MinecraftPlayerController {
 
                 template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
                 pardoned++;
+
+                // Cascade pardon linked bans if this was an alt-blocking ban
+                Map<String, Object> pData = punishment.getData();
+                if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
+                    int cascaded = punishmentService.cascadePardonLinkedBans(server, punishment.getId());
+                    log.info("[PARDON] Cascade-pardoned {} linked bans for parent {}", cascaded, punishment.getId());
+                }
             }
         }
 
@@ -808,7 +834,8 @@ public class MinecraftPlayerController {
             @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
             @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
             @Pattern(regexp = RegExpConstants.IP) String ip,
-            Map<String, Object> ipInfo
+            Map<String, Object> ipInfo,
+            String skinHash
     ) {}
 
     public record SubmitIpInfoRequest(
