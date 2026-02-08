@@ -6,6 +6,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.Date;
@@ -15,6 +16,7 @@ import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class PlayerStatusCalculator {
     private final PunishmentTypeService punishmentTypeService;
 
@@ -55,25 +57,32 @@ public class PlayerStatusCalculator {
     }
 
     public boolean isPunishmentActive(Punishment punishment) {
+        String pId = punishment.getId();
+
         // Kicks (ordinal 0) are instant and never considered "active"
         if (punishment.getType_ordinal() == 0) {
+            log.info("[isPunishmentActive] {} -> false (kick)", pId);
             return false;
         }
 
         Map<String, Object> data = punishment.getData();
         if (data == null) {
+            log.info("[isPunishmentActive] {} -> false (no data)", pId);
             return false;
         }
 
         // Queued punishments (status = "Unstarted") are not yet active
-        String status = (String) data.get("status");
+        Object statusObj = data.get("status");
+        String status = statusObj instanceof String ? (String) statusObj : null;
         if ("Unstarted".equals(status)) {
+            log.info("[isPunishmentActive] {} -> false (Unstarted)", pId);
             return false;
         }
 
         for (PunishmentModification mod : punishment.getModifications()) {
             String type = mod.type();
             if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type)) {
+                log.info("[isPunishmentActive] {} -> false (pardoned: {})", pId, type);
                 return false;
             }
         }
@@ -87,21 +96,27 @@ public class PlayerStatusCalculator {
             } else if (expiresObj instanceof Long) {
                 expires = new Date((Long) expiresObj);
             } else {
+                log.info("[isPunishmentActive] {} -> true (expires field non-date: {})", pId, expiresObj.getClass().getSimpleName());
                 return true;
             }
 
             if (expires.before(new Date())) {
+                log.info("[isPunishmentActive] {} -> false (expired: {})", pId, expires);
                 return false;
             }
+            log.info("[isPunishmentActive] {} -> true (not expired yet: {})", pId, expires);
             return true;
         }
 
         // Check duration-based expiry
         Date effectiveExpiry = getEffectiveExpiry(punishment);
         if (effectiveExpiry != null && effectiveExpiry.before(new Date())) {
+            log.info("[isPunishmentActive] {} -> false (duration expired: {})", pId, effectiveExpiry);
             return false;
         }
 
+        log.info("[isPunishmentActive] {} -> true (active, ordinal={}, started={}, data.status={}, data.keys={})",
+                pId, punishment.getType_ordinal(), punishment.getStarted(), statusObj, data.keySet());
         return true;
     }
 

@@ -16,6 +16,7 @@ import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -31,6 +32,7 @@ import java.util.*;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
+@Slf4j
 public class MinecraftSyncController {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
@@ -87,24 +89,40 @@ public class MinecraftSyncController {
                 Set<String> categoriesWithActiveStarted = new HashSet<>();
                 Map<String, Punishment> oldestUnstartedPerCategory = new LinkedHashMap<>();
 
-                for (Punishment p : player.getPunishments()) {
-                    if (!statusCalculator.isPunishmentActive(p)) continue;
+                log.info("[SYNC] Player {} ({}) has {} punishments", username, uuid, player.getPunishments().size());
 
+                for (Punishment p : player.getPunishments()) {
+                    boolean isActive = statusCalculator.isPunishmentActive(p);
                     PunishmentType pt = types.stream()
                             .filter(t -> t.getOrdinal() == p.getType_ordinal())
                             .findFirst().orElse(null);
                     String category = pt != null && pt.isBan() ? "BAN"
                             : pt != null && pt.isMute() ? "MUTE" : null;
 
+                    log.info("[SYNC]   Punishment {} ordinal={} category={} active={} started={} data.status={} data.keys={}",
+                            p.getId(), p.getType_ordinal(), category, isActive,
+                            p.getStarted(), p.getData() != null ? p.getData().get("status") : "null",
+                            p.getData() != null ? p.getData().keySet() : "null");
+
+                    if (!isActive) continue;
+
                     if (category != null && p.getStarted() != null) {
                         categoriesWithActiveStarted.add(category);
+                        log.info("[SYNC]   -> Added {} to categoriesWithActiveStarted (started={})", category, p.getStarted());
                     } else if (category != null && p.getStarted() == null) {
                         Punishment existing = oldestUnstartedPerCategory.get(category);
                         if (existing == null || p.getIssued().before(existing.getIssued())) {
                             oldestUnstartedPerCategory.put(category, p);
+                            log.info("[SYNC]   -> Set as oldest unstarted for {} (issued={})", category, p.getIssued());
                         }
                     }
                 }
+
+                log.info("[SYNC] categoriesWithActiveStarted={} oldestUnstartedPerCategory={}",
+                        categoriesWithActiveStarted,
+                        oldestUnstartedPerCategory.entrySet().stream()
+                                .map(e -> e.getKey() + "=" + e.getValue().getId())
+                                .toList());
 
                 for (Punishment punishment : player.getPunishments()) {
                     boolean isActive = statusCalculator.isPunishmentActive(punishment);
@@ -134,11 +152,18 @@ public class MinecraftSyncController {
 
                     if (category != null) {
                         // Don't send if there's already an active started punishment in this category
-                        if (categoriesWithActiveStarted.contains(category)) continue;
+                        if (categoriesWithActiveStarted.contains(category)) {
+                            log.info("[SYNC]   SKIPPING {} (category {} already has active started)", punishment.getId(), category);
+                            continue;
+                        }
                         // Only send the oldest unstarted per category
-                        if (oldestUnstartedPerCategory.get(category) != punishment) continue;
+                        if (oldestUnstartedPerCategory.get(category) != punishment) {
+                            log.info("[SYNC]   SKIPPING {} (not oldest unstarted for {})", punishment.getId(), category);
+                            continue;
+                        }
                     }
 
+                    log.info("[SYNC]   SENDING pending punishment {} (category={}, ordinal={})", punishment.getId(), category, punishment.getType_ordinal());
                     Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,

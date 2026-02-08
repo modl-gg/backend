@@ -129,6 +129,7 @@ public class PunishmentService {
                 .orElse(null);
 
         if (newPunishmentType != null && (newPunishmentType.isBan() || newPunishmentType.isMute())) {
+            String newCategory = newPunishmentType.isBan() ? "BAN" : "MUTE";
             boolean hasExistingInCategory = player.getPunishments().stream().anyMatch(existing -> {
                 PunishmentType existingType = types.stream()
                         .filter(t -> t.getOrdinal() == existing.getType_ordinal())
@@ -140,8 +141,17 @@ public class PunishmentService {
                         || (newPunishmentType.isMute() && existingType.isMute());
                 if (!sameCategory) return false;
 
-                return statusCalculator.isPunishmentActive(existing) || isUnstarted(existing);
+                boolean active = statusCalculator.isPunishmentActive(existing);
+                boolean unstarted = isUnstarted(existing);
+                log.info("[CREATE_PUNISHMENT] Checking existing {} ordinal={} active={} unstarted={} data.status={}",
+                        existing.getId(), existing.getType_ordinal(), active, unstarted,
+                        existing.getData() != null ? existing.getData().get("status") : "null");
+                return active || unstarted;
             });
+
+            log.info("[CREATE_PUNISHMENT] New punishment ordinal={} category={} hasExistingInCategory={} -> {}",
+                    request.typeOrdinal(), newCategory, hasExistingInCategory,
+                    hasExistingInCategory ? "QUEUING as Unstarted" : "ACTIVE");
 
             if (hasExistingInCategory) {
                 data.put("status", "Unstarted");

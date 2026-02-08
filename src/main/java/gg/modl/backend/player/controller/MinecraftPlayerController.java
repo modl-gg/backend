@@ -21,6 +21,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -36,6 +37,7 @@ import java.util.*;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
+@Slf4j
 public class MinecraftPlayerController {
     private final PlayerService playerService;
     private final DynamicMongoTemplateProvider mongoProvider;
@@ -84,8 +86,16 @@ public class MinecraftPlayerController {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> activePunishments = new ArrayList<>();
 
+        log.info("[LOGIN] Player {} has {} punishments", request.username(), player.getPunishments().size());
         for (Punishment punishment : player.getPunishments()) {
-            if (statusCalculator.isPunishmentActive(punishment)) {
+            boolean isActive = statusCalculator.isPunishmentActive(punishment);
+            log.info("[LOGIN]   Punishment {} ordinal={} active={} started={} data.status={} data.keys={}",
+                    punishment.getId(), punishment.getType_ordinal(), isActive,
+                    punishment.getStarted(),
+                    punishment.getData() != null ? punishment.getData().get("status") : "null",
+                    punishment.getData() != null ? punishment.getData().keySet() : "null");
+
+            if (isActive) {
                 // Skip kicks - they are instant punishments and shouldn't be "active"
                 PunishmentType punishmentType = types.stream()
                         .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
@@ -98,8 +108,10 @@ public class MinecraftPlayerController {
             }
         }
 
+        log.info("[LOGIN] Active punishments before dedup: {}", activePunishments.size());
         // Deduplicate: keep only the oldest active punishment per category (BAN, MUTE)
         activePunishments = deduplicateActivePunishments(activePunishments);
+        log.info("[LOGIN] Active punishments after dedup: {}", activePunishments.size());
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
