@@ -153,9 +153,19 @@ public class PlayerService {
 
     public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
         log.info("[IP-LOOKUP] updateIpGeoData called: uuid={}, ip={}, ipInfo={}", minecraftUuid, ipAddress, ipInfo);
+        // Find player first using the same approach as findByMinecraftUuid (which works)
+        Optional<Player> playerOpt = findByMinecraftUuid(server, UUID.fromString(minecraftUuid));
+        if (playerOpt.isEmpty()) {
+            log.warn("[IP-LOOKUP] Player not found for uuid={}", minecraftUuid);
+            return;
+        }
+        Player player = playerOpt.get();
+        log.info("[IP-LOOKUP] Found player id={}, ipAddresses count={}", player.getId(), player.getIpAddresses().size());
+
+        // Update using _id + positional operator (same pattern as addIpToPlayer which works)
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(
-                Criteria.where("minecraftUuid").is(minecraftUuid)
+                Criteria.where("_id").is(player.getId())
                         .and("ipAddresses.ipAddress").is(ipAddress)
         );
         Update update = new Update()
@@ -164,9 +174,7 @@ public class PlayerService {
                 .set("ipAddresses.$.asn", ipInfo.get("asn"))
                 .set("ipAddresses.$.proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
                 .set("ipAddresses.$.hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
-        // Use collection name only (no Player.class) to avoid Spring Data type conversion
-        // on the minecraftUuid field (UUID Java type vs String query parameter)
-        var result = template.updateFirst(query, update, CollectionName.PLAYERS);
+        var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         log.info("[IP-LOOKUP] updateIpGeoData result: matched={}, modified={}, db={}", result.getMatchedCount(), result.getModifiedCount(), server.getDatabaseName());
     }
 
