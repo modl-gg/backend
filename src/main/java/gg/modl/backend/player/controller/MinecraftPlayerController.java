@@ -36,6 +36,7 @@ import java.util.*;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class MinecraftPlayerController {
     private final PlayerService playerService;
     private final DynamicMongoTemplateProvider mongoProvider;
@@ -105,10 +106,20 @@ public class MinecraftPlayerController {
         // Always ask the plugin to do IP geo lookup if the IP has no geo data yet
         List<String> pendingIpLookups = new ArrayList<>();
         if (request.ip() != null) {
+            log.info("[IP-LOOKUP] Checking IP {} for player {}", request.ip(), request.username());
+            for (var ipEntry : player.getIpAddresses()) {
+                if (ipEntry.getIpAddress().equals(request.ip())) {
+                    log.info("[IP-LOOKUP] Found IP entry: ip={}, country={}, region={}, asn={}",
+                            ipEntry.getIpAddress(), ipEntry.getCountry(), ipEntry.getRegion(), ipEntry.getAsn());
+                }
+            }
             boolean ipNeedsLookup = player.getIpAddresses().stream()
                     .anyMatch(ip -> ip.getIpAddress().equals(request.ip()) && ip.getCountry() == null);
             if (ipNeedsLookup) {
                 pendingIpLookups.add(request.ip());
+                log.info("[IP-LOOKUP] IP {} needs geo lookup, adding to pendingIpLookups", request.ip());
+            } else {
+                log.info("[IP-LOOKUP] IP {} already has geo data or not found in player record", request.ip());
             }
         }
 
@@ -679,6 +690,8 @@ public class MinecraftPlayerController {
             @RequestBody @Valid SubmitIpInfoRequest request,
             HttpServletRequest httpRequest
     ) {
+        log.info("[IP-LOOKUP] submit-ip-info called: uuid={}, ip={}, country={}, region={}, asn={}, proxy={}, hosting={}",
+                request.minecraftUUID(), request.ip(), request.country(), request.region(), request.asn(), request.proxy(), request.hosting());
         Server server = RequestUtil.getRequestServer(httpRequest);
         Map<String, Object> ipInfo = Map.of(
                 "country", request.country() != null ? request.country() : "",
@@ -688,6 +701,7 @@ public class MinecraftPlayerController {
                 "hosting", request.hosting()
         );
         playerService.updateIpGeoData(server, request.minecraftUUID(), request.ip(), ipInfo);
+        log.info("[IP-LOOKUP] updateIpGeoData completed for uuid={}, ip={}", request.minecraftUUID(), request.ip());
         return ResponseEntity.ok(Map.of("status", 200, "success", true));
     }
 
