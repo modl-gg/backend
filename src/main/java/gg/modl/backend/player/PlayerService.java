@@ -152,10 +152,8 @@ public class PlayerService {
     }
 
     public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
-        log.info("[IP-LOOKUP] updateIpGeoData called: uuid={}, ip={}, ipInfo={}", minecraftUuid, ipAddress, ipInfo);
         Optional<Player> playerOpt = findByMinecraftUuid(server, UUID.fromString(minecraftUuid));
         if (playerOpt.isEmpty()) {
-            log.warn("[IP-LOOKUP] Player not found for uuid={}", minecraftUuid);
             return;
         }
         Player player = playerOpt.get();
@@ -176,15 +174,13 @@ public class PlayerService {
             }
         }
         if (!found) {
-            log.warn("[IP-LOOKUP] IP {} not found in player's ipAddresses (count={})", ipAddress, player.getIpAddresses().size());
             return;
         }
 
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
         Update update = new Update().set("ipAddresses", player.getIpAddresses());
-        var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-        log.info("[IP-LOOKUP] updateIpGeoData result: matched={}, modified={}, db={}", result.getMatchedCount(), result.getModifiedCount(), server.getDatabaseName());
+        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
     }
 
     public Optional<Player> findByMinecraftUuid(Server server, UUID minecraftUuid) {

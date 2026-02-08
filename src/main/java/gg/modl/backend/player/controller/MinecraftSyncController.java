@@ -13,6 +13,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.ticket.data.Ticket;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -125,6 +126,12 @@ public class MinecraftSyncController {
             }
         }
 
+        // Deduplicate pending punishments: keep only oldest per player per category (BAN, MUTE)
+        pendingPunishments = deduplicatePendingPunishments(pendingPunishments);
+
+        // Generate staff notifications for recent events
+        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(template, lastSync, types, recentlyModifiedPunishments);
+
         List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template);
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -132,6 +139,7 @@ public class MinecraftSyncController {
         data.put("recentlyStartedPunishments", List.of());
         data.put("recentlyModifiedPunishments", recentlyModifiedPunishments);
         data.put("playerNotifications", playerNotifications);
+        data.put("staffNotifications", staffNotifications);
         data.put("activeStaffMembers", activeStaffMembers);
         data.put("staffPermissionsUpdatedAt", server.getStaffPermissionsUpdatedAt() != null
                 ? server.getStaffPermissionsUpdatedAt().getTime() : null);
@@ -177,6 +185,126 @@ public class MinecraftSyncController {
                 "effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L
         )).toList());
 
+        return result;
+    }
+
+    private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,
+                                                             List<PunishmentType> types,
+                                                             List<Map<String, Object>> recentlyModifiedPunishments) {
+        List<Map<String, Object>> notifications = new ArrayList<>();
+
+        // 1. Recent tickets created since last sync
+        try {
+            Query ticketQuery = Query.query(Criteria.where("created").gte(Date.from(lastSync)));
+            ticketQuery.limit(20);
+            List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
+
+            for (Ticket ticket : recentTickets) {
+                Map<String, Object> notif = new LinkedHashMap<>();
+                notif.put("id", "ticket_" + ticket.getId());
+                notif.put("type", "TICKET_CREATED");
+                notif.put("message", "New ticket: " + ticket.getSubject() + " by " + ticket.getCreatorName());
+                notif.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
+                notifications.add(notif);
+            }
+        } catch (Exception e) {
+            // Tickets collection may not exist yet, ignore
+        }
+
+        // 2. Recent punishments issued since last sync
+        try {
+            Query punishmentQuery = Query.query(
+                    Criteria.where("punishments").elemMatch(
+                            Criteria.where("issued").gte(Date.from(lastSync))
+                    )
+            );
+            punishmentQuery.limit(50);
+            List<Player> playersWithNewPunishments = template.find(punishmentQuery, Player.class, CollectionName.PLAYERS);
+
+            for (Player player : playersWithNewPunishments) {
+                String playerName = player.getUsernames().isEmpty() ? "Unknown"
+                        : player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+                for (Punishment punishment : player.getPunishments()) {
+                    if (punishment.getIssued() != null && punishment.getIssued().toInstant().isAfter(lastSync)) {
+                        PunishmentType punishmentType = types.stream()
+                                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                                .findFirst()
+                                .orElse(null);
+                        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
+                        String action = punishmentType != null && punishmentType.isBan() ? "banned"
+                                : punishmentType != null && punishmentType.isMute() ? "muted"
+                                : punishmentType != null && punishmentType.isKick() ? "kicked"
+                                : "punished";
+
+                        Map<String, Object> notif = new LinkedHashMap<>();
+                        notif.put("id", "punishment_" + punishment.getId());
+                        notif.put("type", "PUNISHMENT_ISSUED");
+                        notif.put("message", punishment.getIssuerName() + " " + action + " " + playerName + " (" + typeName + ")");
+                        notif.put("timestamp", punishment.getIssued().getTime());
+                        notifications.add(notif);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore errors in punishment query
+        }
+
+        // 3. Recent pardons from already-computed recentlyModifiedPunishments
+        for (Map<String, Object> modified : recentlyModifiedPunishments) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> punishment = (Map<String, Object>) modified.get("punishment");
+            String username = (String) modified.get("username");
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> modifications = (List<Map<String, Object>>) punishment.get("modifications");
+            if (modifications != null) {
+                for (Map<String, Object> mod : modifications) {
+                    String modType = (String) mod.get("type");
+                    if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType)) {
+                        Map<String, Object> notif = new LinkedHashMap<>();
+                        notif.put("id", "pardon_" + punishment.get("id"));
+                        notif.put("type", "PUNISHMENT_PARDONED");
+                        notif.put("message", username + " has been pardoned");
+                        notif.put("timestamp", mod.get("timestamp"));
+                        notifications.add(notif);
+                    }
+                }
+            }
+        }
+
+        return notifications;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> deduplicatePendingPunishments(List<Map<String, Object>> punishments) {
+        // Key: "uuid|category" -> oldest punishment entry
+        Map<String, Map<String, Object>> oldestByPlayerCategory = new LinkedHashMap<>();
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        for (Map<String, Object> entry : punishments) {
+            String uuid = (String) entry.get("minecraftUuid");
+            Map<String, Object> punishment = (Map<String, Object>) entry.get("punishment");
+            String category = (String) punishment.get("category");
+
+            if ("BAN".equals(category) || "MUTE".equals(category)) {
+                String key = uuid + "|" + category;
+                Map<String, Object> existing = oldestByPlayerCategory.get(key);
+                if (existing == null) {
+                    oldestByPlayerCategory.put(key, entry);
+                } else {
+                    Map<String, Object> existingPunishment = (Map<String, Object>) existing.get("punishment");
+                    long existingIssued = (Long) existingPunishment.get("issuedAt");
+                    long currentIssued = (Long) punishment.get("issuedAt");
+                    if (currentIssued < existingIssued) {
+                        oldestByPlayerCategory.put(key, entry);
+                    }
+                }
+            } else {
+                result.add(entry);
+            }
+        }
+        result.addAll(oldestByPlayerCategory.values());
         return result;
     }
 
