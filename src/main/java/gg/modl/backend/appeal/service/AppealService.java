@@ -92,13 +92,6 @@ public class AppealService {
             data.putAll(request.additionalData());
         }
 
-        int typeOrdinal = punishment.getType_ordinal();
-        String typeTag = switch (typeOrdinal) {
-            case 1 -> "mute";
-            case 2 -> "ban";
-            default -> "punishment";
-        };
-
         String username = getLatestUsername(player);
 
         String initialContent = buildInitialContent(request);
@@ -119,7 +112,7 @@ public class AppealService {
                 .category(APPEAL_TYPE)
                 .status("Open")
                 .subject("Appeal for Punishment: " + request.punishmentId())
-                .tags(new ArrayList<>(List.of("appeal", typeTag)))
+                .tags(new ArrayList<>())
                 .creator(username)
                 .creatorUuid(request.playerUuid())
                 .notes(new ArrayList<>())
