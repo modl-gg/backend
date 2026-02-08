@@ -391,16 +391,30 @@ public class PunishmentService {
                 MongoTemplate template = getTemplate(server);
                 Date now = new Date();
 
-                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={})",
-                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued());
+                // Find the array index of this punishment
+                int index = -1;
+                for (int i = 0; i < player.getPunishments().size(); i++) {
+                    if (player.getPunishments().get(i).getId().equals(toPromote.getId())) {
+                        index = i;
+                        break;
+                    }
+                }
 
+                if (index == -1) {
+                    log.warn("[PROMOTE] Could not find punishment {} in player array", toPromote.getId());
+                    continue;
+                }
+
+                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={}, arrayIndex={})",
+                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued(), index);
+
+                // Use array index directly to avoid embedded _id query mapping issues
                 Query query = Query.query(
                         Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                                .and("punishments.id").is(toPromote.getId())
                 );
                 Update update = new Update()
-                        .unset("punishments.$.data.status")
-                        .set("punishments.$.started", now);
+                        .unset("punishments." + index + ".data.status")
+                        .set("punishments." + index + ".started", now);
                 var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
                 log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
