@@ -67,15 +67,11 @@ public class RoleService {
     public RoleResponse createRole(Server server, CreateRoleRequest request) {
         MongoTemplate template = getTemplate(server);
 
-        // Validate permissions
-        List<String> validPermissions = permissionService.getAllPermissionIds(server);
-        List<String> invalidPermissions = request.permissions().stream()
-                .filter(p -> !validPermissions.contains(p))
+        // Filter out any invalid permissions (e.g. from deleted punishment types)
+        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        List<String> filteredPermissions = request.permissions().stream()
+                .filter(validPermissions::contains)
                 .toList();
-
-        if (!invalidPermissions.isEmpty()) {
-            throw new IllegalArgumentException("Invalid permissions: " + String.join(", ", invalidPermissions));
-        }
 
         // Generate unique ID
         String id = "custom-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
@@ -89,7 +85,7 @@ public class RoleService {
                 .id(id)
                 .name(request.name())
                 .description(request.description())
-                .permissions(new ArrayList<>(request.permissions()))
+                .permissions(new ArrayList<>(filteredPermissions))
                 .isDefault(false)
                 .order(nextOrder)
                 .createdAt(new Date())
@@ -109,21 +105,17 @@ public class RoleService {
             throw new IllegalArgumentException("Cannot modify Super Admin role");
         }
 
-        // Validate permissions
-        List<String> validPermissions = permissionService.getAllPermissionIds(server);
-        List<String> invalidPermissions = request.permissions().stream()
-                .filter(p -> !validPermissions.contains(p))
+        // Filter out any invalid permissions (e.g. from deleted punishment types)
+        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        List<String> filteredPermissions = request.permissions().stream()
+                .filter(validPermissions::contains)
                 .toList();
-
-        if (!invalidPermissions.isEmpty()) {
-            throw new IllegalArgumentException("Invalid permissions: " + String.join(", ", invalidPermissions));
-        }
 
         Query query = Query.query(Criteria.where("id").is(id));
         Update update = new Update()
                 .set("name", request.name())
                 .set("description", request.description())
-                .set("permissions", request.permissions())
+                .set("permissions", filteredPermissions)
                 .set("updatedAt", new Date());
 
         StaffRole updated = template.findAndModify(query, update,
