@@ -5,6 +5,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.service.ServerProvisioningService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -23,6 +24,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class AdminServerService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerProvisioningService provisioningService;
 
     private MongoTemplate getTemplate() {
         return mongoProvider.getGlobalDatabase();
@@ -135,7 +137,21 @@ public class AdminServerService {
                 .set("provisioningStatus", ProvisioningStatus.completed)
                 .set("emailVerified", true)
                 .set("updatedAt", new Date());
-        return getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
+        long modified = getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
+
+        // Seed default data for each activated server
+        for (String id : serverIds) {
+            try {
+                Server server = getTemplate().findById(id, Server.class, CollectionName.MODL_SERVERS);
+                if (server != null && server.getDatabaseName() != null) {
+                    provisioningService.provision(server);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to provision server {}: {}", id, e.getMessage());
+            }
+        }
+
+        return modified;
     }
 
     public long bulkUpdatePlan(List<String> serverIds, String plan) {

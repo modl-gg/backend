@@ -44,8 +44,29 @@ public class StaffService {
 
         List<StaffResponse> result = new ArrayList<>();
 
+        // Check if the Super Admin already has a staff record
+        String adminEmail = server.getAdminEmail();
+        boolean superAdminFound = false;
+
         for (Staff staff : staffMembers) {
             result.add(toStaffResponse(staff, "Active"));
+            if (adminEmail != null && adminEmail.equalsIgnoreCase(staff.getEmail())) {
+                superAdminFound = true;
+            }
+        }
+
+        // If Super Admin doesn't have a staff record yet, include them with a default entry
+        if (!superAdminFound && adminEmail != null) {
+            result.add(0, new StaffResponse(
+                    null,
+                    adminEmail,
+                    "Admin",
+                    "Super Admin",
+                    "Active",
+                    null,
+                    null,
+                    server.getCreatedAt()
+            ));
         }
 
         for (Invitation invitation : pendingInvitations) {

@@ -3,6 +3,7 @@ package gg.modl.backend.server;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.*;
+import gg.modl.backend.server.service.ServerProvisioningService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,13 +22,16 @@ import java.util.stream.Collectors;
 public class ServerService {
     public static final String SERVER_DATABASE_PREFIX = "server_";
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerProvisioningService provisioningService;
     private final Set<String> appDomains;
 
     public ServerService(
             DynamicMongoTemplateProvider mongoProvider,
+            ServerProvisioningService provisioningService,
             @Value("${modl.cors.app-domains:modl.gg}") String appDomainsConfig
     ) {
         this.mongoProvider = mongoProvider;
+        this.provisioningService = provisioningService;
         this.appDomains = Arrays.stream(appDomainsConfig.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
@@ -168,7 +172,12 @@ public class ServerService {
         server.setEmailVerificationToken(null);
         server.setProvisioningStatus(ProvisioningStatus.completed);
         server.setUpdatedAt(new Date());
-        return db.save(server, CollectionName.MODL_SERVERS);
+        Server saved = db.save(server, CollectionName.MODL_SERVERS);
+
+        // Seed default data for the new server
+        provisioningService.provision(saved);
+
+        return saved;
     }
 
     @Nullable
