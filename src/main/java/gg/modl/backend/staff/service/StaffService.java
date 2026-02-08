@@ -55,18 +55,17 @@ public class StaffService {
             }
         }
 
-        // If Super Admin doesn't have a staff record yet, include them with a default entry
+        // If Super Admin doesn't have a staff record yet, create one
         if (!superAdminFound && adminEmail != null) {
-            result.add(0, new StaffResponse(
-                    null,
-                    adminEmail,
-                    "Admin",
-                    "Super Admin",
-                    "Active",
-                    null,
-                    null,
-                    server.getCreatedAt()
-            ));
+            Staff superAdmin = Staff.builder()
+                    .email(adminEmail)
+                    .username("Admin")
+                    .role("Super Admin")
+                    .createdAt(server.getCreatedAt())
+                    .updatedAt(new Date())
+                    .build();
+            template.save(superAdmin, CollectionName.STAFF);
+            result.add(0, toStaffResponse(superAdmin, "Active"));
         }
 
         for (Invitation invitation : pendingInvitations) {
