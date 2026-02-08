@@ -222,10 +222,11 @@ public class TicketSubscriptionService {
 
         // Get staff username or email prefix for matching assignedTo
         String staffIdentifier = staff.getUsername() != null ? staff.getUsername() : staffEmail.split("@")[0];
+        String escapedIdentifier = java.util.regex.Pattern.quote(staffIdentifier);
 
-        // Find tickets assigned to this staff member
+        // Find tickets assigned to this staff member (assignedTo stores comma-separated usernames)
         Query ticketQuery = Query.query(
-                Criteria.where("assignedTo").is(staffIdentifier)
+                Criteria.where("assignedTo").regex("(^|,)" + escapedIdentifier + "(,|$)")
                         .and("replies.0").exists(true)
                         .and("status").ne("Unfinished")
         );

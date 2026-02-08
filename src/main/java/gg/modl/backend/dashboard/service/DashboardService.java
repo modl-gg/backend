@@ -183,7 +183,7 @@ public class DashboardService {
                     Criteria.where("created").gte(cutoffDate),
                     new Criteria().orOperator(
                             Criteria.where("creator").is(staffUsername),
-                            Criteria.where("assignedTo").is(staffUsername),
+                            Criteria.where("assignedTo").regex("(^|,)" + java.util.regex.Pattern.quote(staffUsername) + "(,|$)"),
                             Criteria.where("replies.name").is(staffUsername)
                     )
             )).limit(MAX_QUERY_RESULTS);
