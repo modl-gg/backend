@@ -261,7 +261,7 @@ public class PanelPlayerController {
     }
 
     @GetMapping("/{uuid}/linked")
-    public ResponseEntity<List<LinkedAccountResponse>> getLinkedAccounts(
+    public ResponseEntity<Map<String, Object>> getLinkedAccounts(
             @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
             HttpServletRequest request
     ) {
@@ -271,7 +271,7 @@ public class PanelPlayerController {
                 UUID.fromString(uuid)
         );
 
-        return ResponseEntity.ok(linkedAccounts);
+        return ResponseEntity.ok(Map.of("linkedAccounts", linkedAccounts));
     }
 
     @GetMapping("/punishments/{punishmentId}/linked-bans")
