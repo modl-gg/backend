@@ -363,7 +363,7 @@ public class ServerProvisioningService {
                         .isEnabled(true)
                         .ordinal(1)
                         .createdAt(now)
-                        .updat
+                        .updatedAt(now)
                         .build(),
                 HomepageCard.builder()
                         .title("Contact Us")
