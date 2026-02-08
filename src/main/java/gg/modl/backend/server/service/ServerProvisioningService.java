@@ -4,6 +4,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
+import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import java.util.*;
 @Slf4j
 public class ServerProvisioningService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final RoleService roleService;
 
     /**
      * Seeds all default data for a newly provisioned server.
@@ -36,6 +38,7 @@ public class ServerProvisioningService {
             seedLabels(template);
             List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(template);
             seedHomepageCards(template, categories);
+            roleService.createDefaultRoles(server);
             log.info("[Provisioning] Completed provisioning for server: {}", server.getCustomDomain());
         } catch (Exception e) {
             log.error("[Provisioning] Error provisioning server: {}", server.getCustomDomain(), e);
@@ -256,15 +259,10 @@ public class ServerProvisioningService {
         if (settingsExist(template, "general")) return;
 
         List<Map<String, Object>> labels = List.of(
-                labelMap("bug", "#d73a4a", "Bug reports"),
-                labelMap("player", "#0969da", "Player reports"),
-                labelMap("chat", "#0969da", "Chat reports"),
-                labelMap("appeal", "#8250df", "Punishment appeals"),
-                labelMap("high-priority", "#e74c3c", "High priority tickets"),
-                labelMap("needs-review", "#f39c12", "Tickets that need review"),
-                labelMap("in-progress", "#2ecc71", "Tickets being worked on"),
-                labelMap("resolved", "#27ae60", "Resolved tickets"),
-                labelMap("won't-fix", "#6b7280", "Issues that won't be fixed"),
+                labelMap("high priority", "#e74c3c", "High priority tickets"),
+                labelMap("needs admin review", "#f39c12", "Tickets that need review"),
+                labelMap("in progress", "#2ecc71", "Tickets being worked on"),
+                labelMap("won't fix", "#6b7280", "Issues that won't be fixed"),
                 labelMap("duplicate", "#6b7280", "Duplicate tickets")
         );
 
@@ -360,7 +358,7 @@ public class ServerProvisioningService {
                         .icon("UserPlus")
                         .iconColor("#3b82f6")
                         .actionType("url")
-                        .actionUrl("#")
+                        .actionUrl("/submit-ticket/apply")
                         .actionButtonText("Apply Now")
                         .isEnabled(true)
                         .ordinal(1)
@@ -373,7 +371,7 @@ public class ServerProvisioningService {
                         .icon("MessageCircle")
                         .iconColor("#10b981")
                         .actionType("url")
-                        .actionUrl("#")
+                        .actionUrl("/submit-ticket/support")
                         .actionButtonText("Contact Support")
                         .isEnabled(true)
                         .ordinal(2)
@@ -482,4 +480,5 @@ public class ServerProvisioningService {
         label.put("description", description);
         return label;
     }
+
 }

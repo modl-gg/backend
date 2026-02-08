@@ -68,7 +68,8 @@ public class MinecraftPlayerController {
                 server,
                 UUID.fromString(request.minecraftUUID()),
                 request.username(),
-                request.ip()
+                request.ip(),
+                request.ipInfo()
         );
 
         // Promote queued punishments if previous ones expired or were pardoned
@@ -101,13 +102,27 @@ public class MinecraftPlayerController {
         List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
                 player.getData().getOrDefault("pendingNotifications", List.of());
 
+        // Check if the login IP needs a geo lookup (new IP without geo data)
+        List<String> pendingIpLookups = new ArrayList<>();
+        if (request.ip() != null && (request.ipInfo() == null || request.ipInfo().isEmpty())) {
+            boolean ipNeedsLookup = player.getIpAddresses().stream()
+                    .anyMatch(ip -> ip.getIpAddress().equals(request.ip()) && ip.getCountry() == null);
+            if (ipNeedsLookup) {
+                pendingIpLookups.add(request.ip());
+            }
+        }
+
         boolean isNewPlayer = player.getUsernames().size() == 1;
+        Map<String, Object> responseBody = new LinkedHashMap<>();
+        responseBody.put("status", isNewPlayer ? 201 : 200);
+        responseBody.put("activePunishments", activePunishments);
+        responseBody.put("pendingNotifications", pendingNotifications);
+        if (!pendingIpLookups.isEmpty()) {
+            responseBody.put("pendingIpLookups", pendingIpLookups);
+        }
+
         return ResponseEntity.status(isNewPlayer ? HttpStatus.CREATED : HttpStatus.OK)
-                .body(Map.of(
-                        "status", isNewPlayer ? 201 : 200,
-                        "activePunishments", activePunishments,
-                        "pendingNotifications", pendingNotifications
-                ));
+                .body(responseBody);
     }
 
     @PostMapping("/disconnect")
@@ -659,6 +674,23 @@ public class MinecraftPlayerController {
         return data;
     }
 
+    @PostMapping("/submit-ip-info")
+    public ResponseEntity<Map<String, Object>> submitIpInfo(
+            @RequestBody @Valid SubmitIpInfoRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        Map<String, Object> ipInfo = Map.of(
+                "country", request.country() != null ? request.country() : "",
+                "region", request.region() != null ? request.region() : "",
+                "asn", request.asn() != null ? request.asn() : "",
+                "proxy", request.proxy(),
+                "hosting", request.hosting()
+        );
+        playerService.updateIpGeoData(server, request.minecraftUUID(), request.ip(), ipInfo);
+        return ResponseEntity.ok(Map.of("status", 200, "success", true));
+    }
+
     @PostMapping("/pardon")
     public ResponseEntity<Map<String, Object>> pardonPlayer(
             @RequestBody PardonPlayerRequest request,
@@ -767,7 +799,18 @@ public class MinecraftPlayerController {
     public record LoginRequest(
             @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
             @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
-            @Pattern(regexp = RegExpConstants.IP) String ip
+            @Pattern(regexp = RegExpConstants.IP) String ip,
+            Map<String, Object> ipInfo
+    ) {}
+
+    public record SubmitIpInfoRequest(
+            @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
+            @Pattern(regexp = RegExpConstants.IP) String ip,
+            String country,
+            String region,
+            String asn,
+            boolean proxy,
+            boolean hosting
     ) {}
 
     public record DisconnectRequest(String minecraftUuid) {}

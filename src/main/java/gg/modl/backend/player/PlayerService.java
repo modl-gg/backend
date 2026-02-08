@@ -10,7 +10,6 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
-import gg.modl.backend.player.external.IpGeolocationService;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -36,7 +35,6 @@ import java.util.regex.Pattern;
 @Slf4j
 public class PlayerService {
     private final DynamicMongoTemplateProvider mongoProvider;
-    private final IpGeolocationService ipGeolocationService;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
 
@@ -94,16 +92,20 @@ public class PlayerService {
     }
 
     public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip) {
+        return loginPlayer(server, minecraftUuid, username, ip, null);
+    }
+
+    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo) {
         MongoTemplate template = getTemplate(server);
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
 
         if (existingPlayer.isPresent()) {
             Player player = existingPlayer.get();
-            updatePlayerOnLogin(template, player, username, ip);
+            updatePlayerOnLogin(template, player, username, ip, ipInfo);
             return findByMinecraftUuid(server, minecraftUuid).orElse(player);
         } else {
             Player player = createPlayer(server, minecraftUuid, username);
-            addIpToPlayer(template, player, ip);
+            addIpToPlayer(template, player, ip, ipInfo);
             updatePlayerDataOnLogin(template, player);
             return findByMinecraftUuid(server, minecraftUuid).orElse(player);
         }
@@ -145,8 +147,23 @@ public class PlayerService {
         }
 
         Player player = playerOpt.get();
-        addIpToPlayer(template, player, ipAddress);
+        addIpToPlayer(template, player, ipAddress, null);
         return findByMinecraftUuid(server, minecraftUuid).orElse(null);
+    }
+
+    public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
+        MongoTemplate template = getTemplate(server);
+        Query query = Query.query(
+                Criteria.where("minecraftUuid").is(minecraftUuid)
+                        .and("ipAddresses.ipAddress").is(ipAddress)
+        );
+        Update update = new Update()
+                .set("ipAddresses.$.country", ipInfo.get("country"))
+                .set("ipAddresses.$.region", ipInfo.get("region"))
+                .set("ipAddresses.$.asn", ipInfo.get("asn"))
+                .set("ipAddresses.$.proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
+                .set("ipAddresses.$.hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
+        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
     }
 
     public Optional<Player> findByMinecraftUuid(Server server, UUID minecraftUuid) {
@@ -160,7 +177,7 @@ public class PlayerService {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 
-    private void updatePlayerOnLogin(MongoTemplate template, Player player, String username, String ip) {
+    private void updatePlayerOnLogin(MongoTemplate template, Player player, String username, String ip, Map<String, Object> ipInfo) {
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
 
         String currentUsername = player.getUsernames().isEmpty() ? null :
@@ -171,11 +188,11 @@ public class PlayerService {
             template.updateFirst(query, new Update().push("usernames", entry), Player.class, CollectionName.PLAYERS);
         }
 
-        addIpToPlayer(template, player, ip);
+        addIpToPlayer(template, player, ip, ipInfo);
         updatePlayerDataOnLogin(template, player);
     }
 
-    private void addIpToPlayer(MongoTemplate template, Player player, String ipAddress) {
+    private void addIpToPlayer(MongoTemplate template, Player player, String ipAddress, Map<String, Object> ipInfo) {
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
         Date now = new Date();
 
@@ -191,20 +208,21 @@ public class PlayerService {
             Update update = new Update().push("ipAddresses.$.logins", now);
             template.updateFirst(ipQuery, update, Player.class, CollectionName.PLAYERS);
         } else {
-            IpGeolocationService.IpGeolocationResult geoResult = ipGeolocationService.getIpInfo(ipAddress);
-
-            IPEntry newIp = IPEntry.builder()
+            IPEntry.IPEntryBuilder builder = IPEntry.builder()
                     .ipAddress(ipAddress)
-                    .country(geoResult.country())
-                    .region(geoResult.region())
-                    .asn(geoResult.asn())
-                    .proxy(geoResult.proxy())
-                    .hosting(geoResult.hosting())
                     .firstLogin(now)
-                    .logins(new ArrayList<>(List.of(now)))
-                    .build();
+                    .logins(new ArrayList<>(List.of(now)));
 
-            Update update = new Update().push("ipAddresses", newIp);
+            // Use provided IP geo data from the plugin if available
+            if (ipInfo != null) {
+                builder.country((String) ipInfo.get("country"))
+                        .region((String) ipInfo.get("region"))
+                        .asn((String) ipInfo.get("asn"))
+                        .proxy(Boolean.TRUE.equals(ipInfo.get("proxy")))
+                        .hosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
+            }
+
+            Update update = new Update().push("ipAddresses", builder.build());
             template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         }
     }

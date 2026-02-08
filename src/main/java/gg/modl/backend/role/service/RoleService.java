@@ -177,19 +177,61 @@ public class RoleService {
         });
     }
 
+    // Default punishment permission nodes (punishment.apply.{name})
+    private static final List<String> ALL_PUNISHMENT_PERMS = List.of(
+            "punishment.apply.kick",
+            "punishment.apply.manual-mute",
+            "punishment.apply.manual-ban",
+            "punishment.apply.security-ban",
+            "punishment.apply.linked-ban",
+            "punishment.apply.blacklist",
+            "punishment.apply.chat-abuse",
+            "punishment.apply.anti-social",
+            "punishment.apply.targeting",
+            "punishment.apply.bad-content",
+            "punishment.apply.bad-username",
+            "punishment.apply.bad-skin",
+            "punishment.apply.team-abuse",
+            "punishment.apply.game-abuse",
+            "punishment.apply.cheating",
+            "punishment.apply.game-trading",
+            "punishment.apply.account-abuse",
+            "punishment.apply.systems-abuse"
+    );
+
+    // Moderator gets all except blacklist
+    private static final List<String> MODERATOR_PUNISHMENT_PERMS = ALL_PUNISHMENT_PERMS.stream()
+            .filter(p -> !p.contains("blacklist"))
+            .toList();
+
     public void createDefaultRoles(Server server) {
         MongoTemplate template = getTemplate(server);
 
-        List<String> allPermissionIds = permissionService.getAllPermissionIds(server);
-        List<String> punishmentPerms = permissionService.getPunishmentPermissions(server)
-                .stream().map(p -> p.id()).toList();
+        // Super admin gets everything
+        List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
+        superAdminPerms.addAll(ALL_PUNISHMENT_PERMS);
+
+        // Admin permissions
+        List<String> adminPerms = new ArrayList<>(List.of(
+                "admin.settings.view", "admin.staff.manage", "admin.audit.view",
+                "punishment.modify",
+                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
+        ));
+        adminPerms.addAll(ALL_PUNISHMENT_PERMS);
+
+        // Moderator permissions
+        List<String> moderatorPerms = new ArrayList<>(List.of(
+                "punishment.modify",
+                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
+        ));
+        moderatorPerms.addAll(MODERATOR_PUNISHMENT_PERMS);
 
         List<StaffRole> defaultRoles = List.of(
                 StaffRole.builder()
                         .id("super-admin")
                         .name("Super Admin")
                         .description("Full access to all features and settings")
-                        .permissions(new ArrayList<>(allPermissionIds))
+                        .permissions(superAdminPerms)
                         .isDefault(true)
                         .order(0)
                         .createdAt(new Date())
@@ -199,11 +241,7 @@ public class RoleService {
                         .id("admin")
                         .name("Admin")
                         .description("Administrative access with some restrictions")
-                        .permissions(new ArrayList<>(List.of(
-                                "admin.settings.view", "admin.staff.manage", "admin.audit.view",
-                                "punishment.modify",
-                                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
-                        )))
+                        .permissions(adminPerms)
                         .isDefault(true)
                         .order(1)
                         .createdAt(new Date())
@@ -213,10 +251,7 @@ public class RoleService {
                         .id("moderator")
                         .name("Moderator")
                         .description("Moderation permissions for punishments and tickets")
-                        .permissions(new ArrayList<>(List.of(
-                                "punishment.modify",
-                                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
-                        )))
+                        .permissions(moderatorPerms)
                         .isDefault(true)
                         .order(2)
                         .createdAt(new Date())
@@ -233,15 +268,6 @@ public class RoleService {
                         .updatedAt(new Date())
                         .build()
         );
-
-        // Add punishment permissions to admin role
-        defaultRoles.get(1).getPermissions().addAll(punishmentPerms);
-
-        // Add filtered punishment permissions to moderator (exclude blacklist/security-ban)
-        List<String> moderatorPunishPerms = punishmentPerms.stream()
-                .filter(p -> !p.contains("blacklist") && !p.contains("security-ban"))
-                .toList();
-        defaultRoles.get(2).getPermissions().addAll(moderatorPunishPerms);
 
         for (StaffRole role : defaultRoles) {
             Query query = Query.query(Criteria.where("id").is(role.getId()));
