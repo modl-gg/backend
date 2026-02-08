@@ -10,6 +10,8 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -161,5 +163,37 @@ public class PanelBillingController {
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @PostMapping("/storage-limit")
+    public ResponseEntity<?> updateStorageLimit(
+            @RequestBody Map<String, Long> body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
+
+        if (server.getPlan() != ServerPlan.premium) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage limit configuration is only available for premium servers"));
+        }
+
+        Long maxStorageLimitBytes = body.get("maxStorageLimitBytes");
+        if (maxStorageLimitBytes == null || maxStorageLimitBytes <= 0) {
+            return ResponseEntity.badRequest().body(Map.of("error", "maxStorageLimitBytes must be greater than 0"));
+        }
+
+        if (maxStorageLimitBytes > StorageQuotaService.MAX_PREMIUM_BYTES) {
+            return ResponseEntity.badRequest().body(Map.of("error", "maxStorageLimitBytes cannot exceed 10 TB"));
+        }
+
+        usageTrackingService.updateStorageLimit(server, maxStorageLimitBytes);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "maxStorageLimitBytes", maxStorageLimitBytes
+        ));
     }
 }

@@ -3,6 +3,7 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.PresignUploadRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
@@ -33,14 +34,16 @@ public class PanelMediaController {
     private final MediaValidationService validationService;
 
     @GetMapping("/config")
-    public ResponseEntity<Map<String, Object>> getMediaConfig() {
+    public ResponseEntity<Map<String, Object>> getMediaConfig(HttpServletRequest request) {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
+        Server server = RequestUtil.getRequestServer(request);
+        boolean isPremium = server.getPlan() == ServerPlan.premium;
 
         Map<String, Object> response = new HashMap<>();
         response.put("backblazeConfigured", isConfigured);
         response.put("supportedTypes", validationService.getAllSupportedTypes());
-        response.put("fileSizeLimits", validationService.getAllSizeLimits());
+        response.put("fileSizeLimits", validationService.getAllSizeLimits(isPremium));
         response.put("cdnDomain", cdnDomain != null && !cdnDomain.isBlank() ? cdnDomain : null);
 
         return ResponseEntity.ok(response);
@@ -70,12 +73,14 @@ public class PanelMediaController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        boolean isPremium = server.getPlan() == ServerPlan.premium;
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
                 presignRequest.fileName(),
                 presignRequest.contentType(),
                 presignRequest.fileSize(),
-                presignRequest.uploadType()
+                presignRequest.uploadType(),
+                isPremium
         );
 
         if (!validation.valid()) {

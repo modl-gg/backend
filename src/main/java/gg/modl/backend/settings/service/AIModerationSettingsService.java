@@ -32,12 +32,18 @@ public class AIModerationSettingsService {
         Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
 
         if (settings == null || settings.getData() == null) {
-            return AIModerationSettings.builder()
-                    .enableAIReview(false)
-                    .enableAutomatedActions(false)
-                    .strictnessLevel("standard")
-                    .aiPunishmentConfigs(new HashMap<>())
-                    .build();
+            // Lazily create the default document if it doesn't exist
+            AIModerationSettings defaults = createDefaultSettings();
+            try {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
+                Settings newSettings = new Settings(null, SETTINGS_TYPE_AI_MODERATION, data);
+                template.save(newSettings, CollectionName.SETTINGS);
+                log.info("Created default AI moderation settings for server {}", server.getDatabaseName());
+            } catch (Exception e) {
+                log.warn("Failed to create default AI moderation settings for server {}: {}", server.getDatabaseName(), e.getMessage());
+            }
+            return defaults;
         }
 
         try {
@@ -51,6 +57,29 @@ public class AIModerationSettingsService {
                     .aiPunishmentConfigs(new HashMap<>())
                     .build();
         }
+    }
+
+    private AIModerationSettings createDefaultSettings() {
+        Map<String, AIModerationSettings.AIPunishmentConfig> defaultConfigs = new HashMap<>();
+        defaultConfigs.put("6", AIModerationSettings.AIPunishmentConfig.builder()
+                .id("6")
+                .name("Chat Abuse")
+                .aiDescription("Chat abuse is the act of spamming, excessive profanity, abusive language, inappropriate topics or jokes, and misleading information")
+                .enabled(true)
+                .build());
+        defaultConfigs.put("7", AIModerationSettings.AIPunishmentConfig.builder()
+                .id("7")
+                .name("Anti Social")
+                .aiDescription("Anti social is the act of harassing, threatening, black-mailing, or otherwise abusing another player or group of players. This includes bigotry and other forms of discrimination against protected classes.")
+                .enabled(true)
+                .build());
+
+        return AIModerationSettings.builder()
+                .enableAIReview(false)
+                .enableAutomatedActions(false)
+                .strictnessLevel("standard")
+                .aiPunishmentConfigs(defaultConfigs)
+                .build();
     }
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {

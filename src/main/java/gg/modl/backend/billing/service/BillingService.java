@@ -123,7 +123,8 @@ public class BillingService {
                 server.getPlan() != null ? server.getPlan().name() : null,
                 currentStatus,
                 currentPeriodStart,
-                currentPeriodEnd
+                currentPeriodEnd,
+                server.getMaxStorageLimitBytes()
         );
     }
 

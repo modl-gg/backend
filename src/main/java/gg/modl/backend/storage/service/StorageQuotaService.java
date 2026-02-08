@@ -15,8 +15,9 @@ import java.util.Map;
 public class StorageQuotaService {
     private final S3StorageService s3StorageService;
 
-    private static final long FREE_TIER_BYTES = 2L * 1024 * 1024 * 1024;
-    private static final long PREMIUM_TIER_BYTES = 200L * 1024 * 1024 * 1024;
+    private static final long FREE_TIER_BYTES = 500L * 1024 * 1024; // 500 MB
+    private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
+    public static final long MAX_PREMIUM_BYTES = 10L * 1024L * 1024 * 1024 * 1024; // 10 TB
     private static final long AI_FREE_LIMIT = 0L;
     private static final long AI_PREMIUM_LIMIT = 1000L;
 
@@ -37,7 +38,9 @@ public class StorageQuotaService {
                 formatBytes(usedBytes),
                 formatBytes(maxBytes),
                 byType,
-                aiQuota
+                aiQuota,
+                isPremium,
+                0.08
         );
     }
 
@@ -69,7 +72,10 @@ public class StorageQuotaService {
 
     private long getMaxBytesForServer(Server server) {
         if (server.getPlan() == ServerPlan.premium) {
-            return PREMIUM_TIER_BYTES;
+            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
+                return Math.min(server.getMaxStorageLimitBytes(), MAX_PREMIUM_BYTES);
+            }
+            return DEFAULT_PREMIUM_BYTES;
         }
         return FREE_TIER_BYTES;
     }

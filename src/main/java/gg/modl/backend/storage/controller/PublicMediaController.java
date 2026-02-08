@@ -3,6 +3,7 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.PresignUploadRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
@@ -32,16 +33,18 @@ public class PublicMediaController {
     private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "appeal");
 
     @GetMapping("/config")
-    public ResponseEntity<Map<String, Object>> getMediaConfig() {
+    public ResponseEntity<Map<String, Object>> getMediaConfig(HttpServletRequest request) {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
+        Server server = RequestUtil.getRequestServer(request);
+        boolean isPremium = server.getPlan() == ServerPlan.premium;
 
         Map<String, Object> supportedTypes = isConfigured
                 ? validationService.getAllSupportedTypes()
                 : Map.of("evidence", List.of(), "tickets", List.of(), "appeals", List.of(), "articles", List.of(), "server-icons", List.of());
 
         Map<String, Object> fileSizeLimits = isConfigured
-                ? validationService.getAllSizeLimits()
+                ? validationService.getAllSizeLimits(isPremium)
                 : Map.of("evidence", 0L, "tickets", 0L, "appeals", 0L, "articles", 0L, "server-icons", 0L);
 
         Map<String, Object> response = new HashMap<>();
@@ -59,6 +62,7 @@ public class PublicMediaController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        boolean isPremium = server.getPlan() == ServerPlan.premium;
 
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(presignRequest.uploadType())) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -70,7 +74,8 @@ public class PublicMediaController {
                 presignRequest.fileName(),
                 presignRequest.contentType(),
                 presignRequest.fileSize(),
-                presignRequest.uploadType()
+                presignRequest.uploadType(),
+                isPremium
         );
 
         if (!validation.valid()) {

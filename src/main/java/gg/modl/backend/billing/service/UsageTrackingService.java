@@ -5,6 +5,8 @@ import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -19,9 +21,10 @@ import java.util.Date;
 @RequiredArgsConstructor
 @Slf4j
 public class UsageTrackingService {
-    private static final double CDN_LIMIT_GB = 200.0;
+    private static final double FREE_CDN_LIMIT_GB = 0.5; // 500 MB
+    private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
     private static final int AI_LIMIT_REQUESTS = 10000;
-    private static final double CDN_OVERAGE_RATE = 0.05;
+    private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.01;
 
     private final DynamicMongoTemplateProvider mongoProvider;
@@ -45,7 +48,8 @@ public class UsageTrackingService {
         double cdnUsageGB = freshServer.getCdnUsageCurrentPeriod() != null ? freshServer.getCdnUsageCurrentPeriod() : 0.0;
         long aiRequestsUsed = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
 
-        double cdnOverageGB = Math.max(0, cdnUsageGB - CDN_LIMIT_GB);
+        double cdnLimitGB = getCdnLimitGB(freshServer);
+        double cdnOverageGB = Math.max(0, cdnUsageGB - cdnLimitGB);
         long aiOverageRequests = Math.max(0, aiRequestsUsed - AI_LIMIT_REQUESTS);
 
         double cdnOverageCost = cdnOverageGB * CDN_OVERAGE_RATE;
@@ -58,11 +62,11 @@ public class UsageTrackingService {
                 new UsageResponse.Period(currentPeriodStart, currentPeriodEnd),
                 new UsageResponse.UsageMetric(
                         cdnUsageGB,
-                        CDN_LIMIT_GB,
+                        cdnLimitGB,
                         cdnOverageGB,
                         CDN_OVERAGE_RATE,
                         cdnOverageCost,
-                        Math.min(100, (cdnUsageGB / CDN_LIMIT_GB) * 100)
+                        Math.min(100, cdnLimitGB > 0 ? (cdnUsageGB / cdnLimitGB) * 100 : 0)
                 ),
                 new UsageResponse.UsageMetric(
                         aiRequestsUsed,
@@ -117,6 +121,25 @@ public class UsageTrackingService {
         Update update = new Update()
                 .set("cdn_usage_current_period", 0.0)
                 .set("ai_requests_current_period", 0L);
+        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+    }
+
+    public double getCdnLimitGB(Server server) {
+        if (server.getPlan() == ServerPlan.premium) {
+            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
+                double customGB = server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
+                double maxGB = StorageQuotaService.MAX_PREMIUM_BYTES / (1024.0 * 1024 * 1024);
+                return Math.min(customGB, maxGB);
+            }
+            return DEFAULT_PREMIUM_CDN_LIMIT_GB;
+        }
+        return FREE_CDN_LIMIT_GB;
+    }
+
+    public void updateStorageLimit(Server server, long bytes) {
+        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+        Query query = Query.query(Criteria.where("_id").is(server.getId()));
+        Update update = new Update().set("max_storage_limit_bytes", bytes);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 

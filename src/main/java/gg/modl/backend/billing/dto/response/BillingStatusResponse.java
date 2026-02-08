@@ -6,5 +6,6 @@ public record BillingStatusResponse(
         String plan,
         String subscriptionStatus,
         Date currentPeriodStart,
-        Date currentPeriodEnd
+        Date currentPeriodEnd,
+        Long maxStorageLimitBytes
 ) {}

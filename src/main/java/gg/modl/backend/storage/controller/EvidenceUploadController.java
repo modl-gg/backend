@@ -8,9 +8,12 @@ import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService.UploadToken;
+import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
@@ -34,6 +37,8 @@ public class EvidenceUploadController {
     private final S3StorageService s3StorageService;
     private final DynamicMongoTemplateProvider mongoProvider;
     private final ServerService serverService;
+    private final StorageQuotaService quotaService;
+    private final MediaValidationService validationService;
 
     @GetMapping("/{token}")
     public ResponseEntity<Map<String, Object>> validateToken(@PathVariable String token) {
@@ -91,6 +96,23 @@ public class EvidenceUploadController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Server not found"
+            ));
+        }
+
+        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        MediaValidationService.ValidationResult validation = validationService.validateMetadata(
+                fileName, contentType, fileSize, "evidence", isPremium);
+        if (!validation.valid()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", 400,
+                    "message", validation.error()
+            ));
+        }
+
+        if (!quotaService.canUpload(server, fileSize)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", 400,
+                    "message", "Storage quota exceeded. Please contact the server administrator."
             ));
         }
 

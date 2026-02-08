@@ -116,6 +116,10 @@ public class Server {
     @Field(name = "usage_billing_updated_at", targetType = FieldType.DATE_TIME)
     private Date usageBillingUpdatedAt;
 
+    @Nullable
+    @Field(name = "max_storage_limit_bytes", targetType = FieldType.INT64)
+    private Long maxStorageLimitBytes;
+
     // Migration Settings
     @Nullable
     @Field(name = "migrationFileSizeLimit", targetType = FieldType.INT64)

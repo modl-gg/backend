@@ -9,7 +9,9 @@ public record StorageQuotaResponse(
         String usedFormatted,
         String maxFormatted,
         Map<String, Long> byType,
-        AiQuotaInfo aiQuota
+        AiQuotaInfo aiQuota,
+        boolean isPremium,
+        double storageOverageRate
 ) {
     public record AiQuotaInfo(
             long totalUsed,
