@@ -341,7 +341,7 @@ public class MinecraftSyncController {
                         Map<String, Object> notif = new LinkedHashMap<>();
                         notif.put("id", "punishment_" + punishment.getId());
                         notif.put("type", "PUNISHMENT_ISSUED");
-                        notif.put("message", punishment.getIssuerName() + " " + action + " " + playerName + " (" + typeName + ")");
+                        notif.put("message", punishment.getIssuerName() + ": " + action + " " + playerName + " (" + typeName + ")");
                         notif.put("timestamp", punishment.getIssued().getTime());
                         notifications.add(notif);
                     }
@@ -363,10 +363,11 @@ public class MinecraftSyncController {
                 for (Map<String, Object> mod : modifications) {
                     String modType = (String) mod.get("type");
                     if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType) || "SYSTEM_PARDON".equals(modType)) {
+                        String pardoner = (String) mod.get("issuerName");
                         Map<String, Object> notif = new LinkedHashMap<>();
                         notif.put("id", "pardon_" + punishment.get("id"));
                         notif.put("type", "PUNISHMENT_PARDONED");
-                        notif.put("message", username + " has been pardoned");
+                        notif.put("message", (pardoner != null ? pardoner : "System") + ": pardoned " + username);
                         notif.put("timestamp", mod.get("timestamp"));
                         notifications.add(notif);
                     }
