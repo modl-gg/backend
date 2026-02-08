@@ -164,6 +164,35 @@ public class MinecraftSyncController {
                     ));
                 }
 
+                // When a punishment is pardoned, re-send another active+started punishment in the
+                // same category so the plugin re-enforces it (e.g. mute B after mute A is pardoned)
+                Set<String> pardonedCategories = new HashSet<>();
+                for (Punishment punishment : player.getPunishments()) {
+                    boolean recentlyPardoned = punishment.getModifications().stream()
+                            .anyMatch(m -> m.date() != null && m.date().toInstant().isAfter(lastSync)
+                                    && ("MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type())));
+                    if (recentlyPardoned) {
+                        String cat = statusCalculator.getEffectiveCategory(punishment, types);
+                        if (cat != null) pardonedCategories.add(cat);
+                    }
+                }
+                if (!pardonedCategories.isEmpty()) {
+                    for (Punishment punishment : player.getPunishments()) {
+                        if (!statusCalculator.isPunishmentActive(punishment) || punishment.getStarted() == null) continue;
+                        String cat = statusCalculator.getEffectiveCategory(punishment, types);
+                        if (cat != null && pardonedCategories.contains(cat)) {
+                            log.info("[SYNC]   RE-SENDING active punishment {} after pardon in category {}", punishment.getId(), cat);
+                            Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                            pendingPunishments.add(Map.of(
+                                    "minecraftUuid", uuid,
+                                    "username", username,
+                                    "punishment", simplePunishment
+                            ));
+                            pardonedCategories.remove(cat); // Only re-send one per category
+                        }
+                    }
+                }
+
                 @SuppressWarnings("unchecked")
                 List<Map<String, Object>> pending = (List<Map<String, Object>>) player.getData().get("pendingNotifications");
                 if (pending != null) {
