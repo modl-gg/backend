@@ -5,6 +5,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.data.StaffRole;
@@ -33,6 +34,7 @@ public class MinecraftSyncController {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final PunishmentService punishmentService;
 
     @PostMapping("/sync")
     public ResponseEntity<Map<String, Object>> sync(
@@ -66,6 +68,15 @@ public class MinecraftSyncController {
             List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
 
             for (Player player : players) {
+                // Promote queued punishments if previous ones expired or were pardoned
+                List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
+                if (!promoted.isEmpty()) {
+                    // Re-fetch player to get updated punishment data
+                    Query refetchQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
+                    player = template.findOne(refetchQuery, Player.class, CollectionName.PLAYERS);
+                    if (player == null) continue;
+                }
+
                 String uuid = player.getMinecraftUuid().toString();
                 String username = player.getUsernames().isEmpty() ? "Unknown"
                         : player.getUsernames().get(player.getUsernames().size() - 1).username();

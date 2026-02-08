@@ -123,6 +123,34 @@ public class PunishmentService {
         }
         data.putIfAbsent("active", true);
 
+        // Queue as "Unstarted" if player already has an active or unstarted punishment in the same category (ban/mute)
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        PunishmentType newPunishmentType = types.stream()
+                .filter(t -> t.getOrdinal() == request.typeOrdinal())
+                .findFirst()
+                .orElse(null);
+
+        if (newPunishmentType != null && (newPunishmentType.isBan() || newPunishmentType.isMute())) {
+            boolean hasExistingInCategory = player.getPunishments().stream().anyMatch(existing -> {
+                PunishmentType existingType = types.stream()
+                        .filter(t -> t.getOrdinal() == existing.getType_ordinal())
+                        .findFirst()
+                        .orElse(null);
+                if (existingType == null) return false;
+
+                boolean sameCategory = (newPunishmentType.isBan() && existingType.isBan())
+                        || (newPunishmentType.isMute() && existingType.isMute());
+                if (!sameCategory) return false;
+
+                return statusCalculator.isPunishmentActive(existing) || isUnstarted(existing);
+            });
+
+            if (hasExistingInCategory) {
+                data.put("active", false);
+                data.put("status", "Unstarted");
+            }
+        }
+
         // Build notes
         List<PunishmentNote> notes = new ArrayList<>();
         notes.add(new PunishmentNote(
@@ -330,6 +358,76 @@ public class PunishmentService {
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
         return findPlayerByUuid(template, playerUuid);
+    }
+
+    /**
+     * Promotes the oldest unstarted punishment in each category (BAN, MUTE) if no active punishment exists.
+     * @return list of promoted punishment IDs
+     */
+    public List<String> promoteUnstartedPunishments(Server server, Player player) {
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        List<String> promotedIds = new ArrayList<>();
+
+        for (String category : List.of("BAN", "MUTE")) {
+            boolean hasActive = player.getPunishments().stream().anyMatch(p -> {
+                PunishmentType pt = types.stream()
+                        .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                        .findFirst().orElse(null);
+                if (pt == null) return false;
+                boolean matchesCategory = category.equals("BAN") ? pt.isBan() : pt.isMute();
+                return matchesCategory && statusCalculator.isPunishmentActive(p);
+            });
+
+            if (hasActive) continue;
+
+            // Find the oldest unstarted punishment in this category
+            Optional<Punishment> oldest = player.getPunishments().stream()
+                    .filter(p -> {
+                        PunishmentType pt = types.stream()
+                                .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                                .findFirst().orElse(null);
+                        if (pt == null) return false;
+                        boolean matchesCategory = category.equals("BAN") ? pt.isBan() : pt.isMute();
+                        return matchesCategory && isUnstarted(p);
+                    })
+                    .min((a, b) -> a.getIssued().compareTo(b.getIssued()));
+
+            if (oldest.isPresent()) {
+                Punishment toPromote = oldest.get();
+                MongoTemplate template = getTemplate(server);
+                Date now = new Date();
+
+                Query query = Query.query(
+                        Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                                .and("punishments._id").is(toPromote.getId())
+                );
+                Update update = new Update()
+                        .set("punishments.$.data.active", true)
+                        .unset("punishments.$.data.status")
+                        .set("punishments.$.started", now);
+                template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+
+                promotedIds.add(toPromote.getId());
+            }
+        }
+
+        return promotedIds;
+    }
+
+    private boolean isUnstarted(Punishment punishment) {
+        Map<String, Object> data = punishment.getData();
+        if (data == null) return false;
+
+        String status = (String) data.get("status");
+        if (!"Unstarted".equals(status)) return false;
+
+        // Not unstarted if it was pardoned or appeal-accepted
+        for (var mod : punishment.getModifications()) {
+            if ("MANUAL_PARDON".equals(mod.type()) || "APPEAL_ACCEPT".equals(mod.type())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private MongoTemplate getTemplate(Server server) {

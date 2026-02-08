@@ -8,6 +8,7 @@ import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -40,6 +41,7 @@ public class MinecraftPlayerController {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final PunishmentService punishmentService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
@@ -68,6 +70,15 @@ public class MinecraftPlayerController {
                 request.username(),
                 request.ip()
         );
+
+        // Promote queued punishments if previous ones expired or were pardoned
+        List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
+        if (!promoted.isEmpty()) {
+            // Re-fetch player to get updated punishment data
+            MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+            Query refetchQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUUID()));
+            player = template.findOne(refetchQuery, Player.class, CollectionName.PLAYERS);
+        }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> activePunishments = new ArrayList<>();
