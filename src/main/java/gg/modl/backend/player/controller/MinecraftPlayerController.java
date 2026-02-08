@@ -102,9 +102,9 @@ public class MinecraftPlayerController {
         List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
                 player.getData().getOrDefault("pendingNotifications", List.of());
 
-        // Check if the login IP needs a geo lookup (new IP without geo data)
+        // Always ask the plugin to do IP geo lookup if the IP has no geo data yet
         List<String> pendingIpLookups = new ArrayList<>();
-        if (request.ip() != null && (request.ipInfo() == null || request.ipInfo().isEmpty())) {
+        if (request.ip() != null) {
             boolean ipNeedsLookup = player.getIpAddresses().stream()
                     .anyMatch(ip -> ip.getIpAddress().equals(request.ip()) && ip.getCountry() == null);
             if (ipNeedsLookup) {
