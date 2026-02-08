@@ -391,34 +391,39 @@ public class PunishmentService {
                 MongoTemplate template = getTemplate(server);
                 Date now = new Date();
 
-                // Find the array index of this punishment
-                int index = -1;
-                for (int i = 0; i < player.getPunishments().size(); i++) {
-                    if (player.getPunishments().get(i).getId().equals(toPromote.getId())) {
-                        index = i;
+                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={})",
+                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued());
+
+                // Read-modify-write: load fresh player, update in memory, save punishments array back.
+                // This handles any data corruption (e.g. nested arrays) in the stored punishments.
+                Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
+                Player freshPlayer = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
+
+                if (freshPlayer == null) {
+                    log.warn("[PROMOTE] Could not find player {} in database", player.getMinecraftUuid());
+                    continue;
+                }
+
+                boolean updated = false;
+                for (Punishment p : freshPlayer.getPunishments()) {
+                    if (p.getId().equals(toPromote.getId())) {
+                        p.setStarted(now);
+                        if (p.getData() != null) {
+                            p.getData().remove("status");
+                        }
+                        updated = true;
                         break;
                     }
                 }
 
-                if (index == -1) {
-                    log.warn("[PROMOTE] Could not find punishment {} in player array", toPromote.getId());
-                    continue;
+                if (updated) {
+                    Update update = new Update().set("punishments", freshPlayer.getPunishments());
+                    var result = template.updateFirst(findQuery, update, Player.class, CollectionName.PLAYERS);
+                    log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
+                            toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
+                } else {
+                    log.warn("[PROMOTE] Could not find punishment {} in fresh player load", toPromote.getId());
                 }
-
-                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={}, arrayIndex={})",
-                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued(), index);
-
-                // Use array index directly to avoid embedded _id query mapping issues
-                Query query = Query.query(
-                        Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                );
-                Update update = new Update()
-                        .unset("punishments." + index + ".data.status")
-                        .set("punishments." + index + ".started", now);
-                var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-
-                log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
-                        toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
 
                 promotedIds.add(toPromote.getId());
             } else {
