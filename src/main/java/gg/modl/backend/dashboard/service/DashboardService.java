@@ -8,6 +8,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
@@ -29,6 +30,7 @@ import java.util.*;
 public class DashboardService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
+    private final PlayerStatusCalculator statusCalculator;
 
     public DashboardMetricsResponse getMetrics(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -116,17 +118,13 @@ public class DashboardService {
             for (Punishment p : player.getPunishments()) {
                 if (p.getIssued() != null && p.getIssued().after(cutoff)) {
                     String reason = "";
-                    boolean active = false;
+                    boolean active = statusCalculator.isPunishmentActive(p);
                     String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
 
                     if (p.getData() != null) {
                         Object reasonObj = p.getData().get("reason");
                         if (reasonObj != null) {
                             reason = reasonObj.toString();
-                        }
-                        Object activeObj = p.getData().get("active");
-                        if (activeObj instanceof Boolean) {
-                            active = (Boolean) activeObj;
                         }
                     }
 

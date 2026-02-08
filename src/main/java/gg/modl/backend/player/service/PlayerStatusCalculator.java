@@ -65,8 +65,9 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        Boolean active = (Boolean) data.get("active");
-        if (active != null && !active) {
+        // Queued punishments (status = "Unstarted") are not yet active
+        String status = (String) data.get("status");
+        if ("Unstarted".equals(status)) {
             return false;
         }
 

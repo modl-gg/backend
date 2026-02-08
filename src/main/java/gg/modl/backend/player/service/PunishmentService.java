@@ -121,8 +121,6 @@ public class PunishmentService {
         if (request.reason() != null && !request.reason().isBlank()) {
             data.put("reason", request.reason());
         }
-        data.putIfAbsent("active", true);
-
         // Queue as "Unstarted" if player already has an active or unstarted punishment in the same category (ban/mute)
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         PunishmentType newPunishmentType = types.stream()
@@ -146,7 +144,6 @@ public class PunishmentService {
             });
 
             if (hasExistingInCategory) {
-                data.put("active", false);
                 data.put("status", "Unstarted");
             }
         }
@@ -234,10 +231,6 @@ public class PunishmentService {
         );
 
         Update update = new Update().push("punishments.$.modifications", modification);
-
-        if ("MANUAL_PARDON".equals(request.type()) || "APPEAL_ACCEPT".equals(request.type())) {
-            update.set("punishments.$.data.active", false);
-        }
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         return findPlayerByUuid(template, playerUuid);
@@ -402,7 +395,6 @@ public class PunishmentService {
                                 .and("punishments._id").is(toPromote.getId())
                 );
                 Update update = new Update()
-                        .set("punishments.$.data.active", true)
                         .unset("punishments.$.data.status")
                         .set("punishments.$.started", now);
                 template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);

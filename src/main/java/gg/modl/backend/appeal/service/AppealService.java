@@ -320,7 +320,6 @@ public class AppealService {
         Update update = new Update()
                 .push("punishments.$.modifications", modification)
                 .push("punishments.$.notes", appealAcceptedNote)
-                .set("punishments.$.data.active", false)
                 .set("punishments.$.data.appealOutcome", "Approved")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 

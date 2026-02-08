@@ -82,16 +82,27 @@ public class MinecraftSyncController {
                 String username = player.getUsernames().isEmpty() ? "Unknown"
                         : player.getUsernames().get(player.getUsernames().size() - 1).username();
 
-                // Check if player already has active STARTED punishments per category
-                boolean hasActiveStartedBan = false;
-                boolean hasActiveStartedMute = false;
+                // Determine which categories already have an active punishment (started or not)
+                // and find the oldest unstarted per category to send as pending
+                Set<String> categoriesWithActiveStarted = new HashSet<>();
+                Map<String, Punishment> oldestUnstartedPerCategory = new LinkedHashMap<>();
+
                 for (Punishment p : player.getPunishments()) {
-                    if (statusCalculator.isPunishmentActive(p) && p.getStarted() != null) {
-                        PunishmentType pt = types.stream()
-                                .filter(t -> t.getOrdinal() == p.getType_ordinal())
-                                .findFirst().orElse(null);
-                        if (pt != null && pt.isBan()) hasActiveStartedBan = true;
-                        if (pt != null && pt.isMute()) hasActiveStartedMute = true;
+                    if (!statusCalculator.isPunishmentActive(p)) continue;
+
+                    PunishmentType pt = types.stream()
+                            .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                            .findFirst().orElse(null);
+                    String category = pt != null && pt.isBan() ? "BAN"
+                            : pt != null && pt.isMute() ? "MUTE" : null;
+
+                    if (category != null && p.getStarted() != null) {
+                        categoriesWithActiveStarted.add(category);
+                    } else if (category != null && p.getStarted() == null) {
+                        Punishment existing = oldestUnstartedPerCategory.get(category);
+                        if (existing == null || p.getIssued().before(existing.getIssued())) {
+                            oldestUnstartedPerCategory.put(category, p);
+                        }
                     }
                 }
 
@@ -112,26 +123,28 @@ public class MinecraftSyncController {
                         ));
                     }
 
-                    // For pending/new punishments, only include active ones
-                    if (!isActive) continue;
+                    // For pending/new punishments, only include active unstarted ones
+                    if (!isActive || punishment.getStarted() != null) continue;
 
-                    boolean notStarted = punishment.getStarted() == null;
+                    PunishmentType pt = types.stream()
+                            .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                            .findFirst().orElse(null);
+                    String category = pt != null && pt.isBan() ? "BAN"
+                            : pt != null && pt.isMute() ? "MUTE" : null;
 
-                    if (notStarted) {
-                        // Don't send unstarted punishments if there's already an active started one in the same category
-                        PunishmentType pt = types.stream()
-                                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                                .findFirst().orElse(null);
-                        if (pt != null && pt.isBan() && hasActiveStartedBan) continue;
-                        if (pt != null && pt.isMute() && hasActiveStartedMute) continue;
-
-                        Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
-                        pendingPunishments.add(Map.of(
-                                "minecraftUuid", uuid,
-                                "username", username,
-                                "punishment", simplePunishment
-                        ));
+                    if (category != null) {
+                        // Don't send if there's already an active started punishment in this category
+                        if (categoriesWithActiveStarted.contains(category)) continue;
+                        // Only send the oldest unstarted per category
+                        if (oldestUnstartedPerCategory.get(category) != punishment) continue;
                     }
+
+                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    pendingPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", simplePunishment
+                    ));
                 }
 
                 @SuppressWarnings("unchecked")

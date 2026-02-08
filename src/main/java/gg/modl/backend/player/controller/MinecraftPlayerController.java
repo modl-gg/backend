@@ -771,8 +771,7 @@ public class MinecraftPlayerController {
 
                 Update update = new Update()
                         .push("punishments.$.modifications", modification)
-                        .push("punishments.$.notes", pardonNote)
-                        .set("punishments.$.data.active", false);
+                        .push("punishments.$.notes", pardonNote);
 
                 // Add separate note for reason if provided
                 if (request.reason() != null && !request.reason().isBlank()) {
