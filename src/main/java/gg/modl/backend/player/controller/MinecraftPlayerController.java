@@ -433,15 +433,9 @@ public class MinecraftPlayerController {
         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
         String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
 
-        // Determine category: BAN, MUTE, or OTHER
-        String category = "OTHER";
-        if (punishmentType != null) {
-            if (punishmentType.isBan()) {
-                category = "BAN";
-            } else if (punishmentType.isMute()) {
-                category = "MUTE";
-            }
-        }
+        // Determine effective category: BAN, MUTE, or OTHER
+        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
+        String category = effectiveCategory != null ? effectiveCategory : "OTHER";
 
         // Get reason from data map first, fall back to notes for manual punishments
         String reason = data != null ? (String) data.get("reason") : null;

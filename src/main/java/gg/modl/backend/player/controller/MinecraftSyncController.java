@@ -93,13 +93,9 @@ public class MinecraftSyncController {
 
                 for (Punishment p : player.getPunishments()) {
                     boolean isActive = statusCalculator.isPunishmentActive(p);
-                    PunishmentType pt = types.stream()
-                            .filter(t -> t.getOrdinal() == p.getType_ordinal())
-                            .findFirst().orElse(null);
-                    String category = pt != null && pt.isBan() ? "BAN"
-                            : pt != null && pt.isMute() ? "MUTE" : null;
+                    String category = statusCalculator.getEffectiveCategory(p, types);
 
-                    log.info("[SYNC]   Punishment {} ordinal={} category={} active={} started={} data.status={} data.keys={}",
+                    log.info("[SYNC]   Punishment {} ordinal={} effectiveCategory={} active={} started={} data.status={} data.keys={}",
                             p.getId(), p.getType_ordinal(), category, isActive,
                             p.getStarted(), p.getData() != null ? p.getData().get("status") : "null",
                             p.getData() != null ? p.getData().keySet() : "null");
@@ -144,11 +140,7 @@ public class MinecraftSyncController {
                     // For pending/new punishments, only include active unstarted ones
                     if (!isActive || punishment.getStarted() != null) continue;
 
-                    PunishmentType pt = types.stream()
-                            .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                            .findFirst().orElse(null);
-                    String category = pt != null && pt.isBan() ? "BAN"
-                            : pt != null && pt.isMute() ? "MUTE" : null;
+                    String category = statusCalculator.getEffectiveCategory(punishment, types);
 
                     if (category != null) {
                         // Don't send if there's already an active started punishment in this category
@@ -220,9 +212,8 @@ public class MinecraftSyncController {
                 .orElse(null);
 
         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-        boolean isBan = punishmentType != null && punishmentType.isBan();
-        boolean isMute = punishmentType != null && punishmentType.isMute();
-        String category = isBan ? "BAN" : (isMute ? "MUTE" : "OTHER");
+        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
+        String category = effectiveCategory != null ? effectiveCategory : "OTHER";
         String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
 
         Map<String, Object> result = new LinkedHashMap<>();

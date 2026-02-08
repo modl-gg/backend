@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
@@ -154,6 +155,43 @@ public class PlayerStatusCalculator {
 
         Date started = punishment.getStarted() != null ? punishment.getStarted() : punishment.getIssued();
         return new Date(started.getTime() + duration);
+    }
+
+    /**
+     * Determine the effective enforcement category for a punishment.
+     * Core types use isBan()/isMute()/isKick().
+     * Social/gameplay types use the DurationDetail for the stored severity and offense level.
+     * @return "BAN", "MUTE", or null (for kicks and unknown types)
+     */
+    public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
+        PunishmentType pt = types.stream()
+                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                .findFirst()
+                .orElse(null);
+        return getEffectiveCategory(pt, punishment.getData());
+    }
+
+    /**
+     * Determine the effective enforcement category for a punishment type with given data.
+     * @return "BAN", "MUTE", or null
+     */
+    public String getEffectiveCategory(PunishmentType pt, Map<String, Object> data) {
+        if (pt == null) return null;
+        if (pt.isKick()) return null;
+        if (pt.isBan()) return "BAN";
+        if (pt.isMute()) return "MUTE";
+
+        // Social/gameplay types: determine from DurationDetail
+        if (data != null) {
+            String severity = data.get("severity") instanceof String s ? s : "regular";
+            String offenseLevel = data.get("offenseLevel") instanceof String s ? s : "normal";
+            DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
+            if (detail != null) {
+                if (detail.isBan()) return "BAN";
+                if (detail.isMute()) return "MUTE";
+            }
+        }
+        return null;
     }
 
     private Optional<PunishmentType> findTypeByOrdinal(List<PunishmentType> types, int ordinal) {

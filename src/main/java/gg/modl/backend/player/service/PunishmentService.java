@@ -128,28 +128,21 @@ public class PunishmentService {
                 .findFirst()
                 .orElse(null);
 
-        if (newPunishmentType != null && (newPunishmentType.isBan() || newPunishmentType.isMute())) {
-            String newCategory = newPunishmentType.isBan() ? "BAN" : "MUTE";
+        String newCategory = statusCalculator.getEffectiveCategory(newPunishmentType, data);
+        if (newCategory != null) {
             boolean hasExistingInCategory = player.getPunishments().stream().anyMatch(existing -> {
-                PunishmentType existingType = types.stream()
-                        .filter(t -> t.getOrdinal() == existing.getType_ordinal())
-                        .findFirst()
-                        .orElse(null);
-                if (existingType == null) return false;
-
-                boolean sameCategory = (newPunishmentType.isBan() && existingType.isBan())
-                        || (newPunishmentType.isMute() && existingType.isMute());
-                if (!sameCategory) return false;
+                String existingCategory = statusCalculator.getEffectiveCategory(existing, types);
+                if (!newCategory.equals(existingCategory)) return false;
 
                 boolean active = statusCalculator.isPunishmentActive(existing);
                 boolean unstarted = isUnstarted(existing);
-                log.info("[CREATE_PUNISHMENT] Checking existing {} ordinal={} active={} unstarted={} data.status={}",
-                        existing.getId(), existing.getType_ordinal(), active, unstarted,
+                log.info("[CREATE_PUNISHMENT] Checking existing {} ordinal={} effectiveCategory={} active={} unstarted={} data.status={}",
+                        existing.getId(), existing.getType_ordinal(), existingCategory, active, unstarted,
                         existing.getData() != null ? existing.getData().get("status") : "null");
                 return active || unstarted;
             });
 
-            log.info("[CREATE_PUNISHMENT] New punishment ordinal={} category={} hasExistingInCategory={} -> {}",
+            log.info("[CREATE_PUNISHMENT] New punishment ordinal={} effectiveCategory={} hasExistingInCategory={} -> {}",
                     request.typeOrdinal(), newCategory, hasExistingInCategory,
                     hasExistingInCategory ? "QUEUING as Unstarted" : "ACTIVE");
 
@@ -373,12 +366,8 @@ public class PunishmentService {
 
         for (String category : List.of("BAN", "MUTE")) {
             boolean hasActive = player.getPunishments().stream().anyMatch(p -> {
-                PunishmentType pt = types.stream()
-                        .filter(t -> t.getOrdinal() == p.getType_ordinal())
-                        .findFirst().orElse(null);
-                if (pt == null) return false;
-                boolean matchesCategory = category.equals("BAN") ? pt.isBan() : pt.isMute();
-                return matchesCategory && statusCalculator.isPunishmentActive(p);
+                String effectiveCategory = statusCalculator.getEffectiveCategory(p, types);
+                return category.equals(effectiveCategory) && statusCalculator.isPunishmentActive(p);
             });
 
             if (hasActive) continue;
@@ -386,12 +375,8 @@ public class PunishmentService {
             // Find the oldest unstarted punishment in this category
             Optional<Punishment> oldest = player.getPunishments().stream()
                     .filter(p -> {
-                        PunishmentType pt = types.stream()
-                                .filter(t -> t.getOrdinal() == p.getType_ordinal())
-                                .findFirst().orElse(null);
-                        if (pt == null) return false;
-                        boolean matchesCategory = category.equals("BAN") ? pt.isBan() : pt.isMute();
-                        return matchesCategory && isUnstarted(p);
+                        String effectiveCategory = statusCalculator.getEffectiveCategory(p, types);
+                        return category.equals(effectiveCategory) && isUnstarted(p);
                     })
                     .min((a, b) -> a.getIssued().compareTo(b.getIssued()));
 
