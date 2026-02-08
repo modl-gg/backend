@@ -3,6 +3,7 @@ package gg.modl.backend.settings.controller;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.*;
 import gg.modl.backend.settings.service.*;
@@ -31,6 +32,7 @@ public class PanelSettingsController {
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
     private final AITicketAnalysisService aiTicketAnalysisService;
+    private final PermissionService permissionService;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
@@ -116,18 +118,22 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/general")
-    public ResponseEntity<GeneralSettings> getGeneralSettings(HttpServletRequest request) {
+    public ResponseEntity<?> getGeneralSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         GeneralSettings settings = generalSettingsService.getGeneralSettings(server);
         return ResponseEntity.ok(settings);
     }
 
     @PutMapping("/general")
-    public ResponseEntity<GeneralSettings> updateGeneralSettings(
+    public ResponseEntity<?> updateGeneralSettings(
             @RequestBody GeneralSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         GeneralSettings updated = generalSettingsService.updateGeneralSettings(server, settings);
         return ResponseEntity.ok(updated);
     }
@@ -138,6 +144,8 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         String apiKey = apiKeySettingsService.generateApiKey(server, type);
         return ResponseEntity.ok(Map.of(
                 "message", "API key generated successfully",
@@ -151,6 +159,8 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         String apiKey = apiKeySettingsService.revealApiKey(server, type);
 
         if (apiKey == null) {
@@ -166,6 +176,8 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
 
         if (!deleted) {
@@ -181,6 +193,8 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
         boolean exists = apiKeySettingsService.hasApiKey(server, type);
         return ResponseEntity.ok(Map.of("exists", exists));
     }
@@ -381,6 +395,8 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         // Validate icon type
         if (!iconType.equals("homepage") && !iconType.equals("panel")) {
@@ -424,6 +440,14 @@ public class PanelSettingsController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file: " + e.getMessage()));
         }
+    }
+
+    private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can access server configuration"));
+        }
+        return null;
     }
 
     @PostMapping("/ai-apply-punishment/{ticketId}")

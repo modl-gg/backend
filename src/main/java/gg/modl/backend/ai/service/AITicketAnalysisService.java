@@ -17,6 +17,7 @@ import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -222,7 +223,7 @@ public class AITicketAnalysisService {
         TicketReply systemReply = TicketReply.builder()
                 .id(UUID.randomUUID().toString())
                 .name(staffName)
-                .content("AI punishment applied by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
+                .content("This report has been reviewed and appropriate action has been taken. Thank you for your report.")
                 .type("system")
                 .created(now)
                 .staff(true)
@@ -230,9 +231,16 @@ public class AITicketAnalysisService {
                 .attachments(new ArrayList<>())
                 .build();
 
+        TicketNote staffNote = TicketNote.builder()
+                .text("AI Analysis by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
+                .issuerName(staffName)
+                .date(now)
+                .build();
+
         Update update = new Update()
                 .set("aiAnalysis.wasAppliedAutomatically", true)
                 .push("replies", systemReply)
+                .push("notes", staffNote)
                 .set("status", "Closed")
                 .set("locked", true)
                 .set("updatedAt", now);
