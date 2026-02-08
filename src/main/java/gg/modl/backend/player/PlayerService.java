@@ -164,7 +164,9 @@ public class PlayerService {
                 .set("ipAddresses.$.asn", ipInfo.get("asn"))
                 .set("ipAddresses.$.proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
                 .set("ipAddresses.$.hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
-        var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+        // Use collection name only (no Player.class) to avoid Spring Data type conversion
+        // on the minecraftUuid field (UUID Java type vs String query parameter)
+        var result = template.updateFirst(query, update, CollectionName.PLAYERS);
         log.info("[IP-LOOKUP] updateIpGeoData result: matched={}, modified={}, db={}", result.getMatchedCount(), result.getModifiedCount(), server.getDatabaseName());
     }
 
