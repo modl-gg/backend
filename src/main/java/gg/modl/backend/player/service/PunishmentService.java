@@ -364,13 +364,19 @@ public class PunishmentService {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<String> promotedIds = new ArrayList<>();
 
+        log.info("[PROMOTE] Checking promotions for player {} with {} punishments",
+                player.getMinecraftUuid(), player.getPunishments().size());
+
         for (String category : List.of("BAN", "MUTE")) {
             boolean hasActive = player.getPunishments().stream().anyMatch(p -> {
                 String effectiveCategory = statusCalculator.getEffectiveCategory(p, types);
                 return category.equals(effectiveCategory) && statusCalculator.isPunishmentActive(p);
             });
 
-            if (hasActive) continue;
+            if (hasActive) {
+                log.info("[PROMOTE] Category {} already has active punishment, skipping", category);
+                continue;
+            }
 
             // Find the oldest unstarted punishment in this category
             Optional<Punishment> oldest = player.getPunishments().stream()
@@ -385,16 +391,24 @@ public class PunishmentService {
                 MongoTemplate template = getTemplate(server);
                 Date now = new Date();
 
+                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={})",
+                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued());
+
                 Query query = Query.query(
                         Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                                .and("punishments._id").is(toPromote.getId())
+                                .and("punishments.id").is(toPromote.getId())
                 );
                 Update update = new Update()
                         .unset("punishments.$.data.status")
                         .set("punishments.$.started", now);
-                template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+                var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+
+                log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
+                        toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
 
                 promotedIds.add(toPromote.getId());
+            } else {
+                log.info("[PROMOTE] No unstarted punishments found for category {}", category);
             }
         }
 
