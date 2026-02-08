@@ -24,6 +24,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -208,7 +209,9 @@ public class PunishmentService {
                 data
         );
 
-        Update update = new Update().push("punishments", punishment);
+        // Convert to raw Document to avoid Spring Data wrapping embedded @Field("_id") objects in arrays
+        Document punishmentDoc = (Document) template.getConverter().convertToMongoType(punishment);
+        Update update = new Update().push("punishments", punishmentDoc);
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
         return punishmentId;
@@ -394,19 +397,41 @@ public class PunishmentService {
                 log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={})",
                         toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued());
 
-                Query query = Query.query(
-                        Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                );
-                Update update = new Update()
-                        .set("punishments.$[elem].started", now)
-                        .unset("punishments.$[elem].data.status")
-                        .filterArray(Criteria.where("elem._id").is(toPromote.getId()));
-                var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+                try {
+                    Query query = Query.query(
+                            Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                    );
+                    Update update = new Update()
+                            .set("punishments.$[elem].started", now)
+                            .unset("punishments.$[elem].data.status")
+                            .filterArray(Criteria.where("elem._id").is(toPromote.getId()));
+                    var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
-                log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
-                        toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
+                    log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
+                            toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
 
-                promotedIds.add(toPromote.getId());
+                    promotedIds.add(toPromote.getId());
+                } catch (Exception e) {
+                    log.error("[PROMOTE] Failed to promote {}, attempting repair", toPromote.getId(), e);
+                    // Nested array corruption — repair by rewriting the full punishments array
+                    Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
+                    Player freshPlayer = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
+                    if (freshPlayer != null) {
+                        for (Punishment p : freshPlayer.getPunishments()) {
+                            if (p.getId().equals(toPromote.getId())) {
+                                p.setStarted(now);
+                                if (p.getData() != null) {
+                                    p.getData().remove("status");
+                                }
+                                break;
+                            }
+                        }
+                        Update repairUpdate = new Update().set("punishments", freshPlayer.getPunishments());
+                        template.updateFirst(findQuery, repairUpdate, Player.class, CollectionName.PLAYERS);
+                        log.info("[PROMOTE] Repaired and promoted {} via full array rewrite", toPromote.getId());
+                        promotedIds.add(toPromote.getId());
+                    }
+                }
             } else {
                 log.info("[PROMOTE] No unstarted punishments found for category {}", category);
             }
