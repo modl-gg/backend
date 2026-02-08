@@ -82,6 +82,19 @@ public class MinecraftSyncController {
                 String username = player.getUsernames().isEmpty() ? "Unknown"
                         : player.getUsernames().get(player.getUsernames().size() - 1).username();
 
+                // Check if player already has active STARTED punishments per category
+                boolean hasActiveStartedBan = false;
+                boolean hasActiveStartedMute = false;
+                for (Punishment p : player.getPunishments()) {
+                    if (statusCalculator.isPunishmentActive(p) && p.getStarted() != null) {
+                        PunishmentType pt = types.stream()
+                                .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                                .findFirst().orElse(null);
+                        if (pt != null && pt.isBan()) hasActiveStartedBan = true;
+                        if (pt != null && pt.isMute()) hasActiveStartedMute = true;
+                    }
+                }
+
                 for (Punishment punishment : player.getPunishments()) {
                     boolean isActive = statusCalculator.isPunishmentActive(punishment);
 
@@ -103,9 +116,16 @@ public class MinecraftSyncController {
                     if (!isActive) continue;
 
                     boolean notStarted = punishment.getStarted() == null;
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
 
                     if (notStarted) {
+                        // Don't send unstarted punishments if there's already an active started one in the same category
+                        PunishmentType pt = types.stream()
+                                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                                .findFirst().orElse(null);
+                        if (pt != null && pt.isBan() && hasActiveStartedBan) continue;
+                        if (pt != null && pt.isMute() && hasActiveStartedMute) continue;
+
+                        Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
                         pendingPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
