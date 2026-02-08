@@ -217,12 +217,15 @@ public class PunishmentService {
 
         String punishmentId = IdGenerator.generatePunishmentId();
 
+        // Set started = now for non-queued punishments (countdown starts at enforcement time)
+        Date startedDate = "Unstarted".equals(data.get("status")) ? null : now;
+
         Punishment punishment = new Punishment(
                 punishmentId,
                 request.typeOrdinal(),
                 request.issuerName(),
                 now,
-                null,
+                startedDate,
                 new ArrayList<>(),
                 notes,
                 evidence,

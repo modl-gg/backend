@@ -153,7 +153,12 @@ public class PlayerStatusCalculator {
             return null;
         }
 
-        Date started = punishment.getStarted() != null ? punishment.getStarted() : punishment.getIssued();
+        // Only calculate expiry from started date - not issued date
+        // Countdown begins when punishment is started/enforced, not when issued
+        Date started = punishment.getStarted();
+        if (started == null) {
+            return null; // Not started yet, no expiry
+        }
         return new Date(started.getTime() + duration);
     }
 
