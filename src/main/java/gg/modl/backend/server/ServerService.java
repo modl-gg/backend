@@ -145,6 +145,13 @@ public class ServerService {
     }
 
     @Nullable
+    public Server getServerByDatabaseName(@NotNull String databaseName) {
+        MongoTemplate db = mongoProvider.getGlobalDatabase();
+        Query query = new Query(Criteria.where("databaseName").is(databaseName));
+        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+    }
+
+    @Nullable
     public Server getServerByApiKey(@NotNull String apiKey) {
         MongoTemplate db = mongoProvider.getGlobalDatabase();
         Query query = new Query(Criteria.where(ServerField.API_KEY).is(apiKey));

@@ -21,7 +21,8 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     private final String devServerDomain;
 
     private static final Set<String> EXCLUDED_PATHS = Set.of(
-            RESTMappingV1.PUBLIC_REGISTRATION
+            RESTMappingV1.PUBLIC_REGISTRATION,
+            RESTMappingV1.PUBLIC_EVIDENCE_UPLOAD
     );
 
     public ServerHeaderFilter(ServerService serverService) {

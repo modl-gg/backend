@@ -388,7 +388,11 @@ public class MinecraftPlayerController {
                 .toList();
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        // Use a set to track UUIDs we've already added (dedup between IP-based and data.linkedAccounts)
+        Set<String> addedUuids = new HashSet<>();
         List<Map<String, Object>> linkedAccounts = new ArrayList<>();
+
+        // 1. IP-based matching
         if (!ips.isEmpty()) {
             Query ipQuery = Query.query(
                     Criteria.where("ipAddresses.ipAddress").in(ips)
@@ -399,6 +403,25 @@ public class MinecraftPlayerController {
             List<Player> related = template.find(ipQuery, Player.class, CollectionName.PLAYERS);
             for (Player p : related) {
                 linkedAccounts.add(toPlayerProfile(p, types));
+                addedUuids.add(p.getMinecraftUuid().toString());
+            }
+        }
+
+        // 2. Also include accounts from data.linkedAccounts field
+        if (player.getData() != null && player.getData().containsKey("linkedAccounts")) {
+            @SuppressWarnings("unchecked")
+            List<String> storedLinkedUuids = (List<String>) player.getData().get("linkedAccounts");
+            if (storedLinkedUuids != null && !storedLinkedUuids.isEmpty()) {
+                List<String> missingUuids = storedLinkedUuids.stream()
+                        .filter(u -> !addedUuids.contains(u))
+                        .toList();
+                if (!missingUuids.isEmpty()) {
+                    Query linkedQuery = Query.query(Criteria.where("minecraftUuid").in(missingUuids));
+                    List<Player> linkedPlayers = template.find(linkedQuery, Player.class, CollectionName.PLAYERS);
+                    for (Player p : linkedPlayers) {
+                        linkedAccounts.add(toPlayerProfile(p, types));
+                    }
+                }
             }
         }
 

@@ -114,6 +114,10 @@ public final class RESTMappingV1 {
     public static final String MINECRAFT_DASHBOARD = PREFIX_MINECRAFT + DASHBOARD;
     public static final String MINECRAFT_ROLES = PREFIX_MINECRAFT + ROLES;
 
+    // Evidence upload (public, token-based auth)
+    private static final String EVIDENCE_UPLOAD = "/evidence-upload";
+    public static final String PUBLIC_EVIDENCE_UPLOAD = PREFIX_PUBLIC + EVIDENCE_UPLOAD;
+
     // Health check
     public static final String HEALTH = V1 + "/health";
 

@@ -14,6 +14,7 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
@@ -46,6 +47,7 @@ public class MinecraftPunishmentController {
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final PunishmentService punishmentService;
+    private final EvidenceUploadTokenService evidenceUploadTokenService;
 
     @PostMapping("/create")
     public ResponseEntity<Void> createPunishment(
@@ -69,6 +71,72 @@ public class MinecraftPunishmentController {
                 "status", 200,
                 "message", "Punishment created",
                 "punishmentId", punishmentId
+        ));
+    }
+
+    @GetMapping("/{punishmentId}")
+    public ResponseEntity<Map<String, Object>> getPunishmentById(
+            @PathVariable String punishmentId,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+        if (player == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        Punishment punishment = player.getPunishments().stream()
+                .filter(p -> p.getId().equals(punishmentId)).findFirst().orElse(null);
+        if (punishment == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        Map<String, Object> result = toPunishmentMap(punishment, types);
+        result.put("playerUuid", player.getMinecraftUuid().toString());
+        result.put("playerName", player.getUsernames().isEmpty() ? "Unknown"
+                : player.getUsernames().get(player.getUsernames().size() - 1).username());
+
+        return ResponseEntity.ok(Map.of("status", 200, "punishment", result));
+    }
+
+    @PostMapping("/{punishmentId}/upload-token")
+    public ResponseEntity<Map<String, Object>> createUploadToken(
+            @PathVariable String punishmentId,
+            @RequestBody Map<String, String> body,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        // Verify punishment exists
+        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+        if (player == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        String issuerName = body.getOrDefault("issuerName", "Unknown");
+        String playerUuid = player.getMinecraftUuid().toString();
+
+        String token = evidenceUploadTokenService.createToken(
+                server, punishmentId, playerUuid, issuerName);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "token", token
         ));
     }
 
