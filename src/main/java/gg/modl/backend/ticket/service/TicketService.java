@@ -97,7 +97,7 @@ public class TicketService {
             query.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        // Filter by assignees (OR logic for multiple assignees)
+        // Filter by assignees (OR logic for multiple assignees, assignedTo stores comma-separated usernames)
         if (assignees != null && !assignees.isEmpty()) {
             List<Criteria> assigneeCriteriaList = new ArrayList<>();
             for (String assignee : assignees) {
@@ -106,7 +106,8 @@ public class TicketService {
                         assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
                         assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
                     } else {
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(assignee));
+                        String escaped = java.util.regex.Pattern.quote(assignee);
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").regex("(^|,)" + escaped + "(,|$)"));
                     }
                 }
             }
@@ -194,7 +195,7 @@ public class TicketService {
             baseQuery.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        // Filter by assignees (OR logic for multiple assignees)
+        // Filter by assignees (OR logic for multiple assignees, assignedTo stores comma-separated usernames)
         if (assignees != null && !assignees.isEmpty()) {
             List<Criteria> assigneeCriteriaList = new ArrayList<>();
             for (String assignee : assignees) {
@@ -203,7 +204,8 @@ public class TicketService {
                         assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
                         assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
                     } else {
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(assignee));
+                        String escaped = java.util.regex.Pattern.quote(assignee);
+                        assigneeCriteriaList.add(Criteria.where("assignedTo").regex("(^|,)" + escaped + "(,|$)"));
                     }
                 }
             }
