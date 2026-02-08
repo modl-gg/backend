@@ -160,30 +160,29 @@ public class PlayerService {
         }
         Player player = playerOpt.get();
 
-        // Find the matching IP entry index in Java to avoid positional operator query issues
-        List<IPEntry> ipAddresses = player.getIpAddresses();
-        int matchIndex = -1;
-        for (int i = 0; i < ipAddresses.size(); i++) {
-            if (ipAddresses.get(i).getIpAddress().equals(ipAddress)) {
-                matchIndex = i;
+        // Modify the IPEntry in Java, then write the whole ipAddresses list back.
+        // This avoids issues with the MongoDB ipAddresses field structure (stored as object
+        // with numeric keys instead of a proper array, breaking positional/index updates).
+        boolean found = false;
+        for (IPEntry entry : player.getIpAddresses()) {
+            if (entry.getIpAddress().equals(ipAddress)) {
+                entry.setCountry((String) ipInfo.get("country"));
+                entry.setRegion((String) ipInfo.get("region"));
+                entry.setAsn((String) ipInfo.get("asn"));
+                entry.setProxy(Boolean.TRUE.equals(ipInfo.get("proxy")));
+                entry.setHosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
+                found = true;
                 break;
             }
         }
-        if (matchIndex == -1) {
-            log.warn("[IP-LOOKUP] IP {} not found in player's ipAddresses (count={})", ipAddress, ipAddresses.size());
+        if (!found) {
+            log.warn("[IP-LOOKUP] IP {} not found in player's ipAddresses (count={})", ipAddress, player.getIpAddresses().size());
             return;
         }
-        log.info("[IP-LOOKUP] Found IP at index {} for player id={}", matchIndex, player.getId());
 
-        // Update using explicit array index — avoids needing ipAddresses.ipAddress in query
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("_id").is(player.getId()));
-        Update update = new Update()
-                .set("ipAddresses." + matchIndex + ".country", ipInfo.get("country"))
-                .set("ipAddresses." + matchIndex + ".region", ipInfo.get("region"))
-                .set("ipAddresses." + matchIndex + ".asn", ipInfo.get("asn"))
-                .set("ipAddresses." + matchIndex + ".proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
-                .set("ipAddresses." + matchIndex + ".hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
+        Update update = new Update().set("ipAddresses", player.getIpAddresses());
         var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         log.info("[IP-LOOKUP] updateIpGeoData result: matched={}, modified={}, db={}", result.getMatchedCount(), result.getModifiedCount(), server.getDatabaseName());
     }
