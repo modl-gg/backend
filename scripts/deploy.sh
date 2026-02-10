@@ -107,6 +107,7 @@ docker rm "$NEW_CONTAINER" 2>/dev/null || true
 log "Starting new container: $NEW_CONTAINER on port $NEW_PORT"
 docker run -d \
     --name "$NEW_CONTAINER" \
+    --network modl \
     --restart unless-stopped \
     -p ${NEW_PORT}:8080 \
     -v "$(pwd)/.env:/app/.env:ro" \
