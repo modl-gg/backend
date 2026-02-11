@@ -464,6 +464,10 @@ public class MinecraftPunishmentController {
         // Update the punishment in-memory and save the whole player
         // This is less efficient but avoids MongoDB array query issues
         targetPunishment.setStarted(new Date());
+        // Clear "Unstarted" status if present (for promoted queued punishments)
+        if (targetPunishment.getData() != null) {
+            targetPunishment.getData().remove("status");
+        }
         template.save(player, CollectionName.PLAYERS);
 
         return ResponseEntity.ok(Map.of(
@@ -819,6 +823,11 @@ public class MinecraftPunishmentController {
                     .toList();
         }
 
+        // Plugin-created punishments stay pending until the plugin acknowledges them via /acknowledge
+        // This ensures the plugin caches the punishment before it's considered "started"
+        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
+        data.put("pendingAcknowledgement", true);
+
         CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
                 request.issuerName(),
                 request.typeOrdinal(),
@@ -827,7 +836,7 @@ public class MinecraftPunishmentController {
                 request.attachedTicketIds(),
                 request.severity(),
                 request.status(),
-                request.data(),
+                data,
                 request.reason(),
                 request.duration()
         );

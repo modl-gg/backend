@@ -210,8 +210,10 @@ public class PunishmentService {
 
         String punishmentId = IdGenerator.generatePunishmentId();
 
-        // Set started = now for non-queued punishments (countdown starts at enforcement time)
-        Date startedDate = "Unstarted".equals(data.get("status")) ? null : now;
+        // Set started = null for plugin-created punishments (pending plugin acknowledgement)
+        // or queued punishments (waiting behind an active one)
+        boolean pendingAck = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
+        Date startedDate = ("Unstarted".equals(data.get("status")) || pendingAck) ? null : now;
 
         Punishment punishment = new Punishment(
                 punishmentId,
@@ -410,37 +412,23 @@ public class PunishmentService {
             if (oldest.isPresent()) {
                 Punishment toPromote = oldest.get();
                 MongoTemplate template = getTemplate(server);
-                Date now = new Date();
 
-                try {
-                    Query query = Query.query(
-                            Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                    );
-                    Update update = new Update()
-                            .set("punishments.$[elem].started", now)
-                            .unset("punishments.$[elem].data.status")
-                            .filterArray(Criteria.where("elem._id").is(toPromote.getId()));
-
-                    promotedIds.add(toPromote.getId());
-                } catch (Exception e) {
-                    log.error("[PROMOTE] Failed to promote {}, attempting repair", toPromote.getId(), e);
-                    // Nested array corruption — repair by rewriting the full punishments array
-                    Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
-                    Player freshPlayer = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
-                    if (freshPlayer != null) {
-                        for (Punishment p : freshPlayer.getPunishments()) {
-                            if (p.getId().equals(toPromote.getId())) {
-                                p.setStarted(now);
-                                if (p.getData() != null) {
-                                    p.getData().remove("status");
-                                }
-                                break;
+                // Promote by removing "Unstarted" status — do NOT set started here.
+                // The sync will deliver the punishment as pending, and the plugin will
+                // acknowledge it (which sets started) after caching/enforcing.
+                Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
+                Player freshPlayer = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
+                if (freshPlayer != null) {
+                    for (Punishment p : freshPlayer.getPunishments()) {
+                        if (p.getId().equals(toPromote.getId())) {
+                            if (p.getData() != null) {
+                                p.getData().remove("status");
                             }
+                            break;
                         }
-                        Update repairUpdate = new Update().set("punishments", freshPlayer.getPunishments());
-                        template.updateFirst(findQuery, repairUpdate, Player.class, CollectionName.PLAYERS);
-                        promotedIds.add(toPromote.getId());
                     }
+                    template.save(freshPlayer, CollectionName.PLAYERS);
+                    promotedIds.add(toPromote.getId());
                 }
             }
         }
