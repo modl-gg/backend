@@ -175,6 +175,21 @@ public class MinecraftPlayerController {
         return ResponseEntity.ok(Map.of("status", 200, "success", true));
     }
 
+    @PostMapping("/update-server")
+    public ResponseEntity<Map<String, Object>> updateServer(
+            @RequestBody UpdateServerRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUuid()));
+        Update update = new Update().set("data.lastServer", request.serverName());
+        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+
+        return ResponseEntity.ok(Map.of("status", 200, "success", true));
+    }
+
     @GetMapping("/online")
     public ResponseEntity<Map<String, Object>> getOnlinePlayers(
             HttpServletRequest httpRequest
@@ -559,6 +574,7 @@ public class MinecraftPlayerController {
         profile.put("ipList", ipList);
         profile.put("punishments", punishments);
         profile.put("pendingNotifications", pendingNotifications);
+        profile.put("data", player.getData());
 
         return profile;
     }
@@ -870,6 +886,8 @@ public class MinecraftPlayerController {
     ) {}
 
     public record DisconnectRequest(String minecraftUuid, long sessionDurationMs) {}
+
+    public record UpdateServerRequest(String minecraftUuid, String serverName) {}
 
     public record LookupRequest(String query) {}
 
