@@ -21,7 +21,7 @@ import java.util.Date;
 @RequiredArgsConstructor
 @Slf4j
 public class UsageTrackingService {
-    private static final double FREE_CDN_LIMIT_GB = 0.5; // 500 MB
+    private static final double FREE_CDN_LIMIT_GB = 1.0; // 1 GB
     private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
     private static final int AI_LIMIT_REQUESTS = 10000;
     private static final double CDN_OVERAGE_RATE = 0.08;

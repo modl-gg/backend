@@ -97,7 +97,8 @@ public class PanelMediaController {
                     presignRequest.uploadType(),
                     presignRequest.fileName(),
                     presignRequest.contentType(),
-                    presignRequest.fileSize()
+                    presignRequest.fileSize(),
+                    presignRequest.entityId()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {

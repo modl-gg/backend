@@ -127,11 +127,22 @@ public class S3StorageService {
             String contentType,
             long fileSize
     ) {
+        return createPresignedUploadUrl(server, uploadType, fileName, contentType, fileSize, null);
+    }
+
+    public PresignUploadResponse createPresignedUploadUrl(
+            Server server,
+            String uploadType,
+            String fileName,
+            String contentType,
+            long fileSize,
+            String entityId
+    ) {
         if (s3Presigner == null) {
             throw new IllegalStateException("S3 storage is not configured");
         }
 
-        String key = buildKey(server, uploadType, fileName);
+        String key = buildKey(server, uploadType, fileName, entityId);
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
                 .bucket(bucketName)
@@ -257,7 +268,7 @@ public class S3StorageService {
 
     private String categorizeFile(String key) {
         if (key.contains("/evidence/")) return "evidence";
-        if (key.contains("/ticket/")) return "ticket";
+        if (key.contains("/tickets/") || key.contains("/ticket/")) return "ticket";
         if (key.contains("/logs/")) return "logs";
         if (key.contains("/backup/")) return "backup";
         return "other";
@@ -281,7 +292,11 @@ public class S3StorageService {
         return response.deleted().size();
     }
 
-    private String buildKey(Server server, String uploadType, String fileName) {
+    private String buildKey(Server server, String uploadType, String fileName, String entityId) {
+        if (entityId != null && !entityId.isBlank()) {
+            String folder = "ticket".equals(uploadType) ? "tickets" : uploadType;
+            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, entityId, fileName);
+        }
         String uuid = UUID.randomUUID().toString();
         String extension = fileName.contains(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
         return String.format("%s/%s/%s%s", server.getDatabaseName(), uploadType, uuid, extension);
@@ -305,7 +320,7 @@ public class S3StorageService {
             throw new IllegalStateException("S3 storage is not configured");
         }
 
-        String key = buildKey(server, uploadType, fileName);
+        String key = buildKey(server, uploadType, fileName, null);
 
         try {
             PutObjectRequest putRequest = PutObjectRequest.builder()

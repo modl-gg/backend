@@ -116,7 +116,7 @@ public class EvidenceUploadController {
             ));
         }
 
-        var presign = s3StorageService.createPresignedUploadUrl(server, "evidence", fileName, contentType, fileSize);
+        var presign = s3StorageService.createPresignedUploadUrl(server, "evidence", fileName, contentType, fileSize, uploadToken.punishmentId());
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,

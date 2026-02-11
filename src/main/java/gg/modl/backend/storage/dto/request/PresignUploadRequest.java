@@ -18,5 +18,7 @@ public record PresignUploadRequest(
         Long fileSize,
 
         @NotBlank(message = "Content type is required")
-        String contentType
+        String contentType,
+
+        String entityId
 ) {}

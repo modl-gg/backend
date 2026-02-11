@@ -15,7 +15,7 @@ import java.util.Map;
 public class StorageQuotaService {
     private final S3StorageService s3StorageService;
 
-    private static final long FREE_TIER_BYTES = 500L * 1024 * 1024; // 500 MB
+    private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
     private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
     public static final long MAX_PREMIUM_BYTES = 10L * 1024L * 1024 * 1024 * 1024; // 10 TB
     private static final long AI_FREE_LIMIT = 0L;

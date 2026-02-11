@@ -30,7 +30,7 @@ public class PublicMediaController {
     private final MediaValidationService validationService;
     private final StorageQuotaService quotaService;
 
-    private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "appeal");
+    private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "tickets", "appeal");
 
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> getMediaConfig(HttpServletRequest request) {
@@ -92,7 +92,8 @@ public class PublicMediaController {
                     presignRequest.uploadType(),
                     presignRequest.fileName(),
                     presignRequest.contentType(),
-                    presignRequest.fileSize()
+                    presignRequest.fileSize(),
+                    presignRequest.entityId()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
