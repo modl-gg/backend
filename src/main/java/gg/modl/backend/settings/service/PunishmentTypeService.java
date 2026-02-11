@@ -76,6 +76,10 @@ public class PunishmentTypeService {
     }
 
     public PunishmentType updatePunishmentType(@NotNull Server server, int ordinal, @NotNull PunishmentType updatedType) {
+        if (ordinal == 0 || ordinal == 5) {
+            throw new IllegalArgumentException("Kick and Blacklist punishment types cannot be configured");
+        }
+
         List<PunishmentType> types = getPunishmentTypes(server);
 
         for (int i = 0; i < types.size(); i++) {
