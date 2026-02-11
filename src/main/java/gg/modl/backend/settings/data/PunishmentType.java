@@ -81,7 +81,7 @@ public class PunishmentType {
     }
 
     public long getDurationMillis(String severity, String offenseLevel) {
-        if (singleSeverityPunishment && singleSeverityDurations != null) {
+        if (isSingleSeverityPunishment() && singleSeverityDurations != null) {
             DurationDetail detail = singleSeverityDurations.getForOffenseLevel(offenseLevel);
             return detail != null ? detail.toMilliseconds() : 0L;
         }
@@ -93,7 +93,7 @@ public class PunishmentType {
     }
 
     public DurationDetail getDurationDetail(String severity, String offenseLevel) {
-        if (singleSeverityPunishment && singleSeverityDurations != null) {
+        if (isSingleSeverityPunishment() && singleSeverityDurations != null) {
             return singleSeverityDurations.getForOffenseLevel(offenseLevel);
         }
         if (durations != null) {
