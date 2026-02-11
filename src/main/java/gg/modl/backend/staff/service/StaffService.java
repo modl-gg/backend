@@ -23,6 +23,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.regex.Pattern;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -338,7 +339,7 @@ public class StaffService {
 
     public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage) {
         MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
+        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
         Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
 
         if (staff == null) {
@@ -384,7 +385,7 @@ public class StaffService {
 
     public Optional<Staff> getStaffByEmail(Server server, String email) {
         MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
+        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
         return Optional.ofNullable(template.findOne(query, Staff.class, CollectionName.STAFF));
     }
 
