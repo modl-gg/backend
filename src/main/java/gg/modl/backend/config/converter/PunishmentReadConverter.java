@@ -79,7 +79,7 @@ public class PunishmentReadConverter implements Converter<Document, Punishment> 
                 doc.getDate("date"),
                 doc.getString("issuerName"),
                 doc.getString("reason") != null ? doc.getString("reason") : "",
-                doc.getLong("effectiveDuration"),
+                safeLong(doc, "effectiveDuration"),
                 doc.getString("appealTicketId"),
                 doc.get("data", Document.class) != null ? new java.util.HashMap<>(doc.get("data", Document.class)) : null
         );
@@ -97,6 +97,12 @@ public class PunishmentReadConverter implements Converter<Document, Punishment> 
         );
     }
 
+    private Long safeLong(Document doc, String key) {
+        Object value = doc.get(key);
+        if (value instanceof Number n) return n.longValue();
+        return null;
+    }
+
     private PunishmentEvidence convertEvidence(Document doc) {
         return new PunishmentEvidence(
                 doc.getString("text"),
@@ -106,7 +112,7 @@ public class PunishmentReadConverter implements Converter<Document, Punishment> 
                 doc.getDate("uploadedAt") != null ? doc.getDate("uploadedAt") : new Date(),
                 doc.getString("fileName"),
                 doc.getString("fileType"),
-                doc.getLong("fileSize")
+                safeLong(doc, "fileSize")
         );
     }
 }
