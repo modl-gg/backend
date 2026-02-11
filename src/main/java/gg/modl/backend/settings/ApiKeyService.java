@@ -41,12 +41,7 @@ public class ApiKeyService {
         return apiKey instanceof String ? (String) apiKey : null;
     }
 
-    public void syncApiKeyToServer(@NotNull Server server) {
-        String apiKey = getApiKeyFromSettings(server);
-        if (apiKey == null) {
-            return;
-        }
-
+    public void syncApiKeyToServer(@NotNull Server server, @NotNull String apiKey) {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = new Query(Criteria.where("_id").is(server.getId()));
         Update update = new Update().set(ServerField.API_KEY, apiKey);
@@ -79,8 +74,9 @@ public class ApiKeyService {
 
             String settingsApiKey = getApiKeyFromSettings(server);
             if (apiKey.equals(settingsApiKey)) {
-                syncApiKeyToServer(server);
+                syncApiKeyToServer(server, settingsApiKey);
                 server.setApiKey(apiKey);
+
                 return server;
             }
         }

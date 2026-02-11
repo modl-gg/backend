@@ -29,7 +29,6 @@ public class ServerProvisioningService {
      */
     public void provision(Server server) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        log.info("[Provisioning] Starting provisioning for server: {}", server.getCustomDomain());
 
         try {
             seedAIModerationSettings(template);
@@ -39,7 +38,6 @@ public class ServerProvisioningService {
             List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(template);
             seedHomepageCards(template, categories);
             roleService.createDefaultRoles(server);
-            log.info("[Provisioning] Completed provisioning for server: {}", server.getCustomDomain());
         } catch (Exception e) {
             log.error("[Provisioning] Error provisioning server: {}", server.getCustomDomain(), e);
         }

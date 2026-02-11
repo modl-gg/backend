@@ -62,13 +62,11 @@ public class PlayerStatusCalculator {
 
         // Kicks (ordinal 0) are instant and never considered "active"
         if (punishment.getType_ordinal() == 0) {
-            log.info("[isPunishmentActive] {} -> false (kick)", pId);
             return false;
         }
 
         Map<String, Object> data = punishment.getData();
         if (data == null) {
-            log.info("[isPunishmentActive] {} -> false (no data)", pId);
             return false;
         }
 
@@ -76,14 +74,12 @@ public class PlayerStatusCalculator {
         Object statusObj = data.get("status");
         String status = statusObj instanceof String ? (String) statusObj : null;
         if ("Unstarted".equals(status)) {
-            log.info("[isPunishmentActive] {} -> false (Unstarted)", pId);
             return false;
         }
 
         for (PunishmentModification mod : punishment.getModifications()) {
             String type = mod.type();
             if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
-                log.info("[isPunishmentActive] {} -> false (pardoned: {})", pId, type);
                 return false;
             }
         }
@@ -97,28 +93,16 @@ public class PlayerStatusCalculator {
             } else if (expiresObj instanceof Long) {
                 expires = new Date((Long) expiresObj);
             } else {
-                log.info("[isPunishmentActive] {} -> true (expires field non-date: {})", pId, expiresObj.getClass().getSimpleName());
                 return true;
             }
 
-            if (expires.before(new Date())) {
-                log.info("[isPunishmentActive] {} -> false (expired: {})", pId, expires);
-                return false;
-            }
-            log.info("[isPunishmentActive] {} -> true (not expired yet: {})", pId, expires);
-            return true;
+            return !expires.before(new Date());
         }
 
         // Check duration-based expiry
         Date effectiveExpiry = getEffectiveExpiry(punishment);
-        if (effectiveExpiry != null && effectiveExpiry.before(new Date())) {
-            log.info("[isPunishmentActive] {} -> false (duration expired: {})", pId, effectiveExpiry);
-            return false;
-        }
 
-        log.info("[isPunishmentActive] {} -> true (active, ordinal={}, started={}, data.status={}, data.keys={})",
-                pId, punishment.getType_ordinal(), punishment.getStarted(), statusObj, data.keySet());
-        return true;
+        return effectiveExpiry == null || !effectiveExpiry.before(new Date());
     }
 
     public Date getEffectiveExpiry(Punishment punishment) {

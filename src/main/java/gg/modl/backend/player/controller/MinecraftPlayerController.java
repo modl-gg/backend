@@ -105,14 +105,8 @@ public class MinecraftPlayerController {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> activePunishments = new ArrayList<>();
 
-        log.info("[LOGIN] Player {} has {} punishments", request.username(), player.getPunishments().size());
         for (Punishment punishment : player.getPunishments()) {
             boolean isActive = statusCalculator.isPunishmentActive(punishment);
-            log.info("[LOGIN]   Punishment {} ordinal={} active={} started={} data.status={} data.keys={}",
-                    punishment.getId(), punishment.getType_ordinal(), isActive,
-                    punishment.getStarted(),
-                    punishment.getData() != null ? punishment.getData().get("status") : "null",
-                    punishment.getData() != null ? punishment.getData().keySet() : "null");
 
             if (isActive) {
                 // Skip kicks - they are instant punishments and shouldn't be "active"
@@ -127,10 +121,8 @@ public class MinecraftPlayerController {
             }
         }
 
-        log.info("[LOGIN] Active punishments before dedup: {}", activePunishments.size());
         // Deduplicate: keep only the oldest active punishment per category (BAN, MUTE)
         activePunishments = deduplicateActivePunishments(activePunishments);
-        log.info("[LOGIN] Active punishments after dedup: {}", activePunishments.size());
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
@@ -840,7 +832,6 @@ public class MinecraftPlayerController {
                 Map<String, Object> pData = punishment.getData();
                 if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
                     int cascaded = punishmentService.cascadePardonLinkedBans(server, punishment.getId());
-                    log.info("[PARDON] Cascade-pardoned {} linked bans for parent {}", cascaded, punishment.getId());
                 }
             }
         }

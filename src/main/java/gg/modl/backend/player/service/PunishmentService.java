@@ -158,15 +158,8 @@ public class PunishmentService {
 
                 boolean active = statusCalculator.isPunishmentActive(existing);
                 boolean unstarted = isUnstarted(existing);
-                log.info("[CREATE_PUNISHMENT] Checking existing {} ordinal={} effectiveCategory={} active={} unstarted={} data.status={}",
-                        existing.getId(), existing.getType_ordinal(), existingCategory, active, unstarted,
-                        existing.getData() != null ? existing.getData().get("status") : "null");
                 return active || unstarted;
             });
-
-            log.info("[CREATE_PUNISHMENT] New punishment ordinal={} effectiveCategory={} hasExistingInCategory={} -> {}",
-                    request.typeOrdinal(), newCategory, hasExistingInCategory,
-                    hasExistingInCategory ? "QUEUING as Unstarted" : "ACTIVE");
 
             if (hasExistingInCategory) {
                 data.put("status", "Unstarted");
@@ -396,9 +389,6 @@ public class PunishmentService {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<String> promotedIds = new ArrayList<>();
 
-        log.info("[PROMOTE] Checking promotions for player {} with {} punishments",
-                player.getMinecraftUuid(), player.getPunishments().size());
-
         for (String category : List.of("BAN", "MUTE")) {
             boolean hasActive = player.getPunishments().stream().anyMatch(p -> {
                 String effectiveCategory = statusCalculator.getEffectiveCategory(p, types);
@@ -406,7 +396,6 @@ public class PunishmentService {
             });
 
             if (hasActive) {
-                log.info("[PROMOTE] Category {} already has active punishment, skipping", category);
                 continue;
             }
 
@@ -423,9 +412,6 @@ public class PunishmentService {
                 MongoTemplate template = getTemplate(server);
                 Date now = new Date();
 
-                log.info("[PROMOTE] Promoting {} in category {} (ordinal={}, issued={})",
-                        toPromote.getId(), category, toPromote.getType_ordinal(), toPromote.getIssued());
-
                 try {
                     Query query = Query.query(
                             Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
@@ -434,10 +420,6 @@ public class PunishmentService {
                             .set("punishments.$[elem].started", now)
                             .unset("punishments.$[elem].data.status")
                             .filterArray(Criteria.where("elem._id").is(toPromote.getId()));
-                    var result = template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-
-                    log.info("[PROMOTE] MongoDB update result for {}: matched={}, modified={}",
-                            toPromote.getId(), result.getMatchedCount(), result.getModifiedCount());
 
                     promotedIds.add(toPromote.getId());
                 } catch (Exception e) {
@@ -457,12 +439,9 @@ public class PunishmentService {
                         }
                         Update repairUpdate = new Update().set("punishments", freshPlayer.getPunishments());
                         template.updateFirst(findQuery, repairUpdate, Player.class, CollectionName.PLAYERS);
-                        log.info("[PROMOTE] Repaired and promoted {} via full array rewrite", toPromote.getId());
                         promotedIds.add(toPromote.getId());
                     }
                 }
-            } else {
-                log.info("[PROMOTE] No unstarted punishments found for category {}", category);
             }
         }
 
@@ -525,8 +504,6 @@ public class PunishmentService {
                         linkedPlayer.getMinecraftUuid().toString(),
                         linkedDuration
                 );
-                log.info("[ALT_BLOCK] Created LinkedBan {} for {} due to alt-blocking ban {} on {}",
-                        linkedBanId, player.getMinecraftUuid(), punishment.getId(), linkedPlayer.getMinecraftUuid());
                 createdIds.add(linkedBanId);
 
                 // Only create one linked ban per login
@@ -566,7 +543,6 @@ public class PunishmentService {
                 if (blockedName != null && !blockedName.equalsIgnoreCase(currentUsername)) {
                     String reason = "Auto-pardoned: username changed from '" + blockedName + "' to '" + currentUsername + "'";
                     systemPardonPunishment(server, player.getMinecraftUuid(), punishment.getId(), reason);
-                    log.info("[RESTRICTION] Auto-pardoned Bad Username {} for {}: {}", punishment.getId(), player.getMinecraftUuid(), reason);
                     pardonedIds.add(punishment.getId());
                 }
             }
@@ -577,7 +553,6 @@ public class PunishmentService {
                 if (blockedSkin != null && !blockedSkin.equals(currentSkinHash)) {
                     String reason = "Auto-pardoned: skin changed";
                     systemPardonPunishment(server, player.getMinecraftUuid(), punishment.getId(), reason);
-                    log.info("[RESTRICTION] Auto-pardoned Bad Skin {} for {}", punishment.getId(), player.getMinecraftUuid());
                     pardonedIds.add(punishment.getId());
                 }
             }
@@ -694,9 +669,6 @@ public class PunishmentService {
                             .set("punishments.$.data.duration", newDuration);
 
                     template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-                    log.info("[CASCADE] Duration changed on LinkedBan {} on {} (parent: {}, newDuration: {})",
-                            punishment.getId(), player.getMinecraftUuid(), parentPunishmentId, newDuration);
                     count++;
                 }
             }
@@ -723,8 +695,6 @@ public class PunishmentService {
                         statusCalculator.isPunishmentActive(punishment)) {
                     systemPardonWithTemplate(template, player.getMinecraftUuid(), punishment.getId(),
                             "Auto-pardoned: parent ban was pardoned");
-                    log.info("[CASCADE] Pardoned LinkedBan {} on {} (parent: {})",
-                            punishment.getId(), player.getMinecraftUuid(), parentPunishmentId);
                     count++;
                 }
             }
@@ -910,9 +880,6 @@ public class PunishmentService {
             }
         }
 
-        log.info("[TICKET_MODIFY] Modified tickets on punishment {} for player {} by {}",
-                punishmentId, playerUuid, request.issuerName());
-
         return findPlayerByUuid(template, playerUuid);
     }
 
@@ -941,7 +908,6 @@ public class PunishmentService {
                         .set("updatedAt", new Date());
 
                 template.updateFirst(ticketQuery, ticketUpdate, Ticket.class, CollectionName.TICKETS);
-                log.info("[TICKET_REOPEN] Reopened ticket {} due to punishment ticket removal by {}", ticketId, issuerName);
             } catch (Exception e) {
                 log.error("[TICKET_REOPEN] Failed to reopen ticket {}: {}", ticketId, e.getMessage());
             }
@@ -973,7 +939,6 @@ public class PunishmentService {
                         .set("updatedAt", new Date());
 
                 template.updateFirst(ticketQuery, ticketUpdate, Ticket.class, CollectionName.TICKETS);
-                log.info("[TICKET_CLOSE] Closed ticket {} due to punishment creation by {}", ticketId, issuerName);
             } catch (Exception e) {
                 log.error("[TICKET_CLOSE] Failed to close ticket {}: {}", ticketId, e.getMessage());
             }

@@ -225,9 +225,6 @@ public class EvidenceUploadController {
         // Invalidate the token after successful submission
         tokenService.invalidateToken(token);
 
-        log.info("[EVIDENCE_UPLOAD] {} uploaded {} evidence file(s) for punishment {}",
-                uploadToken.issuerName(), request.evidence().size(), uploadToken.punishmentId());
-
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "message", "Evidence uploaded successfully"

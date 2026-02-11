@@ -40,7 +40,6 @@ public class EvidenceUploadTokenService {
                 issuerName,
                 Instant.now()
         ));
-        log.info("[EVIDENCE_TOKEN] Created upload token for punishment {} by {}", punishmentId, issuerName);
         return token;
     }
 
@@ -60,16 +59,6 @@ public class EvidenceUploadTokenService {
 
     @Scheduled(fixedRate = 300000) // Every 5 minutes
     public void cleanupExpiredTokens() {
-        int removed = 0;
-        var iterator = tokens.entrySet().iterator();
-        while (iterator.hasNext()) {
-            if (iterator.next().getValue().isExpired()) {
-                iterator.remove();
-                removed++;
-            }
-        }
-        if (removed > 0) {
-            log.info("[EVIDENCE_TOKEN] Cleaned up {} expired tokens", removed);
-        }
+        tokens.entrySet().removeIf(stringUploadTokenEntry -> stringUploadTokenEntry.getValue().isExpired());
     }
 }

@@ -39,7 +39,6 @@ public class AIModerationSettingsService {
                 Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
                 Settings newSettings = new Settings(null, SETTINGS_TYPE_AI_MODERATION, data);
                 template.save(newSettings, CollectionName.SETTINGS);
-                log.info("Created default AI moderation settings for server {}", server.getDatabaseName());
             } catch (Exception e) {
                 log.warn("Failed to create default AI moderation settings for server {}: {}", server.getDatabaseName(), e.getMessage());
             }
