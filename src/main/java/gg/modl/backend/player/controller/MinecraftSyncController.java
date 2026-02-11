@@ -267,11 +267,14 @@ public class MinecraftSyncController {
         result.put("issuerName", punishment.getIssuerName());
         result.put("issuedAt", punishment.getIssued().getTime());
         result.put("playerDescription", playerDescription);
-        result.put("modifications", punishment.getModifications().stream().map(m -> Map.of(
-                "type", m.type(),
-                "timestamp", m.date() != null ? m.date().getTime() : null,
-                "effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L
-        )).toList());
+        result.put("modifications", punishment.getModifications().stream().map(m -> {
+                Map<String, Object> modMap = new LinkedHashMap<>();
+                modMap.put("type", m.type());
+                modMap.put("timestamp", m.date() != null ? m.date().getTime() : null);
+                modMap.put("effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L);
+                modMap.put("issuerName", m.issuerName());
+                return modMap;
+        }).toList());
 
         return result;
     }
@@ -362,10 +365,11 @@ public class MinecraftSyncController {
                     String modType = (String) mod.get("type");
                     if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType) || "SYSTEM_PARDON".equals(modType)) {
                         String pardoner = (String) mod.get("issuerName");
+                        String typeName = (String) punishment.get("type");
                         Map<String, Object> notif = new LinkedHashMap<>();
                         notif.put("id", "pardon_" + punishment.get("id"));
                         notif.put("type", "PUNISHMENT_PARDONED");
-                        notif.put("message", (pardoner != null ? pardoner : "System") + ": pardoned " + username);
+                        notif.put("message", (pardoner != null ? pardoner : "System") + ": pardoned " + username + "'s " + (typeName != null ? typeName : "punishment"));
                         notif.put("timestamp", mod.get("timestamp"));
                         notifications.add(notif);
                     }
