@@ -1,4 +1,6 @@
 name: Deploy Production
+concurrency:
+  group: ${{ github.workflow }}
 
 on:
   push:
