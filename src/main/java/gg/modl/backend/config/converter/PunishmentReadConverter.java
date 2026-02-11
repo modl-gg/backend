@@ -21,10 +21,14 @@ public class PunishmentReadConverter implements Converter<Document, Punishment> 
     public Punishment convert(Document source) {
         Punishment punishment = new Punishment();
 
-        Object idObj = source.get("_id");
-        if (idObj != null) {
-            punishment.setId(idObj.toString());
+        String id = source.getString("id");
+        if (id == null) {
+            Object idObj = source.get("_id");
+            if (idObj != null) {
+                id = idObj.toString();
+            }
         }
+        punishment.setId(id);
 
         punishment.setType_ordinal(source.getInteger("type_ordinal", 0));
         punishment.setIssuerName(source.getString("issuerName"));

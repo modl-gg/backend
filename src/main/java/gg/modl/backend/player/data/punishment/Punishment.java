@@ -17,7 +17,6 @@ import java.util.Map;
 @AllArgsConstructor
 public class Punishment {
     @NotNull
-    @Field("_id")
     @JsonAlias("id")
     private String id;
 

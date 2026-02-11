@@ -429,7 +429,7 @@ public class AuditService {
                     Update update = new Update().push("punishments.$.modifications", rollbackModification);
                     Query updateQuery = Query.query(
                             Criteria.where("_id").is(playerId)
-                                    .and("punishments._id").is(punishmentId)
+                                    .and("punishments.id").is(punishmentId)
                     );
                     template.updateFirst(updateQuery, update, CollectionName.PLAYERS);
 
@@ -486,7 +486,7 @@ public class AuditService {
                     Aggregation.sort(Sort.Direction.DESC, "punishments.issued"),
                     Aggregation.limit(50),
                     Aggregation.project()
-                            .and("punishments._id").as("punishmentId")
+                            .and("punishments.id").as("punishmentId")
                             .and("minecraftUuid").as("playerId") // Use minecraftUuid instead of _id
                             .and("punishments.type_ordinal").as("typeOrdinal")
                             .and("punishments.issued").as("issued")

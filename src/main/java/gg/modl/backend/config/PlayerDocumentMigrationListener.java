@@ -17,6 +17,7 @@ public class PlayerDocumentMigrationListener extends AbstractMongoEventListener<
         migrateIpList(doc);
         migrateDataFields(doc);
         migratePendingNotifications(doc);
+        migratePunishmentIds(doc);
     }
 
     private void migrateIpList(Document doc) {
@@ -61,6 +62,19 @@ public class PlayerDocumentMigrationListener extends AbstractMongoEventListener<
 
         if (!data.containsKey("pendingNotifications")) {
             data.put("pendingNotifications", rootNotifications);
+        }
+    }
+
+    private void migratePunishmentIds(Document doc) {
+        List<Document> punishments = doc.getList("punishments", Document.class);
+        if (punishments == null) {
+            return;
+        }
+
+        for (Document punishment : punishments) {
+            if (!punishment.containsKey("id") && punishment.containsKey("_id")) {
+                punishment.put("id", punishment.get("_id").toString());
+            }
         }
     }
 }
