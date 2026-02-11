@@ -1,5 +1,6 @@
 package gg.modl.backend.player.data.punishment;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,6 +18,7 @@ import java.util.Map;
 public class Punishment {
     @NotNull
     @Field("_id")
+    @JsonAlias("id")
     private String id;
 
     @Field("type_ordinal")
