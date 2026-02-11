@@ -329,10 +329,14 @@ public class StaffService {
     }
 
     public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
-        return updateOrCreateProfileUsername(server, email, newUsername, false);
+        return updateOrCreateProfileUsername(server, email, newUsername, false, null);
     }
 
     public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists) {
+        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, null);
+    }
+
+    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("email").regex("^" + email + "$", "i"));
         Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
@@ -367,6 +371,12 @@ public class StaffService {
                     .set("updatedAt", new Date());
             template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
             staff.setUsername(newUsername);
+        }
+
+        if (newLanguage != null && List.of("en", "de", "es").contains(newLanguage)) {
+            Update langUpdate = new Update().set("language", newLanguage).set("updatedAt", new Date());
+            template.updateFirst(query, langUpdate, Staff.class, CollectionName.STAFF);
+            staff.setLanguage(newLanguage);
         }
 
         return Optional.of(staff);

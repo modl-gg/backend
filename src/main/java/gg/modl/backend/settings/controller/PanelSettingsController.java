@@ -65,10 +65,6 @@ public class PanelSettingsController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (ordinal < 6) {
-            return ResponseEntity.badRequest().build();
-        }
-
         try {
             PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
             return ResponseEntity.ok(result);

@@ -22,6 +22,7 @@ public class RateLimitConfig {
         PANEL_AUDIT(200, Duration.ofMinutes(1)), // Higher limit for audit/analytics pages
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
+        PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
@@ -104,6 +105,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/public/")) {
+            if (path.startsWith("/v1/public/tickets") && "POST".equalsIgnoreCase(method)) {
+                return RateLimitTier.PUBLIC_TICKET_CREATE;
+            }
             if (isHeavyPublicOperation(path, method)) {
                 return RateLimitTier.PUBLIC_HEAVY;
             }

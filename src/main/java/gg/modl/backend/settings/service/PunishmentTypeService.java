@@ -79,13 +79,30 @@ public class PunishmentTypeService {
         List<PunishmentType> types = getPunishmentTypes(server);
 
         for (int i = 0; i < types.size(); i++) {
-            if (types.get(i).getOrdinal() == ordinal) {
-                if (!types.get(i).isCustomizable()) {
-                    throw new IllegalArgumentException("Administrative punishment types cannot be customized");
+            PunishmentType existing = types.get(i);
+            if (existing.getOrdinal() == ordinal) {
+                if (existing.isCustomizable()) {
+                    // Custom type: full replacement, preserve ordinal and customizable flag
+                    updatedType.setOrdinal(ordinal);
+                    updatedType.setCustomizable(true);
+                    types.set(i, updatedType);
+                } else {
+                    // Core type: only update configurable fields, preserve identity
+                    existing.setStaffDescription(updatedType.getStaffDescription());
+                    existing.setPlayerDescription(updatedType.getPlayerDescription());
+                    existing.setAppealable(updatedType.getAppealable());
+                    existing.setAppealForm(updatedType.getAppealForm());
+                    existing.setDurations(updatedType.getDurations());
+                    existing.setPoints(updatedType.getPoints());
+                    existing.setSingleSeverityPunishment(updatedType.getSingleSeverityPunishment());
+                    existing.setSingleSeverityDurations(updatedType.getSingleSeverityDurations());
+                    existing.setSingleSeverityPoints(updatedType.getSingleSeverityPoints());
+                    existing.setCanBeAltBlocking(updatedType.getCanBeAltBlocking());
+                    existing.setCanBeStatWiping(updatedType.getCanBeStatWiping());
+                    existing.setPermanentUntilSkinChange(updatedType.getPermanentUntilSkinChange());
+                    existing.setPermanentUntilUsernameChange(updatedType.getPermanentUntilUsernameChange());
+                    updatedType = existing;
                 }
-                updatedType.setOrdinal(ordinal);
-                updatedType.setCustomizable(true);
-                types.set(i, updatedType);
                 break;
             }
         }

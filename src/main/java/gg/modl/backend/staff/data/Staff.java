@@ -37,6 +37,9 @@ public class Staff {
     private String assignedMinecraftUsername;
 
     @Builder.Default
+    private String language = "en";
+
+    @Builder.Default
     private List<TicketSubscription> subscribedTickets = new ArrayList<>();
 
     private TicketSubscriptionSettings ticketSubscriptionSettings;

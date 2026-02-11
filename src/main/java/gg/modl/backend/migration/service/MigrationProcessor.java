@@ -393,6 +393,9 @@ public class MigrationProcessor {
             }
 
             Object typeOrdinalObj = map.get("type_ordinal");
+            if (typeOrdinalObj == null) {
+                typeOrdinalObj = map.get("typeOrdinal");
+            }
             int typeOrdinal = 0;
             if (typeOrdinalObj instanceof Number) {
                 typeOrdinal = ((Number) typeOrdinalObj).intValue();

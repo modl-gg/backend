@@ -2,6 +2,7 @@ package gg.modl.backend.player.controller;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
@@ -205,6 +206,22 @@ public class MinecraftSyncController {
                 ? server.getStaffPermissionsUpdatedAt().getTime() : null);
         data.put("punishmentTypesUpdatedAt", server.getPunishmentTypesUpdatedAt() != null
                 ? server.getPunishmentTypesUpdatedAt().getTime() : null);
+
+        // Check for active migration task that needs plugin action
+        try {
+            Query migrationQuery = Query.query(
+                    Criteria.where("status").is("building_json")
+            );
+            MigrationStatus activeMigration = template.findOne(migrationQuery, MigrationStatus.class, "migrations");
+            if (activeMigration != null) {
+                data.put("migrationTask", Map.of(
+                        "taskId", activeMigration.getTaskId(),
+                        "type", activeMigration.getType()
+                ));
+            }
+        } catch (Exception e) {
+            // Migration collection may not exist yet, ignore
+        }
 
         return ResponseEntity.ok(Map.of(
                 "timestamp", now.toString(),
