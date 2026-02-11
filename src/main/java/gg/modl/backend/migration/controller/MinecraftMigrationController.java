@@ -75,7 +75,7 @@ public class MinecraftMigrationController {
             String uniqueFilename = "migration-" + UUID.randomUUID() + ".json";
             Path filePath = uploadPath.resolve(uniqueFilename);
 
-            file.transferTo(filePath.toAbsoluteFile());
+            file.transferTo(filePath.toAbsolutePath());
 
             migrationService.updateProgress(server, new UpdateProgressRequest(
                     "uploading_json",
