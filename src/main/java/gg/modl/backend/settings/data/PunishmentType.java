@@ -17,7 +17,8 @@ public class PunishmentType {
     private Integer id;
     private String name;
     private String category;
-    private Boolean customizable; // no primitive booleans to prevent null errors during deserialization
+    @JsonAlias("isCustomizable")
+    private Boolean customizable;
     private Integer ordinal;
 
     private PunishmentDurations durations;
@@ -34,7 +35,10 @@ public class PunishmentType {
 
     private Boolean canBeAltBlocking;
     private Boolean canBeStatWiping;
+    @JsonAlias("isAppealable")
     private Boolean appealable;
+
+    private AppealForm appealForm;
 
     private Boolean permanentUntilSkinChange;
     private Boolean permanentUntilUsernameChange;

@@ -6,6 +6,30 @@ import java.util.List;
 public final class DefaultPunishmentTypes {
     private DefaultPunishmentTypes() {}
 
+    private static AppealForm createDefaultAppealForm() {
+        return AppealForm.builder()
+                .sections(List.of(
+                        AppealFormSection.builder()
+                                .id("appeal_reason_section")
+                                .title("Appeal Information")
+                                .description("Explain why you believe this punishment should be amended")
+                                .order(0)
+                                .build()
+                ))
+                .fields(List.of(
+                        AppealFormField.builder()
+                                .id("why")
+                                .type("textarea")
+                                .label("Why should this punishment be amended?")
+                                .description("Please provide context and any relevant information to support your appeal")
+                                .required(true)
+                                .order(1)
+                                .sectionId("appeal_reason_section")
+                                .build()
+                ))
+                .build();
+    }
+
     public static List<PunishmentType> getAll() {
         List<PunishmentType> types = new ArrayList<>();
         types.addAll(getAdministrativeTypes());
@@ -74,6 +98,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -89,6 +114,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -104,6 +130,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -119,6 +146,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -167,6 +195,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -200,6 +229,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -233,6 +263,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -266,6 +297,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -282,6 +314,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -298,6 +331,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(false)
                 .canBeStatWiping(false)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -331,6 +365,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -364,6 +399,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -397,6 +433,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -430,6 +467,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -463,6 +501,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 
@@ -496,6 +535,7 @@ public final class DefaultPunishmentTypes {
                 .canBeAltBlocking(true)
                 .canBeStatWiping(true)
                 .appealable(true)
+                .appealForm(createDefaultAppealForm())
                 .build();
     }
 }

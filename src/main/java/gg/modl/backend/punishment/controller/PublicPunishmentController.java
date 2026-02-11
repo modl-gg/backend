@@ -68,13 +68,8 @@ public class PublicPunishmentController {
             response.put("existingAppeal", existingAppeal);
         }
 
-        // Get appeal form configuration if available
         var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
-        if (punishmentType.isPresent()) {
-            // Appeal form would be part of punishment type settings if configured
-            // For now, return null to let frontend use default form
-            response.put("appealForm", null);
-        }
+        response.put("appealForm", punishmentType.map(pt -> pt.getAppealForm()).orElse(null));
 
         return ResponseEntity.ok(response);
     }
