@@ -76,7 +76,8 @@ public class MinecraftPlayerController {
                 request.username(),
                 request.ip(),
                 request.ipInfo(),
-                request.skinHash()
+                request.skinHash(),
+                request.serverName()
         );
 
         // Link accounts by shared IPs
@@ -163,6 +164,11 @@ public class MinecraftPlayerController {
         Update update = new Update()
                 .set("data.isOnline", false)
                 .set("data.lastLogout", new Date());
+
+        if (request.sessionDurationMs() > 0) {
+            long sessionSeconds = request.sessionDurationMs() / 1000;
+            update.inc("data.totalPlaytimeSeconds", sessionSeconds);
+        }
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
 
@@ -849,7 +855,8 @@ public class MinecraftPlayerController {
             @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
             @Pattern(regexp = RegExpConstants.IP) String ip,
             Map<String, Object> ipInfo,
-            String skinHash
+            String skinHash,
+            String serverName
     ) {}
 
     public record SubmitIpInfoRequest(
@@ -862,7 +869,7 @@ public class MinecraftPlayerController {
             boolean hosting
     ) {}
 
-    public record DisconnectRequest(String minecraftUuid) {}
+    public record DisconnectRequest(String minecraftUuid, long sessionDurationMs) {}
 
     public record LookupRequest(String query) {}
 
