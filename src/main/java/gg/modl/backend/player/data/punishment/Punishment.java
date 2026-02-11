@@ -11,13 +11,15 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class Punishment {
     @NotNull
-    @JsonAlias("id")
+    @Field(value = "id", targetType = FieldType.STRING)
+    @JsonAlias("_id")
     private String id;
 
     @Field("type_ordinal")
