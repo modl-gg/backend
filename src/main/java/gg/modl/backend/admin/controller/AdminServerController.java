@@ -77,11 +77,15 @@ public class AdminServerController {
     @PostMapping
     public ResponseEntity<?> createServer(@RequestBody @Valid CreateServerRequest request) {
         Date now = new Date();
-        Server server = new Server(request.serverName(), request.customDomain(), "server_" + request.customDomain());
-        server.setAdminEmail(request.adminEmail());
-        server.setEmailVerified(false);
+        Server server = new Server(
+                request.serverName(),
+                request.customDomain(),
+                "server_" + request.customDomain(),
+                request.adminEmail(),
+                false,
+                request.plan() != null ? ServerPlan.valueOf(request.plan()) : ServerPlan.free
+        );
         server.setProvisioningStatus(ProvisioningStatus.pending);
-        server.setPlan(request.plan() != null ? ServerPlan.valueOf(request.plan()) : ServerPlan.free);
         server.setSubscriptionStatus(SubscriptionStatus.inactive);
         server.setCreatedAt(now);
         server.setUpdatedAt(now);
