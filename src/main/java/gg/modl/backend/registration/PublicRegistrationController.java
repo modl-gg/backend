@@ -218,7 +218,7 @@ public class PublicRegistrationController {
                 server.getCustomDomain(),
                 server.getServerName(),
                 server.getEmailVerified(),
-                server.getProvisioningStatus().name(),
+                server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.pending.name(),
                 getProvisioningMessage(server.getProvisioningStatus())
         ));
     }
@@ -272,6 +272,7 @@ public class PublicRegistrationController {
     }
 
     private String getProvisioningMessage(ProvisioningStatus status) {
+        if (status == null) return "Your server is queued for setup...";
         return switch (status) {
             case pending -> "Your server is queued for setup...";
             case in_progress -> "Setting up your server...";

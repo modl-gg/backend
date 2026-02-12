@@ -2,6 +2,7 @@ package gg.modl.backend.server.controller;
 
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,7 @@ public class PanelServerController {
         Server server = RequestUtil.getRequestServer(request);
 
         return ResponseEntity.ok(Map.of(
-                "status", server.getProvisioningStatus().name(),
+                "status", server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.pending.name(),
                 "serverName", server.getServerName(),
                 "emailVerified", server.getEmailVerified() != null && server.getEmailVerified()
         ));

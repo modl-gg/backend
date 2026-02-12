@@ -54,7 +54,7 @@ public class Server {
     private String emailVerificationToken;
 
     // Provisioning & Status
-    @NotNull
+    @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
     @Indexed(name = "provisioningStatus_1")
     private ProvisioningStatus provisioningStatus;
@@ -77,7 +77,7 @@ public class Server {
     @Field(name = "plan", targetType = FieldType.STRING)
     private ServerPlan plan;
 
-    @NotNull
+    @Nullable
     @Field(name = "subscription_status", targetType = FieldType.STRING)
     private SubscriptionStatus subscriptionStatus;
 
@@ -160,12 +160,12 @@ public class Server {
     private Date lastActivityAt;
 
     // Timestamps
-    @NotNull
+    @Nullable
     @Field(name = "createdAt", targetType = FieldType.DATE_TIME)
     @Indexed(name = "createdAt_1")
     private Date createdAt;
 
-    @NotNull
+    @Nullable
     @Field(name = "updatedAt", targetType = FieldType.DATE_TIME)
     private Date updatedAt;
 
