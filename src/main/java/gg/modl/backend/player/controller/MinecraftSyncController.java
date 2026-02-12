@@ -191,7 +191,7 @@ public class MinecraftSyncController {
         pendingPunishments = deduplicatePendingPunishments(pendingPunishments);
 
         // Generate staff notifications for recent events
-        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(template, lastSync, types, recentlyModifiedPunishments);
+        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(template, lastSync, types, recentlyModifiedPunishments, server);
 
         List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template);
 
@@ -292,21 +292,55 @@ public class MinecraftSyncController {
 
     private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,
                                                              List<PunishmentType> types,
-                                                             List<Map<String, Object>> recentlyModifiedPunishments) {
+                                                             List<Map<String, Object>> recentlyModifiedPunishments,
+                                                             Server server) {
         List<Map<String, Object>> notifications = new ArrayList<>();
 
         // 1. Recent tickets created since last sync
         try {
-            Query ticketQuery = Query.query(Criteria.where("created").gte(Date.from(lastSync)));
+            Query ticketQuery = Query.query(
+                    Criteria.where("created").gte(Date.from(lastSync))
+                            .and("status").ne("Unfinished")
+            );
             ticketQuery.limit(20);
             List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : recentTickets) {
+                String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
+                String ticketId = ticket.getId();
+                String serverName = server.getServerName() != null ? server.getServerName() : "Unknown";
+
                 Map<String, Object> notif = new LinkedHashMap<>();
-                notif.put("id", "ticket_" + ticket.getId());
+                notif.put("id", "ticket_" + ticketId);
                 notif.put("type", "TICKET_CREATED");
-                notif.put("message", "New ticket: " + ticket.getSubject() + " by " + ticket.getCreatorName());
+                notif.put("message", creatorName + ": created " + ticketId + " on " + serverName);
                 notif.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
+
+                // Include data for hover/click in plugin
+                Map<String, Object> data = new LinkedHashMap<>();
+                data.put("ticketId", ticketId);
+                data.put("creatorName", creatorName);
+                data.put("serverName", serverName);
+                data.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
+
+                // Get first reply content, stripped of ** and ```
+                String firstReply = "";
+                if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
+                    String content = ticket.getReplies().get(0).getContent();
+                    if (content != null) {
+                        firstReply = content.replace("**", "").replace("```", "");
+                    }
+                }
+                data.put("firstReplyContent", firstReply);
+
+                // Build ticket URL
+                String domain = server.getCustomDomainOverride();
+                if (domain == null || domain.isBlank()) {
+                    domain = server.getCustomDomain() + ".modl.gg";
+                }
+                data.put("ticketUrl", "https://" + domain + "/tickets/" + ticketId);
+
+                notif.put("data", data);
                 notifications.add(notif);
             }
         } catch (Exception e) {
