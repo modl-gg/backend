@@ -7,6 +7,7 @@ import gg.modl.backend.config.converter.ArrayListToPunishmentConverter;
 import gg.modl.backend.config.converter.IPEntryReadConverter;
 import gg.modl.backend.config.converter.NoteEntryReadConverter;
 import gg.modl.backend.config.converter.PunishmentReadConverter;
+import gg.modl.backend.config.converter.StringToCustomDomainStatusConverter;
 import gg.modl.backend.config.converter.StringToDateReadConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,7 +33,8 @@ public class MongoConfig {
                 new ArrayListToNoteEntryConverter(),
                 new PunishmentReadConverter(),
                 new ArrayListToPunishmentConverter(),
-                new StringToDateReadConverter()
+                new StringToDateReadConverter(),
+                new StringToCustomDomainStatusConverter()
         ));
     }
 
