@@ -219,7 +219,7 @@ public class PanelAuthController {
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
 
         return cookie;
     }
@@ -231,7 +231,7 @@ public class PanelAuthController {
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge(0);
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
 
         return cookie;
     }
