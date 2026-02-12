@@ -54,18 +54,14 @@ public class ServerService {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
-        Server server = new Server(
-                serverName,
-                customDomain,
-                databaseName,
-                adminEmail,
-                false,
-                ProvisioningStatus.pending,
-                plan,
-                SubscriptionStatus.inactive,
-                now,
-                now
-        );
+        Server server = new Server(serverName, customDomain, databaseName);
+        server.setAdminEmail(adminEmail);
+        server.setEmailVerified(false);
+        server.setProvisioningStatus(ProvisioningStatus.pending);
+        server.setPlan(plan);
+        server.setSubscriptionStatus(SubscriptionStatus.inactive);
+        server.setCreatedAt(now);
+        server.setUpdatedAt(now);
 
         if (emailVerificationToken != null) {
             server.setEmailVerificationToken(emailVerificationToken);
