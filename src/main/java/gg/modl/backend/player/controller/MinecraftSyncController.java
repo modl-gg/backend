@@ -147,6 +147,25 @@ public class MinecraftSyncController {
                     ));
                 }
 
+                // Include recently-issued, already-started punishments that need enforcement
+                // on online players. This covers punishments created from the panel (which set
+                // started=now immediately) that the plugin has never executed.
+                for (Punishment punishment : player.getPunishments()) {
+                    if (!statusCalculator.isPunishmentActive(punishment)) continue;
+                    if (punishment.getStarted() == null) continue; // Handled above as unstarted
+                    if (punishment.getIssued() == null || !punishment.getIssued().toInstant().isAfter(lastSync)) continue;
+
+                    String category = statusCalculator.getEffectiveCategory(punishment, types);
+                    if (category == null) continue; // Not a ban or mute — no enforcement needed
+
+                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    pendingPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", simplePunishment
+                    ));
+                }
+
                 // When a punishment is pardoned, re-send another active+started punishment in the
                 // same category so the plugin re-enforces it (e.g. mute B after mute A is pardoned)
                 Set<String> pardonedCategories = new HashSet<>();
