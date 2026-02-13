@@ -32,6 +32,7 @@ public class PanelSettingsController {
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
     private final AITicketAnalysisService aiTicketAnalysisService;
+    private final OffenderThresholdSettingsService offenderThresholdSettingsService;
     private final PermissionService permissionService;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
@@ -131,6 +132,23 @@ public class PanelSettingsController {
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
         if (denied != null) return denied;
         GeneralSettings updated = generalSettingsService.updateGeneralSettings(server, settings);
+        return ResponseEntity.ok(updated);
+    }
+
+    @GetMapping("/status-thresholds")
+    public ResponseEntity<OffenderThresholdSettings> getStatusThresholds(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        OffenderThresholdSettings settings = offenderThresholdSettingsService.getThresholdSettings(server);
+        return ResponseEntity.ok(settings);
+    }
+
+    @PutMapping("/status-thresholds")
+    public ResponseEntity<OffenderThresholdSettings> updateStatusThresholds(
+            @RequestBody OffenderThresholdSettings settings,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        OffenderThresholdSettings updated = offenderThresholdSettingsService.updateThresholdSettings(server, settings);
         return ResponseEntity.ok(updated);
     }
 

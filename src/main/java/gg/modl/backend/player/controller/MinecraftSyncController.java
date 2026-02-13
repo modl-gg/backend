@@ -338,7 +338,7 @@ public class MinecraftSyncController {
                 if (domain == null || domain.isBlank()) {
                     domain = server.getCustomDomain() + ".modl.gg";
                 }
-                data.put("ticketUrl", "https://" + domain + "/tickets/" + ticketId);
+                data.put("ticketUrl", "https://" + domain + "/ticket/" + ticketId);
 
                 notif.put("data", data);
                 notifications.add(notif);
