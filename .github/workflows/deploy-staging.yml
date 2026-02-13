@@ -5,12 +5,12 @@ concurrency:
 on:
   push:
     branches:
-      - draft
+      - dev
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment: staging
 
     steps:
