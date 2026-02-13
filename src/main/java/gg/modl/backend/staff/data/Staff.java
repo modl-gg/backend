@@ -40,6 +40,9 @@ public class Staff {
     private String language = "en";
 
     @Builder.Default
+    private String dateFormat = "MM/DD/YYYY";
+
+    @Builder.Default
     private List<TicketSubscription> subscribedTickets = new ArrayList<>();
 
     private TicketSubscriptionSettings ticketSubscriptionSettings;

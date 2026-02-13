@@ -330,14 +330,18 @@ public class StaffService {
     }
 
     public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
-        return updateOrCreateProfileUsername(server, email, newUsername, false, null);
+        return updateOrCreateProfileUsername(server, email, newUsername, false, null, null);
     }
 
     public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists) {
-        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, null);
+        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, null, null);
     }
 
     public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage) {
+        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, newLanguage, null);
+    }
+
+    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage, String newDateFormat) {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
         Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
@@ -378,6 +382,12 @@ public class StaffService {
             Update langUpdate = new Update().set("language", newLanguage).set("updatedAt", new Date());
             template.updateFirst(query, langUpdate, Staff.class, CollectionName.STAFF);
             staff.setLanguage(newLanguage);
+        }
+
+        if (newDateFormat != null && List.of("MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD").contains(newDateFormat)) {
+            Update dateFormatUpdate = new Update().set("dateFormat", newDateFormat).set("updatedAt", new Date());
+            template.updateFirst(query, dateFormatUpdate, Staff.class, CollectionName.STAFF);
+            staff.setDateFormat(newDateFormat);
         }
 
         return Optional.of(staff);

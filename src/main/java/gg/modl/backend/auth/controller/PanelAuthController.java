@@ -140,7 +140,7 @@ public class PanelAuthController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
         try {
-            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language());
+            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(), requestData.dateFormat());
             if (result.isEmpty()) {
                 return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
             }
@@ -149,7 +149,7 @@ public class PanelAuthController {
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                 ? staff.getAssignedMinecraftUsername()
                 : staff.getUsername();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage()));
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
         }
@@ -174,12 +174,12 @@ public class PanelAuthController {
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                 ? staff.getAssignedMinecraftUsername()
                 : staff.getUsername();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage()));
+            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         }
 
         // Super Admin without a staff record - return default username
         if (isSuperAdmin) {
-            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en"));
+            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", "MM/DD/YYYY"));
         }
 
         return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
@@ -262,7 +262,7 @@ public class PanelAuthController {
 
     public record VerifyCodeRequest(@Email @NotBlank String email, @NotBlank String code) {}
 
-    public record UpdateProfileRequest(String username, String language) {}
+    public record UpdateProfileRequest(String username, String language, String dateFormat) {}
 
-    public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language) {}
+    public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
 }
