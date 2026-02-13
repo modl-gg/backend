@@ -112,9 +112,11 @@ public class PlayerStatusCalculator {
         }
 
         Long duration = null;
+        Date durationBase = null;
         for (PunishmentModification mod : punishment.getModifications()) {
             if (mod.effectiveDuration() != null) {
                 duration = mod.effectiveDuration();
+                durationBase = mod.date();
             }
         }
 
@@ -137,8 +139,12 @@ public class PlayerStatusCalculator {
             return null;
         }
 
-        // Only calculate expiry from started date - not issued date
-        // Countdown begins when punishment is started/enforced, not when issued
+        // If duration came from a modification, count from the modification date
+        if (durationBase != null) {
+            return new Date(durationBase.getTime() + duration);
+        }
+
+        // Otherwise count from started date (original unmodified punishment)
         Date started = punishment.getStarted();
         if (started == null) {
             return null; // Not started yet, no expiry
