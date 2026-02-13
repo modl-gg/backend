@@ -6,6 +6,7 @@ public record PlayerSearchResult(
         String uuid,
         String username,
         String status,
-        Date lastOnline
+        Date lastOnline,
+        boolean isOnline
 ) {
 }

@@ -59,12 +59,15 @@ public class PlayerService {
 
             String status = calculatePlayerStatus(server, player);
             Date lastOnline = getLastOnline(player);
+            boolean isOnline = Boolean.TRUE.equals(
+                    player.getData() != null ? player.getData().get("isOnline") : null);
 
             results.add(new PlayerSearchResult(
                     player.getMinecraftUuid().toString(),
                     username,
                     status,
-                    lastOnline
+                    lastOnline,
+                    isOnline
             ));
         }
 

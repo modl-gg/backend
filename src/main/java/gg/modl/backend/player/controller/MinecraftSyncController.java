@@ -67,6 +67,16 @@ public class MinecraftSyncController {
             }
         }
 
+        // Reconcile online status: mark players as offline if not in the plugin's online list
+        Query staleOnlineQuery = Query.query(
+                Criteria.where("data.isOnline").is(true)
+                        .and("minecraftUuid").nin(onlineUuids)
+        );
+        Update markOffline = new Update()
+                .set("data.isOnline", false)
+                .set("data.lastLogout", Date.from(now));
+        template.updateMulti(staleOnlineQuery, markOffline, Player.class, CollectionName.PLAYERS);
+
         if (!onlineUuids.isEmpty()) {
             Query playerQuery = Query.query(Criteria.where("minecraftUuid").in(onlineUuids));
             List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
