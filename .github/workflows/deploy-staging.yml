@@ -28,8 +28,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
           set -e
           cd /home/modl/backend
-          git fetch origin draft
-          git reset --hard origin/draft
+          git fetch origin dev
+          git reset --hard origin/dev
           chmod +x scripts/deploy.sh scripts/rollback.sh
           ./scripts/deploy.sh staging
           '
