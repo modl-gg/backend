@@ -913,28 +913,28 @@ public class MinecraftPlayerController {
                                 request.issuerName()
                         );
 
+                List<gg.modl.backend.player.data.punishment.PunishmentNote> notesToAdd = new java.util.ArrayList<>();
+                notesToAdd.add(pardonNote);
+                if (request.reason() != null && !request.reason().isBlank()) {
+                    notesToAdd.add(new gg.modl.backend.player.data.punishment.PunishmentNote(
+                            new ObjectId().toHexString(),
+                            request.reason(),
+                            now,
+                            request.issuerName()
+                    ));
+                }
+
                 Update update = new Update()
                         .push("punishments.$.modifications", modification)
-                        .push("punishments.$.notes", pardonNote);
-
-                // Add separate note for reason if provided
-                if (request.reason() != null && !request.reason().isBlank()) {
-                    gg.modl.backend.player.data.punishment.PunishmentNote reasonNote =
-                            new gg.modl.backend.player.data.punishment.PunishmentNote(
-                                    new ObjectId().toHexString(),
-                                    request.reason(),
-                                    now,
-                                    request.issuerName()
-                            );
-                    update.push("punishments.$.notes", reasonNote);
-                }
+                        .push("punishments.$.notes").each(notesToAdd.toArray())
+                        .set("punishments.$.data.status", "Pardoned");
 
                 template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
                 pardoned++;
 
                 // Cascade pardon linked bans if this was an alt-blocking ban
                 if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
-                    int cascaded = punishmentService.cascadePardonLinkedBans(server, punishment.getId());
+                    punishmentService.cascadePardonLinkedBans(server, punishment.getId());
                 }
             }
         }
