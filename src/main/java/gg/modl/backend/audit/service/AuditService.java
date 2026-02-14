@@ -274,9 +274,17 @@ public class AuditService {
     }
 
     public List<ActivePunishmentResponse> getActivePunishments(Server server) {
+        return getPunishmentsList(server, "active");
+    }
+
+    public List<ActivePunishmentResponse> getPunishmentsList(Server server, String statusFilter) {
         MongoTemplate template = getTemplate(server);
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
         List<ActivePunishmentResponse> results = new ArrayList<>();
+
+        boolean filterActive = "active".equalsIgnoreCase(statusFilter);
+        boolean filterInactive = "inactive".equalsIgnoreCase(statusFilter);
+        // "all" or any other value = no filter
 
         try {
             // Query all players that have punishments, unwind and project punishment fields
@@ -305,9 +313,10 @@ public class AuditService {
             for (Document doc : docs) {
                 // Reconstruct a minimal Punishment to check active status
                 Punishment punishment = reconstructPunishment(doc);
-                if (!statusCalculator.isPunishmentActive(punishment)) {
-                    continue;
-                }
+                boolean isActive = statusCalculator.isPunishmentActive(punishment);
+
+                if (filterActive && !isActive) continue;
+                if (filterInactive && isActive) continue;
 
                 int typeOrdinal = doc.getInteger("typeOrdinal", 0);
                 String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
@@ -360,6 +369,7 @@ public class AuditService {
                         issued,
                         started,
                         expires,
+                        isActive,
                         !evidenceItems.isEmpty(),
                         evidenceItems.size(),
                         evidenceItems,
@@ -367,7 +377,7 @@ public class AuditService {
                 ));
             }
         } catch (Exception e) {
-            log.error("Error fetching active punishments: {}", e.getMessage());
+            log.error("Error fetching punishments list: {}", e.getMessage());
         }
 
         return results;

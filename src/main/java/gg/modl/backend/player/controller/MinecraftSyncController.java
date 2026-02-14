@@ -177,6 +177,21 @@ public class MinecraftSyncController {
                     ));
                 }
 
+                // Include unexecuted kicks (ordinal 0) that haven't been acknowledged yet.
+                // Kicks bypass the active/category system — they're one-time actions.
+                // started == null means the plugin hasn't executed the kick yet.
+                for (Punishment punishment : player.getPunishments()) {
+                    if (punishment.getType_ordinal() != 0) continue;
+                    if (punishment.getStarted() != null) continue; // Already executed
+
+                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    pendingPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", simplePunishment
+                    ));
+                }
+
                 // When a punishment is pardoned, re-send another active+started punishment in the
                 // same category so the plugin re-enforces it (e.g. mute B after mute A is pardoned)
                 Set<String> pardonedCategories = new HashSet<>();

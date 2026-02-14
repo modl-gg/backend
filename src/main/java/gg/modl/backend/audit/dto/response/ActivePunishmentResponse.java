@@ -15,6 +15,7 @@ public record ActivePunishmentResponse(
         Date issued,
         Date started,
         Date expires,
+        boolean active,
         boolean hasEvidence,
         int evidenceCount,
         List<EvidenceItem> evidence,
