@@ -547,20 +547,21 @@ public class MinecraftPunishmentController {
                         .and("punishments.id").is(punishmentId)
         );
 
-        Update update = new Update()
-                .push("punishments.$.modifications", modification)
-                .push("punishments.$.notes", pardonNote);
-
-        // Add separate note for reason if provided
+        List<PunishmentNote> notesToAdd = new java.util.ArrayList<>();
+        notesToAdd.add(pardonNote);
         if (request.reason() != null && !request.reason().isBlank()) {
-            PunishmentNote reasonNote = new PunishmentNote(
+            notesToAdd.add(new PunishmentNote(
                     new ObjectId().toHexString(),
                     request.reason(),
                     now,
                     request.issuerName()
-            );
-            update.push("punishments.$.notes", reasonNote);
+            ));
         }
+
+        Update update = new Update()
+                .push("punishments.$.modifications", modification)
+                .push("punishments.$.notes").each(notesToAdd.toArray())
+                .set("punishments.$.data.status", "Pardoned");
 
         template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
