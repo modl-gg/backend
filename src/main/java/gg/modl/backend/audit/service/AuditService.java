@@ -1,12 +1,17 @@
 package gg.modl.backend.audit.service;
 
 import gg.modl.backend.audit.data.AuditLog;
+import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
@@ -33,6 +38,7 @@ public class AuditService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
+    private final PlayerStatusCalculator statusCalculator;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
         MongoTemplate template = getTemplate(server);
@@ -265,6 +271,167 @@ public class AuditService {
                     !Boolean.FALSE.equals(metadata.get("canRollback"))
             );
         }).toList();
+    }
+
+    public List<ActivePunishmentResponse> getActivePunishments(Server server) {
+        MongoTemplate template = getTemplate(server);
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        List<ActivePunishmentResponse> results = new ArrayList<>();
+
+        try {
+            // Query all players that have punishments, unwind and project punishment fields
+            Aggregation aggregation = Aggregation.newAggregation(
+                    Aggregation.match(Criteria.where("punishments").exists(true).ne(Collections.emptyList())),
+                    Aggregation.unwind("punishments"),
+                    // Exclude kicks (ordinal 0) and unstarted punishments early
+                    Aggregation.match(Criteria.where("punishments.type_ordinal").ne(0)
+                            .and("punishments.data.status").ne("Unstarted")),
+                    Aggregation.project()
+                            .and("punishments.id").as("punishmentId")
+                            .and("minecraftUuid").as("playerId")
+                            .and("punishments.type_ordinal").as("typeOrdinal")
+                            .and("punishments.issuerName").as("issuerName")
+                            .and("punishments.issued").as("issued")
+                            .and("punishments.started").as("started")
+                            .and("punishments.data").as("data")
+                            .and("punishments.modifications").as("modifications")
+                            .and("punishments.evidence").as("evidence")
+                            .and("punishments.attachedTicketIds").as("attachedTicketIds")
+                            .and("usernames").as("usernames")
+            );
+
+            List<Document> docs = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
+
+            for (Document doc : docs) {
+                // Reconstruct a minimal Punishment to check active status
+                Punishment punishment = reconstructPunishment(doc);
+                if (!statusCalculator.isPunishmentActive(punishment)) {
+                    continue;
+                }
+
+                int typeOrdinal = doc.getInteger("typeOrdinal", 0);
+                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
+
+                // Determine category from PunishmentType
+                String category = punishmentTypes.stream()
+                        .filter(pt -> pt.getOrdinal() == typeOrdinal)
+                        .findFirst()
+                        .map(pt -> pt.getCategory() != null ? pt.getCategory() : "Administrative")
+                        .orElse("Administrative");
+
+                String playerId = doc.getString("playerId");
+                String playerName = extractPlayerNameFromDoc(doc);
+                String issuerName = doc.getString("issuerName");
+
+                Document data = doc.get("data", Document.class);
+                String reason = data != null ? data.getString("reason") : null;
+                Long duration = extractDuration(data);
+
+                Date issued = doc.getDate("issued");
+                Date started = doc.getDate("started");
+                Date expires = statusCalculator.getEffectiveExpiry(punishment);
+
+                // Evidence
+                List<Document> evidenceDocs = doc.getList("evidence", Document.class);
+                List<ActivePunishmentResponse.EvidenceItem> evidenceItems = new ArrayList<>();
+                if (evidenceDocs != null) {
+                    for (Document evDoc : evidenceDocs) {
+                        evidenceItems.add(new ActivePunishmentResponse.EvidenceItem(
+                                evDoc.getString("text"),
+                                evDoc.getString("url"),
+                                evDoc.getString("type"),
+                                evDoc.getString("fileName")
+                        ));
+                    }
+                }
+
+                List<String> ticketIds = doc.getList("attachedTicketIds", String.class);
+                if (ticketIds == null) ticketIds = Collections.emptyList();
+
+                results.add(new ActivePunishmentResponse(
+                        doc.getString("punishmentId"),
+                        playerId,
+                        playerName,
+                        typeName,
+                        category,
+                        issuerName,
+                        reason,
+                        duration,
+                        issued,
+                        started,
+                        expires,
+                        !evidenceItems.isEmpty(),
+                        evidenceItems.size(),
+                        evidenceItems,
+                        ticketIds
+                ));
+            }
+        } catch (Exception e) {
+            log.error("Error fetching active punishments: {}", e.getMessage());
+        }
+
+        return results;
+    }
+
+    private Punishment reconstructPunishment(Document doc) {
+        Punishment p = new Punishment();
+        p.setId(doc.getString("punishmentId"));
+        p.setType_ordinal(doc.getInteger("typeOrdinal", 0));
+        p.setIssuerName(doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
+        p.setIssued(doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
+        p.setStarted(doc.getDate("started"));
+
+        Document data = doc.get("data", Document.class);
+        if (data != null) {
+            p.setData(new HashMap<>(data));
+        }
+
+        List<PunishmentModification> mods = new ArrayList<>();
+        List<Document> modDocs = doc.getList("modifications", Document.class);
+        if (modDocs != null) {
+            for (Document modDoc : modDocs) {
+                Long effectiveDuration = null;
+                Object edObj = modDoc.get("effectiveDuration");
+                if (edObj instanceof Number num) {
+                    effectiveDuration = num.longValue();
+                }
+                mods.add(new PunishmentModification(
+                        modDoc.getString("id"),
+                        modDoc.getString("type"),
+                        modDoc.getDate("date"),
+                        modDoc.getString("issuerName"),
+                        modDoc.getString("reason"),
+                        effectiveDuration,
+                        modDoc.getString("appealTicketId"),
+                        null
+                ));
+            }
+        }
+        p.setModifications(mods);
+        p.setNotes(Collections.emptyList());
+        p.setEvidence(Collections.emptyList());
+        p.setAttachedTicketIds(Collections.emptyList());
+
+        return p;
+    }
+
+    private String extractPlayerNameFromDoc(Document doc) {
+        List<Document> usernames = doc.getList("usernames", Document.class);
+        if (usernames != null && !usernames.isEmpty()) {
+            String name = usernames.get(0).getString("username");
+            if (name != null) return name;
+        }
+        return "Unknown";
+    }
+
+    private Long extractDuration(Document data) {
+        if (data == null) return null;
+        Object durationObj = data.get("duration");
+        if (durationObj instanceof Long l) return l;
+        if (durationObj instanceof Integer i) return i.longValue();
+        if (durationObj instanceof Double d) return d.longValue();
+        if (durationObj instanceof Number n) return n.longValue();
+        return null;
     }
 
     public boolean rollbackPunishment(Server server, String punishmentId, String reason, String performerUsername) {

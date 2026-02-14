@@ -9,6 +9,7 @@ public record UpdateTicketRequest(
         AddReplyRequest newReply,
         AddNoteRequest newNote,
         List<String> tags,
-        Map<String, Object> data
+        Map<String, Object> data,
+        Boolean hidden
 ) {
 }

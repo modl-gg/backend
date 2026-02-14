@@ -132,6 +132,100 @@ public class TicketNotificationService {
     }
 
     /**
+     * Send transcript email and in-game notification when a ticket is closed.
+     */
+    @Async
+    public void notifyTicketClosed(Server server, Ticket ticket) {
+        String creatorEmail = getCreatorEmail(ticket);
+        String creatorUuid = ticket.getCreatorUuid();
+
+        // Send transcript email if creator has an email
+        if (creatorEmail != null && !creatorEmail.isBlank()) {
+            sendTranscriptEmail(server, ticket, creatorEmail);
+        }
+
+        // Create in-game notification if creator has a Minecraft UUID
+        if (creatorUuid != null && !creatorUuid.isBlank()) {
+            createClosedInGameNotification(server, ticket, creatorUuid);
+        }
+    }
+
+    /**
+     * Send transcript email to the ticket creator.
+     */
+    private void sendTranscriptEmail(Server server, Ticket ticket, String toEmail) {
+        try {
+            String serverName = server.getServerName() != null ? server.getServerName() : "Server";
+            String playerName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
+            String ticketType = ticket.getType() != null ? formatTicketType(ticket.getType()) : "Support";
+            String ticketId = ticket.getId();
+            String ticketSubject = ticket.getSubject() != null ? ticket.getSubject() : "No Subject";
+            String ticketUrl = buildTicketUrl(server, ticketId);
+
+            // Build messages HTML
+            StringBuilder messagesHtml = new StringBuilder();
+            if (ticket.getReplies() != null) {
+                for (TicketReply reply : ticket.getReplies()) {
+                    String author = reply.getName() != null ? reply.getName() : (reply.isStaff() ? "Staff" : "Player");
+                    String date = reply.getCreated() != null ? reply.getCreated().toString() : "";
+                    String content = reply.getContent() != null ? reply.getContent().replace("\n", "<br>") : "";
+                    String roleLabel = reply.isStaff() ? " (Staff)" : "";
+
+                    messagesHtml.append("""
+                            <div style="border: 1px solid #e9ecef; border-radius: 4px; padding: 12px; margin: 10px 0;">
+                              <div style="margin-bottom: 8px;">
+                                <strong style="color: #333;">%s%s</strong>
+                                <span style="color: #888; font-size: 12px; margin-left: 8px;">%s</span>
+                              </div>
+                              <div style="color: #555; font-size: 14px;">%s</div>
+                            </div>
+                            """.formatted(author, roleLabel, date, content));
+                }
+            }
+
+            EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_TRANSCRIPT_TEMPLATE.build(
+                    serverName, playerName, ticketType, ticketId, ticketSubject, messagesHtml.toString(), ticketUrl
+            );
+
+            emailService.send(toEmail, email);
+        } catch (Exception e) {
+            log.error("Failed to send ticket transcript email to {} for ticket {}: {}",
+                    toEmail, ticket.getId(), e.getMessage());
+        }
+    }
+
+    /**
+     * Create in-game notification when a ticket is closed.
+     */
+    private void createClosedInGameNotification(Server server, Ticket ticket, String playerUuid) {
+        try {
+            MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+            Query query = Query.query(Criteria.where("minecraftUuid").is(playerUuid));
+            Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+            if (player == null) return;
+
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("id", UUID.randomUUID().toString());
+            notification.put("type", "TICKET_CLOSED");
+            notification.put("message", String.format("Your ticket #%s has been closed", ticket.getId()));
+            notification.put("timestamp", System.currentTimeMillis());
+
+            Map<String, Object> notificationData = new HashMap<>();
+            notificationData.put("ticketId", ticket.getId());
+            notificationData.put("ticketUrl", buildTicketUrl(server, ticket.getId()));
+            notification.put("data", notificationData);
+
+            Update update = new Update().push("data.pendingNotifications", notification);
+            template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+        } catch (Exception e) {
+            log.error("Failed to create in-game closed notification for player {} for ticket {}: {}",
+                    playerUuid, ticket.getId(), e.getMessage());
+        }
+    }
+
+    /**
      * Get the creator's email from ticket data.
      */
     private String getCreatorEmail(Ticket ticket) {

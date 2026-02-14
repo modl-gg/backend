@@ -2,6 +2,7 @@ package gg.modl.backend.audit.controller;
 
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
+import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
@@ -42,6 +43,15 @@ public class AuditController {
         Server server = RequestUtil.getRequestServer(request);
         StaffDetailsResponse details = auditService.getStaffDetails(server, username, period);
         return ResponseEntity.ok(details);
+    }
+
+    @GetMapping("/punishments/active")
+    public ResponseEntity<List<ActivePunishmentResponse>> getActivePunishments(
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        List<ActivePunishmentResponse> activePunishments = auditService.getActivePunishments(server);
+        return ResponseEntity.ok(activePunishments);
     }
 
     @GetMapping("/punishments")

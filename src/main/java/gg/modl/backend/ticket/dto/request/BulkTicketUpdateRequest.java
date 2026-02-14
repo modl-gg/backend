@@ -7,6 +7,7 @@ public record BulkTicketUpdateRequest(
         Boolean locked,
         List<String> addLabels,
         List<String> removeLabels,
-        String assignTo
+        String assignTo,
+        Boolean hidden
 ) {
 }
