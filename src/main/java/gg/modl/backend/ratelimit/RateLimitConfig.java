@@ -23,6 +23,7 @@ public class RateLimitConfig {
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
         PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
+        PUBLIC_TICKET_VERIFY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
@@ -106,6 +107,9 @@ public class RateLimitConfig {
 
         if (path.startsWith("/v1/public/")) {
             if (path.startsWith("/v1/public/tickets") && "POST".equalsIgnoreCase(method)) {
+                if (path.contains("/verify") || path.contains("/request-verification")) {
+                    return RateLimitTier.PUBLIC_TICKET_VERIFY;
+                }
                 return RateLimitTier.PUBLIC_TICKET_CREATE;
             }
             if (isHeavyPublicOperation(path, method)) {

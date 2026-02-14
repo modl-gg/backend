@@ -44,7 +44,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         CorsConfiguration config = new CorsConfiguration();
         config.addAllowedOrigin(origin);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Server-Domain", "X-API-Key"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Server-Domain", "X-API-Key", "X-Ticket-Token"));
         config.setExposedHeaders(List.of("X-RateLimit-Remaining", "X-RateLimit-Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
