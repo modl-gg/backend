@@ -8,6 +8,7 @@ import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.AccountLinkingService;
+import gg.modl.backend.player.service.MojangApiService;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
@@ -46,6 +47,7 @@ public class MinecraftPlayerController {
     private final PunishmentTypeService punishmentTypeService;
     private final PunishmentService punishmentService;
     private final AccountLinkingService accountLinkingService;
+    private final MojangApiService mojangApiService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
@@ -120,6 +122,13 @@ public class MinecraftPlayerController {
                 }
                 activePunishments.add(toSimplePunishment(punishment, types));
             }
+        }
+
+        // Include unexecuted kicks (started == null means plugin hasn't acknowledged)
+        for (Punishment punishment : player.getPunishments()) {
+            if (punishment.getType_ordinal() != 0) continue;
+            if (punishment.getStarted() != null) continue; // Already executed
+            activePunishments.add(toSimplePunishment(punishment, types));
         }
 
         // Deduplicate: keep only the oldest active punishment per category (BAN, MUTE)
@@ -252,6 +261,7 @@ public class MinecraftPlayerController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> getPlayerByQuery(
             @RequestParam(required = false) String minecraftUuid,
+            @RequestParam(defaultValue = "false") boolean queryMojang,
             HttpServletRequest httpRequest
     ) {
         if (minecraftUuid == null || minecraftUuid.isBlank()) {
@@ -266,6 +276,26 @@ public class MinecraftPlayerController {
 
         Query query = Query.query(Criteria.where("minecraftUuid").is(minecraftUuid));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null && queryMojang) {
+            Optional<MojangApiService.MojangProfile> profile = mojangApiService.lookupByUuid(minecraftUuid);
+            if (profile.isPresent()) {
+                MojangApiService.MojangProfile mojang = profile.get();
+                return ResponseEntity.ok(Map.of(
+                        "status", 200,
+                        "message", "Player found via Mojang",
+                        "player", Map.of(
+                                "minecraftUuid", mojang.uuid().toString(),
+                                "usernames", List.of(Map.of("username", mojang.name())),
+                                "notes", List.of(),
+                                "ipList", List.of(),
+                                "punishments", List.of(),
+                                "pendingNotifications", List.of(),
+                                "data", Map.of()
+                        )
+                ));
+            }
+        }
 
         if (player == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
@@ -285,6 +315,7 @@ public class MinecraftPlayerController {
     @GetMapping("/by-name")
     public ResponseEntity<Map<String, Object>> getPlayerByUsername(
             @RequestParam String username,
+            @RequestParam(defaultValue = "false") boolean queryMojang,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -292,6 +323,26 @@ public class MinecraftPlayerController {
 
         Query query = Query.query(Criteria.where("usernames.username").regex("^" + username + "$", "i"));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null && queryMojang) {
+            Optional<MojangApiService.MojangProfile> profile = mojangApiService.lookupByUsername(username);
+            if (profile.isPresent()) {
+                MojangApiService.MojangProfile mojang = profile.get();
+                return ResponseEntity.ok(Map.of(
+                        "status", 200,
+                        "message", "Player found via Mojang",
+                        "player", Map.of(
+                                "minecraftUuid", mojang.uuid().toString(),
+                                "usernames", List.of(Map.of("username", mojang.name())),
+                                "notes", List.of(),
+                                "ipList", List.of(),
+                                "punishments", List.of(),
+                                "pendingNotifications", List.of(),
+                                "data", Map.of()
+                        )
+                ));
+            }
+        }
 
         if (player == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
@@ -317,14 +368,45 @@ public class MinecraftPlayerController {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
         String queryStr = request.query();
+        boolean isUuid = queryStr.contains("-") && queryStr.length() == 36;
         Player player;
 
-        if (queryStr.contains("-") && queryStr.length() == 36) {
+        if (isUuid) {
             Query query = Query.query(Criteria.where("minecraftUuid").is(queryStr));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         } else {
             Query query = Query.query(Criteria.where("usernames.username").regex("^" + queryStr + "$", "i"));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+        }
+
+        if (player == null && request.queryMojang()) {
+            Optional<MojangApiService.MojangProfile> profile = isUuid
+                    ? mojangApiService.lookupByUuid(queryStr)
+                    : mojangApiService.lookupByUsername(queryStr);
+            if (profile.isPresent()) {
+                MojangApiService.MojangProfile mojang = profile.get();
+                Map<String, Object> lookupData = new LinkedHashMap<>();
+                lookupData.put("minecraftUuid", mojang.uuid().toString());
+                lookupData.put("currentUsername", mojang.name());
+                lookupData.put("previousUsernames", List.of());
+                lookupData.put("firstSeen", null);
+                lookupData.put("lastSeen", null);
+                lookupData.put("isOnline", false);
+                lookupData.put("punishmentStats", Map.of(
+                        "totalPunishments", 0,
+                        "activePunishments", 0,
+                        "bans", 0,
+                        "mutes", 0,
+                        "kicks", 0,
+                        "warnings", 0
+                ));
+                lookupData.put("recentPunishments", List.of());
+                return ResponseEntity.ok(Map.of(
+                        "status", 200,
+                        "message", "Player found via Mojang",
+                        "data", lookupData
+                ));
+            }
         }
 
         if (player == null) {
@@ -889,7 +971,7 @@ public class MinecraftPlayerController {
 
     public record UpdateServerRequest(String minecraftUuid, String serverName) {}
 
-    public record LookupRequest(String query) {}
+    public record LookupRequest(String query, boolean queryMojang) {}
 
     public record CreateNoteRequest(
             @NotBlank String text,

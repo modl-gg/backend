@@ -210,10 +210,11 @@ public class PunishmentService {
 
         String punishmentId = IdGenerator.generatePunishmentId();
 
-        // Set started = null for plugin-created punishments (pending plugin acknowledgement)
-        // or queued punishments (waiting behind an active one)
+        // Set started = null for plugin-created punishments (pending plugin acknowledgement),
+        // queued punishments (waiting behind an active one), or kicks (which need plugin execution)
         boolean pendingAck = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
-        Date startedDate = ("Unstarted".equals(data.get("status")) || pendingAck) ? null : now;
+        boolean isKick = request.typeOrdinal() == 0;
+        Date startedDate = ("Unstarted".equals(data.get("status")) || pendingAck || isKick) ? null : now;
 
         Punishment punishment = new Punishment(
                 punishmentId,

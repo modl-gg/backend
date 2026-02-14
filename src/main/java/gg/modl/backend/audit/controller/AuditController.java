@@ -47,11 +47,12 @@ public class AuditController {
 
     @GetMapping("/punishments/active")
     public ResponseEntity<List<ActivePunishmentResponse>> getActivePunishments(
+            @RequestParam(defaultValue = "active") String status,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<ActivePunishmentResponse> activePunishments = auditService.getActivePunishments(server);
-        return ResponseEntity.ok(activePunishments);
+        List<ActivePunishmentResponse> punishments = auditService.getPunishmentsList(server, status);
+        return ResponseEntity.ok(punishments);
     }
 
     @GetMapping("/punishments")
