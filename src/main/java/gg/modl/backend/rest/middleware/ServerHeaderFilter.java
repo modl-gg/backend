@@ -37,6 +37,9 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(@NotNull HttpServletRequest request) {
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
         String path = request.getRequestURI();
         return EXCLUDED_PATHS.stream().anyMatch(path::startsWith);
     }
