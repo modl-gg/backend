@@ -18,6 +18,7 @@ public record CreateTicketRequest(
         Map<String, Object> formData,
         List<String> tags,
         String priority,
-        String creatorIdentifier
+        String creatorIdentifier,
+        Boolean emailAuthEnabled
 ) {
 }

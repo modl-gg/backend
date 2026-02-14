@@ -28,6 +28,8 @@ public record TicketResponse(
         Map<String, Object> formData,
         Map<String, Object> data,
         List<Ticket.ChatMessage> chatMessages,
-        AIAnalysisResult aiAnalysis
+        AIAnalysisResult aiAnalysis,
+        boolean emailAuthEnabled,
+        boolean hidden
 ) {
 }

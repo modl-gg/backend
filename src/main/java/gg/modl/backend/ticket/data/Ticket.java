@@ -58,6 +58,9 @@ public class Ticket {
 
     private AIAnalysisResult aiAnalysis;
 
+    private boolean emailAuthEnabled;
+    private boolean hidden;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

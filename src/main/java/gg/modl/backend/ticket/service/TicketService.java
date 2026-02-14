@@ -256,6 +256,12 @@ public class TicketService {
                 hasChanges = true;
             }
 
+            // Update hidden status
+            if (request.hidden() != null) {
+                update.set("hidden", request.hidden());
+                hasChanges = true;
+            }
+
             // Add labels (tags)
             if (request.addLabels() != null && !request.addLabels().isEmpty()) {
                 List<String> currentTags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
@@ -286,6 +292,11 @@ public class TicketService {
             if (hasChanges) {
                 template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
                 updatedCount++;
+
+                // Send transcript email when ticket is closed via bulk operation
+                if (Boolean.TRUE.equals(request.locked())) {
+                    notificationService.notifyTicketClosed(server, ticket);
+                }
             }
         }
 
@@ -297,6 +308,12 @@ public class TicketService {
         Query query = Query.query(Criteria.where("_id").is(ticketId));
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
         return Optional.ofNullable(ticket).map(this::toTicketResponse);
+    }
+
+    public Optional<Ticket> getTicketRaw(Server server, String ticketId) {
+        MongoTemplate template = getTemplate(server);
+        Query query = Query.query(Criteria.where("_id").is(ticketId));
+        return Optional.ofNullable(template.findOne(query, Ticket.class, CollectionName.TICKETS));
     }
 
     public TicketResponse createTicket(Server server, CreateTicketRequest request) {
@@ -343,6 +360,8 @@ public class TicketService {
 
         String creatorDisplayName = request.creatorName() != null ? request.creatorName() : "API User";
 
+        boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
+
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
                 .type(request.type())
@@ -365,6 +384,7 @@ public class TicketService {
                 .data(data)
                 .locked(false)
                 .priority(request.priority())
+                .emailAuthEnabled(emailAuth)
                 .created(new Date())
                 .updatedAt(new Date())
                 .build();
@@ -399,6 +419,11 @@ public class TicketService {
         if (request.tags() != null) {
             update.set("tags", request.tags());
             ticket.setTags(request.tags());
+        }
+
+        if (request.hidden() != null) {
+            update.set("hidden", request.hidden());
+            ticket.setHidden(request.hidden());
         }
 
         if (request.data() != null && !request.data().isEmpty()) {
@@ -443,6 +468,11 @@ public class TicketService {
         // Send notifications for staff replies
         if (newReply != null && newReply.isStaff()) {
             notificationService.notifyTicketReply(server, ticket, newReply);
+        }
+
+        // Send transcript email when ticket is closed (locked)
+        if (Boolean.TRUE.equals(request.locked())) {
+            notificationService.notifyTicketClosed(server, ticket);
         }
 
         return Optional.of(toTicketResponse(ticket));
@@ -622,6 +652,11 @@ public class TicketService {
         // Send notifications for the quick response (which is a staff reply)
         notificationService.notifyTicketReply(server, ticket, responseReply);
 
+        // Send transcript email if ticket was closed
+        if (ticketClosed) {
+            notificationService.notifyTicketClosed(server, ticket);
+        }
+
         return new QuickResponseResult(
                 true,
                 "Quick response applied successfully",
@@ -665,6 +700,15 @@ public class TicketService {
 
             if (request.creatorIdentifier() != null) {
                 existingData.put("creatorIdentifier", request.creatorIdentifier());
+            }
+
+            // Handle emailAuthEnabled from form data
+            Object emailAuthValue = request.formData().get("emailAuthEnabled");
+            if (emailAuthValue != null) {
+                boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
+                update.set("emailAuthEnabled", emailAuth);
+                ticket.setEmailAuthEnabled(emailAuth);
+                existingData.put("emailAuthEnabled", emailAuth);
             }
 
             update.set("data", existingData);
@@ -824,7 +868,8 @@ public class TicketService {
                 lastReply,
                 replyCount,
                 ticket.getTags() != null ? ticket.getTags() : new ArrayList<>(),
-                ticket.getAssignedTo()
+                ticket.getAssignedTo(),
+                ticket.isHidden()
         );
     }
 
@@ -851,7 +896,9 @@ public class TicketService {
                 ticket.getFormData(),
                 ticket.getData(),
                 ticket.getChatMessages(),
-                ticket.getAiAnalysis()
+                ticket.getAiAnalysis(),
+                ticket.isEmailAuthEnabled(),
+                ticket.isHidden()
         );
     }
 
