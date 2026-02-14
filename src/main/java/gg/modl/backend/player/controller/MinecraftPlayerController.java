@@ -865,14 +865,14 @@ public class MinecraftPlayerController {
                     .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()) || "SYSTEM_PARDON".equals(m.type()));
             if (alreadyPardoned) continue;
 
-            // For active punishments, always allow pardon
-            // For expired punishments, only pardon if explicitly targeting this type (to remove points)
             boolean isActive = statusCalculator.isPunishmentActive(punishment);
+            Map<String, Object> pData = punishment.getData();
+            boolean isUnstarted = pData != null && "Unstarted".equals(pData.get("status"));
 
             boolean shouldPardon = false;
             if (request.punishmentType() == null) {
-                // General pardon - only pardon active punishments
-                shouldPardon = isActive;
+                // General pardon - pardon active and unstarted punishments
+                shouldPardon = isActive || isUnstarted;
             } else {
                 // Specific type pardon (unban/unmute) - pardon both active and expired punishments of matching type
                 String pType = request.punishmentType().toLowerCase();
@@ -933,7 +933,6 @@ public class MinecraftPlayerController {
                 pardoned++;
 
                 // Cascade pardon linked bans if this was an alt-blocking ban
-                Map<String, Object> pData = punishment.getData();
                 if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
                     int cascaded = punishmentService.cascadePardonLinkedBans(server, punishment.getId());
                 }
