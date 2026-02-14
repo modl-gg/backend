@@ -89,7 +89,7 @@ public class PublicTicketController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getTicket(
             @PathVariable String id,
-            @RequestHeader(value = "X-Ticket-Token", required = false) String ticketToken,
+            @RequestParam(value = "token", required = false) String ticketToken,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -178,7 +178,7 @@ public class PublicTicketController {
     public ResponseEntity<?> addReply(
             @PathVariable String id,
             @RequestBody @Valid AddReplyRequest replyRequest,
-            @RequestHeader(value = "X-Ticket-Token", required = false) String ticketToken,
+            @RequestParam(value = "token", required = false) String ticketToken,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
