@@ -472,7 +472,9 @@ public class AppealService {
                 ticket.getFormData(),
                 ticket.getData(),
                 ticket.getChatMessages(),
-                ticket.getAiAnalysis()
+                ticket.getAiAnalysis(),
+                ticket.isEmailAuthEnabled(),
+                ticket.isHidden()
         );
     }
 
