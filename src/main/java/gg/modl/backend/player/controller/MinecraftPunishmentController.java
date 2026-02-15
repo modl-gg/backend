@@ -716,18 +716,22 @@ public class MinecraftPunishmentController {
                         .and("punishments.id").is(punishmentId)
         );
 
+        // Force-start the punishment if it hasn't started yet
+        Punishment targetPunishment = player.getPunishments().stream()
+                .filter(p -> punishmentId.equals(p.getId()))
+                .findFirst()
+                .orElse(null);
+
         Update update = new Update()
                 .push("punishments.$.modifications", modification)
                 .push("punishments.$.notes", durationNote)
                 .set("punishments.$.data.duration", request.newDuration());
 
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
+        if (targetPunishment != null && targetPunishment.getStarted() == null) {
+            update.set("punishments.$.started", now);
+        }
 
-        // Cascade duration change to linked bans if this is an alt-blocking punishment
-        Punishment targetPunishment = player.getPunishments().stream()
-                .filter(p -> punishmentId.equals(p.getId()))
-                .findFirst()
-                .orElse(null);
+        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
 
         if (targetPunishment != null) {
             Map<String, Object> pData = targetPunishment.getData();

@@ -260,10 +260,12 @@ public class PunishmentService {
                         .and("punishments.id").is(punishmentId)
         );
 
+        Date now = new Date();
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 request.type(),
-                new Date(),
+                now,
                 request.issuerName(),
                 request.reason() != null ? request.reason() : "",
                 request.effectiveDuration(),
@@ -272,6 +274,19 @@ public class PunishmentService {
         );
 
         Update update = new Update().push("punishments.$.modifications", modification);
+
+        // If this is a duration change on an unstarted punishment, force-start it now
+        if (request.effectiveDuration() != null) {
+            Player player = findPlayerByUuid(template, playerUuid);
+            if (player != null) {
+                Punishment target = player.getPunishments().stream()
+                        .filter(p -> p.getId().equals(punishmentId))
+                        .findFirst().orElse(null);
+                if (target != null && target.getStarted() == null) {
+                    update.set("punishments.$.started", now);
+                }
+            }
+        }
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         return findPlayerByUuid(template, playerUuid);
@@ -666,6 +681,10 @@ public class PunishmentService {
                             .push("punishments.$.modifications", modification)
                             .push("punishments.$.notes", note)
                             .set("punishments.$.data.duration", newDuration);
+
+                    if (punishment.getStarted() == null) {
+                        update.set("punishments.$.started", now);
+                    }
 
                     template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
                     count++;
