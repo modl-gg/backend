@@ -168,9 +168,19 @@ public class PunishmentService {
 
         // Build notes
         List<PunishmentNote> notes = new ArrayList<>();
+        String enforcementType = newPunishmentType != null && newPunishmentType.isKick() ? "kick"
+                : "BAN".equals(newCategory) ? "ban"
+                : "MUTE".equals(newCategory) ? "mute"
+                : "punishment";
+        String issuedNote = calculatedDuration != null && calculatedDuration > 0
+                ? "issued " + formatDuration(calculatedDuration) + " " + enforcementType
+                : "issued permanent " + enforcementType;
+        if ("kick".equals(enforcementType)) {
+            issuedNote = "issued kick";
+        }
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
-                "issued punishment",
+                issuedNote,
                 now,
                 request.issuerName()
         ));
@@ -210,11 +220,11 @@ public class PunishmentService {
 
         String punishmentId = IdGenerator.generatePunishmentId();
 
-        // Set started = null for plugin-created punishments (pending plugin acknowledgement),
-        // queued punishments (waiting behind an active one), or kicks (which need plugin execution)
-        boolean pendingAck = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
-        boolean isKick = request.typeOrdinal() == 0;
-        Date startedDate = ("Unstarted".equals(data.get("status")) || pendingAck || isKick) ? null : now;
+        // Set started = null so punishments only begin when the plugin acknowledges them
+        // (i.e., when the player is online). This applies to all sources (panel, plugin, etc.).
+        // Queued ("Unstarted") and kick punishments also remain null.
+        Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
+        Date startedDate = null;
 
         Punishment punishment = new Punishment(
                 punishmentId,
@@ -774,9 +784,12 @@ public class PunishmentService {
         String punishmentId = IdGenerator.generatePunishmentId();
 
         List<PunishmentNote> notes = new ArrayList<>();
+        String linkedBanNote = duration != null && duration > 0
+                ? "issued " + formatDuration(duration) + " ban"
+                : "issued permanent ban";
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
-                "issued punishment",
+                linkedBanNote,
                 now,
                 "System"
         ));
@@ -948,6 +961,29 @@ public class PunishmentService {
             }
         }
         return true;
+    }
+
+    private static String formatDuration(long durationMs) {
+        long seconds = durationMs / 1000;
+        long minutes = seconds / 60;
+        long hours = minutes / 60;
+        long days = hours / 24;
+        long weeks = days / 7;
+        long months = days / 30;
+
+        if (months > 0) {
+            return months + (months == 1 ? " month" : " months");
+        } else if (weeks > 0) {
+            return weeks + (weeks == 1 ? " week" : " weeks");
+        } else if (days > 0) {
+            return days + (days == 1 ? " day" : " days");
+        } else if (hours > 0) {
+            return hours + (hours == 1 ? " hour" : " hours");
+        } else if (minutes > 0) {
+            return minutes + (minutes == 1 ? " minute" : " minutes");
+        } else {
+            return seconds + (seconds == 1 ? " second" : " seconds");
+        }
     }
 
     private MongoTemplate getTemplate(Server server) {

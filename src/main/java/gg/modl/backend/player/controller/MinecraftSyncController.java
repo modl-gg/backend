@@ -328,6 +328,7 @@ public class MinecraftSyncController {
         if (noteText == null) return true;
         String lower = noteText.toLowerCase();
         return lower.equals("issued punishment") ||
+               lower.startsWith("issued ") ||
                lower.equals("pardoned punishment") ||
                lower.equals("added evidence") ||
                lower.startsWith("changed duration to ") ||
