@@ -261,7 +261,7 @@ public class MinecraftPlayerController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> getPlayerByQuery(
             @RequestParam(required = false) String minecraftUuid,
-            @RequestParam(defaultValue = "false") boolean queryMojang,
+            @RequestParam(defaultValue = "true") boolean queryMojang,
             HttpServletRequest httpRequest
     ) {
         if (minecraftUuid == null || minecraftUuid.isBlank()) {
@@ -315,7 +315,7 @@ public class MinecraftPlayerController {
     @GetMapping("/by-name")
     public ResponseEntity<Map<String, Object>> getPlayerByUsername(
             @RequestParam String username,
-            @RequestParam(defaultValue = "false") boolean queryMojang,
+            @RequestParam(defaultValue = "true") boolean queryMojang,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -379,7 +379,7 @@ public class MinecraftPlayerController {
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         }
 
-        if (player == null && request.queryMojang()) {
+        if (player == null && request.shouldQueryMojang()) {
             Optional<MojangApiService.MojangProfile> profile = isUuid
                     ? mojangApiService.lookupByUuid(queryStr)
                     : mojangApiService.lookupByUsername(queryStr);
@@ -970,7 +970,11 @@ public class MinecraftPlayerController {
 
     public record UpdateServerRequest(String minecraftUuid, String serverName) {}
 
-    public record LookupRequest(String query, boolean queryMojang) {}
+    public record LookupRequest(String query, Boolean queryMojang) {
+        public boolean shouldQueryMojang() {
+            return queryMojang == null || queryMojang;
+        }
+    }
 
     public record CreateNoteRequest(
             @NotBlank String text,
