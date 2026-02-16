@@ -219,7 +219,7 @@ public class PublicTicketController {
     @PostMapping("/{id}/submit")
     public ResponseEntity<?> submitTicketForm(
             @PathVariable String id,
-            @RequestBody SubmitTicketFormRequest submitRequest,
+            @RequestBody @Valid SubmitTicketFormRequest submitRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

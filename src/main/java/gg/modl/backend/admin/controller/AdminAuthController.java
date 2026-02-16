@@ -2,6 +2,9 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.AdminUser;
 import gg.modl.backend.admin.service.AdminAuthService;
+import gg.modl.backend.auth.AuthService;
+import gg.modl.backend.auth.session.AuthSessionData;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import jakarta.servlet.http.Cookie;
@@ -18,9 +21,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_AUTH)
@@ -29,9 +30,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminAuthController {
     private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
     private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
-    private static final int SESSION_TOKEN_BYTES = 32;
 
     private final AdminAuthService adminAuthService;
+    private final AuthService authService;
+    private final SessionService sessionService;
 
     @Value("${modl.cookie-domain:}")
     private String cookieDomain;
@@ -41,9 +43,6 @@ public class AdminAuthController {
 
     @Value("${modl.development-mode:false}")
     private boolean developmentMode;
-
-    // Simple in-memory session store (in production, use Redis or database)
-    private final Map<String, AdminSession> sessions = new ConcurrentHashMap<>();
 
     @PostMapping("/request-code")
     public ResponseEntity<?> requestCode(
@@ -57,7 +56,7 @@ public class AdminAuthController {
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
         if (adminOpt.isPresent()) {
             try {
-                adminAuthService.sendVerificationCode(request.email());
+                authService.sendAdminLoginCode(request.email());
             } catch (Exception e) {
                 log.error("Failed to send verification code", e);
             }
@@ -78,7 +77,7 @@ public class AdminAuthController {
         }
 
         // Always verify code regardless of user existence to prevent timing-based enumeration
-        boolean codeValid = adminAuthService.verifyCode(loginRequest.email(), loginRequest.code());
+        boolean codeValid = authService.verifyAdminCode(loginRequest.email(), loginRequest.code());
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.email());
 
         if (adminOpt.isEmpty() || !codeValid) {
@@ -89,12 +88,10 @@ public class AdminAuthController {
         String clientIp = RequestUtil.getClientIp(request);
         adminAuthService.updateLastActivity(admin.getEmail(), clientIp);
 
-        // Create session with cryptographically secure token
-        String sessionId = RequestUtil.generateSecureToken(SESSION_TOKEN_BYTES);
-        sessions.put(sessionId, new AdminSession(admin.getId(), admin.getEmail(), Instant.now()));
+        AuthSessionData session = sessionService.createAdminSession(admin.getEmail());
 
         // Set session cookie with security attributes
-        Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, sessionId);
+        Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, session.getId());
         sessionCookie.setHttpOnly(true);
         sessionCookie.setSecure(cookieSecure);
         sessionCookie.setPath("/");
@@ -113,7 +110,7 @@ public class AdminAuthController {
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
         String sessionId = extractSessionId(request);
         if (sessionId != null) {
-            sessions.remove(sessionId);
+            sessionService.invalidateAdminSession(sessionId);
         }
 
         Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
@@ -137,19 +134,15 @@ public class AdminAuthController {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Not authenticated"));
         }
 
-        AdminSession session = sessions.get(sessionId);
-        if (session == null) {
+        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
+        if (sessionOpt.isEmpty()) {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
         }
+        AuthSessionData session = sessionOpt.get();
 
-        if (session.createdAt().plusSeconds(SESSION_MAX_AGE).isBefore(Instant.now())) {
-            sessions.remove(sessionId);
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
-        }
-
-        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.email());
+        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.getEmail());
         if (adminOpt.isEmpty()) {
-            sessions.remove(sessionId);
+            sessionService.invalidateAdminSession(sessionId);
             return ResponseEntity.status(401).body(new ApiResponse(false, "User not found"));
         }
 
@@ -161,14 +154,18 @@ public class AdminAuthController {
     // Helper to check if request is authenticated (for use by other admin controllers)
     public Optional<AdminSession> getAuthenticatedSession(HttpServletRequest request) {
         String sessionId = extractSessionId(request);
-        if (sessionId == null) return Optional.empty();
-        AdminSession session = sessions.get(sessionId);
-        if (session == null) return Optional.empty();
-        if (session.createdAt().plusSeconds(SESSION_MAX_AGE).isBefore(Instant.now())) {
-            sessions.remove(sessionId);
+        if (sessionId == null) {
             return Optional.empty();
         }
-        return Optional.of(session);
+
+        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AuthSessionData session = sessionOpt.get();
+        return adminAuthService.findByEmail(session.getEmail())
+                .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
     }
 
     private String extractSessionId(HttpServletRequest request) {

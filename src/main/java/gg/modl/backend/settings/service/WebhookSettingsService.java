@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -66,8 +67,14 @@ public class WebhookSettingsService {
 
     public boolean testWebhook(Server server) {
         WebhookSettings settings = getWebhookSettings(server);
+        String webhookUrl = settings.getDiscordWebhookUrl();
 
-        if (settings.getDiscordWebhookUrl() == null || settings.getDiscordWebhookUrl().isBlank()) {
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            return false;
+        }
+
+        if (!isAllowedDiscordWebhookUrl(webhookUrl)) {
+            log.warn("Rejected webhook test URL due to failed validation");
             return false;
         }
 
@@ -86,11 +93,35 @@ public class WebhookSettingsService {
             );
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
-            restTemplate.postForEntity(settings.getDiscordWebhookUrl(), request, String.class);
+            restTemplate.postForEntity(webhookUrl, request, String.class);
 
             return true;
         } catch (Exception e) {
             log.error("Webhook test failed", e);
+            return false;
+        }
+    }
+
+    private boolean isAllowedDiscordWebhookUrl(String webhookUrl) {
+        try {
+            URI uri = URI.create(webhookUrl);
+            if (!"https".equalsIgnoreCase(uri.getScheme())) {
+                return false;
+            }
+
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+
+            boolean allowedHost = "discord.com".equalsIgnoreCase(host) || "discordapp.com".equalsIgnoreCase(host);
+            if (!allowedHost) {
+                return false;
+            }
+
+            String path = uri.getPath();
+            return path != null && path.startsWith("/api/webhooks/");
+        } catch (IllegalArgumentException e) {
             return false;
         }
     }

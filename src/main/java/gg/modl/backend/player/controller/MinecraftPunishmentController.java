@@ -19,8 +19,10 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import jakarta.servlet.http.HttpServletRequest;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import gg.modl.backend.validation.RegExpConstants;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -310,7 +312,7 @@ public class MinecraftPunishmentController {
 
     @PostMapping("/acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgePunishment(
-            @RequestBody AcknowledgeRequest request,
+            @RequestBody @Valid AcknowledgeRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -366,7 +368,7 @@ public class MinecraftPunishmentController {
     @PostMapping("/{punishmentId}/pardon")
     public ResponseEntity<Map<String, Object>> pardonPunishment(
             @PathVariable String punishmentId,
-            @RequestBody PardonRequest request,
+            @RequestBody @Valid PardonRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -560,7 +562,7 @@ public class MinecraftPunishmentController {
     @PostMapping("/{punishmentId}/duration")
     public ResponseEntity<Map<String, Object>> changeDuration(
             @PathVariable String punishmentId,
-            @RequestBody ChangeDurationRequest request,
+            @RequestBody @Valid ChangeDurationRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -645,7 +647,7 @@ public class MinecraftPunishmentController {
     @PostMapping("/{punishmentId}/toggle")
     public ResponseEntity<Map<String, Object>> toggleOption(
             @PathVariable String punishmentId,
-            @RequestBody ToggleOptionRequest request,
+            @RequestBody @Valid ToggleOptionRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -750,15 +752,15 @@ public class MinecraftPunishmentController {
     ) {}
 
     public record AcknowledgeRequest(
-            String punishmentId,
-            String playerUuid,
+            @NotBlank String punishmentId,
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
             String executedAt,
             boolean success,
             String errorMessage
     ) {}
 
     public record PardonRequest(
-            String issuerName,
+            @NotBlank String issuerName,
             String reason,
             String expectedType
     ) {}

@@ -35,6 +35,7 @@ public class PanelSettingsController {
     private final DomainSettingsService domainSettingsService;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
+    private final gg.modl.backend.storage.service.StorageQuotaService storageQuotaService;
     private final AITicketAnalysisService aiTicketAnalysisService;
     private final OffenderThresholdSettingsService offenderThresholdSettingsService;
     private final PermissionService permissionService;
@@ -430,6 +431,11 @@ public class PanelSettingsController {
         // Check if S3 is configured
         if (!s3StorageService.isConfigured()) {
             return ResponseEntity.status(503).body(Map.of("error", "File storage is not configured"));
+        }
+
+        // Check storage quota
+        if (!storageQuotaService.canUpload(server, file.getSize())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
 
         try {

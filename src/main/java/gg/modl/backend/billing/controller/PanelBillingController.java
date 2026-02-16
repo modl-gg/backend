@@ -171,7 +171,7 @@ public class PanelBillingController {
         }
 
         if (body.maxStorageLimitBytes() > StorageQuotaService.MAX_PREMIUM_BYTES) {
-            return ResponseEntity.badRequest().body(Map.of("error", "maxStorageLimitBytes cannot exceed 10 TB"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage limit cannot exceed 2 TB. Please contact support for higher limits."));
         }
 
         usageTrackingService.updateStorageLimit(server, body.maxStorageLimitBytes());

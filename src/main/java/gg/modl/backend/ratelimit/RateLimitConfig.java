@@ -3,14 +3,19 @@ package gg.modl.backend.ratelimit;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class RateLimitConfig {
+
+    private static final int MAX_BUCKETS_PER_TIER = 50_000;
 
     private final Map<String, Map<String, Bucket>> buckets = new ConcurrentHashMap<>();
 
@@ -50,7 +55,14 @@ public class RateLimitConfig {
     public Bucket resolveBucket(String clientKey, RateLimitTier tier) {
         String tierName = tier.name();
         return buckets
-                .computeIfAbsent(tierName, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(tierName, k -> Collections.synchronizedMap(
+                        new LinkedHashMap<>(64, 0.75f, true) {
+                            @Override
+                            protected boolean removeEldestEntry(Map.Entry<String, Bucket> eldest) {
+                                return size() > MAX_BUCKETS_PER_TIER;
+                            }
+                        }
+                ))
                 .computeIfAbsent(clientKey, k -> createBucket(tier));
     }
 

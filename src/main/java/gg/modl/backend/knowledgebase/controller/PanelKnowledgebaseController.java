@@ -68,7 +68,7 @@ public class PanelKnowledgebaseController {
     @PutMapping("/categories/{id}")
     public ResponseEntity<KnowledgebaseCategory> updateCategory(
             @PathVariable String id,
-            @RequestBody UpdateCategoryRequest updateRequest,
+            @RequestBody @Valid UpdateCategoryRequest updateRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -92,7 +92,7 @@ public class PanelKnowledgebaseController {
 
     @PutMapping("/categories/reorder")
     public ResponseEntity<?> reorderCategories(
-            @RequestBody ReorderRequest reorderRequest,
+            @RequestBody @Valid ReorderRequest reorderRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -137,7 +137,7 @@ public class PanelKnowledgebaseController {
     public ResponseEntity<KnowledgebaseArticle> updateArticle(
             @PathVariable String categoryId,
             @PathVariable String articleId,
-            @RequestBody UpdateArticleRequest updateRequest,
+            @RequestBody @Valid UpdateArticleRequest updateRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -163,7 +163,7 @@ public class PanelKnowledgebaseController {
     @PutMapping("/categories/{categoryId}/articles/reorder")
     public ResponseEntity<?> reorderArticles(
             @PathVariable String categoryId,
-            @RequestBody ReorderRequest reorderRequest,
+            @RequestBody @Valid ReorderRequest reorderRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

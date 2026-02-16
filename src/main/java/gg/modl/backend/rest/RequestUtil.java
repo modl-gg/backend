@@ -6,12 +6,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.net.InetAddress;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.Optional;
 import java.util.Objects;
 
 public final class RequestUtil {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
+            Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
+                    .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
+    );
 
     @NotNull
     public static Server getRequestServer(HttpServletRequest request) {
@@ -44,20 +50,43 @@ public final class RequestUtil {
     }
 
     public static String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
+        String remoteAddr = request.getRemoteAddr();
+        boolean shouldTrustProxyHeaders = TRUST_PROXY_HEADERS || isLikelyTrustedProxy(remoteAddr);
+        if (shouldTrustProxyHeaders) {
+            String xForwardedFor = request.getHeader("X-Forwarded-For");
+            if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+                String firstHop = xForwardedFor.split(",")[0].trim();
+                if (!firstHop.isEmpty()) {
+                    return firstHop;
+                }
+            }
+            String xRealIp = request.getHeader("X-Real-IP");
+            if (xRealIp != null && !xRealIp.isEmpty()) {
+                return xRealIp;
+            }
         }
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-        return request.getRemoteAddr();
+        return remoteAddr;
     }
 
     public static String generateSecureToken(int byteLength) {
         byte[] bytes = new byte[byteLength];
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static boolean isLikelyTrustedProxy(String remoteAddr) {
+        if (remoteAddr == null || remoteAddr.isBlank()) {
+            return false;
+        }
+
+        try {
+            InetAddress address = InetAddress.getByName(remoteAddr);
+            return address.isAnyLocalAddress()
+                    || address.isLoopbackAddress()
+                    || address.isSiteLocalAddress()
+                    || address.isLinkLocalAddress();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 }

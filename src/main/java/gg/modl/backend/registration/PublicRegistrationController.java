@@ -32,9 +32,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_REGISTRATION)
@@ -50,7 +51,15 @@ public class PublicRegistrationController {
     private final EmailService emailService;
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
-    private final Map<String, Long> rateLimitMap = new ConcurrentHashMap<>();
+    private static final int MAX_RATE_LIMIT_ENTRIES = 10_000;
+    private final Map<String, Long> rateLimitMap = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
+                    return size() > MAX_RATE_LIMIT_ENTRIES;
+                }
+            }
+    );
 
     @Value("${modl.app-domain}")
     private String appDomain;
@@ -166,6 +175,15 @@ public class PublicRegistrationController {
 
     @GetMapping("/verify")
     public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        return verifyEmailInternal(token);
+    }
+
+    @PostMapping("/verify")
+    public ResponseEntity<?> verifyEmailPost(@RequestBody @Valid TokenRequest body) {
+        return verifyEmailInternal(body.token());
+    }
+
+    private ResponseEntity<?> verifyEmailInternal(String token) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.badRequest().body(new VerifyResponse(false, "Verification token is required.", null, null));
         }
@@ -190,6 +208,15 @@ public class PublicRegistrationController {
 
     @GetMapping("/setup-status")
     public ResponseEntity<?> getSetupStatus(@RequestParam String token) {
+        return getSetupStatusInternal(token);
+    }
+
+    @PostMapping("/setup-status")
+    public ResponseEntity<?> getSetupStatusPost(@RequestBody @Valid TokenRequest body) {
+        return getSetupStatusInternal(body.token());
+    }
+
+    private ResponseEntity<?> getSetupStatusInternal(String token) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.badRequest().body(new SetupStatusResponse(
                     null, null, false, null, "Token is required."
@@ -312,7 +339,9 @@ public class PublicRegistrationController {
 
     public record VerifyResponse(boolean success, String message, String subdomain, String autoLoginToken) {}
 
-    public record SetupStatusResponse(String subdomain, String serverName, boolean emailVerified, String provisioningStatus, String message) {}
+    public record SetupStatusResponse(String subdomain, String serverName, Boolean emailVerified, String provisioningStatus, String message) {}
+
+    public record TokenRequest(@NotBlank String token) {}
 
     public record AutoLoginRequest(@NotBlank String token) {}
 

@@ -1,5 +1,6 @@
 package gg.modl.backend.ratelimit;
 
+import gg.modl.backend.rest.RequestUtil;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
@@ -58,24 +59,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientKey(HttpServletRequest request) {
-        String serverDomain = request.getHeader("X-Server-Domain");
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        String realIp = request.getHeader("X-Real-IP");
-
-        String ip;
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            ip = forwardedFor.split(",")[0].trim();
-        } else if (realIp != null && !realIp.isBlank()) {
-            ip = realIp;
-        } else {
-            ip = request.getRemoteAddr();
-        }
-
-        if (serverDomain != null && !serverDomain.isBlank()) {
-            return serverDomain + ":" + ip;
-        }
-
-        return ip;
+        return RequestUtil.getClientIp(request);
     }
 
     @Override

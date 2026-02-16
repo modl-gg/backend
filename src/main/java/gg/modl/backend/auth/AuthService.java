@@ -88,6 +88,8 @@ public class AuthService {
         return verifyCodeInternal(mongo, email, code);
     }
 
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+
     private boolean verifyCodeInternal(MongoTemplate mongo, String email, String code) {
         String normalizedEmail = email.toLowerCase();
 
@@ -100,6 +102,12 @@ public class AuthService {
             return false;
         }
 
+        // Invalidate code after too many failed attempts
+        if (authCode.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
+            mongo.remove(authCode);
+            return false;
+        }
+
         String providedHash = hashCode(code);
         boolean valid = MessageDigest.isEqual(
                 providedHash.getBytes(StandardCharsets.UTF_8),
@@ -108,6 +116,11 @@ public class AuthService {
 
         if (valid) {
             mongo.remove(authCode);
+        } else {
+            // Increment failed attempts counter
+            org.springframework.data.mongodb.core.query.Update update = new org.springframework.data.mongodb.core.query.Update()
+                    .inc("failedAttempts", 1);
+            mongo.updateFirst(query, update, AuthCode.class);
         }
 
         return valid;

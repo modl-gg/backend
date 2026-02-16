@@ -20,5 +20,7 @@ public record PresignUploadRequest(
         @NotBlank(message = "Content type is required")
         String contentType,
 
-        String entityId
+        String entityId,
+
+        String accessToken
 ) {}

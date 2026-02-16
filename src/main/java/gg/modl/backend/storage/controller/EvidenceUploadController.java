@@ -17,6 +17,8 @@ import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
@@ -28,6 +30,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.*;
 
 @RestController
@@ -145,6 +148,13 @@ public class EvidenceUploadController {
         }
 
         String key = body.key();
+        String expectedKeyPrefix = uploadToken.serverDatabaseName() + "/evidence/" + uploadToken.punishmentId() + "/";
+        if (!key.startsWith(expectedKeyPrefix)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "status", 403,
+                    "message", "Upload key does not belong to this evidence token"
+            ));
+        }
 
         var uploadDetails = s3StorageService.getUploadDetails(key);
         if (uploadDetails == null) {
@@ -167,20 +177,13 @@ public class EvidenceUploadController {
     @PostMapping("/{token}/submit")
     public ResponseEntity<Map<String, Object>> submitEvidence(
             @PathVariable String token,
-            @RequestBody SubmitEvidenceRequest request
+            @RequestBody @Valid SubmitEvidenceRequest request
     ) {
         UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Invalid or expired upload token"
-            ));
-        }
-
-        if (request.evidence() == null || request.evidence().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", 400,
-                    "message", "No evidence provided"
             ));
         }
 
@@ -193,6 +196,13 @@ public class EvidenceUploadController {
         );
 
         for (EvidenceItem item : request.evidence()) {
+            if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "status", 400,
+                        "message", "Invalid evidence URL"
+                ));
+            }
+
             PunishmentEvidence evidence = new PunishmentEvidence(
                     null,
                     item.url(),
@@ -228,7 +238,37 @@ public class EvidenceUploadController {
         ));
     }
 
-    public record SubmitEvidenceRequest(List<EvidenceItem> evidence) {}
+    private boolean isAllowedEvidenceUrl(String url, UploadToken uploadToken) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
 
-    public record EvidenceItem(String url, String fileName, String fileType, Long fileSize) {}
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            if (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme)) {
+                return false;
+            }
+
+            String expectedPathFragment = "/" + uploadToken.serverDatabaseName() + "/evidence/" + uploadToken.punishmentId() + "/";
+            String path = uri.getPath();
+            if (path == null || !path.contains(expectedPathFragment)) {
+                return false;
+            }
+
+            String cdnDomain = s3StorageService.getCdnDomain();
+            if (cdnDomain == null || cdnDomain.isBlank()) {
+                // Reject when no CDN domain is configured — cannot verify host
+                return false;
+            }
+
+            return cdnDomain.equalsIgnoreCase(uri.getHost());
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    public record SubmitEvidenceRequest(@NotEmpty @jakarta.validation.Valid List<EvidenceItem> evidence) {}
+
+    public record EvidenceItem(@NotBlank String url, @NotBlank String fileName, String fileType, Long fileSize) {}
 }

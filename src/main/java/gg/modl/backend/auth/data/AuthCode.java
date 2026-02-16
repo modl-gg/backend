@@ -25,6 +25,9 @@ public class AuthCode {
     private String codeHash;
 
     @Field
+    private int failedAttempts;
+
+    @Field
     @Indexed(name = "expiresAt_1", expireAfter = "0s")
     private Instant expiresAt;
 }

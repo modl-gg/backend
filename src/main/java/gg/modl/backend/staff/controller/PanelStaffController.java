@@ -178,7 +178,7 @@ public class PanelStaffController {
     @PatchMapping("/{username}/minecraft-player")
     public ResponseEntity<?> assignMinecraftPlayer(
             @PathVariable String username,
-            @RequestBody AssignMinecraftPlayerRequest assignRequest,
+            @RequestBody @Valid AssignMinecraftPlayerRequest assignRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

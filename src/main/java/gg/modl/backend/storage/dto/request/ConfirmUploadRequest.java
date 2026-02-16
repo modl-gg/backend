@@ -4,5 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record ConfirmUploadRequest(
         @NotBlank(message = "Key is required")
-        String key
+        String key,
+
+        String accessToken
 ) {}

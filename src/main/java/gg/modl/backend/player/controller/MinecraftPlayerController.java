@@ -61,7 +61,7 @@ public class MinecraftPlayerController {
                     .map(e -> e.getField() + ": '" + e.getRejectedValue() + "' - " + e.getDefaultMessage())
                     .reduce((a, b) -> a + "; " + b)
                     .orElse("Unknown validation error");
-            System.err.println("[LOGIN] Validation failed: " + errors);
+            log.warn("[LOGIN] Validation failed: {}", errors);
             return ResponseEntity.badRequest().body(Map.of(
                     "status", 400,
                     "success", false,
@@ -135,9 +135,13 @@ public class MinecraftPlayerController {
         // Deduplicate: keep only the oldest active punishment per category (BAN, MUTE)
         activePunishments = deduplicateActivePunishments(activePunishments);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
-                player.getData().getOrDefault("pendingNotifications", List.of());
+        Object rawNotifications = player.getData().getOrDefault("pendingNotifications", List.of());
+        List<Map<String, Object>> pendingNotifications = rawNotifications instanceof List<?> list
+                ? list.stream().filter(e -> e instanceof Map<?, ?>).map(e -> {
+                    @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) e;
+                    return m;
+                }).toList()
+                : List.of();
 
         // Ask the plugin to do IP geo lookup if the IP has no geo data yet
         List<String> pendingIpLookups = new ArrayList<>();
@@ -164,7 +168,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/disconnect")
     public ResponseEntity<Map<String, Object>> disconnect(
-            @RequestBody DisconnectRequest request,
+            @RequestBody @Valid DisconnectRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -187,7 +191,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/update-server")
     public ResponseEntity<Map<String, Object>> updateServer(
-            @RequestBody UpdateServerRequest request,
+            @RequestBody @Valid UpdateServerRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -322,7 +326,7 @@ public class MinecraftPlayerController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("usernames.username").regex("^" + username + "$", "i"));
+        Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(username) + "$", "i"));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
 
         if (player == null && queryMojang) {
@@ -362,7 +366,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/lookup")
     public ResponseEntity<Map<String, Object>> lookupPlayer(
-            @RequestBody LookupRequest request,
+            @RequestBody @Valid LookupRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -376,7 +380,7 @@ public class MinecraftPlayerController {
             Query query = Query.query(Criteria.where("minecraftUuid").is(queryStr));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         } else {
-            Query query = Query.query(Criteria.where("usernames.username").regex("^" + queryStr + "$", "i"));
+            Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(queryStr) + "$", "i"));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         }
 
@@ -505,8 +509,10 @@ public class MinecraftPlayerController {
 
         // 2. Also include accounts from data.linkedAccounts field
         if (player.getData() != null && player.getData().containsKey("linkedAccounts")) {
-            @SuppressWarnings("unchecked")
-            List<String> storedLinkedUuids = (List<String>) player.getData().get("linkedAccounts");
+            Object rawLinked = player.getData().get("linkedAccounts");
+            List<String> storedLinkedUuids = rawLinked instanceof List<?> list
+                    ? list.stream().filter(e -> e instanceof String).map(e -> (String) e).toList()
+                    : null;
             if (storedLinkedUuids != null && !storedLinkedUuids.isEmpty()) {
                 List<String> missingUuids = storedLinkedUuids.stream()
                         .filter(u -> !addedUuids.contains(u))
@@ -601,9 +607,13 @@ public class MinecraftPlayerController {
                 .map(p -> PunishmentMapper.toPunishmentMap(p, punishmentTypes)).toList();
 
         // Get pending notifications from player data
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>) player.getData()
-                .getOrDefault("pendingNotifications", Collections.emptyList());
+        Object rawPending = player.getData().getOrDefault("pendingNotifications", Collections.emptyList());
+        List<Map<String, Object>> pendingNotifications = rawPending instanceof List<?> list
+                ? list.stream().filter(e -> e instanceof Map<?, ?>).map(e -> {
+                    @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) e;
+                    return m;
+                }).toList()
+                : Collections.emptyList();
 
         Map<String, Object> profile = new LinkedHashMap<>();
         profile.put("_id", player.getId());
@@ -712,13 +722,13 @@ public class MinecraftPlayerController {
 
     @PostMapping("/pardon")
     public ResponseEntity<Map<String, Object>> pardonPlayer(
-            @RequestBody PardonPlayerRequest request,
+            @RequestBody @Valid PardonPlayerRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("usernames.username").regex("^" + request.playerName() + "$", "i"));
+        Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(request.playerName()) + "$", "i"));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
 
         if (player == null) {
@@ -838,11 +848,17 @@ public class MinecraftPlayerController {
             boolean hosting
     ) {}
 
-    public record DisconnectRequest(String minecraftUuid, long sessionDurationMs) {}
+    public record DisconnectRequest(
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+            long sessionDurationMs
+    ) {}
 
-    public record UpdateServerRequest(String minecraftUuid, String serverName) {}
+    public record UpdateServerRequest(
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+            @NotBlank String serverName
+    ) {}
 
-    public record LookupRequest(String query, Boolean queryMojang) {
+    public record LookupRequest(@NotBlank String query, Boolean queryMojang) {
         public boolean shouldQueryMojang() {
             return queryMojang == null || queryMojang;
         }
@@ -854,8 +870,8 @@ public class MinecraftPlayerController {
     ) {}
 
     public record PardonPlayerRequest(
-            String playerName,
-            String issuerName,
+            @NotBlank String playerName,
+            @NotBlank String issuerName,
             String punishmentType,
             String reason
     ) {}
@@ -876,8 +892,8 @@ public class MinecraftPlayerController {
                     oldestByCategory.put(category, p);
                 } else {
                     // Keep the one with the older issuedAt timestamp
-                    long existingIssued = (Long) existing.get("issuedAt");
-                    long currentIssued = (Long) p.get("issuedAt");
+                    long existingIssued = existing.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
+                    long currentIssued = p.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
                     if (currentIssued < existingIssued) {
                         oldestByCategory.put(category, p);
                     }

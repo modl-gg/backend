@@ -46,7 +46,6 @@ public class PanelAuthController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
-    private Optional<Staff> result;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -60,8 +59,9 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
+        // Always return generic success to prevent email enumeration
         if (!isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+            return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
 
         try {
@@ -88,8 +88,9 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
+        // Return same error as invalid code to prevent email enumeration
         if (!isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 
         boolean valid = authService.verifyCode(server, requestData.email(), requestData.code());
@@ -219,7 +220,7 @@ public class PanelAuthController {
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
 
         return cookie;
     }
@@ -231,7 +232,7 @@ public class PanelAuthController {
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge(0);
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
 
         return cookie;
     }

@@ -100,7 +100,7 @@ public class PanelHomepageCardController {
     @PutMapping("/{id}")
     public ResponseEntity<HomepageCard> updateCard(
             @PathVariable String id,
-            @RequestBody UpdateCardRequest updateRequest,
+            @RequestBody @Valid UpdateCardRequest updateRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -124,7 +124,7 @@ public class PanelHomepageCardController {
 
     @PutMapping("/reorder")
     public ResponseEntity<?> reorderCards(
-            @RequestBody ReorderRequest reorderRequest,
+            @RequestBody @Valid ReorderRequest reorderRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
