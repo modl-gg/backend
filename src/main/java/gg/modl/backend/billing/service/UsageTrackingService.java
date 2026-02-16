@@ -127,9 +127,8 @@ public class UsageTrackingService {
     public double getCdnLimitGB(Server server) {
         if (server.getPlan() == ServerPlan.premium) {
             if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                double customGB = server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
-                double maxGB = StorageQuotaService.MAX_PREMIUM_BYTES / (1024.0 * 1024 * 1024);
-                return Math.min(customGB, maxGB);
+                // Trust database value directly — support can set values above the self-service cap
+                return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
             }
             return DEFAULT_PREMIUM_CDN_LIMIT_GB;
         }
