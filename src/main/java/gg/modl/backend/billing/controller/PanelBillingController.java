@@ -1,6 +1,7 @@
 package gg.modl.backend.billing.controller;
 
 import com.stripe.exception.StripeException;
+import gg.modl.backend.billing.dto.request.UpdateStorageLimitRequest;
 import gg.modl.backend.billing.dto.request.UsageBillingSettingsRequest;
 import gg.modl.backend.billing.dto.response.*;
 import gg.modl.backend.billing.service.BillingService;
@@ -13,6 +14,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -37,10 +39,8 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         try {
             CheckoutSessionResponse response = billingService.createCheckoutSession(server);
@@ -58,10 +58,8 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         try {
             PortalSessionResponse response = billingService.createPortalSession(server);
@@ -81,10 +79,8 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         try {
             CancelResponse response = billingService.cancelSubscription(server);
@@ -104,10 +100,8 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         try {
             ResubscribeResponse response = billingService.resubscribe(server);
@@ -152,10 +146,8 @@ public class PanelBillingController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         try {
             UsageBillingSettingsResponse response = usageTrackingService.updateUsageBillingSettings(server, settingsRequest.enabled());
@@ -167,33 +159,34 @@ public class PanelBillingController {
 
     @PostMapping("/storage-limit")
     public ResponseEntity<?> updateStorageLimit(
-            @RequestBody Map<String, Long> body,
+            @RequestBody @Valid UpdateStorageLimitRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
 
         if (server.getPlan() != ServerPlan.premium) {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage limit configuration is only available for premium servers"));
         }
 
-        Long maxStorageLimitBytes = body.get("maxStorageLimitBytes");
-        if (maxStorageLimitBytes == null || maxStorageLimitBytes <= 0) {
-            return ResponseEntity.badRequest().body(Map.of("error", "maxStorageLimitBytes must be greater than 0"));
-        }
-
-        if (maxStorageLimitBytes > StorageQuotaService.MAX_PREMIUM_BYTES) {
+        if (body.maxStorageLimitBytes() > StorageQuotaService.MAX_PREMIUM_BYTES) {
             return ResponseEntity.badRequest().body(Map.of("error", "maxStorageLimitBytes cannot exceed 10 TB"));
         }
 
-        usageTrackingService.updateStorageLimit(server, maxStorageLimitBytes);
+        usageTrackingService.updateStorageLimit(server, body.maxStorageLimitBytes());
 
         return ResponseEntity.ok(Map.of(
                 "success", true,
-                "maxStorageLimitBytes", maxStorageLimitBytes
+                "maxStorageLimitBytes", body.maxStorageLimitBytes()
         ));
+    }
+
+    private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null || !permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
+        return null;
     }
 }

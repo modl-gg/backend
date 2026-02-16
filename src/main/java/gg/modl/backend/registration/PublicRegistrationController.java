@@ -6,6 +6,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
@@ -31,8 +32,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,7 +41,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 @Slf4j
 public class PublicRegistrationController {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
     private static final long AUTO_LOGIN_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -67,7 +65,7 @@ public class PublicRegistrationController {
             return ResponseEntity.badRequest().body(new RegisterResponse(false, "Validation failed", null));
         }
 
-        String clientIp = getClientIp(request);
+        String clientIp = RequestUtil.getClientIp(request);
 
         // Check rate limit
         long now = System.currentTimeMillis();
@@ -121,7 +119,7 @@ public class PublicRegistrationController {
         }
 
         // Generate email verification token
-        String emailVerificationToken = generateSecureToken();
+        String emailVerificationToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
 
         // Parse plan
         ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.premium : ServerPlan.free;
@@ -178,7 +176,7 @@ public class PublicRegistrationController {
         }
 
         // Generate auto-login token for seamless setup flow
-        String autoLoginToken = generateSecureToken();
+        String autoLoginToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
         Date tokenExpiry = new Date(System.currentTimeMillis() + AUTO_LOGIN_TOKEN_EXPIRY_MS);
         serverService.setAutoLoginToken(server, autoLoginToken, tokenExpiry);
 
@@ -294,24 +292,6 @@ public class PublicRegistrationController {
     private void sendVerificationEmail(String email, String verificationLink) throws Exception {
         EmailHTMLTemplate.HTMLEmail htmlEmail = EmailHTMLTemplate.REGISTRATION_VERIFY_LINK.build(verificationLink);
         emailService.send(email, htmlEmail);
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-        return request.getRemoteAddr();
-    }
-
-    private String generateSecureToken() {
-        byte[] tokenBytes = new byte[TOKEN_BYTE_LENGTH];
-        SECURE_RANDOM.nextBytes(tokenBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
     }
 
     private void cleanupRateLimitMap(long now) {

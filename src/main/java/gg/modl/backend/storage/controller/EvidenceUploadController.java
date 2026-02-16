@@ -9,11 +9,14 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
+import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService.UploadToken;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
@@ -70,7 +73,7 @@ public class EvidenceUploadController {
     @PostMapping("/{token}/presign")
     public ResponseEntity<Map<String, Object>> presignUpload(
             @PathVariable String token,
-            @RequestBody Map<String, Object> body
+            @RequestBody @Valid EvidencePresignUploadRequest body
     ) {
         UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
@@ -87,9 +90,9 @@ public class EvidenceUploadController {
             ));
         }
 
-        String fileName = (String) body.get("fileName");
-        String contentType = (String) body.get("contentType");
-        long fileSize = ((Number) body.get("fileSize")).longValue();
+        String fileName = body.fileName();
+        String contentType = body.contentType();
+        long fileSize = body.fileSize();
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server == null) {
@@ -131,7 +134,7 @@ public class EvidenceUploadController {
     @PostMapping("/{token}/confirm")
     public ResponseEntity<Map<String, Object>> confirmUpload(
             @PathVariable String token,
-            @RequestBody Map<String, String> body
+            @RequestBody @Valid EvidenceConfirmUploadRequest body
     ) {
         UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
@@ -141,13 +144,7 @@ public class EvidenceUploadController {
             ));
         }
 
-        String key = body.get("key");
-        if (key == null || key.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", 400,
-                    "message", "Missing key"
-            ));
-        }
+        String key = body.key();
 
         var uploadDetails = s3StorageService.getUploadDetails(key);
         if (uploadDetails == null) {

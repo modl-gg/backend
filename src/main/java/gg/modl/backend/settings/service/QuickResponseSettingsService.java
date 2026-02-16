@@ -6,6 +6,7 @@ import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.data.Settings;
+import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -61,15 +62,18 @@ public class QuickResponseSettingsService {
         return null;
     }
 
-    public void updateQuickResponseSettings(Server server, Map<String, Object> quickResponses) {
+    public void updateQuickResponseSettings(Server server, UpdateQuickResponsesRequest quickResponses) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
         Query query = Query.query(Criteria.where("type").is("quickResponses"));
 
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = objectMapper.convertValue(quickResponses, Map.class);
+
         org.springframework.data.mongodb.core.query.Update update =
                 new org.springframework.data.mongodb.core.query.Update()
                         .set("type", "quickResponses")
-                        .set("data", quickResponses);
+                        .set("data", data);
 
         template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
     }

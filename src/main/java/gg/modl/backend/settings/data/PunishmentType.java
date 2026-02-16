@@ -56,15 +56,24 @@ public class PunishmentType {
     }
 
     public boolean isBan() {
-        return ordinal == 2 || ordinal == 3 || ordinal == 4 || ordinal == 5;
+        if (category != null) {
+            return category.toLowerCase().contains("ban");
+        }
+        return ordinal != null && ordinal >= 2 && ordinal <= 5;
     }
 
     public boolean isMute() {
-        return ordinal == 1;
+        if (category != null) {
+            return category.toLowerCase().contains("mute");
+        }
+        return ordinal != null && ordinal == 1;
     }
 
     public boolean isKick() {
-        return ordinal == 0;
+        if (category != null) {
+            return category.toLowerCase().contains("kick");
+        }
+        return ordinal != null && ordinal == 0;
     }
 
     public int getPointsForSeverity(String severity) {

@@ -6,6 +6,10 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.*;
+import gg.modl.backend.settings.dto.request.ApplyAIPunishmentRequest;
+import gg.modl.backend.settings.dto.request.ConfigureDomainRequest;
+import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
+import gg.modl.backend.settings.dto.request.VerifyDomainRequest;
 import gg.modl.backend.settings.service.*;
 import gg.modl.backend.storage.service.S3StorageService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -125,7 +129,7 @@ public class PanelSettingsController {
 
     @PutMapping("/general")
     public ResponseEntity<?> updateGeneralSettings(
-            @RequestBody GeneralSettings settings,
+            @RequestBody @Valid GeneralSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -144,7 +148,7 @@ public class PanelSettingsController {
 
     @PutMapping("/status-thresholds")
     public ResponseEntity<OffenderThresholdSettings> updateStatusThresholds(
-            @RequestBody OffenderThresholdSettings settings,
+            @RequestBody @Valid OffenderThresholdSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -222,7 +226,7 @@ public class PanelSettingsController {
 
     @PutMapping("/ai-moderation")
     public ResponseEntity<AIModerationSettings> updateAIModerationSettings(
-            @RequestBody AIModerationSettings settings,
+            @RequestBody @Valid AIModerationSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -239,7 +243,7 @@ public class PanelSettingsController {
 
     @PutMapping("/webhooks")
     public ResponseEntity<WebhookSettings> updateWebhookSettings(
-            @RequestBody WebhookSettings settings,
+            @RequestBody @Valid WebhookSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -268,7 +272,7 @@ public class PanelSettingsController {
 
     @PutMapping("/ticket-forms")
     public ResponseEntity<TicketFormSettings> updateTicketFormSettings(
-            @RequestBody TicketFormSettings settings,
+            @RequestBody @Valid TicketFormSettings settings,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -294,7 +298,7 @@ public class PanelSettingsController {
     @PutMapping("/ticket-forms/{type}")
     public ResponseEntity<TicketFormSettings> updateTicketForm(
             @PathVariable String type,
-            @RequestBody TicketFormSettings.TicketForm form,
+            @RequestBody @Valid TicketFormSettings.TicketForm form,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -313,18 +317,13 @@ public class PanelSettingsController {
 
     @PostMapping("/domain")
     public ResponseEntity<?> configureDomain(
-            @RequestBody Map<String, String> body,
+            @RequestBody @Valid ConfigureDomainRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String customDomain = body.get("customDomain");
-        
-        if (customDomain == null || customDomain.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Custom domain is required"));
-        }
-        
+
         try {
-            DomainSettings settings = domainSettingsService.configureDomain(server, customDomain.trim());
+            DomainSettings settings = domainSettingsService.configureDomain(server, body.customDomain().trim());
             return ResponseEntity.ok(settings);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
@@ -333,18 +332,13 @@ public class PanelSettingsController {
 
     @PostMapping("/domain/verify")
     public ResponseEntity<?> verifyDomain(
-            @RequestBody Map<String, String> body,
+            @RequestBody @Valid VerifyDomainRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String domain = body.get("domain");
-
-        if (domain == null || domain.trim().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Domain is required"));
-        }
 
         try {
-            DomainSettings settings = domainSettingsService.verifyDomain(server, domain.trim());
+            DomainSettings settings = domainSettingsService.verifyDomain(server, body.domain().trim());
             DomainSettings.DomainStatus status = settings.getStatus();
 
             String message = switch (status.getStatus()) {
@@ -394,7 +388,7 @@ public class PanelSettingsController {
 
     @PutMapping("/quick-responses")
     public ResponseEntity<?> updateQuickResponses(
-            @RequestBody Map<String, Object> quickResponses,
+            @RequestBody @Valid UpdateQuickResponsesRequest quickResponses,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -458,7 +452,7 @@ public class PanelSettingsController {
 
     private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
+        if (email == null || !permissionService.isSuperAdmin(server, email)) {
             return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can access server configuration"));
         }
         return null;
@@ -467,11 +461,11 @@ public class PanelSettingsController {
     @PostMapping("/ai-apply-punishment/{ticketId}")
     public ResponseEntity<?> applyAIPunishment(
             @PathVariable String ticketId,
-            @RequestBody Map<String, String> body,
+            @RequestBody @Valid ApplyAIPunishmentRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffName = body.getOrDefault("staffName", "Staff");
+        String staffName = body.staffName() != null ? body.staffName() : "Staff";
 
         var result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, staffName);
         if (!result.success()) {

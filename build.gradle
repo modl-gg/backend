@@ -24,10 +24,6 @@ repositories {
 	mavenCentral()
 }
 
-//ext {
-//	set('springAiVersion', "1.1.0")
-//}
-
 dependencies {
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
@@ -65,12 +61,6 @@ dependencies {
     testImplementation 'org.mongodb:mongodb-driver-sync'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
-
-//dependencyManagement {
-//	imports {
-//		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
-//	}
-//}
 
 tasks.named('test') {
 	useJUnitPlatform()

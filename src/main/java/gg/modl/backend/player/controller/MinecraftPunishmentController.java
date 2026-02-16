@@ -8,7 +8,9 @@ import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
+import gg.modl.backend.player.dto.request.CreateUploadTokenRequest;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentMapper;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
@@ -101,7 +103,7 @@ public class MinecraftPunishmentController {
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, Object> result = toPunishmentMap(punishment, types);
+        Map<String, Object> result = PunishmentMapper.toPunishmentMap(punishment, types);
         result.put("playerUuid", player.getMinecraftUuid().toString());
         result.put("playerName", player.getUsernames().isEmpty() ? "Unknown"
                 : player.getUsernames().get(player.getUsernames().size() - 1).username());
@@ -112,7 +114,7 @@ public class MinecraftPunishmentController {
     @PostMapping("/{punishmentId}/upload-token")
     public ResponseEntity<Map<String, Object>> createUploadToken(
             @PathVariable String punishmentId,
-            @RequestBody Map<String, String> body,
+            @RequestBody @Valid CreateUploadTokenRequest body,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -128,7 +130,7 @@ public class MinecraftPunishmentController {
             ));
         }
 
-        String issuerName = body.getOrDefault("issuerName", "Unknown");
+        String issuerName = body.issuerName() != null ? body.issuerName() : "Unknown";
         String playerUuid = player.getMinecraftUuid().toString();
 
         String token = evidenceUploadTokenService.createToken(
@@ -164,7 +166,7 @@ public class MinecraftPunishmentController {
             for (Punishment punishment : player.getPunishments()) {
                 if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
                     // Use full punishment format (same as toPunishmentMap in MinecraftPlayerController)
-                    Map<String, Object> p = toPunishmentMap(punishment, types);
+                    Map<String, Object> p = PunishmentMapper.toPunishmentMap(punishment, types);
                     // Add player info
                     p.put("playerName", username);
                     p.put("playerUuid", player.getMinecraftUuid().toString());
@@ -179,91 +181,6 @@ public class MinecraftPunishmentController {
                 "status", 200,
                 "punishments", punishments
         ));
-    }
-
-    /**
-     * Convert a Punishment to a map format for API responses.
-     * Same format as MinecraftPlayerController.toPunishmentMap.
-     */
-    private Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", punishment.getId());
-        map.put("issuerName", punishment.getIssuerName());
-        map.put("issued", punishment.getIssued());
-        map.put("started", punishment.getStarted());
-
-        int ordinal = punishment.getType_ordinal();
-        map.put("typeOrdinal", ordinal);
-
-        String actualTypeName = punishmentTypes.stream()
-                .filter(t -> t.getOrdinal() == ordinal)
-                .findFirst()
-                .map(PunishmentType::getName)
-                .orElse(null);
-
-        String legacyTypeName = switch (ordinal) {
-            case 0 -> "KICK";
-            case 1 -> "MUTE";
-            case 2 -> "BAN";
-            case 3 -> "SECURITY_BAN";
-            case 4 -> "LINKED_BAN";
-            case 5 -> "BLACKLIST";
-            default -> "KICK";
-        };
-        map.put("type", legacyTypeName);
-
-        Map<String, Object> dataWithTypeName = punishment.getData() != null ?
-                new LinkedHashMap<>(punishment.getData()) : new LinkedHashMap<>();
-        if (actualTypeName != null) {
-            dataWithTypeName.put("typeName", actualTypeName);
-        }
-
-        // Convert modifications with effectiveDuration
-        List<Map<String, Object>> modifications = punishment.getModifications().stream()
-                .map(m -> {
-                    Map<String, Object> mod = new LinkedHashMap<>();
-                    mod.put("id", m.id());
-                    mod.put("type", m.type());
-                    mod.put("date", m.date());
-                    mod.put("issuerName", m.issuerName());
-                    mod.put("effectiveDuration", m.effectiveDuration());
-                    mod.put("data", m.data());
-                    return mod;
-                }).toList();
-        map.put("modifications", modifications);
-
-        // Convert notes
-        List<Map<String, Object>> notes = punishment.getNotes().stream()
-                .map(n -> {
-                    Map<String, Object> note = new LinkedHashMap<>();
-                    note.put("id", n.id());
-                    note.put("text", n.text());
-                    note.put("issuerName", n.issuerName());
-                    note.put("date", n.date());
-                    return note;
-                }).toList();
-        map.put("notes", notes);
-
-        // Convert evidence
-        List<Map<String, Object>> evidence = punishment.getEvidence().stream()
-                .map(e -> {
-                    Map<String, Object> ev = new LinkedHashMap<>();
-                    ev.put("text", e.text());
-                    ev.put("url", e.url());
-                    ev.put("type", e.type());
-                    ev.put("uploadedBy", e.uploadedBy());
-                    ev.put("uploadedAt", e.uploadedAt());
-                    ev.put("fileName", e.fileName());
-                    ev.put("fileType", e.fileType());
-                    ev.put("fileSize", e.fileSize());
-                    return ev;
-                }).toList();
-        map.put("evidence", evidence);
-
-        map.put("attachedTicketIds", punishment.getAttachedTicketIds());
-        map.put("data", dataWithTypeName);
-
-        return map;
     }
 
     @GetMapping("/preview")
@@ -381,7 +298,7 @@ public class MinecraftPunishmentController {
                 .severity(severity)
                 .points(points)
                 .durationMs(durationMs)
-                .durationFormatted(formatDuration(durationMs, isPermanent))
+                .durationFormatted(PunishmentMapper.formatDuration(durationMs, isPermanent))
                 .punishmentType(punishmentResultType)
                 .permanent(isPermanent)
                 .newSocialStatus(thresholds.getSocialOffenderLevel(newSocialPoints))
@@ -389,36 +306,6 @@ public class MinecraftPunishmentController {
                 .newSocialPoints(newSocialPoints)
                 .newGameplayPoints(newGameplayPoints)
                 .build();
-    }
-
-    private String formatDuration(long durationMs, boolean isPermanent) {
-        if (isPermanent || durationMs < 0) {
-            return "Permanent";
-        }
-        if (durationMs == 0) {
-            return "Instant";
-        }
-
-        long seconds = durationMs / 1000;
-        long minutes = seconds / 60;
-        long hours = minutes / 60;
-        long days = hours / 24;
-        long weeks = days / 7;
-        long months = days / 30;
-
-        if (months > 0) {
-            return months + (months == 1 ? " month" : " months");
-        } else if (weeks > 0) {
-            return weeks + (weeks == 1 ? " week" : " weeks");
-        } else if (days > 0) {
-            return days + (days == 1 ? " day" : " days");
-        } else if (hours > 0) {
-            return hours + (hours == 1 ? " hour" : " hours");
-        } else if (minutes > 0) {
-            return minutes + (minutes == 1 ? " minute" : " minutes");
-        } else {
-            return seconds + (seconds == 1 ? " second" : " seconds");
-        }
     }
 
     @PostMapping("/acknowledge")
@@ -703,7 +590,7 @@ public class MinecraftPunishmentController {
         );
 
         // Create automatic note for duration change
-        String durationText = request.newDuration() == null || request.newDuration() < 0 ? "permanent" : formatDuration(request.newDuration(), false);
+        String durationText = request.newDuration() == null || request.newDuration() < 0 ? "permanent" : PunishmentMapper.formatDuration(request.newDuration(), false);
         PunishmentNote durationNote = new PunishmentNote(
                 new ObjectId().toHexString(),
                 "changed duration to " + durationText,

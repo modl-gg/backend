@@ -3,11 +3,13 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.dto.request.BulkDeleteRequest;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -41,15 +43,11 @@ public class PanelStorageController {
 
     @PostMapping("/bulk-delete")
     public ResponseEntity<?> bulkDelete(
-            @RequestBody Map<String, List<String>> body,
+            @RequestBody @Valid BulkDeleteRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<String> keys = body.get("keys");
-
-        if (keys == null || keys.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No keys provided"));
-        }
+        List<String> keys = body.keys();
 
         String prefix = server.getDatabaseName() + "/";
         for (String key : keys) {

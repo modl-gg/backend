@@ -2,9 +2,13 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.admin.data.SystemPrompt;
+import gg.modl.backend.admin.dto.request.ToggleMaintenanceRequest;
+import gg.modl.backend.admin.dto.request.UpdatePromptRequest;
+import gg.modl.backend.admin.dto.request.UpdateRateLimitsRequest;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -98,10 +102,10 @@ public class AdminSystemController {
     }
 
     @PostMapping("/maintenance/toggle")
-    public ResponseEntity<?> toggleMaintenance(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> toggleMaintenance(@RequestBody @Valid ToggleMaintenanceRequest request) {
         try {
-            boolean enabled = (Boolean) request.getOrDefault("enabled", false);
-            String message = (String) request.get("message");
+            boolean enabled = request.enabled();
+            String message = request.message();
 
             SystemConfig config = getOrCreateConfig();
             config.getGeneral().setMaintenanceMode(enabled);
@@ -143,15 +147,15 @@ public class AdminSystemController {
     }
 
     @PutMapping("/rate-limits")
-    public ResponseEntity<?> updateRateLimits(@RequestBody Map<String, Integer> request) {
+    public ResponseEntity<?> updateRateLimits(@RequestBody @Valid UpdateRateLimitsRequest request) {
         try {
             SystemConfig config = getOrCreateConfig();
 
-            if (request.containsKey("rateLimitRequests")) {
-                config.getPerformance().setRateLimitRequests(request.get("rateLimitRequests"));
+            if (request.rateLimitRequests() != null) {
+                config.getPerformance().setRateLimitRequests(request.rateLimitRequests());
             }
-            if (request.containsKey("rateLimitWindow")) {
-                config.getPerformance().setRateLimitWindow(request.get("rateLimitWindow"));
+            if (request.rateLimitWindow() != null) {
+                config.getPerformance().setRateLimitWindow(request.rateLimitWindow());
             }
             config.setUpdatedAt(new Date());
 
@@ -177,14 +181,14 @@ public class AdminSystemController {
     }
 
     @PutMapping("/prompts/{strictnessLevel}")
-    public ResponseEntity<?> updatePrompt(@PathVariable String strictnessLevel, @RequestBody Map<String, String> request) {
+    public ResponseEntity<?> updatePrompt(@PathVariable String strictnessLevel, @RequestBody @Valid UpdatePromptRequest request) {
         try {
             if (!List.of("lenient", "standard", "strict").contains(strictnessLevel)) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
 
-            String prompt = request.get("prompt");
-            if (prompt == null || prompt.trim().isEmpty()) {
+            String prompt = request.prompt();
+            if (prompt.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Prompt content is required"));
             }
 

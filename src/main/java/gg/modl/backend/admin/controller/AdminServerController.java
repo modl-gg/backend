@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.controller;
 
+import gg.modl.backend.admin.dto.request.UpdateServerRequest;
 import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.data.ProvisioningStatus;
@@ -107,16 +108,19 @@ public class AdminServerController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateServer(@PathVariable String id, @RequestBody Map<String, Object> updateData) {
+    public ResponseEntity<?> updateServer(@PathVariable String id, @RequestBody @Valid UpdateServerRequest request) {
         if (!serverService.findById(id).isPresent()) {
             return ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found"));
         }
 
-        updateData.remove("_id");
-        updateData.remove("createdAt");
-        updateData.remove("serverName");
-        updateData.remove("customDomain");
-        updateData.remove("databaseName");
+        Map<String, Object> updateData = new HashMap<>();
+        if (request.adminEmail() != null) updateData.put("adminEmail", request.adminEmail());
+        if (request.emailVerified() != null) updateData.put("emailVerified", request.emailVerified());
+        if (request.provisioningStatus() != null) updateData.put("provisioningStatus", request.provisioningStatus());
+        if (request.provisioningNotes() != null) updateData.put("provisioningNotes", request.provisioningNotes());
+        if (request.plan() != null) updateData.put("plan", request.plan());
+        if (request.subscriptionStatus() != null) updateData.put("subscriptionStatus", request.subscriptionStatus());
+        if (request.lastActivityAt() != null) updateData.put("lastActivityAt", request.lastActivityAt());
         updateData.put("updatedAt", new Date());
 
         Server updated = serverService.updateById(id, updateData);
@@ -154,7 +158,7 @@ public class AdminServerController {
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<?> bulkOperation(@RequestBody BulkOperationRequest request) {
+    public ResponseEntity<?> bulkOperation(@RequestBody @Valid BulkOperationRequest request) {
         if (request.action() == null || request.serverIds() == null || request.serverIds().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Missing required fields: action, serverIds"));
         }

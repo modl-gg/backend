@@ -3,6 +3,7 @@ package gg.modl.backend.admin.controller;
 import gg.modl.backend.admin.data.AdminUser;
 import gg.modl.backend.admin.service.AdminAuthService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,8 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.SecureRandom;
-import java.util.Base64;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,7 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminAuthController {
     private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
     private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int SESSION_TOKEN_BYTES = 32;
 
     private final AdminAuthService adminAuthService;
@@ -56,17 +55,15 @@ public class AdminAuthController {
         }
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
-        if (adminOpt.isEmpty()) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid email address"));
+        if (adminOpt.isPresent()) {
+            try {
+                adminAuthService.sendVerificationCode(request.email());
+            } catch (Exception e) {
+                log.error("Failed to send verification code", e);
+            }
         }
 
-        try {
-            adminAuthService.sendVerificationCode(request.email());
-            return ResponseEntity.ok(new ApiResponse(true, "Verification code sent to your email"));
-        } catch (Exception e) {
-            log.error("Failed to send verification code", e);
-            return ResponseEntity.status(500).body(new ApiResponse(false, "Failed to send verification code"));
-        }
+        return ResponseEntity.ok(new ApiResponse(true, "If this email is registered, a verification code has been sent"));
     }
 
     @PostMapping("/login")
@@ -80,22 +77,21 @@ public class AdminAuthController {
             return ResponseEntity.badRequest().body(new ApiResponse(false, "Email and code are required"));
         }
 
+        // Always verify code regardless of user existence to prevent timing-based enumeration
+        boolean codeValid = adminAuthService.verifyCode(loginRequest.email(), loginRequest.code());
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.email());
-        if (adminOpt.isEmpty()) {
+
+        if (adminOpt.isEmpty() || !codeValid) {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid credentials"));
         }
 
-        if (!adminAuthService.verifyCode(loginRequest.email(), loginRequest.code())) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid or expired code"));
-        }
-
         AdminUser admin = adminOpt.get();
-        String clientIp = getClientIp(request);
+        String clientIp = RequestUtil.getClientIp(request);
         adminAuthService.updateLastActivity(admin.getEmail(), clientIp);
 
         // Create session with cryptographically secure token
-        String sessionId = generateSecureToken();
-        sessions.put(sessionId, new AdminSession(admin.getId(), admin.getEmail()));
+        String sessionId = RequestUtil.generateSecureToken(SESSION_TOKEN_BYTES);
+        sessions.put(sessionId, new AdminSession(admin.getId(), admin.getEmail(), Instant.now()));
 
         // Set session cookie with security attributes
         Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, sessionId);
@@ -146,6 +142,11 @@ public class AdminAuthController {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
         }
 
+        if (session.createdAt().plusSeconds(SESSION_MAX_AGE).isBefore(Instant.now())) {
+            sessions.remove(sessionId);
+            return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
+        }
+
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.email());
         if (adminOpt.isEmpty()) {
             sessions.remove(sessionId);
@@ -161,7 +162,13 @@ public class AdminAuthController {
     public Optional<AdminSession> getAuthenticatedSession(HttpServletRequest request) {
         String sessionId = extractSessionId(request);
         if (sessionId == null) return Optional.empty();
-        return Optional.ofNullable(sessions.get(sessionId));
+        AdminSession session = sessions.get(sessionId);
+        if (session == null) return Optional.empty();
+        if (session.createdAt().plusSeconds(SESSION_MAX_AGE).isBefore(Instant.now())) {
+            sessions.remove(sessionId);
+            return Optional.empty();
+        }
+        return Optional.of(session);
     }
 
     private String extractSessionId(HttpServletRequest request) {
@@ -175,24 +182,6 @@ public class AdminAuthController {
         return null;
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-        return request.getRemoteAddr();
-    }
-
-    private String generateSecureToken() {
-        byte[] bytes = new byte[SESSION_TOKEN_BYTES];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
     // Request/Response records
     public record RequestCodeRequest(@Email @NotBlank String email) {}
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String code) {}
@@ -201,5 +190,5 @@ public class AdminAuthController {
     public record UserData(String email, java.util.Date lastActivityAt) {}
     public record SessionResponse(boolean success, SessionData data) {}
     public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
-    public record AdminSession(String adminId, String email) {}
+    public record AdminSession(String adminId, String email, Instant createdAt) {}
 }

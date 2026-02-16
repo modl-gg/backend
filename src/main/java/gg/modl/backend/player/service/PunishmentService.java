@@ -173,7 +173,7 @@ public class PunishmentService {
                 : "MUTE".equals(newCategory) ? "mute"
                 : "punishment";
         String issuedNote = calculatedDuration != null && calculatedDuration > 0
-                ? "issued " + formatDuration(calculatedDuration) + " " + enforcementType
+                ? "issued " + PunishmentMapper.formatDuration(calculatedDuration, false) + " " + enforcementType
                 : "issued permanent " + enforcementType;
         if ("kick".equals(enforcementType)) {
             issuedNote = "issued kick";
@@ -804,7 +804,7 @@ public class PunishmentService {
 
         List<PunishmentNote> notes = new ArrayList<>();
         String linkedBanNote = duration != null && duration > 0
-                ? "issued " + formatDuration(duration) + " ban"
+                ? "issued " + PunishmentMapper.formatDuration(duration, false) + " ban"
                 : "issued permanent ban";
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
@@ -980,29 +980,6 @@ public class PunishmentService {
             }
         }
         return true;
-    }
-
-    private static String formatDuration(long durationMs) {
-        long seconds = durationMs / 1000;
-        long minutes = seconds / 60;
-        long hours = minutes / 60;
-        long days = hours / 24;
-        long weeks = days / 7;
-        long months = days / 30;
-
-        if (months > 0) {
-            return months + (months == 1 ? " month" : " months");
-        } else if (weeks > 0) {
-            return weeks + (weeks == 1 ? " week" : " weeks");
-        } else if (days > 0) {
-            return days + (days == 1 ? " day" : " days");
-        } else if (hours > 0) {
-            return hours + (hours == 1 ? " hour" : " hours");
-        } else if (minutes > 0) {
-            return minutes + (minutes == 1 ? " minute" : " minutes");
-        } else {
-            return seconds + (seconds == 1 ? " second" : " seconds");
-        }
     }
 
     private MongoTemplate getTemplate(Server server) {

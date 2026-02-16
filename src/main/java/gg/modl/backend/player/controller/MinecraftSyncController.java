@@ -6,6 +6,7 @@ import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentMapper;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
@@ -126,7 +127,7 @@ public class MinecraftSyncController {
 
                     // Include recently modified punishments even if inactive (e.g., pardons)
                     if (recentlyModified) {
-                        Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                        Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                         recentlyModifiedPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
@@ -150,7 +151,7 @@ public class MinecraftSyncController {
                         }
                     }
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -169,7 +170,7 @@ public class MinecraftSyncController {
                     String category = statusCalculator.getEffectiveCategory(punishment, types);
                     if (category == null) continue; // Not a ban or mute — no enforcement needed
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -184,7 +185,7 @@ public class MinecraftSyncController {
                     if (punishment.getType_ordinal() != 0) continue;
                     if (punishment.getStarted() != null) continue; // Already executed
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -209,7 +210,7 @@ public class MinecraftSyncController {
                         if (!statusCalculator.isPunishmentActive(punishment) || punishment.getStarted() == null) continue;
                         String cat = statusCalculator.getEffectiveCategory(punishment, types);
                         if (cat != null && pardonedCategories.contains(cat)) {
-                            Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                            Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                             pendingPunishments.add(Map.of(
                                     "minecraftUuid", uuid,
                                     "username", username,
@@ -272,68 +273,6 @@ public class MinecraftSyncController {
                 "timestamp", now.toString(),
                 "data", data
         ));
-    }
-
-    private Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types) {
-        Map<String, Object> data = punishment.getData();
-        Date expires = statusCalculator.getEffectiveExpiry(punishment);
-
-        PunishmentType punishmentType = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .orElse(null);
-
-        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
-        String category = effectiveCategory != null ? effectiveCategory : "OTHER";
-        String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
-
-        // For manual punishments (ordinals 0-5: kick, mute, ban, security ban, linked ban, blacklist),
-        // the reason is stored as the first non-auto-generated note
-        String reason = null;
-        if (punishment.getType_ordinal() <= 5 && punishment.getNotes() != null && !punishment.getNotes().isEmpty()) {
-            for (var note : punishment.getNotes()) {
-                String noteText = note.text();
-                if (noteText != null && !isAutoGeneratedNote(noteText)) {
-                    reason = noteText;
-                    break;
-                }
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", punishment.getId());
-        result.put("type", typeName);
-        result.put("category", category);
-        result.put("ordinal", punishment.getType_ordinal());
-        result.put("started", punishment.getStarted() != null);
-        result.put("expiration", expires != null ? expires.getTime() : null);
-        result.put("description", reason != null ? reason : "No reason specified");
-        result.put("issuerName", punishment.getIssuerName());
-        result.put("issuedAt", punishment.getIssued().getTime());
-        result.put("playerDescription", playerDescription);
-        result.put("modifications", punishment.getModifications().stream().map(m -> {
-                Map<String, Object> modMap = new LinkedHashMap<>();
-                modMap.put("type", m.type());
-                modMap.put("timestamp", m.date() != null ? m.date().getTime() : null);
-                modMap.put("effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L);
-                modMap.put("issuerName", m.issuerName());
-                return modMap;
-        }).toList());
-
-        return result;
-    }
-
-    private boolean isAutoGeneratedNote(String noteText) {
-        if (noteText == null) return true;
-        String lower = noteText.toLowerCase();
-        return lower.equals("issued punishment") ||
-               lower.startsWith("issued ") ||
-               lower.equals("pardoned punishment") ||
-               lower.equals("added evidence") ||
-               lower.startsWith("changed duration to ") ||
-               lower.startsWith("enabled ") ||
-               lower.startsWith("disabled ");
     }
 
     private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,

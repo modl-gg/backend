@@ -3,10 +3,14 @@ package gg.modl.backend.admin.controller;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.admin.data.SystemLog;
+import gg.modl.backend.admin.dto.request.DeleteLogsRequest;
+import gg.modl.backend.admin.dto.request.ResolveLogRequest;
+import gg.modl.backend.admin.dto.request.TogglePm2Request;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.data.Server;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -179,7 +183,7 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/logs")
-    public ResponseEntity<?> createLog(@RequestBody SystemLog logData) {
+    public ResponseEntity<?> createLog(@RequestBody @Valid SystemLog logData) {
         if (logData.getLevel() == null || logData.getMessage() == null || logData.getSource() == null) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Missing required fields: level, message, source"));
         }
@@ -207,11 +211,11 @@ public class AdminMonitoringController {
     }
 
     @PutMapping("/logs/{id}/resolve")
-    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody Map<String, String> request) {
+    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody @Valid ResolveLogRequest request) {
         Query query = Query.query(Criteria.where("_id").is(id));
         Update update = new Update()
                 .set("resolved", true)
-                .set("resolvedBy", request.getOrDefault("resolvedBy", "admin"))
+                .set("resolvedBy", request.resolvedBy() != null ? request.resolvedBy() : "admin")
                 .set("resolvedAt", new Date());
 
         UpdateResult result = getTemplate().updateFirst(query, update, SystemLog.class, LOGS_COLLECTION);
@@ -267,11 +271,8 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/logs/delete")
-    public ResponseEntity<?> deleteLogs(@RequestBody Map<String, List<String>> request) {
-        List<String> logIds = request.get("logIds");
-        if (logIds == null || logIds.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Log IDs are required"));
-        }
+    public ResponseEntity<?> deleteLogs(@RequestBody @Valid DeleteLogsRequest request) {
+        List<String> logIds = request.logIds();
 
         DeleteResult result = getTemplate().remove(Query.query(Criteria.where("_id").in(logIds)), SystemLog.class, LOGS_COLLECTION);
         return ResponseEntity.ok(Map.of("success", true, "data", Map.of("deletedCount", result.getDeletedCount()), "message", "Successfully deleted " + result.getDeletedCount() + " log(s)"));
@@ -294,7 +295,7 @@ public class AdminMonitoringController {
         if (source != null && !"all".equals(source)) criteriaList.add(Criteria.where("source").is(source));
         if (category != null && !"all".equals(category)) criteriaList.add(Criteria.where("category").is(category));
         if (resolved != null && !"all".equals(resolved)) criteriaList.add(Criteria.where("resolved").is("true".equals(resolved)));
-        if (search != null) criteriaList.add(Criteria.where("message").regex(search, "i"));
+        if (search != null) criteriaList.add(Criteria.where("message").regex(Pattern.quote(search), "i"));
 
         if (!criteriaList.isEmpty()) {
             query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
@@ -348,8 +349,8 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/pm2/toggle")
-    public ResponseEntity<?> togglePm2(@RequestBody Map<String, Boolean> request) {
-        boolean enabled = request.getOrDefault("enabled", false);
+    public ResponseEntity<?> togglePm2(@RequestBody @Valid TogglePm2Request request) {
+        boolean enabled = request.enabled();
         return ResponseEntity.ok(Map.of("success", true, "data", Map.of("isEnabled", enabled, "isStreaming", enabled), "message", "PM2 log streaming " + (enabled ? "enabled" : "disabled")));
     }
 
