@@ -77,10 +77,13 @@ public class TicketService {
                     .toList();
             if (!validTypes.isEmpty()) {
                 List<Criteria> typeCriteriaList = validTypes.stream()
-                        .flatMap(type -> java.util.stream.Stream.of(
-                                Criteria.where("type").regex("^" + type + "$", "i"),
-                                Criteria.where("category").regex("^" + type + "$", "i")
-                        ))
+                        .flatMap(type -> {
+                            String escapedType = java.util.regex.Pattern.quote(type);
+                            return java.util.stream.Stream.of(
+                                Criteria.where("type").regex("^" + escapedType + "$", "i"),
+                                Criteria.where("category").regex("^" + escapedType + "$", "i")
+                            );
+                        })
                         .toList();
                 query.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
             }
@@ -177,10 +180,13 @@ public class TicketService {
                     .toList();
             if (!validTypes.isEmpty()) {
                 List<Criteria> typeCriteriaList = validTypes.stream()
-                        .flatMap(type -> java.util.stream.Stream.of(
-                                Criteria.where("type").regex("^" + type + "$", "i"),
-                                Criteria.where("category").regex("^" + type + "$", "i")
-                        ))
+                        .flatMap(type -> {
+                            String escapedType = java.util.regex.Pattern.quote(type);
+                            return java.util.stream.Stream.of(
+                                Criteria.where("type").regex("^" + escapedType + "$", "i"),
+                                Criteria.where("category").regex("^" + escapedType + "$", "i")
+                            );
+                        })
                         .toList();
                 baseQuery.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
             }

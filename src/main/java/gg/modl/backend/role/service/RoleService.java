@@ -31,6 +31,7 @@ public class RoleService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
+    private static final List<String> LEGACY_PERMISSION_PREFIXES = List.of("player.", "appeal.");
 
     public List<RoleResponse> getAllRoles(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -41,6 +42,7 @@ public class RoleService {
         // Get all roles sorted by order
         Query query = new Query().with(Sort.by(Sort.Direction.ASC, "order", "createdAt"));
         List<StaffRole> roles = template.find(query, StaffRole.class, CollectionName.STAFF_ROLES);
+        roles.forEach(role -> sanitizeLegacyPermissions(template, role));
 
         // Get staff counts per role
         Map<String, Integer> roleCounts = getStaffCountsByRole(server);
@@ -59,6 +61,7 @@ public class RoleService {
         if (role == null) {
             return Optional.empty();
         }
+        sanitizeLegacyPermissions(template, role);
 
         int staffCount = getStaffCountForRole(server, role.getName());
         return Optional.of(toRoleResponse(role, staffCount));
@@ -336,6 +339,29 @@ public class RoleService {
                 .set("order", role.getOrder())
                 .setOnInsert("createdAt", role.getCreatedAt())
                 .set("updatedAt", role.getUpdatedAt());
+    }
+
+    private void sanitizeLegacyPermissions(MongoTemplate template, StaffRole role) {
+        if (role == null || role.getPermissions() == null || role.getPermissions().isEmpty()) {
+            return;
+        }
+
+        List<String> cleaned = role.getPermissions().stream()
+                .filter(Objects::nonNull)
+                .filter(permission -> LEGACY_PERMISSION_PREFIXES.stream().noneMatch(permission::startsWith))
+                .distinct()
+                .toList();
+
+        if (cleaned.size() == role.getPermissions().size()) {
+            return;
+        }
+
+        Query query = Query.query(Criteria.where("id").is(role.getId()));
+        Update update = new Update()
+                .set("permissions", cleaned)
+                .set("updatedAt", new Date());
+        template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
+        role.setPermissions(new ArrayList<>(cleaned));
     }
 
     // Helper class for aggregation results

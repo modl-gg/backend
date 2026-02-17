@@ -123,18 +123,18 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
         // Tickets — sub-permissions for specific operations
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)) {
-            return "ticket.manage.subscribe";
+            return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKETS)) {
             return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
         }
 
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_PLAYERS)) {
-            return isReadOnly(method) ? "player.view" : "player.modify";
+            return "punishment.modify";
         }
 
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_APPEALS)) {
-            return isReadOnly(method) ? "appeal.view" : "appeal.modify";
+            return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
         }
 
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_SERVER)) {

@@ -76,17 +76,40 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             @NotNull FilterChain filterChain
     ) throws ServletException, IOException {
         String origin = request.getHeader("Origin");
-        if (origin != null && isAllowedOrigin(origin)) {
-            filterChain.doFilter(request, response);
+        if (origin != null) {
+            if (isAllowedOrigin(origin)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            reject(response);
             return;
         }
 
         String referer = request.getHeader("Referer");
-        if (referer != null && isAllowedReferer(referer)) {
+        if (referer != null) {
+            if (isAllowedReferer(referer)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            reject(response);
+            return;
+        }
+
+        // Compatibility path for non-browser clients (or clients that strip origin/referrer):
+        // block only when browser metadata explicitly marks the request as cross-site.
+        String fetchSite = request.getHeader("Sec-Fetch-Site");
+        if (fetchSite == null || fetchSite.isBlank()
+                || "same-origin".equalsIgnoreCase(fetchSite)
+                || "same-site".equalsIgnoreCase(fetchSite)
+                || "none".equalsIgnoreCase(fetchSite)) {
             filterChain.doFilter(request, response);
             return;
         }
 
+        reject(response);
+    }
+
+    private void reject(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json");
         response.getWriter().write("{\"success\":false,\"message\":\"Cross-site request blocked\"}");

@@ -258,7 +258,8 @@ public class StaffService {
         if (request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()) {
             playerQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUuid()));
         } else {
-            playerQuery = Query.query(Criteria.where("usernames.username").regex("^" + request.minecraftUsername() + "$", "i"));
+            String escapedUsername = Pattern.quote(request.minecraftUsername().trim());
+            playerQuery = Query.query(Criteria.where("usernames.username").regex("^" + escapedUsername + "$", "i"));
         }
 
         Player player = template.findOne(playerQuery, Player.class, CollectionName.PLAYERS);

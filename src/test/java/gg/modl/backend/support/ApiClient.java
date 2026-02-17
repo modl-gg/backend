@@ -15,6 +15,7 @@ public final class ApiClient {
     private final String apiKey;
     private final String sessionToken;
     private final String serverDomain;
+    private final String panelOrigin;
     private final Gson gson = new Gson();
 
     public ApiClient() {
@@ -22,6 +23,11 @@ public final class ApiClient {
         this.apiKey = StagingCredentials.apiKey();
         this.sessionToken = StagingCredentials.sessionToken();
         this.serverDomain = StagingCredentials.serverDomain();
+        this.panelOrigin = resolveOrigin(
+                StagingCredentials.panelOrigin() != null
+                        ? StagingCredentials.panelOrigin()
+                        : "https://admin.modl.gg"
+        );
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -115,6 +121,8 @@ public final class ApiClient {
     private HttpRequest.Builder panelBuilder(String path) {
         return newBuilder(path)
                 .header("X-Server-Domain", serverDomain)
+                .header("Origin", panelOrigin)
+                .header("Referer", panelOrigin + "/panel")
                 .header("Cookie", "MODL_SESSION=" + sessionToken);
     }
 
@@ -138,5 +146,20 @@ public final class ApiClient {
             Thread.sleep(1000L * (attempt + 1));
         }
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String resolveOrigin(String rawBaseUrl) {
+        URI uri = URI.create(rawBaseUrl);
+        if (uri.getScheme() == null || uri.getHost() == null) {
+            throw new IllegalArgumentException("Invalid base URL for origin derivation: " + rawBaseUrl);
+        }
+        StringBuilder origin = new StringBuilder()
+                .append(uri.getScheme())
+                .append("://")
+                .append(uri.getHost());
+        if (uri.getPort() != -1) {
+            origin.append(":").append(uri.getPort());
+        }
+        return origin.toString();
     }
 }

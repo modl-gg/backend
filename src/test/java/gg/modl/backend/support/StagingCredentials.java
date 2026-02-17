@@ -17,6 +17,7 @@ public final class StagingCredentials {
     public static String sessionToken()  { return get("MODL_SESSION_TOKEN"); }
     public static String serverDomain()  { return get("MODL_SERVER_DOMAIN"); }
     public static String mongoUri()      { return get("MODL_MONGO_URI"); }
+    public static String panelOrigin()   { return get("MODL_PANEL_ORIGIN"); }
 
     public static boolean isAvailable() {
         return baseUrl() != null && apiKey() != null && sessionToken() != null && serverDomain() != null;
