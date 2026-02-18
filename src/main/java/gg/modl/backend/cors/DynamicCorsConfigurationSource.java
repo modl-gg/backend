@@ -71,9 +71,9 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         }
 
         String path = request.getRequestURI();
-        boolean privilegedPath = isPrivilegedPath(path);
+        boolean adminPath = isAdminPath(path);
 
-        if (privilegedPath && !isSystemOrigin(origin)) {
+        if (adminPath && !isSystemOrigin(origin)) {
             return null;
         }
 
@@ -86,16 +86,14 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Content-Type", "X-Server-Domain", "X-API-Key", "Cookie", "Accept", "Origin", "Authorization"));
         config.setExposedHeaders(List.of("X-RateLimit-Remaining", "X-RateLimit-Retry-After"));
-        config.setAllowCredentials(privilegedPath);
+        config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         return config;
     }
 
-    private boolean isPrivilegedPath(String path) {
+    private boolean isAdminPath(String path) {
         return path != null && (
-                path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
-                        || path.equals(RESTMappingV1.PREFIX_PANEL)
-                        || path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
+                path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
                         || path.equals(RESTMappingV1.PREFIX_ADMIN)
         );
     }

@@ -2,6 +2,7 @@ package gg.modl.backend.rest.middleware;
 
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestHeader;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -77,7 +78,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         String origin = request.getHeader("Origin");
         if (origin != null) {
-            if (isAllowedOrigin(origin)) {
+            if (isAllowedOrigin(request, origin)) {
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -87,7 +88,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
 
         String referer = request.getHeader("Referer");
         if (referer != null) {
-            if (isAllowedReferer(referer)) {
+            if (isAllowedReferer(request, referer)) {
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -127,28 +128,62 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
                 .anyMatch(name -> panelSessionCookie.equals(name) || ADMIN_SESSION_COOKIE.equals(name));
     }
 
-    private boolean isAllowedOrigin(String origin) {
-        return parsedSystemOrigins.contains(origin);
+    private boolean isAllowedOrigin(HttpServletRequest request, String origin) {
+        if (parsedSystemOrigins.contains(origin)) {
+            return true;
+        }
+
+        if (!isPanelPath(request.getRequestURI())) {
+            return false;
+        }
+
+        String originHost = extractHost(origin);
+        if (originHost == null) {
+            return false;
+        }
+
+        String serverDomain = request.getHeader(RequestHeader.SERVER_DOMAIN);
+        if (serverDomain == null || serverDomain.isBlank()) {
+            return false;
+        }
+
+        return originHost.equalsIgnoreCase(serverDomain.trim());
     }
 
-    private boolean isAllowedReferer(String referer) {
+    private boolean isAllowedReferer(HttpServletRequest request, String referer) {
         try {
             URI uri = URI.create(referer);
-            if (uri.getScheme() == null || uri.getHost() == null) {
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (scheme == null || host == null) {
                 return false;
             }
 
             StringBuilder originBuilder = new StringBuilder()
-                    .append(uri.getScheme())
+                    .append(scheme)
                     .append("://")
-                    .append(uri.getHost());
+                    .append(host);
             if (uri.getPort() != -1) {
                 originBuilder.append(":").append(uri.getPort());
             }
 
-            return isAllowedOrigin(originBuilder.toString());
+            return isAllowedOrigin(request, originBuilder.toString());
         } catch (IllegalArgumentException ignored) {
             return false;
+        }
+    }
+
+    private boolean isPanelPath(String path) {
+        return path != null && (path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
+                || path.equals(RESTMappingV1.PREFIX_PANEL));
+    }
+
+    private String extractHost(String origin) {
+        try {
+            URI uri = URI.create(origin);
+            return uri.getHost();
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 
