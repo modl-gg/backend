@@ -85,7 +85,12 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         config.addAllowedOrigin(origin);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Content-Type", "X-Server-Domain", "X-API-Key", "Cookie", "Accept", "Origin", "Authorization"));
-        config.setExposedHeaders(List.of("X-RateLimit-Remaining", "X-RateLimit-Retry-After"));
+        config.setExposedHeaders(List.of(
+                "X-RateLimit-Remaining",
+                "X-RateLimit-Retry-After",
+                "X-Rate-Limit-Remaining",
+                "X-Rate-Limit-Retry-After-Seconds"
+        ));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         return config;

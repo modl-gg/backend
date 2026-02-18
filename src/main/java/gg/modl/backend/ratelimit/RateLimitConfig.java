@@ -27,6 +27,7 @@ public class RateLimitConfig {
         PANEL_AUDIT(200, Duration.ofMinutes(1)), // Higher limit for audit/analytics pages
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
+        PUBLIC_MEDIA_UPLOAD(30, Duration.ofMinutes(1)),
         PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
         PUBLIC_TICKET_VERIFY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
@@ -118,6 +119,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/public/")) {
+            if (path.startsWith("/v1/public/media/") && "POST".equalsIgnoreCase(method)) {
+                return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
+            }
             if (path.startsWith("/v1/public/tickets") && "POST".equalsIgnoreCase(method)) {
                 if (path.contains("/verify") || path.contains("/request-verification")) {
                     return RateLimitTier.PUBLIC_TICKET_VERIFY;

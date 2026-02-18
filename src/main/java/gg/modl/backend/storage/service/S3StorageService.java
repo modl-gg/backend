@@ -299,7 +299,9 @@ public class S3StorageService {
         if (entityId != null && !entityId.isBlank()) {
             String safeEntityId = sanitizeSegment(entityId, UUID.randomUUID().toString());
             String folder = "ticket".equals(safeUploadType) ? "tickets" : safeUploadType;
-            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, safeEntityId, safeFileName);
+            // Always randomize stored object names to prevent collisions/overwrite in shared entity folders.
+            String uniqueName = UUID.randomUUID() + "-" + safeFileName;
+            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, safeEntityId, uniqueName);
         }
 
         String uuid = UUID.randomUUID().toString();

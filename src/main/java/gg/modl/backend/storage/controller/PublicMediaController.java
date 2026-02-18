@@ -69,6 +69,7 @@ public class PublicMediaController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.premium;
+        String normalizedEntityId = presignRequest.entityId() != null ? presignRequest.entityId().trim() : null;
 
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(presignRequest.uploadType())) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -79,7 +80,7 @@ public class PublicMediaController {
         ResponseEntity<?> accessCheck = validatePublicUploadAccess(
                 server,
                 presignRequest.uploadType(),
-                presignRequest.entityId(),
+                normalizedEntityId,
                 presignRequest.accessToken()
         );
         if (accessCheck != null) {
@@ -109,7 +110,7 @@ public class PublicMediaController {
                     presignRequest.fileName(),
                     presignRequest.contentType(),
                     presignRequest.fileSize(),
-                    presignRequest.entityId()
+                    normalizedEntityId
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
@@ -185,8 +186,19 @@ public class PublicMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", "entityId is required for public uploads"));
         }
 
+        String normalizedEntityId = entityId.trim();
         String normalizedType = normalizeUploadType(uploadType);
-        Optional<Ticket> ticketOpt = ticketService.getTicketRaw(server, entityId);
+
+        // Public creation flows upload before a ticket/appeal id exists.
+        // "new" keeps this backward-compatible while still requiring explicit intent.
+        if ("new".equalsIgnoreCase(normalizedEntityId)) {
+            if ("ticket".equals(normalizedType) || "appeal".equals(normalizedType)) {
+                return null;
+            }
+            return ResponseEntity.status(403).body(Map.of("error", "Temporary uploads are only allowed for ticket and appeal types"));
+        }
+
+        Optional<Ticket> ticketOpt = ticketService.getTicketRaw(server, normalizedEntityId);
         if (ticketOpt.isEmpty() || ticketOpt.get().isHidden()) {
             return ResponseEntity.notFound().build();
         }
@@ -203,7 +215,7 @@ public class PublicMediaController {
         if (ticket.isEmailAuthEnabled()) {
             boolean validToken = accessToken != null
                     && !accessToken.isBlank()
-                    && verificationService.validateToken(server, entityId, accessToken);
+                    && verificationService.validateToken(server, normalizedEntityId, accessToken);
             if (!validToken) {
                 return ResponseEntity.status(403).body(Map.of(
                         "error", "Email verification token required for this ticket"

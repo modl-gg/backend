@@ -35,7 +35,8 @@ class PublicMediaApiTest {
                 "fileName", "test-image.png",
                 "contentType", "image/png",
                 "fileSize", 1024,
-                "uploadType", "ticket"
+                "uploadType", "ticket",
+                "entityId", "new"
         ));
         JsonHelper.assertStatus(response, 200);
     }
