@@ -31,6 +31,7 @@ public class RateLimitConfig {
         PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
         PUBLIC_TICKET_VERIFY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
+        AUTH_SEND_CODE(2, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
         MIGRATION(5, Duration.ofHours(1)),
@@ -89,6 +90,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/panel/auth/")) {
+            if (path.equals("/v1/panel/auth/send-email-code")) {
+                return RateLimitTier.AUTH_SEND_CODE;
+            }
             return RateLimitTier.AUTH;
         }
 

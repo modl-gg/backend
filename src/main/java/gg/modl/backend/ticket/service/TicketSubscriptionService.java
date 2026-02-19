@@ -149,6 +149,9 @@ public class TicketSubscriptionService {
     public boolean markAsRead(Server server, String staffEmail, String updateId) {
         String ticketId = updateId.split("-")[0];
 
+        // Ensure a subscription exists (assigned tickets may not have one yet)
+        ensureSubscription(server, ticketId, staffEmail);
+
         MongoTemplate template = getTemplate(server);
 
         Query query = Query.query(
