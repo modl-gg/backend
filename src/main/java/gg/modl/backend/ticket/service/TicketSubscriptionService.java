@@ -125,7 +125,7 @@ public class TicketSubscriptionService {
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "-" + latestReply.getId(),
+                        ticket.getId() + "::" + latestReply.getId(),
                         ticket.getId(),
                         ticketTitle,
                         latestReply.getContent(),
@@ -147,7 +147,7 @@ public class TicketSubscriptionService {
     }
 
     public boolean markAsRead(Server server, String staffEmail, String updateId) {
-        String ticketId = updateId.split("-")[0];
+        String ticketId = updateId.split("::")[0];
 
         // Ensure a subscription exists (assigned tickets may not have one yet)
         ensureSubscription(server, ticketId, staffEmail);
@@ -268,7 +268,7 @@ public class TicketSubscriptionService {
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "-" + latestReply.getId(),
+                        ticket.getId() + "::" + latestReply.getId(),
                         ticket.getId(),
                         ticketTitle,
                         latestReply.getContent(),
