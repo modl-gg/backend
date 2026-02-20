@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
+import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
@@ -54,6 +55,7 @@ public class AITicketAnalysisService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentService punishmentService;
     private final PunishmentTypeService punishmentTypeService;
+    private final UsageTrackingService usageTrackingService;
     private final ObjectMapper objectMapper;
 
     public record AISuggestionResult(boolean success, String error) {}
@@ -101,6 +103,7 @@ public class AITicketAnalysisService {
         String rawResponse;
         try {
             rawResponse = llmService.generate(fullPrompt);
+            usageTrackingService.incrementAiRequests(server.getId(), 1);
         } catch (Exception e) {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return null;
@@ -183,6 +186,21 @@ public class AITicketAnalysisService {
         if (!settings.isEnableAIReview()) {
             log.debug("AI review is disabled for server {}", server.getServerName());
             return false;
+        }
+
+        // Check AI usage cap — fetch fresh server data for current period counts
+        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+        Server freshServer = globalDb.findOne(
+                Query.query(Criteria.where("_id").is(server.getId())),
+                Server.class, CollectionName.MODL_SERVERS
+        );
+        if (freshServer != null) {
+            long currentUsage = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
+            long limit = usageTrackingService.getAiRequestLimit(freshServer);
+            if (currentUsage >= limit) {
+                log.debug("Server {} has reached AI request limit ({}/{})", server.getServerName(), currentUsage, limit);
+                return false;
+            }
         }
 
         return true;

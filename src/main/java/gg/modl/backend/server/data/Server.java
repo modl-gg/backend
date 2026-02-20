@@ -120,6 +120,10 @@ public class Server {
     @Field(name = "max_storage_limit_bytes", targetType = FieldType.INT64)
     private Long maxStorageLimitBytes;
 
+    @Nullable
+    @Field(name = "max_ai_overage_requests", targetType = FieldType.INT64)
+    private Long maxAiOverageRequests;
+
     // Migration Settings
     @Nullable
     @Field(name = "migrationFileSizeLimit", targetType = FieldType.INT64)

@@ -17,7 +17,7 @@ public class StorageQuotaService {
 
     private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
     private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
-    public static final long MAX_PREMIUM_BYTES = 2L * 1024L * 1024 * 1024 * 1024; // 2 TB
+    public static final long MAX_PREMIUM_BYTES = 2200L * 1024L * 1024 * 1024; // 2200 GB (200 base + 2000 max overage)
     private static final long AI_FREE_LIMIT = 0L;
     private static final long AI_PREMIUM_LIMIT = 1000L;
 

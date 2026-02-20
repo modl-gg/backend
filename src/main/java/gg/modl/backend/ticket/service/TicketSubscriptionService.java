@@ -196,6 +196,9 @@ public class TicketSubscriptionService {
     }
 
     public void markTicketAsRead(Server server, String ticketId, String staffEmail) {
+        // Ensure a subscription exists (assigned tickets may not have one yet)
+        ensureSubscription(server, ticketId, staffEmail);
+
         MongoTemplate template = getTemplate(server);
 
         Query query = Query.query(

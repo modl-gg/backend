@@ -389,10 +389,7 @@ public class TicketService {
                 .tags(tags)
                 .replies(replies)
                 .notes(new ArrayList<>())
-                .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : request.chatMessages().stream()
-                    .map(x -> new Ticket.ChatMessage((String) x.get("content"), parseTimestamp(x.get("timestamp"))))
-                    .toList()
-                )
+                .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : sanitizeChatMessages(request.chatMessages()))
                 .formData(request.formData())
                 .data(data)
                 .locked(false)
@@ -1137,6 +1134,26 @@ public class TicketService {
             }
             return reply;
         }).toList();
+    }
+
+    private static final int MAX_CHAT_MESSAGE_LENGTH = 256;
+    private static final int MAX_CHAT_MESSAGES = 50;
+
+    private List<Ticket.ChatMessage> sanitizeChatMessages(List<Map<String, Object>> rawMessages) {
+        // Keep only the last MAX_CHAT_MESSAGES messages
+        List<Map<String, Object>> trimmed = rawMessages.size() > MAX_CHAT_MESSAGES
+                ? rawMessages.subList(rawMessages.size() - MAX_CHAT_MESSAGES, rawMessages.size())
+                : rawMessages;
+
+        return trimmed.stream()
+                .map(x -> {
+                    String content = (String) x.get("content");
+                    if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
+                        content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
+                    }
+                    return new Ticket.ChatMessage(content, parseTimestamp(x.get("timestamp")));
+                })
+                .toList();
     }
 
     private static Date parseTimestamp(Object value) {

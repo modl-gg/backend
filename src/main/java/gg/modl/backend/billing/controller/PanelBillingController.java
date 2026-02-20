@@ -1,6 +1,7 @@
 package gg.modl.backend.billing.controller;
 
 import com.stripe.exception.StripeException;
+import gg.modl.backend.billing.dto.request.UpdateOverageLimitsRequest;
 import gg.modl.backend.billing.dto.request.UpdateStorageLimitRequest;
 import gg.modl.backend.billing.dto.request.UsageBillingSettingsRequest;
 import gg.modl.backend.billing.dto.response.*;
@@ -171,7 +172,7 @@ public class PanelBillingController {
         }
 
         if (body.maxStorageLimitBytes() > StorageQuotaService.MAX_PREMIUM_BYTES) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Storage limit cannot exceed 2 TB. Please contact support for higher limits."));
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage limit cannot exceed 2200 GB. Please contact support for higher limits."));
         }
 
         usageTrackingService.updateStorageLimit(server, body.maxStorageLimitBytes());
@@ -179,6 +180,29 @@ public class PanelBillingController {
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "maxStorageLimitBytes", body.maxStorageLimitBytes()
+        ));
+    }
+
+    @PostMapping("/overage-limits")
+    public ResponseEntity<?> updateOverageLimits(
+            @RequestBody @Valid UpdateOverageLimitsRequest body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireSuperAdmin(server, request);
+        if (denied != null) return denied;
+
+        if (server.getPlan() != ServerPlan.premium) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Overage limits configuration is only available for premium servers"));
+        }
+
+        long maxStorageLimitBytes = (200L + body.maxStorageOverageGB()) * 1024L * 1024 * 1024;
+        usageTrackingService.updateOverageLimits(server, maxStorageLimitBytes, body.maxAiOverageRequests());
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "maxStorageLimitBytes", maxStorageLimitBytes,
+                "maxAiOverageRequests", body.maxAiOverageRequests()
         ));
     }
 

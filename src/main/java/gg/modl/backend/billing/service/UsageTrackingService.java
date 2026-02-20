@@ -25,7 +25,7 @@ public class UsageTrackingService {
     private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
     private static final int AI_LIMIT_REQUESTS = 10000;
     private static final double CDN_OVERAGE_RATE = 0.08;
-    private static final double AI_OVERAGE_RATE = 0.01;
+    private static final double AI_OVERAGE_RATE = 0.02;
 
     private final DynamicMongoTemplateProvider mongoProvider;
 
@@ -140,6 +140,20 @@ public class UsageTrackingService {
         Query query = Query.query(Criteria.where("_id").is(server.getId()));
         Update update = new Update().set("max_storage_limit_bytes", bytes);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+    }
+
+    public void updateOverageLimits(Server server, long maxStorageLimitBytes, long maxAiOverageRequests) {
+        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+        Query query = Query.query(Criteria.where("_id").is(server.getId()));
+        Update update = new Update()
+                .set("max_storage_limit_bytes", maxStorageLimitBytes)
+                .set("max_ai_overage_requests", maxAiOverageRequests);
+        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+    }
+
+    public long getAiRequestLimit(Server server) {
+        long overageCap = server.getMaxAiOverageRequests() != null ? server.getMaxAiOverageRequests() : 0L;
+        return AI_LIMIT_REQUESTS + overageCap;
     }
 
     private Server getFreshServer(String serverId) {

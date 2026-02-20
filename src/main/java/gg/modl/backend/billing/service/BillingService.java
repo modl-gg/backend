@@ -124,7 +124,8 @@ public class BillingService {
                 currentStatus,
                 currentPeriodStart,
                 currentPeriodEnd,
-                server.getMaxStorageLimitBytes()
+                server.getMaxStorageLimitBytes(),
+                server.getMaxAiOverageRequests()
         );
     }
 
