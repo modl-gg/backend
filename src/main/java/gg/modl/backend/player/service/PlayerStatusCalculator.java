@@ -144,12 +144,11 @@ public class PlayerStatusCalculator {
             return new Date(durationBase.getTime() + duration);
         }
 
-        // Otherwise count from started date (original unmodified punishment)
-        Date started = punishment.getStarted();
-        if (started == null) {
-            return null; // Not started yet, no expiry
-        }
-        return new Date(started.getTime() + duration);
+        // Count from started date, or current time if not yet started
+        // (unstarted punishments use current time so the plugin receives a proper
+        // expiration for display — nothing is persisted until the plugin acknowledges)
+        Date baseDate = punishment.getStarted() != null ? punishment.getStarted() : new Date();
+        return new Date(baseDate.getTime() + duration);
     }
 
     /**
