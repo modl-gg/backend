@@ -758,12 +758,10 @@ public class MinecraftPlayerController {
             } else {
                 // Specific type pardon (unban/unmute) - pardon both active and expired punishments of matching type
                 String pType = request.punishmentType().toLowerCase();
-                int ordinal = punishment.getType_ordinal();
-                boolean isBan = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isBan).orElse(false);
-                boolean isMute = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isMute).orElse(false);
+                String effectiveCategory = statusCalculator.getEffectiveCategory(punishment, types);
 
-                if (pType.equals("ban") && isBan) shouldPardon = true;
-                if (pType.equals("mute") && isMute) shouldPardon = true;
+                if (pType.equals("ban") && "BAN".equals(effectiveCategory)) shouldPardon = true;
+                if (pType.equals("mute") && "MUTE".equals(effectiveCategory)) shouldPardon = true;
             }
 
             if (shouldPardon) {
