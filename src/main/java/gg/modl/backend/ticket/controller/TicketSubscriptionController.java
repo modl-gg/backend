@@ -84,6 +84,22 @@ public class TicketSubscriptionController {
         return ResponseEntity.ok(Map.of("message", "Update marked as read", "modified", result));
     }
 
+    @PostMapping("/tickets/{ticketId}/read")
+    public ResponseEntity<?> markTicketAsRead(
+            @PathVariable String ticketId,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String staffEmail = RequestUtil.getSessionEmail(request);
+
+        if (staffEmail == null || staffEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+        }
+
+        subscriptionService.markTicketAsRead(server, ticketId, staffEmail);
+        return ResponseEntity.ok(Map.of("message", "All updates for ticket marked as read"));
+    }
+
     @GetMapping("/assigned-updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getAssignedUpdates(
             @RequestParam(defaultValue = "10") int limit,
