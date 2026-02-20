@@ -56,24 +56,25 @@ public class PunishmentType {
     }
 
     public boolean isBan() {
-        if (category != null) {
-            return category.toLowerCase().contains("ban");
+        // Core types (ordinals 0-5) are hardcoded
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal >= 2;
         }
-        return ordinal != null && ordinal >= 2 && ordinal <= 5;
+        return category != null && category.toLowerCase().contains("ban");
     }
 
     public boolean isMute() {
-        if (category != null) {
-            return category.toLowerCase().contains("mute");
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal == 1;
         }
-        return ordinal != null && ordinal == 1;
+        return category != null && category.toLowerCase().contains("mute");
     }
 
     public boolean isKick() {
-        if (category != null) {
-            return category.toLowerCase().contains("kick");
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal == 0;
         }
-        return ordinal != null && ordinal == 0;
+        return category != null && category.toLowerCase().contains("kick");
     }
 
     public int getPointsForSeverity(String severity) {
