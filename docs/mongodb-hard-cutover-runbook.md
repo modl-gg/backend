@@ -126,10 +126,16 @@ Run in `mongosh` before migration.
     const playersLegacyCount = tenantDb.players.countDocuments({
       $or: [
         { ipList: { $exists: true } },
+        { "usernames.0": { $type: "array" } },
+        { "notes.0": { $type: "array" } },
+        { "ipAddresses.0": { $type: "array" } },
+        { "punishments.0": { $type: "array" } },
         { "notes._id": { $exists: true } },
         { "punishments._id": { $exists: true } },
         { "punishments.type_ordinal": { $exists: true } },
+        { "punishments.modifications.0": { $type: "array" } },
         { "punishments.modifications._id": { $exists: true } },
+        { "punishments.notes.0": { $type: "array" } },
         { "punishments.notes._id": { $exists: true } },
         { "punishments.data.expires": { $exists: true } },
         { "punishments.data.expiresAt": { $exists: true } }
@@ -405,6 +411,28 @@ Run in `mongosh` before migration.
     return "url";
   }
 
+  function normalizeStaffRoleName(value) {
+    if (value === undefined || value === null) return "";
+    return String(value).trim().replace(/\s+/g, " ");
+  }
+
+  function roleNameKey(value) {
+    return normalizeStaffRoleName(value).toLowerCase();
+  }
+
+  function canonicalDefaultRoleDisplayName(roleId, fallbackName) {
+    const id = String(roleId || "");
+    if (id === "super-admin") return "Super Admin";
+    if (id === "admin") return "Admin";
+    if (id === "moderator") return "Moderator";
+    if (id === "helper") return "Helper";
+    return fallbackName;
+  }
+
+  function escapeRegex(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   function toDate(value) {
     if (value === undefined || value === null) return null;
     if (value instanceof Date) return value;
@@ -426,6 +454,59 @@ Run in `mongosh` before migration.
       return NumberLong(String(normalized));
     }
     return normalized;
+  }
+
+  function errorCode(error) {
+    if (!error || typeof error !== "object") return null;
+    if (typeof error.code === "number") return error.code;
+    if (Array.isArray(error.writeErrors) && error.writeErrors.length > 0) {
+      const first = error.writeErrors[0];
+      if (first && typeof first.code === "number") return first.code;
+    }
+    return null;
+  }
+
+  function errorMessage(error) {
+    if (!error) return "";
+    if (typeof error.message === "string" && error.message) return error.message;
+    return String(error);
+  }
+
+  function isDuplicateKeyError(error) {
+    const code = errorCode(error);
+    const message = errorMessage(error);
+    if (code === 11000 || code === 11001 || /E11000|duplicate key/i.test(message)) {
+      return true;
+    }
+
+    if (Array.isArray(error && error.writeErrors)) {
+      return error.writeErrors.some(writeError => {
+        const writeCode = writeError && writeError.code;
+        const writeMessage = writeError && (writeError.errmsg || writeError.message || "");
+        return writeCode === 11000 || /E11000|duplicate key/i.test(String(writeMessage));
+      });
+    }
+
+    return false;
+  }
+
+  function logDuplicateKeySkip(label, error) {
+    log("WARN", `${label}: skipped because duplicate key constraint is currently violated`, {
+      code: errorCode(error),
+      message: errorMessage(error)
+    });
+  }
+
+  function runStep(label, fn) {
+    try {
+      fn();
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        logDuplicateKeySkip(label, error);
+        return;
+      }
+      throw error;
+    }
   }
 
   function tenantDbNames() {
@@ -451,8 +532,16 @@ Run in `mongosh` before migration.
       return;
     }
 
-    const result = collection.updateMany(filter, update);
-    log("MIGRATE", `${label}: matched=${result.matchedCount}, modified=${result.modifiedCount}`);
+    try {
+      const result = collection.updateMany(filter, update);
+      log("MIGRATE", `${label}: matched=${result.matchedCount}, modified=${result.modifiedCount}`);
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        logDuplicateKeySkip(label, error);
+        return;
+      }
+      throw error;
+    }
   }
 
   function runDeleteMany(collection, filter, label) {
@@ -479,8 +568,16 @@ Run in `mongosh` before migration.
       return;
     }
 
-    const result = collection.bulkWrite(ops, { ordered: false });
-    log("MIGRATE", `${label}: matched=${result.matchedCount}, modified=${result.modifiedCount}`);
+    try {
+      const result = collection.bulkWrite(ops, { ordered: false });
+      log("MIGRATE", `${label}: matched=${result.matchedCount}, modified=${result.modifiedCount}`);
+    } catch (error) {
+      if (isDuplicateKeyError(error)) {
+        logDuplicateKeySkip(label, error);
+        return;
+      }
+      throw error;
+    }
   }
 
   function migrateGlobalSessionsAndCodes() {
@@ -616,6 +713,27 @@ Run in `mongosh` before migration.
     return { obj, changed };
   }
 
+  function flattenNestedArrays(value) {
+    if (!Array.isArray(value)) {
+      return { values: value, changed: false };
+    }
+
+    const flattened = [];
+    let changed = false;
+
+    const append = (item) => {
+      if (Array.isArray(item)) {
+        changed = true;
+        item.forEach(append);
+        return;
+      }
+      flattened.push(item);
+    };
+
+    value.forEach(append);
+    return { values: flattened, changed };
+  }
+
   function migrateTenantPlayers(tenantDbName) {
     const tenantDb = db.getSiblingDB(tenantDbName);
     const coll = tenantDb.players;
@@ -630,15 +748,33 @@ Run in `mongosh` before migration.
 
       if (doc.ipList !== undefined) {
         if ((doc.ipAddresses === undefined || doc.ipAddresses === null) && Array.isArray(doc.ipList)) {
-          setOps.ipAddresses = doc.ipList;
+          const legacyIpListFlattened = flattenNestedArrays(doc.ipList);
+          setOps.ipAddresses = legacyIpListFlattened.values;
         }
         unsetOps.ipList = "";
         changed = true;
       }
 
+      if (Array.isArray(doc.usernames)) {
+        const usernamesFlattened = flattenNestedArrays(doc.usernames);
+        if (usernamesFlattened.changed) {
+          setOps.usernames = usernamesFlattened.values;
+          changed = true;
+        }
+      }
+
+      if (Array.isArray(doc.ipAddresses)) {
+        const ipAddressesFlattened = flattenNestedArrays(doc.ipAddresses);
+        if (ipAddressesFlattened.changed) {
+          setOps.ipAddresses = ipAddressesFlattened.values;
+          changed = true;
+        }
+      }
+
       if (Array.isArray(doc.notes)) {
-        let notesChanged = false;
-        const normalizedNotes = doc.notes.map(note => {
+        const notesFlattened = flattenNestedArrays(doc.notes);
+        let notesChanged = notesFlattened.changed;
+        const normalizedNotes = notesFlattened.values.map(note => {
           const copy = note && typeof note === "object" ? { ...note } : note;
           if (copy && typeof copy === "object") {
             const result = normalizeEmbeddedId(copy);
@@ -654,9 +790,13 @@ Run in `mongosh` before migration.
       }
 
       if (Array.isArray(doc.punishments)) {
+        const punishmentsFlattened = flattenNestedArrays(doc.punishments);
         let punishmentsChanged = false;
+        if (punishmentsFlattened.changed) {
+          punishmentsChanged = true;
+        }
 
-        const normalizedPunishments = doc.punishments.map(p => {
+        const normalizedPunishments = punishmentsFlattened.values.map(p => {
           const punishment = p && typeof p === "object" ? { ...p } : p;
           if (!punishment || typeof punishment !== "object") return punishment;
 
@@ -683,7 +823,11 @@ Run in `mongosh` before migration.
           }
 
           if (Array.isArray(punishment.modifications)) {
-            punishment.modifications = punishment.modifications.map(m => {
+            const modificationsFlattened = flattenNestedArrays(punishment.modifications);
+            if (modificationsFlattened.changed) {
+              punishmentsChanged = true;
+            }
+            punishment.modifications = modificationsFlattened.values.map(m => {
               const mod = m && typeof m === "object" ? { ...m } : m;
               if (!mod || typeof mod !== "object") return mod;
               const idRes = normalizeEmbeddedId(mod);
@@ -693,7 +837,11 @@ Run in `mongosh` before migration.
           }
 
           if (Array.isArray(punishment.notes)) {
-            punishment.notes = punishment.notes.map(n => {
+            const punishmentNotesFlattened = flattenNestedArrays(punishment.notes);
+            if (punishmentNotesFlattened.changed) {
+              punishmentsChanged = true;
+            }
+            punishment.notes = punishmentNotesFlattened.values.map(n => {
               const note = n && typeof n === "object" ? { ...n } : n;
               if (!note || typeof note !== "object") return note;
               const idRes = normalizeEmbeddedId(note);
@@ -835,9 +983,16 @@ Run in `mongosh` before migration.
   function migrateTenantStaffRoles(tenantDbName) {
     const tenantDb = db.getSiblingDB(tenantDbName);
     const coll = tenantDb.staffroles;
+    const staffColl = tenantDb.staffs;
+    const invitationColl = tenantDb.invitations;
     let rewritten = 0;
     let removedLegacyId = 0;
     let collisions = 0;
+    let normalizedNames = 0;
+    let dedupedRoles = 0;
+    let mergedPermissions = 0;
+    let normalizedStaffAssignments = 0;
+    let normalizedInvitationAssignments = 0;
 
     coll.find({ id: { $exists: true } }).forEach(doc => {
       const legacyId = doc.id;
@@ -845,8 +1000,16 @@ Run in `mongosh` before migration.
         if (CONFIG.DRY_RUN) {
           removedLegacyId += 1;
         } else {
-          const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
-          if (result.modifiedCount > 0) removedLegacyId += 1;
+          try {
+            const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
+            if (result.modifiedCount > 0) removedLegacyId += 1;
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.staffroles remove empty legacy id for _id=${String(doc._id)}`, error);
+            } else {
+              throw error;
+            }
+          }
         }
         return;
       }
@@ -858,8 +1021,16 @@ Run in `mongosh` before migration.
         if (CONFIG.DRY_RUN) {
           removedLegacyId += 1;
         } else {
-          const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
-          if (result.modifiedCount > 0) removedLegacyId += 1;
+          try {
+            const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
+            if (result.modifiedCount > 0) removedLegacyId += 1;
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.staffroles remove legacy id for _id=${String(doc._id)}`, error);
+            } else {
+              throw error;
+            }
+          }
         }
         return;
       }
@@ -881,14 +1052,216 @@ Run in `mongosh` before migration.
       if (CONFIG.DRY_RUN) {
         rewritten += 1;
       } else {
-        coll.insertOne(replacement);
-        coll.deleteOne({ _id: doc._id });
-        rewritten += 1;
+        try {
+          coll.insertOne(replacement);
+          coll.deleteOne({ _id: doc._id });
+          rewritten += 1;
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            collisions += 1;
+            logDuplicateKeySkip(`${tenantDbName}.staffroles rewrite _id ${String(doc._id)} -> ${canonicalId}`, error);
+          } else {
+            throw error;
+          }
+        }
+      }
+    });
+
+    const roles = coll.find({}).toArray();
+    const grouped = {};
+
+    roles.forEach(roleDoc => {
+      const docId = String(roleDoc._id);
+      const fallbackName = canonicalDefaultRoleDisplayName(docId, `Role ${docId}`);
+      let normalizedName = normalizeStaffRoleName(roleDoc.name);
+      if (!normalizedName) {
+        normalizedName = fallbackName;
+      }
+
+      const canonicalName = canonicalDefaultRoleDisplayName(docId, normalizedName);
+      if (canonicalName !== roleDoc.name) {
+        normalizedNames += 1;
+        if (!CONFIG.DRY_RUN) {
+          try {
+            coll.updateOne(
+              { _id: roleDoc._id },
+              { $set: { name: canonicalName, updatedAt: new Date() } }
+            );
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.staffroles normalize name for _id=${String(roleDoc._id)}`, error);
+            } else {
+              throw error;
+            }
+          }
+        }
+      }
+
+      const key = roleNameKey(canonicalName);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push({ ...roleDoc, name: canonicalName });
+    });
+
+    Object.keys(grouped).forEach(roleKey => {
+      const group = grouped[roleKey];
+      if (!group || group.length === 0) return;
+
+      const sorted = [...group].sort((a, b) => {
+        function rank(doc) {
+          const id = String(doc._id);
+          const defaultRank = id === "super-admin" ? 0
+            : id === "admin" ? 1
+            : id === "moderator" ? 2
+            : id === "helper" ? 3
+            : 99;
+          const isDefaultRank = doc.isDefault === true ? 0 : 1;
+          const orderRank = Number.isFinite(Number(doc.order)) ? Number(doc.order) : Number.MAX_SAFE_INTEGER;
+          const createdAtDate = toDate(doc.createdAt);
+          const createdAtRank = createdAtDate ? createdAtDate.getTime() : Number.MAX_SAFE_INTEGER;
+          return [defaultRank, isDefaultRank, orderRank, createdAtRank, String(doc._id)];
+        }
+
+        const aRank = rank(a);
+        const bRank = rank(b);
+        for (let i = 0; i < aRank.length; i += 1) {
+          if (aRank[i] < bRank[i]) return -1;
+          if (aRank[i] > bRank[i]) return 1;
+        }
+        return 0;
+      });
+
+      const keeper = sorted[0];
+      const duplicates = sorted.slice(1);
+      const canonicalName = normalizeStaffRoleName(keeper.name);
+
+      const knownNames = [...new Set(
+        sorted
+          .map(role => normalizeStaffRoleName(role.name))
+          .filter(Boolean)
+      )];
+      const nameAlternatives = knownNames.map(name => escapeRegex(name)).join("|");
+      const assignmentRegex = `^\\s*(?:${nameAlternatives})\\s*$`;
+
+      if (nameAlternatives) {
+        if (CONFIG.DRY_RUN) {
+          normalizedStaffAssignments += staffColl.countDocuments({ role: { $regex: assignmentRegex, $options: "i" } });
+          normalizedInvitationAssignments += invitationColl.countDocuments({ role: { $regex: assignmentRegex, $options: "i" } });
+        } else {
+          try {
+            const staffResult = staffColl.updateMany(
+              { role: { $regex: assignmentRegex, $options: "i" } },
+              { $set: { role: canonicalName } }
+            );
+            normalizedStaffAssignments += staffResult.modifiedCount;
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.staff normalize role assignments -> ${canonicalName}`, error);
+            } else {
+              throw error;
+            }
+          }
+
+          try {
+            const invitationResult = invitationColl.updateMany(
+              { role: { $regex: assignmentRegex, $options: "i" } },
+              { $set: { role: canonicalName } }
+            );
+            normalizedInvitationAssignments += invitationResult.modifiedCount;
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.invitations normalize role assignments -> ${canonicalName}`, error);
+            } else {
+              throw error;
+            }
+          }
+        }
+      }
+
+      if (duplicates.length === 0) {
+        return;
+      }
+
+      dedupedRoles += duplicates.length;
+
+      const permissionSeen = {};
+      const mergedPermissionList = [];
+      sorted.forEach(role => {
+        const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+        permissions.forEach(permission => {
+          if (typeof permission !== "string") return;
+          if (permissionSeen[permission]) return;
+          permissionSeen[permission] = true;
+          mergedPermissionList.push(permission);
+        });
+      });
+
+      const keeperPermissions = Array.isArray(keeper.permissions)
+        ? keeper.permissions.filter(permission => typeof permission === "string")
+        : [];
+      const permissionsChanged = mergedPermissionList.length !== keeperPermissions.length
+        || mergedPermissionList.some((permission, idx) => permission !== keeperPermissions[idx]);
+
+      const keeperDescription = typeof keeper.description === "string" ? keeper.description : "";
+      let mergedDescription = keeperDescription;
+      if (!mergedDescription) {
+        const described = sorted.find(role => typeof role.description === "string" && role.description.trim() !== "");
+        if (described) mergedDescription = described.description;
+      }
+
+      const mergedIsDefault = sorted.some(role => role.isDefault === true);
+      const mergedOrder = Math.min(
+        ...sorted.map(role => Number.isFinite(Number(role.order)) ? Number(role.order) : Number.MAX_SAFE_INTEGER)
+      );
+      const keeperOrder = Number.isFinite(Number(keeper.order)) ? Number(keeper.order) : Number.MAX_SAFE_INTEGER;
+
+      const keeperSet = {};
+      if (permissionsChanged) {
+        keeperSet.permissions = mergedPermissionList;
+        mergedPermissions += 1;
+      }
+      if (mergedDescription !== keeperDescription) keeperSet.description = mergedDescription;
+      if (keeper.isDefault !== mergedIsDefault) keeperSet.isDefault = mergedIsDefault;
+      if (mergedOrder !== Number.MAX_SAFE_INTEGER && mergedOrder !== keeperOrder) keeperSet.order = mergedOrder;
+      if (Object.keys(keeperSet).length > 0) {
+        keeperSet.updatedAt = new Date();
+      }
+
+      if (CONFIG.DRY_RUN) {
+        log("DRY_RUN", `${tenantDbName}.staffroles duplicate role names for "${canonicalName}"`, {
+          keeperId: String(keeper._id),
+          duplicateIds: duplicates.map(role => String(role._id)),
+          mergedPermissionsChanged: permissionsChanged
+        });
+      } else {
+        duplicates.forEach(duplicate => {
+          coll.deleteOne({ _id: duplicate._id });
+        });
+
+        if (Object.keys(keeperSet).length > 0) {
+          try {
+            coll.updateOne({ _id: keeper._id }, { $set: keeperSet });
+          } catch (error) {
+            if (isDuplicateKeyError(error)) {
+              logDuplicateKeySkip(`${tenantDbName}.staffroles merge keeper updates for _id=${String(keeper._id)}`, error);
+            } else {
+              throw error;
+            }
+          }
+        }
       }
     });
 
     const section = CONFIG.DRY_RUN ? "DRY_RUN" : "MIGRATE";
-    log(section, `${tenantDbName}.staffroles id -> _id normalization`, { rewritten, removedLegacyId, collisions });
+    log(section, `${tenantDbName}.staffroles id/name normalization`, {
+      rewritten,
+      removedLegacyId,
+      collisions,
+      normalizedNames,
+      dedupedRoles,
+      mergedPermissions,
+      normalizedStaffAssignments,
+      normalizedInvitationAssignments
+    });
   }
 
   function migrateTenantInvitations(tenantDbName) {
@@ -1185,12 +1558,13 @@ Run in `mongosh` before migration.
 
     const coll = database.getCollection(collName);
 
+    const uniqueIndexSkipSet = new Set();
     for (const spec of specs) {
       const dups = uniqueDuplicates(coll, spec);
       if (dups.length > 0) {
-        const msg = `${dbName}.${collName} has duplicate keys for unique index ${spec.name}`;
-        log("ERROR", msg, dups);
-        if (!CONFIG.DRY_RUN) throw new Error(msg);
+        uniqueIndexSkipSet.add(spec.name);
+        const msg = `${dbName}.${collName} has duplicate keys for unique index ${spec.name}. Script will skip this unique index and continue.`;
+        log("WARN", msg, dups);
       }
     }
 
@@ -1199,6 +1573,9 @@ Run in `mongosh` before migration.
     if (CONFIG.DRY_RUN) {
       log("DRY_RUN", `${dbName}.${collName} indexes to drop`, existingIndexes.map(i => i.name));
       log("DRY_RUN", `${dbName}.${collName} indexes to create`, specs.map(s => ({ name: s.name, key: s.key, options: s.options })));
+      if (uniqueIndexSkipSet.size > 0) {
+        log("DRY_RUN", `${dbName}.${collName} unique indexes that would be skipped due to duplicate data`, Array.from(uniqueIndexSkipSet));
+      }
       return;
     }
 
@@ -1208,8 +1585,30 @@ Run in `mongosh` before migration.
     }
 
     for (const spec of specs) {
-      coll.createIndex(spec.key, { ...spec.options, name: spec.name });
-      log("INDEX", `Created ${dbName}.${collName}.${spec.name}`);
+      if (uniqueIndexSkipSet.has(spec.name)) {
+        log("WARN", `Skipped ${dbName}.${collName}.${spec.name} because duplicate data was detected during pre-check`);
+        continue;
+      }
+
+      try {
+        coll.createIndex(spec.key, { ...spec.options, name: spec.name });
+        log("INDEX", `Created ${dbName}.${collName}.${spec.name}`);
+      } catch (error) {
+        const code = error && error.code;
+        const message = error && error.message ? error.message : String(error);
+
+        if (code === 11000 || /E11000/i.test(message)) {
+          log("WARN", `Skipped ${dbName}.${collName}.${spec.name} because duplicate data violates uniqueness`, { code, message });
+          continue;
+        }
+
+        if (code === 85 || code === 86 || /IndexOptionsConflict|IndexKeySpecsConflict|already exists/i.test(message)) {
+          log("WARN", `Skipped ${dbName}.${collName}.${spec.name} due to index conflict with existing state`, { code, message });
+          continue;
+        }
+
+        throw error;
+      }
     }
   }
 
@@ -1231,23 +1630,23 @@ Run in `mongosh` before migration.
     log("INFO", `Tenant DB count=${tenants.length}`);
     log("INFO", "Tenant DB names", tenants);
 
-    migrateGlobalSessionsAndCodes();
-    migrateGlobalSystemPrompts();
-    migrateGlobalServers();
+    runStep("global migrateGlobalSessionsAndCodes", () => migrateGlobalSessionsAndCodes());
+    runStep("global migrateGlobalSystemPrompts", () => migrateGlobalSystemPrompts());
+    runStep("global migrateGlobalServers", () => migrateGlobalServers());
 
     tenants.forEach(tenant => {
-      migrateTenantPlayers(tenant);
-      migrateTenantSettings(tenant);
-      migrateTenantStaffRoles(tenant);
-      migrateTenantInvitations(tenant);
-      migrateTenantTickets(tenant);
-      migrateTenantKnowledgebaseCategories(tenant);
-      migrateTenantKnowledgebaseArticles(tenant);
-      migrateTenantHomepageCards(tenant);
-      migrateTenantTicketVerifications(tenant);
+      runStep(`${tenant} migrateTenantPlayers`, () => migrateTenantPlayers(tenant));
+      runStep(`${tenant} migrateTenantSettings`, () => migrateTenantSettings(tenant));
+      runStep(`${tenant} migrateTenantStaffRoles`, () => migrateTenantStaffRoles(tenant));
+      runStep(`${tenant} migrateTenantInvitations`, () => migrateTenantInvitations(tenant));
+      runStep(`${tenant} migrateTenantTickets`, () => migrateTenantTickets(tenant));
+      runStep(`${tenant} migrateTenantKnowledgebaseCategories`, () => migrateTenantKnowledgebaseCategories(tenant));
+      runStep(`${tenant} migrateTenantKnowledgebaseArticles`, () => migrateTenantKnowledgebaseArticles(tenant));
+      runStep(`${tenant} migrateTenantHomepageCards`, () => migrateTenantHomepageCards(tenant));
+      runStep(`${tenant} migrateTenantTicketVerifications`, () => migrateTenantTicketVerifications(tenant));
     });
 
-    rebuildCanonicalIndexes(tenants);
+    runStep("global rebuildCanonicalIndexes", () => rebuildCanonicalIndexes(tenants));
     log("DONE", "Migration script completed");
   }
 
@@ -1374,10 +1773,16 @@ Run after commit-mode migration.
         : d.players.countDocuments({
             $or: [
               { ipList: { $exists: true } },
+              { "usernames.0": { $type: "array" } },
+              { "notes.0": { $type: "array" } },
+              { "ipAddresses.0": { $type: "array" } },
+              { "punishments.0": { $type: "array" } },
               { "notes._id": { $exists: true } },
               { "punishments._id": { $exists: true } },
               { "punishments.type_ordinal": { $exists: true } },
+              { "punishments.modifications.0": { $type: "array" } },
               { "punishments.modifications._id": { $exists: true } },
+              { "punishments.notes.0": { $type: "array" } },
               { "punishments.notes._id": { $exists: true } },
               { "punishments.data.expires": { $exists: true } },
               { "punishments.data.expiresAt": { $exists: true } }
@@ -1470,7 +1875,7 @@ Run after commit-mode migration.
 
 ## Operational Notes
 - Put the backend in maintenance mode during commit-mode migration if possible.
-- If unique index creation reports duplicates, resolve duplicates first and rerun commit mode.
+- If unique indexes are skipped because duplicates exist, deduplicate data and rerun commit mode to restore those unique constraints.
 - Keep the backup archive until after at least one full business cycle of monitoring.
 - Restarting backend after migration is recommended so index warmup logs clearly confirm canonical index state.
 - `servers.currentPeriodEnd` is allowed to be `null` for non-billing/inactive records; this runbook does not force synthetic values.

@@ -32,19 +32,19 @@ public class Player {
     @Indexed(name = "uidx_players_minecraftUuid", unique = true, sparse = true)
     private UUID minecraftUuid;
 
-    @Field(name = "usernames", targetType = FieldType.ARRAY)
+    @Field(name = "usernames")
     @Builder.Default
     private List<UsernameEntry> usernames = new ArrayList<>();
 
-    @Field(name = "notes", targetType = FieldType.ARRAY)
+    @Field(name = "notes")
     @Builder.Default
     private List<NoteEntry> notes = new ArrayList<>();
 
-    @Field(name = "ipAddresses", targetType = FieldType.ARRAY)
+    @Field(name = "ipAddresses")
     @Builder.Default
     private List<IPEntry> ipAddresses = new ArrayList<>();
 
-    @Field(name = "punishments", targetType = FieldType.ARRAY)
+    @Field(name = "punishments")
     @Builder.Default
     private List<Punishment> punishments = new ArrayList<>();
 
