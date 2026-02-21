@@ -416,6 +416,50 @@ public class MinecraftTicketsController {
     ) {}
 
     /**
+     * Fetch tickets by a list of IDs. Returns ticket summaries.
+     */
+    @PostMapping("/by-ids")
+    public ResponseEntity<Map<String, Object>> getTicketsByIds(
+            @RequestBody @Valid TicketsByIdsRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        if (request.ids() == null || request.ids().isEmpty()) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "tickets", List.of()
+            ));
+        }
+
+        Query query = Query.query(Criteria.where("_id").in(request.ids()));
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
+            Map<String, Object> ticket = new LinkedHashMap<>();
+            ticket.put("id", t.getId());
+            ticket.put("type", t.getType());
+            ticket.put("category", t.getCategory());
+            ticket.put("subject", t.getSubject());
+            ticket.put("status", t.getStatus());
+            ticket.put("playerName", t.getCreatorName());
+            ticket.put("playerUuid", t.getCreatorUuid());
+            ticket.put("createdAt", t.getCreated());
+            return ticket;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "tickets", ticketList
+        ));
+    }
+
+    public record TicketsByIdsRequest(
+            List<String> ids
+    ) {}
+
+    /**
      * Request record for creating tickets from the Minecraft plugin
      */
     public record CreateTicketRequest(
