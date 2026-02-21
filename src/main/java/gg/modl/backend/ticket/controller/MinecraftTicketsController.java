@@ -446,6 +446,10 @@ public class MinecraftTicketsController {
             ticket.put("playerName", t.getCreatorName());
             ticket.put("playerUuid", t.getCreatorUuid());
             ticket.put("createdAt", t.getCreated());
+            // Include the body of the first reply
+            if (t.getReplies() != null && !t.getReplies().isEmpty()) {
+                ticket.put("firstReplyContent", t.getReplies().get(0).getContent());
+            }
             return ticket;
         }).toList();
 
