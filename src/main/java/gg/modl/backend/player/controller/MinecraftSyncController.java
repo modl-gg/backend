@@ -297,21 +297,53 @@ public class MinecraftSyncController {
             List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : recentTickets) {
+                String ticketType = ticket.getType();
+
+                // Skip staff application tickets - no in-game notification
+                if ("STAFF".equalsIgnoreCase(ticketType)) {
+                    continue;
+                }
+
                 String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
                 String ticketId = ticket.getId();
-                String serverName = server.getServerName() != null ? server.getServerName() : "Unknown";
+
+                // Use the Minecraft server name from ticket data if available
+                String createdServer = null;
+                if (ticket.getData() != null) {
+                    Object cs = ticket.getData().get("createdServer");
+                    if (cs instanceof String s && !s.isBlank()) {
+                        createdServer = s;
+                    }
+                }
+
+                // Build message based on ticket type
+                String message;
+                if ("REPORT".equalsIgnoreCase(ticketType)) {
+                    String reportedPlayer = ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "Unknown";
+                    String category = ticket.getCategory();
+                    String categoryLabel = category != null && category.toLowerCase().contains("chat") ? "Chat" : "Gameplay";
+                    message = creatorName + ": reported " + reportedPlayer;
+                    if (createdServer != null) {
+                        message += " on " + createdServer;
+                    }
+                    message += " (" + categoryLabel + ")";
+                } else {
+                    message = creatorName + ": created " + ticketId;
+                    if (createdServer != null) {
+                        message += " on " + createdServer;
+                    }
+                }
 
                 Map<String, Object> notif = new LinkedHashMap<>();
                 notif.put("id", "ticket_" + ticketId);
                 notif.put("type", "TICKET_CREATED");
-                notif.put("message", creatorName + ": created " + ticketId + " on " + serverName);
+                notif.put("message", message);
                 notif.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
 
                 // Include data for hover/click in plugin
                 Map<String, Object> data = new LinkedHashMap<>();
                 data.put("ticketId", ticketId);
                 data.put("creatorName", creatorName);
-                data.put("serverName", serverName);
                 data.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
 
                 // Get first reply content, stripped of ** and ```
