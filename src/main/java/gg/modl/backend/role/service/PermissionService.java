@@ -8,7 +8,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -21,7 +20,6 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class PermissionService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
@@ -109,9 +107,13 @@ public class PermissionService {
     }
 
     public boolean hasPermission(Server server, String staffRole, String permission) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        if (staffRole == null || staffRole.isBlank()) {
+            return false;
+        }
 
-        Query query = Query.query(Criteria.where("name").is(staffRole));
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        String normalizedRoleName = staffRole.trim();
+        Query query = Query.query(Criteria.where("name").is(normalizedRoleName));
         StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
@@ -131,8 +133,14 @@ public class PermissionService {
     }
 
     public Optional<StaffRole> getRoleByName(Server server, String roleName) {
+        if (roleName == null || roleName.isBlank()) {
+            return Optional.empty();
+        }
+
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = Query.query(Criteria.where("name").is(roleName));
+        String normalizedRoleName = roleName.trim();
+
+        Query query = Query.query(Criteria.where("name").is(normalizedRoleName));
         return Optional.ofNullable(template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES));
     }
 

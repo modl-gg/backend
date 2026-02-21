@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -27,6 +28,7 @@ public class MongoIndexBootstrapService {
             "customDomain_override",
             "customDomain_cloudflareId"
     );
+    private static final String LEGACY_STAFF_ROLE_ID_FIELD = "id";
     private static final int NAMESPACE_NOT_FOUND_ERROR_CODE = 26;
 
     public void ensureIndexesForDatabase(String databaseName, MongoTemplate template) {
@@ -77,16 +79,48 @@ public class MongoIndexBootstrapService {
         ));
 
         ensureIndexes(template, databaseName, CollectionName.STAFF_ROLES, List.of(
-                IndexSpec.standard("uidx_staff_roles_id", doc("id", 1), true, false)
+                IndexSpec.standard("uidx_staff_roles_name", doc("name", 1), true, false),
+                IndexSpec.standard("idx_staff_roles_order", doc("order", 1), false, false)
         ));
 
         ensureIndexes(template, databaseName, CollectionName.INVITATIONS, List.of(
                 IndexSpec.standard("idx_invitations_email", doc("email", 1), false, false),
-                IndexSpec.standard("uidx_invitations_token", doc("token", 1), true, false)
+                IndexSpec.standard("uidx_invitations_token", doc("token", 1), true, false),
+                IndexSpec.ttl("idx_invitations_expiresAt_ttl", doc("expiresAt", 1), 0)
         ));
 
         ensureIndexes(template, databaseName, CollectionName.TICKET_VERIFICATIONS, List.of(
                 IndexSpec.ttl("idx_ticket_verifications_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
+
+        ensureIndexes(template, databaseName, CollectionName.TICKETS, List.of(
+                IndexSpec.standard("idx_tickets_status_created", doc("status", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_created", doc("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_updatedAt", doc("updatedAt", -1), false, false),
+                IndexSpec.standard("idx_tickets_type_created", doc("type", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_creatorUuid_created", doc("creatorUuid", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_reportedPlayerUuid_created", doc("reportedPlayerUuid", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_locked_created", doc("locked", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false)
+        ));
+
+        ensureIndexes(template, databaseName, CollectionName.KNOWLEDGEBASE_CATEGORIES, List.of(
+                IndexSpec.standard("uidx_knowledgebase_categories_slug", doc("slug", 1), true, false),
+                IndexSpec.standard("idx_knowledgebase_categories_name", doc("name", 1), false, false),
+                IndexSpec.standard("idx_knowledgebase_categories_ordinal", doc("ordinal", 1), false, false),
+                IndexSpec.standard("idx_knowledgebase_categories_isVisible_ordinal", doc("isVisible", 1).append("ordinal", 1), false, false)
+        ));
+
+        ensureIndexes(template, databaseName, CollectionName.KNOWLEDGEBASE_ARTICLES, List.of(
+                IndexSpec.standard("uidx_knowledgebase_articles_slug", doc("slug", 1), true, false),
+                IndexSpec.standard("idx_knowledgebase_articles_categoryId_ordinal", doc("categoryId", 1).append("ordinal", 1), false, false),
+                IndexSpec.standard("idx_knowledgebase_articles_isVisible_categoryId_ordinal", doc("isVisible", 1).append("categoryId", 1).append("ordinal", 1), false, false)
+        ));
+
+        ensureIndexes(template, databaseName, CollectionName.HOMEPAGE_CARDS, List.of(
+                IndexSpec.standard("idx_homepage_cards_ordinal", doc("ordinal", 1), false, false),
+                IndexSpec.standard("idx_homepage_cards_isEnabled_ordinal", doc("isEnabled", 1).append("ordinal", 1), false, false),
+                IndexSpec.standard("idx_homepage_cards_categoryId", doc("categoryId", 1), false, true)
         ));
     }
 
@@ -101,7 +135,7 @@ public class MongoIndexBootstrapService {
 
         // Remove known legacy TTL indexes on the old expires field before ensuring canonical indexes.
         for (IndexInfoSnapshot existingIndex : existingIndexes) {
-            if (existingIndex.ttl() && existingIndex.singleField(LEGACY_EXPIRES_FIELD) && existingIndex.name() != null) {
+            if (existingIndex.singleField(LEGACY_EXPIRES_FIELD) && existingIndex.name() != null) {
                 indexOps.dropIndex(existingIndex.name());
                 log.info("Dropped legacy TTL index {} on {}.{}", existingIndex.name(), databaseName, collectionName);
             }
@@ -111,6 +145,13 @@ public class MongoIndexBootstrapService {
                     && existingIndex.singleFieldIn(LEGACY_SERVER_INDEX_FIELDS)) {
                 indexOps.dropIndex(existingIndex.name());
                 log.info("Dropped legacy server index {} on {}.{}", existingIndex.name(), databaseName, collectionName);
+            }
+
+            if (CollectionName.STAFF_ROLES.equals(collectionName)
+                    && existingIndex.name() != null
+                    && existingIndex.singleField(LEGACY_STAFF_ROLE_ID_FIELD)) {
+                indexOps.dropIndex(existingIndex.name());
+                log.info("Dropped legacy staff role index {} on {}.{}", existingIndex.name(), databaseName, collectionName);
             }
         }
 
@@ -158,10 +199,12 @@ public class MongoIndexBootstrapService {
     }
 
     private void ensureIndex(IndexOperations indexOps, IndexSpec spec) {
-        String field = spec.firstFieldName();
-        Index index = new Index()
-                .on(field, Sort.Direction.ASC)
-                .named(spec.name());
+        Index index = new Index().named(spec.name());
+
+        for (Map.Entry<String, Object> entry : spec.keys().entrySet()) {
+            Sort.Direction direction = directionFrom(entry.getValue());
+            index.on(entry.getKey(), direction);
+        }
 
         if (spec.unique()) {
             index.unique();
@@ -174,6 +217,13 @@ public class MongoIndexBootstrapService {
         }
 
         indexOps.ensureIndex(index);
+    }
+
+    private Sort.Direction directionFrom(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue() < 0 ? Sort.Direction.DESC : Sort.Direction.ASC;
+        }
+        throw new IllegalArgumentException("Unsupported index direction value: " + value);
     }
 
     private boolean matchesSpec(IndexInfoSnapshot existing, IndexSpec spec) {
@@ -247,10 +297,6 @@ public class MongoIndexBootstrapService {
 
         static IndexSpec ttl(String name, Document keys, long ttlSeconds) {
             return new IndexSpec(name, keys, false, false, ttlSeconds);
-        }
-
-        String firstFieldName() {
-            return keys.keySet().iterator().next();
         }
     }
 

@@ -40,7 +40,7 @@ public class StaffService {
         MongoTemplate template = getTemplate(server);
 
         List<Staff> staffMembers = template.findAll(Staff.class, CollectionName.STAFF);
-        Query pendingQuery = Query.query(Criteria.where("status").is("pending"));
+        Query pendingQuery = Query.query(Criteria.where("expiresAt").gt(new Date()));
         List<Invitation> pendingInvitations = template.find(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
 
         List<StaffResponse> result = new ArrayList<>();

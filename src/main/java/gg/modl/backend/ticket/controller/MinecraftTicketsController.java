@@ -69,7 +69,6 @@ public class MinecraftTicketsController {
                 .category(request.type())
                 .subject(request.subject())
                 .status("Open")
-                .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
                 .reportedPlayer(request.reportedPlayerName())
@@ -133,7 +132,6 @@ public class MinecraftTicketsController {
                 .category(request.type())
                 .subject(request.subject())
                 .status("Unfinished") // Unfinished tickets start as Unfinished
-                .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
                 .tags(request.tags() != null ? request.tags() : new ArrayList<>())
@@ -261,7 +259,7 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
         if (ticket == null) {
@@ -371,9 +369,8 @@ public class MinecraftTicketsController {
             ));
         }
 
-        // Store the old creator name to update replies
-        // Check both creatorName and creator fields (TicketService uses creator for name)
-        String oldCreatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator();
+        // Store the old creator name to update replies.
+        String oldCreatorName = ticket.getCreatorName();
 
         // Update all replies that match the old creator name (Web User format)
         // This changes "{name} (Web User)" to the verified player name
@@ -391,11 +388,9 @@ public class MinecraftTicketsController {
         }
 
         // Update the ticket with the player's information
-        // Note: creator field stores the display name, creatorUuid stores the UUID
         Update update = new Update()
                 .set("creatorUuid", request.playerUuid())
                 .set("creatorName", request.playerName())
-                .set("creator", request.playerName())
                 .set("updatedAt", new Date());
 
         // Update replies if we modified them

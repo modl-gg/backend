@@ -11,7 +11,6 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -22,16 +21,15 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class RoleService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
-    private static final List<String> LEGACY_PERMISSION_PREFIXES = List.of("player.", "appeal.");
 
     public List<RoleResponse> getAllRoles(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -42,7 +40,6 @@ public class RoleService {
         // Get all roles sorted by order
         Query query = new Query().with(Sort.by(Sort.Direction.ASC, "order", "createdAt"));
         List<StaffRole> roles = template.find(query, StaffRole.class, CollectionName.STAFF_ROLES);
-        roles.forEach(role -> sanitizeLegacyPermissions(template, role));
 
         // Get staff counts per role
         Map<String, Integer> roleCounts = getStaffCountsByRole(server);
@@ -55,13 +52,12 @@ public class RoleService {
     public Optional<RoleResponse> getRoleById(Server server, String id) {
         MongoTemplate template = getTemplate(server);
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
             return Optional.empty();
         }
-        sanitizeLegacyPermissions(template, role);
 
         int staffCount = getStaffCountForRole(server, role.getName());
         return Optional.of(toRoleResponse(role, staffCount));
@@ -69,6 +65,8 @@ public class RoleService {
 
     public RoleResponse createRole(Server server, CreateRoleRequest request) {
         MongoTemplate template = getTemplate(server);
+        String roleName = request.name() != null ? request.name().trim() : "";
+        ensureRoleNameAvailable(template, roleName, null);
 
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
@@ -86,7 +84,7 @@ public class RoleService {
 
         StaffRole newRole = StaffRole.builder()
                 .id(id)
-                .name(request.name())
+                .name(roleName)
                 .description(request.description())
                 .permissions(new ArrayList<>(filteredPermissions))
                 .isDefault(false)
@@ -108,15 +106,18 @@ public class RoleService {
             throw new IllegalArgumentException("Cannot modify Super Admin role");
         }
 
+        String roleName = request.name() != null ? request.name().trim() : "";
+        ensureRoleNameAvailable(template, roleName, id);
+
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
         List<String> filteredPermissions = request.permissions().stream()
                 .filter(validPermissions::contains)
                 .toList();
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         Update update = new Update()
-                .set("name", request.name())
+                .set("name", roleName)
                 .set("description", request.description())
                 .set("permissions", filteredPermissions)
                 .set("updatedAt", new Date());
@@ -144,7 +145,7 @@ public class RoleService {
         }
 
         // Check if any staff are using this role
-        Query roleQuery = Query.query(Criteria.where("id").is(id));
+        Query roleQuery = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(roleQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
@@ -156,7 +157,7 @@ public class RoleService {
             throw new IllegalStateException("Cannot delete role that is currently assigned to staff members");
         }
 
-        Query deleteQuery = Query.query(Criteria.where("id").is(id));
+        Query deleteQuery = Query.query(Criteria.where("_id").is(id));
         DeleteResult result = template.remove(deleteQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
         return result.getDeletedCount() > 0;
@@ -166,7 +167,7 @@ public class RoleService {
         MongoTemplate template = getTemplate(server);
 
         request.roleOrder().forEach(item -> {
-            Query query = Query.query(Criteria.where("id").is(item.id()));
+            Query query = Query.query(Criteria.where("_id").is(item.id()));
             Update update = new Update().set("order", item.order());
             template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
         });
@@ -265,7 +266,7 @@ public class RoleService {
         );
 
         for (StaffRole role : defaultRoles) {
-            Query query = Query.query(Criteria.where("id").is(role.getId()));
+            Query query = Query.query(Criteria.where("_id").is(role.getId()));
             template.upsert(query, buildUpdateFromRole(role), CollectionName.STAFF_ROLES);
         }
     }
@@ -284,7 +285,7 @@ public class RoleService {
             int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
 
             for (StaffRole role : problematicRoles) {
-                Query updateQuery = Query.query(Criteria.where("mongoId").is(role.getMongoId()));
+                Query updateQuery = Query.query(Criteria.where("_id").is(role.getId()));
                 Update update = new Update().set("order", nextOrder++);
                 template.updateFirst(updateQuery, update, StaffRole.class, CollectionName.STAFF_ROLES);
             }
@@ -331,7 +332,6 @@ public class RoleService {
 
     private Update buildUpdateFromRole(StaffRole role) {
         return new Update()
-                .set("id", role.getId())
                 .set("name", role.getName())
                 .set("description", role.getDescription())
                 .set("permissions", role.getPermissions())
@@ -341,27 +341,21 @@ public class RoleService {
                 .set("updatedAt", role.getUpdatedAt());
     }
 
-    private void sanitizeLegacyPermissions(MongoTemplate template, StaffRole role) {
-        if (role == null || role.getPermissions() == null || role.getPermissions().isEmpty()) {
-            return;
+    private void ensureRoleNameAvailable(MongoTemplate template, String roleName, String excludeRoleId) {
+        if (roleName == null || roleName.isBlank()) {
+            throw new IllegalArgumentException("Role name cannot be empty");
         }
 
-        List<String> cleaned = role.getPermissions().stream()
-                .filter(Objects::nonNull)
-                .filter(permission -> LEGACY_PERMISSION_PREFIXES.stream().noneMatch(permission::startsWith))
-                .distinct()
-                .toList();
-
-        if (cleaned.size() == role.getPermissions().size()) {
-            return;
+        Criteria criteria = Criteria.where("name")
+                .regex("^" + Pattern.quote(roleName) + "$", "i");
+        if (excludeRoleId != null && !excludeRoleId.isBlank()) {
+            criteria = criteria.and("_id").ne(excludeRoleId);
         }
 
-        Query query = Query.query(Criteria.where("id").is(role.getId()));
-        Update update = new Update()
-                .set("permissions", cleaned)
-                .set("updatedAt", new Date());
-        template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
-        role.setPermissions(new ArrayList<>(cleaned));
+        Query query = Query.query(criteria);
+        if (template.exists(query, StaffRole.class, CollectionName.STAFF_ROLES)) {
+            throw new IllegalArgumentException("A role with this name already exists");
+        }
     }
 
     // Helper class for aggregation results

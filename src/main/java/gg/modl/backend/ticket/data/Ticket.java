@@ -27,7 +27,6 @@ public class Ticket {
     private String subject;
     private String status;
 
-    private String creator;
     private String creatorUuid;
     private String creatorName;
     private String creatorAvatar;

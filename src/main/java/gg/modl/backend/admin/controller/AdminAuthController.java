@@ -20,9 +20,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -113,8 +113,17 @@ public class AdminAuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
+        Set<String> sessionEmails = new LinkedHashSet<>();
+
         for (String sessionId : extractSessionIds(request)) {
+            sessionService.findValidAdminSession(sessionId)
+                    .map(AuthSessionData::getEmail)
+                    .ifPresent(sessionEmails::add);
             sessionService.invalidateAdminSession(sessionId);
+        }
+
+        for (String sessionEmail : sessionEmails) {
+            sessionService.invalidateAllAdminSessionsForEmail(sessionEmail);
         }
 
         for (Cookie expiredCookie : createExpiredSessionCookies()) {
@@ -226,5 +235,5 @@ public class AdminAuthController {
     public record UserData(String email, java.util.Date lastActivityAt) {}
     public record SessionResponse(boolean success, SessionData data) {}
     public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
-    public record AdminSession(String adminId, String email, Instant createdAt) {}
+    public record AdminSession(String adminId, String email, Date createdAt) {}
 }

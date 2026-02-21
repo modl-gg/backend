@@ -127,7 +127,9 @@ public class PublicTicketController {
                     response.put("type", ticketResponse.type());
                     response.put("subject", ticketResponse.subject());
                     response.put("status", ticketResponse.status());
-                    response.put("creator", ticketResponse.creator() != null ? ticketResponse.creator() : "");
+                    String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
+                    response.put("creatorName", creatorName);
+                    response.put("creator", creatorName);
                     response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
                     response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
                     response.put("created", ticketResponse.date());

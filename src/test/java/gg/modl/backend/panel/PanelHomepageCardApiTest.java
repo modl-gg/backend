@@ -34,9 +34,9 @@ class PanelHomepageCardApiTest {
         var createResponse = api.panelPost("/v1/panel/homepage-cards", Map.of(
                 "title", "API Test Card " + System.currentTimeMillis(),
                 "description", "Created by automated test",
-                "action_type", "link",
-                "action_url", "https://example.com",
-                "is_enabled", false
+                "actionType", "url",
+                "actionUrl", "https://example.com",
+                "isEnabled", false
         ));
         int status = createResponse.statusCode();
         assertTrue(status == 200 || status == 201, "Expected 200 or 201 but got " + status);
@@ -67,7 +67,7 @@ class PanelHomepageCardApiTest {
     void updateCard() throws Exception {
         var createResponse = api.panelPost("/v1/panel/homepage-cards", Map.of(
                 "title", "API Test Update Card",
-                "is_enabled", false
+                "isEnabled", false
         ));
         if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) return;
         var json = JsonHelper.parseObject(createResponse.body());

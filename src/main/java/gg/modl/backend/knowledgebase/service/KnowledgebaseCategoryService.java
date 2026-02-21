@@ -4,6 +4,7 @@ import com.github.slugify.Slugify;
 import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.knowledgebase.dto.request.CreateCategoryRequest;
 import gg.modl.backend.knowledgebase.dto.request.UpdateCategoryRequest;
@@ -94,6 +95,10 @@ public class KnowledgebaseCategoryService {
 
     public boolean deleteCategory(Server server, String id) {
         MongoTemplate template = getTemplate(server);
+
+        Query deleteArticlesQuery = Query.query(Criteria.where("categoryId").is(id));
+        template.remove(deleteArticlesQuery, KnowledgebaseArticle.class, CollectionName.KNOWLEDGEBASE_ARTICLES);
+
         Query query = Query.query(Criteria.where("_id").is(id));
         DeleteResult result = template.remove(query, KnowledgebaseCategory.class, CollectionName.KNOWLEDGEBASE_CATEGORIES);
         return result.getDeletedCount() > 0;

@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.Instant;
 import java.util.Base64;
+import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +44,7 @@ public class AuthService {
         AuthCode authCode = new AuthCode();
         authCode.setEmail(normalizedEmail);
         authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(Instant.now().plusSeconds(authConfiguration.getEmailCodeExpiry()));
+        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
 
         mongo.save(authCode);
 
@@ -70,7 +70,7 @@ public class AuthService {
         AuthCode authCode = new AuthCode();
         authCode.setEmail(normalizedEmail);
         authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(Instant.now().plusSeconds(authConfiguration.getEmailCodeExpiry()));
+        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
 
         mongo.save(authCode);
 
@@ -94,7 +94,7 @@ public class AuthService {
         String normalizedEmail = email.toLowerCase();
 
         Query query = new Query(Criteria.where("email").is(normalizedEmail)
-                .and("expiresAt").gt(Instant.now()));
+                .and("expiresAt").gt(new Date()));
 
         AuthCode authCode = mongo.findOne(query, AuthCode.class);
 

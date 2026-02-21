@@ -9,6 +9,7 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketVerification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -28,8 +29,12 @@ public class TicketEmailVerificationService {
     private final EmailService emailService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final long CODE_EXPIRY_MS = 15 * 60 * 1000; // 15 minutes
-    private static final long TOKEN_EXPIRY_MS = 7L * 24 * 60 * 60 * 1000; // 7 days
+
+    @Value("${modl.ticket.email-verification.code-expiry-seconds:300}")
+    private long codeExpirySeconds;
+
+    @Value("${modl.ticket.email-verification.token-expiry-seconds:300}")
+    private long tokenExpirySeconds;
 
     /**
      * Send a verification code to the ticket creator's email.
@@ -59,7 +64,7 @@ public class TicketEmailVerificationService {
                 .ticketId(ticket.getId())
                 .codeHash(codeHash)
                 .email(email)
-                .expiresAt(new Date(System.currentTimeMillis() + CODE_EXPIRY_MS))
+                .expiresAt(new Date(System.currentTimeMillis() + (codeExpirySeconds * 1000L)))
                 .build();
 
         template.save(verification, CollectionName.TICKET_VERIFICATIONS);
@@ -108,7 +113,7 @@ public class TicketEmailVerificationService {
                 .ticketId(ticketId)
                 .token(token)
                 .email(verification.getEmail())
-                .expiresAt(new Date(System.currentTimeMillis() + TOKEN_EXPIRY_MS))
+                .expiresAt(new Date(System.currentTimeMillis() + (tokenExpirySeconds * 1000L)))
                 .build();
 
         template.save(tokenVerification, CollectionName.TICKET_VERIFICATIONS);

@@ -7,7 +7,7 @@ This runbook migrates production data to the backend's strict cleaned schema and
 - Tenant DBs: discovered from `modl.servers.databaseName`
 - Collections covered:
   - Global: `servers`, `sessions`, `auth_codes`, `systemprompts`
-  - Tenant: `players`, `settings`, `staffs`, `staffroles`, `invitations`, `ticket_verifications`
+  - Tenant: `players`, `settings`, `staffs`, `staffroles`, `invitations`, `tickets`, `ticket_verifications`, `knowledgebasecategories`, `knowledgebasearticles`, `homepagecards`
 
 ## Safety Strategy
 1. Create a full snapshot with `mongodump`.
@@ -55,7 +55,7 @@ Run in `mongosh` before migration.
 
   function log(section, message, payload) {
     if (payload !== undefined) {
-      print(`[${section}] ${message} :: ${tojson(payload)}`);
+      print(`[${section}] ${message} :: ${JSON.stringify(payload, null, 2)}`);
     } else {
       print(`[${section}] ${message}`);
     }
@@ -152,12 +152,66 @@ Run in `mongosh` before migration.
       "data.strictnessLevel": { $in: ["lenient", "standard", "strict"] }
     });
 
+    const invitationsLegacyStatusCount = tenantDb.invitations.countDocuments({ status: { $exists: true } });
+    const invitationsLegacyExpiresCount = tenantDb.invitations.countDocuments({ expires: { $exists: true } });
+    const invitationsMissingExpiresAtCount = tenantDb.invitations.countDocuments({
+      $or: [
+        { expiresAt: { $exists: false } },
+        { expiresAt: null }
+      ]
+    });
+    const staffRolesLegacyIdFieldCount = tenantDb.staffroles.countDocuments({ id: { $exists: true } });
+    const ticketsLegacyCreatorFieldCount = tenantDb.tickets.countDocuments({ creator: { $exists: true } });
+    const homepageCardsLegacyFieldCount = tenantDb.homepagecards.countDocuments({
+      $or: [
+        { icon_color: { $exists: true } },
+        { action_type: { $exists: true } },
+        { action_url: { $exists: true } },
+        { action_button_text: { $exists: true } },
+        { category_id: { $exists: true } },
+        { background_color: { $exists: true } },
+        { is_enabled: { $exists: true } },
+        { created_at: { $exists: true } },
+        { updated_at: { $exists: true } }
+      ]
+    });
+    const kbCategoriesLegacyFieldCount = tenantDb.knowledgebasecategories.countDocuments({
+      $or: [
+        { created_at: { $exists: true } },
+        { updated_at: { $exists: true } }
+      ]
+    });
+    const kbArticlesLegacyFieldCount = tenantDb.knowledgebasearticles.countDocuments({
+      $or: [
+        { category_id: { $exists: true } },
+        { is_visible: { $exists: true } },
+        { created_at: { $exists: true } },
+        { updated_at: { $exists: true } }
+      ]
+    });
+    const kbArticlesNullCategoryCount = tenantDb.knowledgebasearticles.countDocuments({
+      $or: [
+        { categoryId: { $exists: false } },
+        { categoryId: null },
+        { categoryId: "" }
+      ]
+    });
+
     return {
       db: dbName,
       playersLegacyCount,
       ticketLegacyExpiresCount,
       generalLegacyTagsCount,
-      aiStrictnessLowercaseCount
+      aiStrictnessLowercaseCount,
+      invitationsLegacyStatusCount,
+      invitationsLegacyExpiresCount,
+      invitationsMissingExpiresAtCount,
+      staffRolesLegacyIdFieldCount,
+      ticketsLegacyCreatorFieldCount,
+      homepageCardsLegacyFieldCount,
+      kbCategoriesLegacyFieldCount,
+      kbArticlesLegacyFieldCount,
+      kbArticlesNullCategoryCount
     };
   }
 
@@ -169,7 +223,7 @@ Run in `mongosh` before migration.
   tenants.forEach(name => log("LEGACY", `Tenant legacy counts for ${name}`, countTenantLegacy(name)));
 
   const globalCollections = ["servers", "sessions", "auth_codes", "systemprompts"];
-  const tenantCollections = ["players", "staffs", "staffroles", "invitations", "ticket_verifications"];
+  const tenantCollections = ["players", "settings", "staffs", "staffroles", "invitations", "tickets", "ticket_verifications", "knowledgebasecategories", "knowledgebasearticles", "homepagecards"];
 
   globalCollections.forEach(c => log("INDEX", `Global index summary ${c}`, indexSummary(GLOBAL_DB, c)));
   tenants.forEach(t => {
@@ -181,6 +235,7 @@ Run in `mongosh` before migration.
   log("TTL", "Expired auth codes still present (cleanup is async)", globalDb.auth_codes.countDocuments({ expiresAt: { $lt: now } }));
   tenants.forEach(t => {
     const tenantDb = db.getSiblingDB(t);
+    log("TTL", `Expired invitations still present in ${t} (cleanup is async)`, tenantDb.invitations.countDocuments({ expiresAt: { $lt: now } }));
     log("TTL", `Expired ticket verifications still present in ${t} (cleanup is async)`, tenantDb.ticket_verifications.countDocuments({ expiresAt: { $lt: now } }));
   });
 })();
@@ -195,7 +250,7 @@ Run in `mongosh` before migration.
 ```javascript
 (() => {
   const CONFIG = {
-    DRY_RUN: true,
+    DRY_RUN: true, // Review output first, then set to false for commit mode
     GLOBAL_DB: "modl",
     TARGET_TENANT_DBS: null,
     BATCH_SIZE: 500
@@ -237,14 +292,42 @@ Run in `mongosh` before migration.
       { name: "sidx_staff_assignedMinecraftUuid", key: { assignedMinecraftUuid: 1 }, options: { sparse: true } }
     ],
     staffroles: [
-      { name: "uidx_staff_roles_id", key: { id: 1 }, options: { unique: true } }
+      { name: "uidx_staff_roles_name", key: { name: 1 }, options: { unique: true } },
+      { name: "idx_staff_roles_order", key: { order: 1 }, options: {} }
     ],
     invitations: [
       { name: "idx_invitations_email", key: { email: 1 }, options: {} },
-      { name: "uidx_invitations_token", key: { token: 1 }, options: { unique: true } }
+      { name: "uidx_invitations_token", key: { token: 1 }, options: { unique: true } },
+      { name: "idx_invitations_expiresAt_ttl", key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } }
+    ],
+    tickets: [
+      { name: "idx_tickets_status_created", key: { status: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_created", key: { created: -1 }, options: {} },
+      { name: "idx_tickets_updatedAt", key: { updatedAt: -1 }, options: {} },
+      { name: "idx_tickets_type_created", key: { type: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_creatorUuid_created", key: { creatorUuid: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_reportedPlayerUuid_created", key: { reportedPlayerUuid: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_locked_created", key: { locked: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_tags", key: { tags: 1 }, options: {} }
     ],
     ticket_verifications: [
       { name: "idx_ticket_verifications_expiresAt_ttl", key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } }
+    ],
+    knowledgebasecategories: [
+      { name: "uidx_knowledgebase_categories_slug", key: { slug: 1 }, options: { unique: true } },
+      { name: "idx_knowledgebase_categories_name", key: { name: 1 }, options: {} },
+      { name: "idx_knowledgebase_categories_ordinal", key: { ordinal: 1 }, options: {} },
+      { name: "idx_knowledgebase_categories_isVisible_ordinal", key: { isVisible: 1, ordinal: 1 }, options: {} }
+    ],
+    knowledgebasearticles: [
+      { name: "uidx_knowledgebase_articles_slug", key: { slug: 1 }, options: { unique: true } },
+      { name: "idx_knowledgebase_articles_categoryId_ordinal", key: { categoryId: 1, ordinal: 1 }, options: {} },
+      { name: "idx_knowledgebase_articles_isVisible_categoryId_ordinal", key: { isVisible: 1, categoryId: 1, ordinal: 1 }, options: {} }
+    ],
+    homepagecards: [
+      { name: "idx_homepage_cards_ordinal", key: { ordinal: 1 }, options: {} },
+      { name: "idx_homepage_cards_isEnabled_ordinal", key: { isEnabled: 1, ordinal: 1 }, options: {} },
+      { name: "idx_homepage_cards_categoryId", key: { categoryId: 1 }, options: { sparse: true } }
     ]
   };
   const PLAN_MAP = {
@@ -296,7 +379,7 @@ Run in `mongosh` before migration.
 
   function log(section, message, payload) {
     if (payload !== undefined) {
-      print(`[${section}] ${message} :: ${tojson(payload)}`);
+      print(`[${section}] ${message} :: ${JSON.stringify(payload, null, 2)}`);
     } else {
       print(`[${section}] ${message}`);
     }
@@ -310,6 +393,16 @@ Run in `mongosh` before migration.
     if (value === undefined || value === null) return value;
     const k = normalizeKey(value);
     return map[k] || fallback;
+  }
+
+  function normalizeHomepageActionType(value) {
+    if (value === undefined || value === null || String(value).trim() === "") return "url";
+    const normalized = normalizeKey(value);
+    if (normalized === "url" || normalized === "link") return "url";
+    if (normalized === "category_dropdown" || normalized === "categorydropdown" || normalized === "dropdown" || normalized === "category") {
+      return "category_dropdown";
+    }
+    return "url";
   }
 
   function toDate(value) {
@@ -360,6 +453,22 @@ Run in `mongosh` before migration.
 
     const result = collection.updateMany(filter, update);
     log("MIGRATE", `${label}: matched=${result.matchedCount}, modified=${result.modifiedCount}`);
+  }
+
+  function runDeleteMany(collection, filter, label) {
+    const matched = collection.countDocuments(filter);
+    if (matched === 0) {
+      log("MIGRATE", `${label}: nothing to delete`);
+      return;
+    }
+
+    if (CONFIG.DRY_RUN) {
+      log("DRY_RUN", `${label}: would delete ${matched} document(s)`);
+      return;
+    }
+
+    const result = collection.deleteMany(filter);
+    log("MIGRATE", `${label}: deleted=${result.deletedCount}`);
   }
 
   function flushBulk(collection, ops, label) {
@@ -506,6 +615,7 @@ Run in `mongosh` before migration.
 
     return { obj, changed };
   }
+
   function migrateTenantPlayers(tenantDbName) {
     const tenantDb = db.getSiblingDB(tenantDbName);
     const coll = tenantDb.players;
@@ -599,16 +709,31 @@ Run in `mongosh` before migration.
             if ((data.duration === undefined || data.duration === null) && hadLegacyExpiry) {
               const expiryRaw = data.expiresAt !== undefined ? data.expiresAt : data.expires;
               const expiryDate = toDate(expiryRaw);
-              const baseDate = toDate(punishment.started) || toDate(punishment.issued);
 
-              if (expiryDate && baseDate) {
-                const durationMs = expiryDate.getTime() - baseDate.getTime();
-                if (durationMs > 0) {
-                  data.duration = toLong(durationMs);
-                  punishmentsChanged = true;
-                }
+              // *** ROBUST PATCH ***
+              if (!expiryDate) {
+                 // CASE: Garbage data in expiry field.
+                 // Action: Do not flag unresolved. Just let it fall through to remove the field.
+                 // Duration remains unset (permanent).
+                 if (CONFIG.DRY_RUN) log("WARN", `${tenantDbName} player ${doc._id} has invalid legacy expiry date. Treating as permanent.`);
               } else {
-                unresolvedExpiry = true;
+                 // CASE: Valid expiry date found
+                 let baseDate = toDate(punishment.started) || toDate(punishment.issued);
+
+                 // Fallback: If start date missing, assume started at expiry (duration 0)
+                 if (!baseDate) {
+                    baseDate = expiryDate;
+                 }
+
+                 let durationMs = expiryDate.getTime() - baseDate.getTime();
+
+                 // Fallback: If duration is negative (expires before start), clamp to 0
+                 if (durationMs < 0) {
+                    durationMs = 0;
+                 }
+
+                 data.duration = toLong(durationMs);
+                 punishmentsChanged = true;
               }
             }
 
@@ -705,6 +830,307 @@ Run in `mongosh` before migration.
     });
 
     flushBulk(settings, strictnessOps, `${tenantDbName}.settings aiModeration strictness normalization`);
+  }
+
+  function migrateTenantStaffRoles(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+    const coll = tenantDb.staffroles;
+    let rewritten = 0;
+    let removedLegacyId = 0;
+    let collisions = 0;
+
+    coll.find({ id: { $exists: true } }).forEach(doc => {
+      const legacyId = doc.id;
+      if (legacyId === undefined || legacyId === null || String(legacyId).trim() === "") {
+        if (CONFIG.DRY_RUN) {
+          removedLegacyId += 1;
+        } else {
+          const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
+          if (result.modifiedCount > 0) removedLegacyId += 1;
+        }
+        return;
+      }
+
+      const canonicalId = String(legacyId);
+      const currentId = String(doc._id);
+
+      if (currentId === canonicalId) {
+        if (CONFIG.DRY_RUN) {
+          removedLegacyId += 1;
+        } else {
+          const result = coll.updateOne({ _id: doc._id }, { $unset: { id: "" } });
+          if (result.modifiedCount > 0) removedLegacyId += 1;
+        }
+        return;
+      }
+
+      if (coll.findOne({ _id: canonicalId })) {
+        collisions += 1;
+        const message = `${tenantDbName}.staffroles collision: legacy _id=${String(doc._id)} wants canonical _id=${canonicalId}`;
+        if (CONFIG.DRY_RUN) {
+          log("WARN", message);
+        } else {
+          throw new Error(`${message}. Resolve manually before commit-mode migration.`);
+        }
+        return;
+      }
+
+      const replacement = { ...doc, _id: canonicalId };
+      delete replacement.id;
+
+      if (CONFIG.DRY_RUN) {
+        rewritten += 1;
+      } else {
+        coll.insertOne(replacement);
+        coll.deleteOne({ _id: doc._id });
+        rewritten += 1;
+      }
+    });
+
+    const section = CONFIG.DRY_RUN ? "DRY_RUN" : "MIGRATE";
+    log(section, `${tenantDbName}.staffroles id -> _id normalization`, { rewritten, removedLegacyId, collisions });
+  }
+
+  function migrateTenantInvitations(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+    const coll = tenantDb.invitations;
+
+    runUpdateMany(
+      coll,
+      { expires: { $exists: true } },
+      [
+        { $set: { expiresAt: { $ifNull: ["$expiresAt", "$expires"] } } },
+        { $unset: ["expires"] }
+      ],
+      `${tenantDbName}.invitations expires -> expiresAt`
+    );
+
+    runDeleteMany(
+      coll,
+      { status: { $type: "string", $regex: /^accepted$/i } },
+      `${tenantDbName}.invitations delete accepted invitations`
+    );
+
+    runUpdateMany(
+      coll,
+      { status: { $exists: true } },
+      { $unset: { status: "" } },
+      `${tenantDbName}.invitations remove legacy status field`
+    );
+
+    runDeleteMany(
+      coll,
+      {
+        $or: [
+          { expiresAt: { $exists: false } },
+          { expiresAt: null }
+        ]
+      },
+      `${tenantDbName}.invitations delete malformed records without expiresAt`
+    );
+  }
+
+  function migrateTenantKnowledgebaseCategories(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+    const coll = tenantDb.knowledgebasecategories;
+
+    runUpdateMany(
+      coll,
+      {
+        $or: [
+          { is_visible: { $exists: true } },
+          { created_at: { $exists: true } },
+          { updated_at: { $exists: true } }
+        ]
+      },
+      [
+        {
+          $set: {
+            isVisible: { $ifNull: ["$isVisible", "$is_visible"] },
+            createdAt: { $ifNull: ["$createdAt", "$created_at"] },
+            updatedAt: { $ifNull: ["$updatedAt", "$updated_at"] }
+          }
+        },
+        { $unset: ["is_visible", "created_at", "updated_at"] }
+      ],
+      `${tenantDbName}.knowledgebasecategories snake_case -> camelCase`
+    );
+
+    runUpdateMany(
+      coll,
+      { isVisible: { $exists: false } },
+      { $set: { isVisible: true } },
+      `${tenantDbName}.knowledgebasecategories set default isVisible=true`
+    );
+  }
+
+  function migrateTenantKnowledgebaseArticles(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+    const coll = tenantDb.knowledgebasearticles;
+
+    runUpdateMany(
+      coll,
+      {
+        $or: [
+          { category_id: { $exists: true } },
+          { is_visible: { $exists: true } },
+          { created_at: { $exists: true } },
+          { updated_at: { $exists: true } }
+        ]
+      },
+      [
+        {
+          $set: {
+            categoryId: { $ifNull: ["$categoryId", "$category_id"] },
+            isVisible: { $ifNull: ["$isVisible", "$is_visible"] },
+            createdAt: { $ifNull: ["$createdAt", "$created_at"] },
+            updatedAt: { $ifNull: ["$updatedAt", "$updated_at"] }
+          }
+        },
+        { $unset: ["category_id", "is_visible", "created_at", "updated_at"] }
+      ],
+      `${tenantDbName}.knowledgebasearticles snake_case -> camelCase`
+    );
+
+    runUpdateMany(
+      coll,
+      { isVisible: { $exists: false } },
+      { $set: { isVisible: true } },
+      `${tenantDbName}.knowledgebasearticles set default isVisible=true`
+    );
+
+    const validCategoryIds = new Set();
+    tenantDb.knowledgebasecategories.find({}, { _id: 1 }).forEach(category => {
+      validCategoryIds.add(String(category._id));
+    });
+
+    const orphanIds = [];
+    coll.find({}, { _id: 1, categoryId: 1 }).forEach(article => {
+      const rawCategoryId = article.categoryId;
+      if (rawCategoryId === undefined || rawCategoryId === null || String(rawCategoryId).trim() === "") {
+        orphanIds.push(article._id);
+        return;
+      }
+
+      if (!validCategoryIds.has(String(rawCategoryId))) {
+        orphanIds.push(article._id);
+      }
+    });
+
+    if (orphanIds.length === 0) {
+      log("MIGRATE", `${tenantDbName}.knowledgebasearticles orphan cleanup: nothing to delete`);
+      return;
+    }
+
+    if (CONFIG.DRY_RUN) {
+      log("DRY_RUN", `${tenantDbName}.knowledgebasearticles orphan cleanup: would delete ${orphanIds.length} document(s)`);
+      return;
+    }
+
+    let deleted = 0;
+    for (let i = 0; i < orphanIds.length; i += CONFIG.BATCH_SIZE) {
+      const batch = orphanIds.slice(i, i + CONFIG.BATCH_SIZE);
+      const result = coll.deleteMany({ _id: { $in: batch } });
+      deleted += result.deletedCount;
+    }
+    log("MIGRATE", `${tenantDbName}.knowledgebasearticles orphan cleanup: deleted=${deleted}`);
+  }
+
+  function migrateTenantHomepageCards(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+    const coll = tenantDb.homepagecards;
+
+    runUpdateMany(
+      coll,
+      {
+        $or: [
+          { icon_color: { $exists: true } },
+          { action_type: { $exists: true } },
+          { action_url: { $exists: true } },
+          { action_button_text: { $exists: true } },
+          { category_id: { $exists: true } },
+          { background_color: { $exists: true } },
+          { is_enabled: { $exists: true } },
+          { created_at: { $exists: true } },
+          { updated_at: { $exists: true } }
+        ]
+      },
+      [
+        {
+          $set: {
+            iconColor: { $ifNull: ["$iconColor", "$icon_color"] },
+            actionType: { $ifNull: ["$actionType", "$action_type"] },
+            actionUrl: { $ifNull: ["$actionUrl", "$action_url"] },
+            actionButtonText: { $ifNull: ["$actionButtonText", "$action_button_text"] },
+            categoryId: { $ifNull: ["$categoryId", "$category_id"] },
+            backgroundColor: { $ifNull: ["$backgroundColor", "$background_color"] },
+            isEnabled: { $ifNull: ["$isEnabled", "$is_enabled"] },
+            createdAt: { $ifNull: ["$createdAt", "$created_at"] },
+            updatedAt: { $ifNull: ["$updatedAt", "$updated_at"] }
+          }
+        },
+        { $unset: ["icon_color", "action_type", "action_url", "action_button_text", "category_id", "background_color", "is_enabled", "created_at", "updated_at"] }
+      ],
+      `${tenantDbName}.homepagecards snake_case -> camelCase`
+    );
+
+    const ops = [];
+    coll.find({}).forEach(doc => {
+      const setOps = {};
+      let changed = false;
+
+      const normalizedActionType = normalizeHomepageActionType(doc.actionType);
+      if (doc.actionType !== normalizedActionType) {
+        setOps.actionType = normalizedActionType;
+        changed = true;
+      }
+
+      if (doc.isEnabled === undefined || doc.isEnabled === null) {
+        setOps.isEnabled = true;
+        changed = true;
+      }
+
+      if (changed) {
+        ops.push({
+          updateOne: {
+            filter: { _id: doc._id },
+            update: { $set: setOps }
+          }
+        });
+      }
+
+      if (ops.length >= CONFIG.BATCH_SIZE) {
+        flushBulk(coll, ops.splice(0, ops.length), `${tenantDbName}.homepagecards enum/default normalization`);
+      }
+    });
+
+    flushBulk(coll, ops, `${tenantDbName}.homepagecards enum/default normalization`);
+  }
+
+  function migrateTenantTickets(tenantDbName) {
+    const tenantDb = db.getSiblingDB(tenantDbName);
+
+    runUpdateMany(
+      tenantDb.tickets,
+      {
+        $or: [
+          { creator: { $exists: true } },
+          { creatorName: { $exists: false } },
+          { creatorName: null }
+        ]
+      },
+      [
+        {
+          $set: {
+            creatorName: {
+              $ifNull: ["$creatorName", { $ifNull: ["$creator", "Unknown"] }]
+            }
+          }
+        },
+        { $unset: ["creator"] }
+      ],
+      `${tenantDbName}.tickets creator -> creatorName`
+    );
   }
 
   function migrateTenantTicketVerifications(tenantDbName) {
@@ -812,6 +1238,12 @@ Run in `mongosh` before migration.
     tenants.forEach(tenant => {
       migrateTenantPlayers(tenant);
       migrateTenantSettings(tenant);
+      migrateTenantStaffRoles(tenant);
+      migrateTenantInvitations(tenant);
+      migrateTenantTickets(tenant);
+      migrateTenantKnowledgebaseCategories(tenant);
+      migrateTenantKnowledgebaseArticles(tenant);
+      migrateTenantHomepageCards(tenant);
       migrateTenantTicketVerifications(tenant);
     });
 
@@ -857,9 +1289,39 @@ Run after commit-mode migration.
   const expectedTenantIndexes = {
     players: ["_id_", "uidx_players_minecraftUuid"],
     staffs: ["_id_", "uidx_staff_email", "uidx_staff_username", "sidx_staff_assignedMinecraftUuid"],
-    staffroles: ["_id_", "uidx_staff_roles_id"],
-    invitations: ["_id_", "idx_invitations_email", "uidx_invitations_token"],
-    ticket_verifications: ["_id_", "idx_ticket_verifications_expiresAt_ttl"]
+    staffroles: ["_id_", "uidx_staff_roles_name", "idx_staff_roles_order"],
+    invitations: ["_id_", "idx_invitations_email", "uidx_invitations_token", "idx_invitations_expiresAt_ttl"],
+    tickets: [
+      "_id_",
+      "idx_tickets_status_created",
+      "idx_tickets_created",
+      "idx_tickets_updatedAt",
+      "idx_tickets_type_created",
+      "idx_tickets_creatorUuid_created",
+      "idx_tickets_reportedPlayerUuid_created",
+      "idx_tickets_locked_created",
+      "idx_tickets_tags"
+    ],
+    ticket_verifications: ["_id_", "idx_ticket_verifications_expiresAt_ttl"],
+    knowledgebasecategories: [
+      "_id_",
+      "uidx_knowledgebase_categories_slug",
+      "idx_knowledgebase_categories_name",
+      "idx_knowledgebase_categories_ordinal",
+      "idx_knowledgebase_categories_isVisible_ordinal"
+    ],
+    knowledgebasearticles: [
+      "_id_",
+      "uidx_knowledgebase_articles_slug",
+      "idx_knowledgebase_articles_categoryId_ordinal",
+      "idx_knowledgebase_articles_isVisible_categoryId_ordinal"
+    ],
+    homepagecards: [
+      "_id_",
+      "idx_homepage_cards_ordinal",
+      "idx_homepage_cards_isEnabled_ordinal",
+      "idx_homepage_cards_categoryId"
+    ]
   };
   function tenantDbNames() {
     const names = globalDb.getCollection("servers")
@@ -882,9 +1344,9 @@ Run after commit-mode migration.
     const missing = expected.filter(n => !names.includes(n));
     const extra = names.filter(n => !expected.includes(n));
 
-    print(`[VERIFY] ${dbName}.${collectionName} index_names=${tojson(names)}`);
-    if (missing.length) print(`[VERIFY][ERROR] missing indexes: ${tojson(missing)}`);
-    if (extra.length) print(`[VERIFY][ERROR] unexpected indexes: ${tojson(extra)}`);
+    print(`[VERIFY] ${dbName}.${collectionName} index_names=${JSON.stringify(names)}`);
+    if (missing.length) print(`[VERIFY][ERROR] missing indexes: ${JSON.stringify(missing)}`);
+    if (extra.length) print(`[VERIFY][ERROR] unexpected indexes: ${JSON.stringify(extra)}`);
   }
 
   function countLegacy(dbName) {
@@ -920,10 +1382,65 @@ Run after commit-mode migration.
               { "punishments.data.expires": { $exists: true } },
               { "punishments.data.expiresAt": { $exists: true } }
             ]
+          }),
+      invitationsLegacyFields: dbName === GLOBAL_DB
+        ? null
+        : d.invitations.countDocuments({
+            $or: [
+              { status: { $exists: true } },
+              { expires: { $exists: true } },
+              { expiresAt: { $exists: false } },
+              { expiresAt: null }
+            ]
+          }),
+      staffRolesLegacyIdField: dbName === GLOBAL_DB ? null : d.staffroles.countDocuments({ id: { $exists: true } }),
+      ticketsLegacyCreatorField: dbName === GLOBAL_DB ? null : d.tickets.countDocuments({ creator: { $exists: true } }),
+      homepageCardsLegacyFields: dbName === GLOBAL_DB
+        ? null
+        : d.homepagecards.countDocuments({
+            $or: [
+              { icon_color: { $exists: true } },
+              { action_type: { $exists: true } },
+              { action_url: { $exists: true } },
+              { action_button_text: { $exists: true } },
+              { category_id: { $exists: true } },
+              { background_color: { $exists: true } },
+              { is_enabled: { $exists: true } },
+              { created_at: { $exists: true } },
+              { updated_at: { $exists: true } }
+            ]
+          }),
+      kbCategoriesLegacyFields: dbName === GLOBAL_DB
+        ? null
+        : d.knowledgebasecategories.countDocuments({
+            $or: [
+              { is_visible: { $exists: true } },
+              { created_at: { $exists: true } },
+              { updated_at: { $exists: true } }
+            ]
+          }),
+      kbArticlesLegacyFields: dbName === GLOBAL_DB
+        ? null
+        : d.knowledgebasearticles.countDocuments({
+            $or: [
+              { category_id: { $exists: true } },
+              { is_visible: { $exists: true } },
+              { created_at: { $exists: true } },
+              { updated_at: { $exists: true } }
+            ]
+          }),
+      kbArticlesNullCategory: dbName === GLOBAL_DB
+        ? null
+        : d.knowledgebasearticles.countDocuments({
+            $or: [
+              { categoryId: { $exists: false } },
+              { categoryId: null },
+              { categoryId: "" }
+            ]
           })
     };
 
-    print(`[VERIFY] ${dbName} legacy_counts=${tojson(result)}`);
+    print(`[VERIFY] ${dbName} legacy_counts=${JSON.stringify(result)}`);
   }
 
   const tenants = tenantDbNames();
@@ -941,6 +1458,7 @@ Run after commit-mode migration.
   print(`[VERIFY][TTL] modl.auth_codes expired_docs_remaining=${globalDb.auth_codes.countDocuments({ expiresAt: { $lt: now } })}`);
   tenants.forEach(t => {
     const d = db.getSiblingDB(t);
+    print(`[VERIFY][TTL] ${t}.invitations expired_docs_remaining=${d.invitations.countDocuments({ expiresAt: { $lt: now } })}`);
     print(`[VERIFY][TTL] ${t}.ticket_verifications expired_docs_remaining=${d.ticket_verifications.countDocuments({ expiresAt: { $lt: now } })}`);
   });
 
@@ -955,3 +1473,4 @@ Run after commit-mode migration.
 - If unique index creation reports duplicates, resolve duplicates first and rerun commit mode.
 - Keep the backup archive until after at least one full business cycle of monitoring.
 - Restarting backend after migration is recommended so index warmup logs clearly confirm canonical index state.
+- `servers.currentPeriodEnd` is allowed to be `null` for non-billing/inactive records; this runbook does not force synthetic values.

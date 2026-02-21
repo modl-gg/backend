@@ -15,7 +15,7 @@ public record TicketResponse(
         String category,
         String subject,
         String status,
-        String creator,
+        String creatorName,
         String creatorUuid,
         String reportedBy,
         String reportedPlayer,

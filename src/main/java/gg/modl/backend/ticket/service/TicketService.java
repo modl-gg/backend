@@ -54,7 +54,6 @@ public class TicketService {
             Criteria searchCriteria = new Criteria().orOperator(
                     Criteria.where("_id").regex(escapedSearch, "i"),
                     Criteria.where("subject").regex(escapedSearch, "i"),
-                    Criteria.where("creator").regex(escapedSearch, "i"),
                     Criteria.where("creatorName").regex(escapedSearch, "i"),
                     Criteria.where("replies.name").regex(escapedSearch, "i"),
                     Criteria.where("replies.content").regex(escapedSearch, "i")
@@ -167,7 +166,6 @@ public class TicketService {
             Criteria searchCriteria = new Criteria().orOperator(
                     Criteria.where("_id").regex(escapedSearch, "i"),
                     Criteria.where("subject").regex(escapedSearch, "i"),
-                    Criteria.where("creator").regex(escapedSearch, "i"),
                     Criteria.where("creatorName").regex(escapedSearch, "i")
             );
             baseQuery.addCriteria(searchCriteria);
@@ -381,7 +379,6 @@ public class TicketService {
                 .category(request.type())
                 .subject(subject)
                 .status(ticketStatus)
-                .creator(creatorDisplayName)
                 .creatorName(creatorDisplayName)
                 .creatorUuid(request.creatorUuid())
                 .reportedPlayer(request.reportedPlayerName())
@@ -1062,6 +1059,7 @@ public class TicketService {
     private TicketListItemResponse toListItemResponse(Ticket ticket) {
         TicketReply lastReply = null;
         int replyCount = 0;
+        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
 
         if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
             replyCount = ticket.getReplies().size();
@@ -1072,8 +1070,8 @@ public class TicketService {
                 ticket.getId(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
                 ticket.getStatus(),
-                ticket.getCreator(),
-                ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator(),
+                creatorName,
+                creatorName,
                 ticket.getCreated(),
                 TicketType.fromId(ticket.getType()).getDisplayName(),
                 ticket.isLocked(),
@@ -1089,6 +1087,7 @@ public class TicketService {
     private TicketResponse toTicketResponse(Ticket ticket) {
         // Ensure all replies have proper names
         List<TicketReply> processedReplies = processRepliesWithNames(ticket);
+        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
 
         return new TicketResponse(
                 ticket.getId(),
@@ -1096,9 +1095,9 @@ public class TicketService {
                 TicketType.fromId(ticket.getType()).getDisplayName(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
                 ticket.getStatus(),
-                ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator(),
+                creatorName,
                 ticket.getCreatorUuid(),
-                ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator(),
+                creatorName,
                 ticket.getReportedPlayer(),
                 ticket.getReportedPlayerUuid(),
                 ticket.getCreated(),

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 @Getter
 @Setter
 public class AuthConfiguration {
-    private int emailCodeExpiry = 600;
+    private int emailCodeExpiry = 300;
     private int emailCodeLength = 6;
     private long sessionDurationSeconds = 14 * 24 * 60 * 60;
     private String sessionCookieName = "MODL_SESSION";

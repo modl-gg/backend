@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.time.Instant;
+import java.util.Date;
 
 @Document(collection = CollectionName.SESSIONS)
 @Data
@@ -24,9 +24,9 @@ public class AuthSessionData {
     private String email;
 
     @Field
-    private Instant createdAt;
+    private Date createdAt;
 
     @Field
     @Indexed(name = "idx_sessions_expiresAt_ttl", expireAfter = "0s")
-    private Instant expiresAt;
+    private Date expiresAt;
 }

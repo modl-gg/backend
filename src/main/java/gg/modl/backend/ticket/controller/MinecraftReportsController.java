@@ -61,7 +61,7 @@ public class MinecraftReportsController {
             report.put("id", t.getId());
             report.put("type", t.getCategory() != null ? t.getCategory() : t.getType()); // Use category (player/chat) as the type
             report.put("category", t.getCategory()); // Original report category
-            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : "Unknown");
             report.put("reporterUuid", t.getCreatorUuid());
             report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
             report.put("reportedPlayerName", t.getReportedPlayer());
@@ -233,7 +233,7 @@ public class MinecraftReportsController {
             report.put("id", t.getId());
             report.put("type", t.getCategory() != null ? t.getCategory() : t.getType());
             report.put("category", t.getCategory());
-            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : "Unknown");
             report.put("reporterUuid", t.getCreatorUuid());
             report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
             report.put("reportedPlayerName", t.getReportedPlayer());

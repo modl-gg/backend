@@ -180,7 +180,7 @@ public class DashboardService {
             Query ticketQuery = Query.query(new Criteria().andOperator(
                     Criteria.where("created").gte(cutoffDate),
                     new Criteria().orOperator(
-                            Criteria.where("creator").is(staffUsername),
+                            Criteria.where("creatorName").is(staffUsername),
                             Criteria.where("assignedTo").regex("(^|,)" + java.util.regex.Pattern.quote(staffUsername) + "(,|$)"),
                             Criteria.where("replies.name").is(staffUsername)
                     )
@@ -188,7 +188,7 @@ public class DashboardService {
             List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : tickets) {
-                if (ticket.getCreator() != null && ticket.getCreator().equals(staffUsername)
+                if (ticket.getCreatorName() != null && ticket.getCreatorName().equals(staffUsername)
                         && ticket.getCreated() != null && ticket.getCreated().after(cutoffDate)) {
                     activities.add(new ActivityItemResponse(
                             "ticket-created-" + ticket.getId(),

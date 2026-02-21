@@ -1,6 +1,5 @@
 package gg.modl.backend.knowledgebase.data;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,13 +23,7 @@ public class KnowledgebaseArticle {
     private String content;
     private String categoryId;
     private int ordinal;
-
-    @JsonProperty("is_visible")
     private boolean isVisible;
-
-    @JsonProperty("created_at")
     private Date createdAt;
-
-    @JsonProperty("updated_at")
     private Date updatedAt;
 }

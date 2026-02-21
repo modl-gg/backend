@@ -11,8 +11,9 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
-import java.time.Instant;
 import java.util.Base64;
+import java.util.Date;
+import java.util.Locale;
 import java.util.Optional;
 
 @Service
@@ -26,22 +27,28 @@ public class SessionService {
 
     public AuthSessionData createSession(Server server, String email) {
         MongoTemplate mongo = getMongoTemplateForServer(server);
+        invalidateAllSessionsForEmailInternal(mongo, email);
         return createSessionInternal(mongo, email);
     }
 
     public AuthSessionData createAdminSession(String email) {
         MongoTemplate mongo = mongoProvider.getGlobalDatabase();
+        invalidateAllSessionsForEmailInternal(mongo, email);
         return createSessionInternal(mongo, email);
     }
 
     private AuthSessionData createSessionInternal(MongoTemplate mongo, String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Session email cannot be empty");
+        }
+
         AuthSessionData session = new AuthSessionData();
         session.setId(generateSecureToken());
-        session.setEmail(email.toLowerCase());
+        session.setEmail(email.trim().toLowerCase(Locale.ROOT));
 
-        Instant now = Instant.now();
+        Date now = new Date();
         session.setCreatedAt(now);
-        session.setExpiresAt(now.plusSeconds(authConfiguration.getSessionDurationSeconds()));
+        session.setExpiresAt(new Date(now.getTime() + (authConfiguration.getSessionDurationSeconds() * 1000)));
 
         mongo.save(session);
         return session;
@@ -67,7 +74,7 @@ public class SessionService {
 
     private Optional<AuthSessionData> findValidSessionInternal(MongoTemplate mongo, String sessionId) {
         Query query = new Query(Criteria.where("_id").is(sessionId)
-                .and("expiresAt").gt(Instant.now()));
+                .and("expiresAt").gt(new Date()));
 
         AuthSessionData session = mongo.findOne(query, AuthSessionData.class);
         return Optional.ofNullable(session);
@@ -96,10 +103,10 @@ public class SessionService {
     }
 
     private void refreshSessionInternal(MongoTemplate mongo, String sessionId) {
-        Instant now = Instant.now();
+        Date now = new Date();
         Query query = new Query(Criteria.where("_id").is(sessionId));
         Update update = new Update()
-                .set("expiresAt", now.plusSeconds(authConfiguration.getSessionDurationSeconds()));
+                .set("expiresAt", new Date(now.getTime() + (authConfiguration.getSessionDurationSeconds() * 1000)));
 
         mongo.updateFirst(query, update, AuthSessionData.class);
     }
@@ -121,7 +128,29 @@ public class SessionService {
 
     public void invalidateAllSessionsForEmail(Server server, String email) {
         MongoTemplate mongo = getMongoTemplateForServer(server);
-        Query query = new Query(Criteria.where("email").is(email.toLowerCase()));
+        invalidateAllSessionsForEmailInternal(mongo, email);
+    }
+
+    public void invalidateAllAdminSessionsForEmail(String email) {
+        MongoTemplate mongo = mongoProvider.getGlobalDatabase();
+        invalidateAllSessionsForEmailInternal(mongo, email);
+    }
+
+    private void invalidateAllSessionsForEmailInternal(MongoTemplate mongo, String email) {
+        if (email == null || email.isBlank()) {
+            return;
+        }
+
+        String rawEmail = email.trim();
+        String normalizedEmail = rawEmail.toLowerCase(Locale.ROOT);
+
+        Query query;
+        if (rawEmail.equals(normalizedEmail)) {
+            query = new Query(Criteria.where("email").is(normalizedEmail));
+        } else {
+            query = new Query(Criteria.where("email").in(rawEmail, normalizedEmail));
+        }
+
         mongo.remove(query, AuthSessionData.class);
     }
 

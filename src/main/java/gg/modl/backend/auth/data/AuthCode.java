@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.time.Instant;
+import java.util.Date;
 
 @Document(collection = CollectionName.AUTH_CODES)
 @Data
@@ -29,5 +29,5 @@ public class AuthCode {
 
     @Field
     @Indexed(name = "idx_auth_codes_expiresAt_ttl", expireAfter = "0s")
-    private Instant expiresAt;
+    private Date expiresAt;
 }

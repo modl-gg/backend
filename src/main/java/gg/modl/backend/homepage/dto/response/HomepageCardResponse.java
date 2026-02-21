@@ -1,6 +1,5 @@
 package gg.modl.backend.homepage.dto.response;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
@@ -13,16 +12,16 @@ public record HomepageCardResponse(
         String title,
         String description,
         String icon,
-        @JsonProperty("icon_color") String iconColor,
-        @JsonProperty("action_type") String actionType,
-        @JsonProperty("action_url") String actionUrl,
-        @JsonProperty("action_button_text") String actionButtonText,
-        @JsonProperty("category_id") String categoryId,
-        @JsonProperty("background_color") String backgroundColor,
+        String iconColor,
+        String actionType,
+        String actionUrl,
+        String actionButtonText,
+        String categoryId,
+        String backgroundColor,
         int ordinal,
-        @JsonProperty("is_enabled") boolean isEnabled,
-        @JsonProperty("created_at") Date createdAt,
-        @JsonProperty("updated_at") Date updatedAt,
+        boolean isEnabled,
+        Date createdAt,
+        Date updatedAt,
         EmbeddedCategory category
 ) {
     public record EmbeddedCategory(

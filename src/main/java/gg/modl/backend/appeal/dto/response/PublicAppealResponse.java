@@ -14,6 +14,7 @@ public record PublicAppealResponse(
         String subject,
         String status,
         String creator,
+        String creatorName,
         String creatorUuid,
         Date created,
         Date date,
@@ -25,7 +26,7 @@ public record PublicAppealResponse(
         Map<String, Object> data
 ) {
     public static PublicAppealResponse fromTicketResponse(TicketResponse appeal) {
-        String creator = appeal.creator() != null ? appeal.creator() : "";
+        String creatorName = appeal.creatorName() != null ? appeal.creatorName() : "";
         String creatorUuid = appeal.creatorUuid() != null ? appeal.creatorUuid() : "";
         List<TicketReply> messages = appeal.messages() != null ? appeal.messages() : Collections.emptyList();
         List<TicketNote> notes = appeal.notes() != null ? appeal.notes() : Collections.emptyList();
@@ -37,7 +38,8 @@ public record PublicAppealResponse(
                 appeal.type(),
                 appeal.subject(),
                 appeal.status(),
-                creator,
+                creatorName,
+                creatorName,
                 creatorUuid,
                 appeal.date(),
                 appeal.date(),
