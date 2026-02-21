@@ -42,7 +42,7 @@ class EvidenceUploadApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
+                "typeOrdinal", testTypeOrdinal,
                 "reason", "Evidence upload test",
                 "duration", 300,
                 "severity", "LOW",

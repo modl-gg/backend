@@ -172,7 +172,7 @@ class PanelPlayerApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
+                "typeOrdinal", testTypeOrdinal,
                 "reason", "Panel API test - punishment note",
                 "duration", 60,
                 "severity", "LOW",
@@ -212,7 +212,7 @@ class PanelPlayerApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
+                "typeOrdinal", testTypeOrdinal,
                 "reason", "Panel API test - get by id",
                 "duration", 60,
                 "severity", "LOW",
@@ -236,7 +236,7 @@ class PanelPlayerApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
+                "typeOrdinal", testTypeOrdinal,
                 "reason", "Panel API test - evidence",
                 "duration", 60,
                 "severity", "LOW",
@@ -273,7 +273,7 @@ class PanelPlayerApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
+                "typeOrdinal", testTypeOrdinal,
                 "reason", "Panel API test - linked bans",
                 "duration", 60,
                 "severity", "LOW",
