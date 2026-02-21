@@ -42,7 +42,7 @@ class PublicAppealApiTest {
         var createPunishment = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "Public appeal test",
                 "duration", 300,
                 "severity", "LOW",

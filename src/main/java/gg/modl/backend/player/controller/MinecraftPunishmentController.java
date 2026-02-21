@@ -17,6 +17,7 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.servlet.http.HttpServletRequest;
 import gg.modl.backend.validation.RegExpConstants;
 import jakarta.validation.Valid;
@@ -740,7 +741,7 @@ public class MinecraftPunishmentController {
     public record MinecraftCreatePunishmentRequest(
             @NotBlank String targetUuid,
             @NotBlank String issuerName,
-            int typeOrdinal,
+            @JsonProperty("type_ordinal") int typeOrdinal,
             String reason,
             Long duration,
             Map<String, Object> data,

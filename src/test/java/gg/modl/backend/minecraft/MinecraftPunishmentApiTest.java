@@ -43,7 +43,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - auto cleanup",
                 "duration", 60,
                 "severity", "LOW",
@@ -86,7 +86,7 @@ class MinecraftPunishmentApiTest {
         var response = api.minecraftPost("/v1/minecraft/punishments/create", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test legacy - auto cleanup",
                 "duration", 60,
                 "severity", "LOW",
@@ -108,7 +108,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - get by id",
                 "duration", 60,
                 "severity", "LOW",
@@ -136,7 +136,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - upload token",
                 "duration", 60,
                 "severity", "LOW",
@@ -181,7 +181,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - acknowledge",
                 "duration", 60,
                 "severity", "LOW",
@@ -211,7 +211,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - add note",
                 "duration", 60,
                 "severity", "LOW",
@@ -250,7 +250,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - add evidence",
                 "duration", 60,
                 "severity", "LOW",
@@ -290,7 +290,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - duration update",
                 "duration", 60,
                 "severity", "LOW",
@@ -330,7 +330,7 @@ class MinecraftPunishmentApiTest {
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                 "targetUuid", testUuid,
                 "issuerName", "TestBot",
-                "typeOrdinal", testTypeOrdinal,
+                "type_ordinal", testTypeOrdinal,
                 "reason", "API Test - toggle option",
                 "duration", 60,
                 "severity", "LOW",
@@ -360,7 +360,7 @@ class MinecraftPunishmentApiTest {
             var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                     "targetUuid", testUuid,
                     "issuerName", "TestBot",
-                    "typeOrdinal", type.ordinal(),
+                    "type_ordinal", type.ordinal(),
                     "reason", "API Test - type " + type.name(),
                     "duration", 60,
                     "severity", "LOW",
@@ -390,7 +390,7 @@ class MinecraftPunishmentApiTest {
             var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
                     "targetUuid", player.uuid(),
                     "issuerName", "TestBot",
-                    "typeOrdinal", testTypeOrdinal,
+                    "type_ordinal", testTypeOrdinal,
                     "reason", "API Test - player " + player.username(),
                     "duration", 60,
                     "severity", "LOW",
