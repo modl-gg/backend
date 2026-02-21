@@ -326,7 +326,8 @@ public class TicketService {
         TicketType ticketType = TicketType.fromId(request.type());
         String ticketId = generateTicketId(template, ticketType);
 
-        String ticketStatus = (request.subject() != null && !request.subject().isBlank()) ? "Open" : "Unfinished";
+        boolean isReport = "player".equalsIgnoreCase(request.type()) || "chat".equalsIgnoreCase(request.type());
+        String ticketStatus = isReport || (request.subject() != null && !request.subject().isBlank()) ? "Open" : "Unfinished";
         String subject = (request.subject() != null && !request.subject().isBlank())
                 ? request.subject()
                 : ticketType.getDisplayName();
@@ -414,8 +415,15 @@ public class TicketService {
         Update update = new Update().set("updatedAt", new Date());
 
         if (request.status() != null) {
-            update.set("status", request.status());
-            ticket.setStatus(request.status());
+            // Validate status is one of the allowed values
+            String validatedStatus = switch (request.status().toLowerCase()) {
+                case "open" -> "Open";
+                case "closed" -> "Closed";
+                case "unfinished" -> "Unfinished";
+                default -> "Open";
+            };
+            update.set("status", validatedStatus);
+            ticket.setStatus(validatedStatus);
         }
 
         if (request.locked() != null) {

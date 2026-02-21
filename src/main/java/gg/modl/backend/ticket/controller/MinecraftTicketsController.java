@@ -156,14 +156,12 @@ public class MinecraftTicketsController {
      * Map plugin ticket type to internal type
      */
     private String mapTicketType(String type) {
-        if (type == null) return "OTHER";
+        if (type == null) return "SUPPORT";
         return switch (type.toLowerCase()) {
             case "player", "chat" -> "REPORT";
-            case "staff" -> "STAFF";
             case "bug" -> "BUG";
-            case "support" -> "SUPPORT";
             case "appeal" -> "APPEAL";
-            default -> "OTHER";
+            default -> "SUPPORT";
         };
     }
 
@@ -207,7 +205,7 @@ public class MinecraftTicketsController {
             conditions.add(Criteria.where("type").is(type));
         } else {
             // Default to support tickets (exclude player reports)
-            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL", "STAFF", "OTHER"));
+            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL"));
         }
 
         if (!conditions.isEmpty()) {

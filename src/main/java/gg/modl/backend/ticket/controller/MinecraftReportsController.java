@@ -275,7 +275,6 @@ public class MinecraftReportsController {
 
         Update update = new Update()
                 .set("assignedTo", request.assignee())
-                .set("status", "in_progress")
                 .set("updatedAt", new Date());
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
