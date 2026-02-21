@@ -171,7 +171,7 @@ public class AccountLinkingService {
 
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                int ordinal = punishment.getType_ordinal();
+                int ordinal = punishment.getTypeOrdinal();
                 boolean isBan = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
                         .map(type -> type.isBan())
                         .orElse(false);

@@ -239,7 +239,7 @@ public class PunishmentService {
                 data
         );
 
-        // Convert to raw Document to avoid Spring Data wrapping embedded @Field("_id") objects in arrays
+        // Convert to raw Document to keep embedded array entries as plain objects.
         Document punishmentDoc = (Document) template.getConverter().convertToMongoType(punishment);
         Update update = new Update().push("punishments", punishmentDoc);
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
@@ -354,7 +354,7 @@ public class PunishmentService {
                     results.add(new PunishmentSearchResult(
                             punishment.getId(),
                             username,
-                            punishment.getType_ordinal(),
+                            punishment.getTypeOrdinal(),
                             statusCalculator.isPunishmentActive(punishment) ? "Active" : "Inactive",
                             punishment.getIssued()
                     ));
@@ -439,7 +439,7 @@ public class PunishmentService {
                 Punishment toPromote = oldest.get();
                 MongoTemplate template = getTemplate(server);
 
-                // Promote by removing "Unstarted" status — do NOT set started here.
+                // Promote by removing "Unstarted" status â€” do NOT set started here.
                 // The sync will deliver the punishment as pending, and the plugin will
                 // acknowledge it (which sets started) after caching/enforcing.
                 Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
@@ -541,7 +541,7 @@ public class PunishmentService {
         for (Punishment punishment : player.getPunishments()) {
             if (!statusCalculator.isPunishmentActive(punishment)) continue;
 
-            int ordinal = punishment.getType_ordinal();
+            int ordinal = punishment.getTypeOrdinal();
             PunishmentType type = types.stream()
                     .filter(t -> t.getOrdinal() == ordinal)
                     .findFirst()
@@ -639,7 +639,7 @@ public class PunishmentService {
         int count = 0;
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -647,7 +647,7 @@ public class PunishmentService {
 
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId")) &&
                         statusCalculator.isPunishmentActive(punishment)) {
@@ -699,7 +699,7 @@ public class PunishmentService {
         int count = 0;
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -707,7 +707,7 @@ public class PunishmentService {
 
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId")) &&
                         statusCalculator.isPunishmentActive(punishment)) {
@@ -763,7 +763,7 @@ public class PunishmentService {
         List<Map<String, Object>> results = new ArrayList<>();
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -774,7 +774,7 @@ public class PunishmentService {
                     player.getUsernames().get(player.getUsernames().size() - 1).username();
 
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId"))) {
 
@@ -1004,7 +1004,7 @@ public class PunishmentService {
         String playerUsername = player != null && !player.getUsernames().isEmpty() ?
                 player.getUsernames().get(player.getUsernames().size() - 1).username() : null;
 
-        int ordinal = punishment.getType_ordinal();
+        int ordinal = punishment.getTypeOrdinal();
 
         return new PunishmentResponse(
                 punishment.getId(),
@@ -1031,3 +1031,4 @@ public class PunishmentService {
         );
     }
 }
+

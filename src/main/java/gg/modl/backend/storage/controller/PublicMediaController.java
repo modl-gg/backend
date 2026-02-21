@@ -43,7 +43,7 @@ public class PublicMediaController {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
         Server server = RequestUtil.getRequestServer(request);
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         Map<String, Object> supportedTypes = isConfigured
                 ? validationService.getAllSupportedTypes()
@@ -68,7 +68,7 @@ public class PublicMediaController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
         String normalizedEntityId = presignRequest.entityId() != null ? presignRequest.entityId().trim() : null;
 
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(presignRequest.uploadType())) {

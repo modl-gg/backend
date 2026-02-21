@@ -70,7 +70,7 @@ public class ServerProvisioningService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("enableAIReview", false);
         data.put("enableAutomatedActions", false);
-        data.put("strictnessLevel", "standard");
+        data.put("strictnessLevel", "STANDARD");
         data.put("aiPunishmentConfigs", aiPunishmentConfigs);
 
         Settings settings = new Settings(null, "aiModerationSettings", data);
@@ -270,9 +270,6 @@ public class ServerProvisioningService {
         data.put("homepageIconUrl", "");
         data.put("panelIconUrl", "");
         data.put("labels", labels);
-        data.put("bugReportTags", List.of());
-        data.put("playerReportTags", List.of());
-        data.put("appealTags", List.of());
 
         Settings settings = new Settings(null, "general", data);
         template.save(settings, CollectionName.SETTINGS);

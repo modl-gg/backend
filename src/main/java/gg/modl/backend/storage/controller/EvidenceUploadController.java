@@ -105,7 +105,7 @@ public class EvidenceUploadController {
             ));
         }
 
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
                 fileName, contentType, fileSize, "evidence", isPremium);
         if (!validation.valid()) {
@@ -258,7 +258,7 @@ public class EvidenceUploadController {
 
             String cdnDomain = s3StorageService.getCdnDomain();
             if (cdnDomain == null || cdnDomain.isBlank()) {
-                // Reject when no CDN domain is configured — cannot verify host
+                // Reject when no CDN domain is configured â€” cannot verify host
                 return false;
             }
 

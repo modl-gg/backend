@@ -167,7 +167,7 @@ public class PanelBillingController {
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
         if (denied != null) return denied;
 
-        if (server.getPlan() != ServerPlan.premium) {
+        if (server.getPlan() != ServerPlan.PREMIUM) {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage limit configuration is only available for premium servers"));
         }
 
@@ -192,7 +192,7 @@ public class PanelBillingController {
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
         if (denied != null) return denied;
 
-        if (server.getPlan() != ServerPlan.premium) {
+        if (server.getPlan() != ServerPlan.PREMIUM) {
             return ResponseEntity.badRequest().body(Map.of("error", "Overage limits configuration is only available for premium servers"));
         }
 

@@ -41,11 +41,6 @@ public class DomainSettingsService {
         boolean accessingFromCustomDomain = false;
 
         if (settings == null || settings.getData() == null) {
-            // Check if Server document has custom domain data that needs to be migrated
-            if (server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isEmpty()) {
-                return migrateAndReturnDomainSettings(server, template, query, requestHost, modlSubdomainUrl);
-            }
-
             return DomainSettings.builder()
                     .customDomain(null)
                     .status(null)
@@ -57,12 +52,6 @@ public class DomainSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) settings.getData();
         String customDomain = getStringValue(data, "customDomain");
-
-        // If settings collection has no domain but Server document does, migrate it
-        if ((customDomain == null || customDomain.isEmpty()) &&
-            server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isEmpty()) {
-            return migrateAndReturnDomainSettings(server, template, query, requestHost, modlSubdomainUrl);
-        }
 
         if (customDomain != null && !customDomain.isEmpty() && requestHost != null) {
             accessingFromCustomDomain = requestHost.equalsIgnoreCase(customDomain);
@@ -83,58 +72,6 @@ public class DomainSettingsService {
                         .build();
             }
         }
-
-        return DomainSettings.builder()
-                .customDomain(customDomain)
-                .status(status)
-                .accessingFromCustomDomain(accessingFromCustomDomain)
-                .modlSubdomainUrl(modlSubdomainUrl)
-                .build();
-    }
-
-    private DomainSettings migrateAndReturnDomainSettings(Server server, MongoTemplate template, Query query,
-                                                           String requestHost, String modlSubdomainUrl) {
-        String customDomain = server.getCustomDomainOverride();
-        CustomDomainStatus serverStatus = server.getCustomDomainStatus();
-        String cloudflareId = server.getCustomDomainCloudflareId();
-        String error = server.getCustomDomainError();
-        Date lastChecked = server.getCustomDomainLastChecked();
-
-        String statusString = serverStatus != null ? serverStatus.name() : "pending";
-        boolean cnameConfigured = "active".equals(statusString);
-
-        DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
-                .domain(customDomain)
-                .status(statusString)
-                .cnameConfigured(cnameConfigured)
-                .sslStatus(cnameConfigured ? "active" : "pending")
-                .lastChecked(lastChecked != null ? lastChecked.toInstant().toString() : Instant.now().toString())
-                .error(error)
-                .build();
-
-        Map<String, Object> statusMap = new HashMap<>();
-        statusMap.put("domain", status.getDomain());
-        statusMap.put("status", status.getStatus());
-        statusMap.put("cnameConfigured", status.isCnameConfigured());
-        statusMap.put("sslStatus", status.getSslStatus());
-        statusMap.put("lastChecked", status.getLastChecked());
-        statusMap.put("error", status.getError());
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("customDomain", customDomain);
-        data.put("status", statusMap);
-        data.put("cloudflareHostnameId", cloudflareId);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_DOMAIN)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
-
-        // Invalidate CORS cache to ensure migrated domain is recognized
-        corsConfigurationSource.invalidateCache(customDomain);
-
-        boolean accessingFromCustomDomain = requestHost != null && requestHost.equalsIgnoreCase(customDomain);
 
         return DomainSettings.builder()
                 .customDomain(customDomain)
@@ -233,18 +170,18 @@ public class DomainSettingsService {
         Query serverQuery = new Query(Criteria.where("_id").is(serverId));
 
         CustomDomainStatus domainStatus = switch (status) {
-            case "active" -> CustomDomainStatus.active;
-            case "error" -> CustomDomainStatus.error;
-            case "verifying" -> CustomDomainStatus.verifying;
-            default -> CustomDomainStatus.pending;
+            case "active" -> CustomDomainStatus.ACTIVE;
+            case "error" -> CustomDomainStatus.ERROR;
+            case "verifying" -> CustomDomainStatus.VERIFYING;
+            default -> CustomDomainStatus.PENDING;
         };
 
         Update serverUpdate = new Update()
                 .set(ServerField.CUSTOM_DOMAIN, customDomain)
                 .set(ServerField.CUSTOM_DOMAIN_STATUS, domainStatus.name())
-                .set("customDomain_cloudflareId", cloudflareHostnameId)
-                .set("customDomain_lastChecked", new Date())
-                .set("customDomain_error", error)
+                .set("customDomainCloudflareId", cloudflareHostnameId)
+                .set("customDomainLastChecked", new Date())
+                .set("customDomainError", error)
                 .set("updatedAt", new Date());
 
         globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
@@ -394,9 +331,9 @@ public class DomainSettingsService {
         Update serverUpdate = new Update()
                 .unset(ServerField.CUSTOM_DOMAIN)
                 .unset(ServerField.CUSTOM_DOMAIN_STATUS)
-                .unset("customDomain_cloudflareId")
-                .unset("customDomain_lastChecked")
-                .unset("customDomain_error")
+                .unset("customDomainCloudflareId")
+                .unset("customDomainLastChecked")
+                .unset("customDomainError")
                 .set("updatedAt", new Date());
 
         globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);

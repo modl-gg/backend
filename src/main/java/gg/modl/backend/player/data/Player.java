@@ -29,7 +29,7 @@ public class Player {
     private String id;
 
     @Field(name = "minecraftUuid", targetType = FieldType.STRING)
-    @Indexed(name = "minecraftUuid_1", unique = true, sparse = true)
+    @Indexed(name = "uidx_players_minecraftUuid", unique = true, sparse = true)
     private UUID minecraftUuid;
 
     @Field(name = "usernames", targetType = FieldType.ARRAY)

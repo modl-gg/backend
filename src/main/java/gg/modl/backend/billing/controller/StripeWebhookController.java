@@ -22,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Date;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -95,15 +96,15 @@ public class StripeWebhookController {
                     Date periodEndDate = stripeService.extractPeriodEnd(subscription);
 
                     Update update = new Update()
-                            .set("stripe_subscription_id", session.getSubscription())
-                            .set("subscription_status", SubscriptionStatus.active)
-                            .set("plan", ServerPlan.premium);
+                            .set("stripeSubscriptionId", session.getSubscription())
+                            .set("subscriptionStatus", SubscriptionStatus.ACTIVE)
+                            .set("plan", ServerPlan.PREMIUM);
 
                     if (periodStartDate != null) {
-                        update.set("current_period_start", periodStartDate);
+                        update.set("currentPeriodStart", periodStartDate);
                     }
                     if (periodEndDate != null) {
-                        update.set("current_period_end", periodEndDate);
+                        update.set("currentPeriodEnd", periodEndDate);
                     }
 
                     updateServer(globalDb, server.getId(), update);
@@ -128,21 +129,21 @@ public class StripeWebhookController {
             Date periodEndDate = stripeService.extractPeriodEnd(subscription);
 
             Update update = new Update()
-                    .set("stripe_subscription_id", subscription.getId())
-                    .set("subscription_status", parseSubscriptionStatus(subscription.getStatus()));
+                    .set("stripeSubscriptionId", subscription.getId())
+                    .set("subscriptionStatus", parseSubscriptionStatus(subscription.getStatus()));
 
             ServerPlan plan = switch (subscription.getStatus()) {
-                case "active", "trialing", "paused" -> ServerPlan.premium;
-                case "past_due", "unpaid", "incomplete", "incomplete_expired" -> ServerPlan.free;
-                default -> ServerPlan.premium;
+                case "active", "trialing", "paused" -> ServerPlan.PREMIUM;
+                case "past_due", "unpaid", "incomplete", "incomplete_expired" -> ServerPlan.FREE;
+                default -> ServerPlan.PREMIUM;
             };
             update.set("plan", plan);
 
             if (periodStartDate != null) {
-                update.set("current_period_start", periodStartDate);
+                update.set("currentPeriodStart", periodStartDate);
             }
             if (periodEndDate != null) {
-                update.set("current_period_end", periodEndDate);
+                update.set("currentPeriodEnd", periodEndDate);
             }
 
             updateServer(globalDb, server.getId(), update);
@@ -162,20 +163,20 @@ public class StripeWebhookController {
             String effectiveStatus = stripeService.getEffectiveStatus(subscription);
 
             Update update = new Update()
-                    .set("subscription_status", parseSubscriptionStatus(effectiveStatus));
+                    .set("subscriptionStatus", parseSubscriptionStatus(effectiveStatus));
 
             if ("active".equals(effectiveStatus)) {
-                update.set("plan", ServerPlan.premium);
+                update.set("plan", ServerPlan.PREMIUM);
             } else if ("past_due".equals(effectiveStatus) || "unpaid".equals(effectiveStatus) ||
                     "incomplete".equals(effectiveStatus) || "incomplete_expired".equals(effectiveStatus)) {
-                update.set("plan", ServerPlan.free);
+                update.set("plan", ServerPlan.FREE);
             }
 
             if (periodStartDate != null) {
-                update.set("current_period_start", periodStartDate);
+                update.set("currentPeriodStart", periodStartDate);
             }
             if (periodEndDate != null) {
-                update.set("current_period_end", periodEndDate);
+                update.set("currentPeriodEnd", periodEndDate);
             }
 
             updateServer(globalDb, server.getId(), update);
@@ -193,9 +194,9 @@ public class StripeWebhookController {
         Server server = findServerBySubscriptionId(globalDb, subscription.getId());
         if (server != null) {
             Update update = new Update()
-                    .set("subscription_status", SubscriptionStatus.canceled)
-                    .set("plan", ServerPlan.free)
-                    .unset("current_period_end");
+                    .set("subscriptionStatus", SubscriptionStatus.CANCELED)
+                    .set("plan", ServerPlan.FREE)
+                    .unset("currentPeriodEnd");
 
             updateServer(globalDb, server.getId(), update);
             usageTrackingService.resetUsageCounters(server.getId());
@@ -213,8 +214,8 @@ public class StripeWebhookController {
             Server server = findServerByCustomerId(globalDb, customerId);
             if (server != null) {
                 Update update = new Update()
-                        .set("subscription_status", SubscriptionStatus.past_due)
-                        .set("plan", ServerPlan.free);
+                        .set("subscriptionStatus", SubscriptionStatus.PAST_DUE)
+                        .set("plan", ServerPlan.FREE);
 
                 updateServer(globalDb, server.getId(), update);
             }
@@ -230,10 +231,10 @@ public class StripeWebhookController {
         String customerId = invoice.getCustomer();
         if (customerId != null) {
             Server server = findServerByCustomerId(globalDb, customerId);
-            if (server != null && server.getSubscriptionStatus() == SubscriptionStatus.past_due) {
+            if (server != null && server.getSubscriptionStatus() == SubscriptionStatus.PAST_DUE) {
                 Update update = new Update()
-                        .set("subscription_status", SubscriptionStatus.active)
-                        .set("plan", ServerPlan.premium);
+                        .set("subscriptionStatus", SubscriptionStatus.ACTIVE)
+                        .set("plan", ServerPlan.PREMIUM);
 
                 updateServer(globalDb, server.getId(), update);
             }
@@ -241,12 +242,12 @@ public class StripeWebhookController {
     }
 
     private Server findServerByCustomerId(MongoTemplate globalDb, String customerId) {
-        Query query = Query.query(Criteria.where("stripe_customer_id").is(customerId));
+        Query query = Query.query(Criteria.where("stripeCustomerId").is(customerId));
         return globalDb.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 
     private Server findServerBySubscriptionId(MongoTemplate globalDb, String subscriptionId) {
-        Query query = Query.query(Criteria.where("stripe_subscription_id").is(subscriptionId));
+        Query query = Query.query(Criteria.where("stripeSubscriptionId").is(subscriptionId));
         return globalDb.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 
@@ -257,10 +258,10 @@ public class StripeWebhookController {
 
     private SubscriptionStatus parseSubscriptionStatus(String status) {
         try {
-            return SubscriptionStatus.valueOf(status);
+            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
-            return SubscriptionStatus.inactive;
+            return SubscriptionStatus.INACTIVE;
         }
     }
 }

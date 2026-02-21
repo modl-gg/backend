@@ -20,13 +20,13 @@ public class AuthSessionData {
     private String id;
 
     @Field
-    @Indexed(name = "email_1")
+    @Indexed(name = "idx_sessions_email")
     private String email;
 
     @Field
     private Instant createdAt;
 
     @Field
-    @Indexed(name = "expiresAt_1", expireAfter = "0s")
+    @Indexed(name = "idx_sessions_expiresAt_ttl", expireAfter = "0s")
     private Instant expiresAt;
 }

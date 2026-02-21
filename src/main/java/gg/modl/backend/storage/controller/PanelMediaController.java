@@ -38,7 +38,7 @@ public class PanelMediaController {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
         Server server = RequestUtil.getRequestServer(request);
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         Map<String, Object> response = new HashMap<>();
         response.put("backblazeConfigured", isConfigured);
@@ -73,7 +73,7 @@ public class PanelMediaController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
                 presignRequest.fileName(),

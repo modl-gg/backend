@@ -1,6 +1,5 @@
 package gg.modl.backend.settings.data;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,11 +12,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PunishmentType {
-    @JsonAlias("_id")
     private Integer id;
     private String name;
     private String category;
-    @JsonAlias("isCustomizable")
     private Boolean customizable;
     private Integer ordinal;
 
@@ -35,7 +32,6 @@ public class PunishmentType {
 
     private Boolean canBeAltBlocking;
     private Boolean canBeStatWiping;
-    @JsonAlias("isAppealable")
     private Boolean appealable;
 
     private AppealForm appealForm;

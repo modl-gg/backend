@@ -1,7 +1,6 @@
 package gg.modl.backend.auth.filter;
 
 import gg.modl.backend.auth.AuthConfiguration;
-import gg.modl.backend.auth.AuthService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTSecurityRole;
@@ -24,42 +23,47 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private final SessionService sessionService;
-    private final AuthService authService;
     private final AuthConfiguration authConfiguration;
 
     @Override
     protected void doFilterInternal(@NotNull HttpServletRequest request,
                                     @NotNull HttpServletResponse response,
                                     @NotNull FilterChain filterChain) throws ServletException, IOException {
-        String sessionToken = extractSessionToken(request);
-        log.debug("SessionAuthenticationFilter: path={}, sessionToken={}", request.getRequestURI(), sessionToken != null ? "present" : "null");
+        Set<String> sessionTokens = extractSessionTokens(request);
+        log.debug("SessionAuthenticationFilter: path={}, sessionTokenCount={}", request.getRequestURI(), sessionTokens.size());
 
-        if (sessionToken != null) {
+        if (!sessionTokens.isEmpty()) {
             Server server = (Server) request.getAttribute(RequestAttribute.SERVER);
             log.debug("SessionAuthenticationFilter: server attribute={}", server != null ? server.getCustomDomain() : "null");
 
             if (server != null) {
-                authenticatePanelUser(request, server, sessionToken);
+                for (String sessionToken : sessionTokens) {
+                    if (authenticatePanelUser(request, server, sessionToken)) {
+                        break;
+                    }
+                }
             }
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private void authenticatePanelUser(HttpServletRequest request, Server server, String sessionToken) {
+    private boolean authenticatePanelUser(HttpServletRequest request, Server server, String sessionToken) {
         Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshSession(server, sessionToken);
         log.debug("SessionAuthenticationFilter: session lookup result={}", sessionOpt.isPresent() ? "found" : "not found");
 
         if (sessionOpt.isEmpty()) {
-            return;
+            return false;
         }
 
         AuthSessionData session = sessionOpt.get();
@@ -78,18 +82,19 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
 
         authentication.setDetails(session);
         SecurityContextHolder.getContext().setAuthentication(authentication);
+        return true;
     }
 
-    private String extractSessionToken(HttpServletRequest request) {
+    private Set<String> extractSessionTokens(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
-            return null;
+            return Set.of();
         }
 
         return Arrays.stream(cookies)
                 .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
                 .map(Cookie::getValue)
-                .findFirst()
-                .orElse(null);
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 }

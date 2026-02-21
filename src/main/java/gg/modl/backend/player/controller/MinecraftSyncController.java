@@ -172,7 +172,7 @@ public class MinecraftSyncController {
                     if (punishment.getIssued() == null || !punishment.getIssued().toInstant().isAfter(lastSync)) continue;
 
                     String category = statusCalculator.getEffectiveCategory(punishment, types);
-                    if (category == null) continue; // Not a ban or mute — no enforcement needed
+                    if (category == null) continue; // Not a ban or mute â€” no enforcement needed
 
                     Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
@@ -183,10 +183,10 @@ public class MinecraftSyncController {
                 }
 
                 // Include unexecuted kicks (ordinal 0) that haven't been acknowledged yet.
-                // Kicks bypass the active/category system — they're one-time actions.
+                // Kicks bypass the active/category system â€” they're one-time actions.
                 // started == null means the plugin hasn't executed the kick yet.
                 for (Punishment punishment : player.getPunishments()) {
-                    if (punishment.getType_ordinal() != 0) continue;
+                    if (punishment.getTypeOrdinal() != 0) continue;
                     if (punishment.getStarted() != null) continue; // Already executed
 
                     Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
@@ -355,7 +355,7 @@ public class MinecraftSyncController {
                 for (Punishment punishment : player.getPunishments()) {
                     if (punishment.getIssued() != null && punishment.getIssued().toInstant().isAfter(lastSync)) {
                         PunishmentType punishmentType = types.stream()
-                                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                                .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
                                 .findFirst()
                                 .orElse(null);
                         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";

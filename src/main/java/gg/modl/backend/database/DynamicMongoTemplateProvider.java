@@ -1,6 +1,7 @@
 package gg.modl.backend.database;
 
 import com.mongodb.client.MongoClient;
+import jakarta.annotation.PostConstruct;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
@@ -15,17 +16,30 @@ public class DynamicMongoTemplateProvider {
 
     private final MongoClient mongoClient;
     private final MappingMongoConverter mongoConverter;
+    private final MongoIndexBootstrapService mongoIndexBootstrapService;
     private final ConcurrentMap<String, MongoTemplate> mongoTemplateCache = new ConcurrentHashMap<>();
 
-    public DynamicMongoTemplateProvider(MongoClient mongoClient, MappingMongoConverter mongoConverter) {
+    public DynamicMongoTemplateProvider(
+            MongoClient mongoClient,
+            MappingMongoConverter mongoConverter,
+            MongoIndexBootstrapService mongoIndexBootstrapService
+    ) {
         this.mongoClient = mongoClient;
         this.mongoConverter = mongoConverter;
+        this.mongoIndexBootstrapService = mongoIndexBootstrapService;
+    }
+
+    @PostConstruct
+    public void initializeGlobalTemplate() {
+        getGlobalDatabase();
     }
 
     public MongoTemplate getFromDatabaseName(String databaseName) {
         return mongoTemplateCache.computeIfAbsent(databaseName, dbName -> {
             SimpleMongoClientDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(mongoClient, databaseName);
-            return new MongoTemplate(factory, mongoConverter);
+            MongoTemplate template = new MongoTemplate(factory, mongoConverter);
+            mongoIndexBootstrapService.ensureIndexesForDatabase(dbName, template);
+            return template;
         });
     }
 

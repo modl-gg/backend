@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -84,10 +85,10 @@ public class AdminServerController {
                 "server_" + request.customDomain(),
                 request.adminEmail(),
                 false,
-                request.plan() != null ? ServerPlan.valueOf(request.plan()) : ServerPlan.free
+                request.plan() != null ? ServerPlan.valueOf(request.plan().trim().toUpperCase(Locale.ROOT)) : ServerPlan.FREE
         );
-        server.setProvisioningStatus(ProvisioningStatus.pending);
-        server.setSubscriptionStatus(SubscriptionStatus.inactive);
+        server.setProvisioningStatus(ProvisioningStatus.PENDING);
+        server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
         server.setCreatedAt(now);
         server.setUpdatedAt(now);
 

@@ -1,6 +1,4 @@
 package gg.modl.backend.appeal.dto.response;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
@@ -12,7 +10,6 @@ import java.util.Map;
 
 public record PublicAppealResponse(
         String id,
-        @JsonProperty("_id") String legacyId,
         String type,
         String subject,
         String status,
@@ -36,7 +33,6 @@ public record PublicAppealResponse(
         Map<String, Object> data = appeal.data() != null ? appeal.data() : Map.of();
 
         return new PublicAppealResponse(
-                appeal.id(),
                 appeal.id(),
                 appeal.type(),
                 appeal.subject(),

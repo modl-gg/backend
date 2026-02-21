@@ -21,7 +21,12 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_AUTH)
@@ -108,21 +113,13 @@ public class AdminAuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
-        String sessionId = extractSessionId(request);
-        if (sessionId != null) {
+        for (String sessionId : extractSessionIds(request)) {
             sessionService.invalidateAdminSession(sessionId);
         }
 
-        Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
-        expiredCookie.setHttpOnly(true);
-        expiredCookie.setSecure(cookieSecure);
-        expiredCookie.setPath("/");
-        expiredCookie.setMaxAge(0);
-        expiredCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
-        if (cookieDomain != null && !cookieDomain.isEmpty()) {
-            expiredCookie.setDomain(cookieDomain);
+        for (Cookie expiredCookie : createExpiredSessionCookies()) {
+            response.addCookie(expiredCookie);
         }
-        response.addCookie(expiredCookie);
 
         return ResponseEntity.ok(new ApiResponse(true, "Logout successful"));
     }
@@ -177,6 +174,48 @@ public class AdminAuthController {
             }
         }
         return null;
+    }
+
+    private Set<String> extractSessionIds(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Set.of();
+        }
+
+        return Arrays.stream(cookies)
+                .filter(cookie -> ADMIN_SESSION_COOKIE.equals(cookie.getName()))
+                .map(Cookie::getValue)
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private List<Cookie> createExpiredSessionCookies() {
+        List<Cookie> cookies = new ArrayList<>();
+        cookies.add(createExpiredSessionCookie(null));
+
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            cookies.add(createExpiredSessionCookie(cookieDomain));
+            if (!cookieDomain.startsWith(".")) {
+                cookies.add(createExpiredSessionCookie("." + cookieDomain));
+            } else if (cookieDomain.length() > 1) {
+                cookies.add(createExpiredSessionCookie(cookieDomain.substring(1)));
+            }
+        }
+
+        return cookies;
+    }
+
+    private Cookie createExpiredSessionCookie(String domain) {
+        Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
+        expiredCookie.setHttpOnly(true);
+        expiredCookie.setSecure(cookieSecure);
+        expiredCookie.setPath("/");
+        expiredCookie.setMaxAge(0);
+        expiredCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
+        if (domain != null) {
+            expiredCookie.setDomain(domain);
+        }
+        return expiredCookie;
     }
 
     // Request/Response records

@@ -119,7 +119,7 @@ public class DashboardService {
                 if (p.getIssued() != null && p.getIssued().after(cutoff)) {
                     String reason = "";
                     boolean active = statusCalculator.isPunishmentActive(p);
-                    String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
+                    String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getTypeOrdinal());
 
                     if (p.getData() != null) {
                         Object reasonObj = p.getData().get("reason");
@@ -245,7 +245,7 @@ public class DashboardService {
                         if (staffUsername.equals(punishment.getIssuerName())
                                 && punishment.getIssued() != null
                                 && punishment.getIssued().after(cutoffDate)) {
-                            String punishmentTypeName = punishmentTypeService.getPunishmentTypeName(server, punishment.getType_ordinal());
+                            String punishmentTypeName = punishmentTypeService.getPunishmentTypeName(server, punishment.getTypeOrdinal());
                             activities.add(new ActivityItemResponse(
                                     "punishment-" + punishment.getId(),
                                     "new_punishment",

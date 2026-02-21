@@ -14,7 +14,11 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,41 +41,18 @@ public class GeneralSettingsService {
                     .homepageIconUrl("")
                     .panelIconUrl("")
                     .labels(new ArrayList<>())
-                    .bugReportTags(new ArrayList<>())
-                    .playerReportTags(new ArrayList<>())
-                    .appealTags(new ArrayList<>())
                     .build();
         }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) settings.getData();
 
-        // Get labels (new system)
-        List<Label> labels = getLabelsValue(data, "labels");
-
-        // Get deprecated tags for backwards compatibility
-        List<String> bugReportTags = getStringListValue(data, "bugReportTags");
-        List<String> playerReportTags = getStringListValue(data, "playerReportTags");
-        List<String> appealTags = getStringListValue(data, "appealTags");
-
-        // Migration: if labels is empty but tags exist, migrate them
-        if (labels.isEmpty() && (!bugReportTags.isEmpty() || !playerReportTags.isEmpty() || !appealTags.isEmpty())) {
-            labels = migrateTagsToLabels(bugReportTags, playerReportTags, appealTags);
-            // Save migrated labels
-            data.put("labels", labels.stream().map(this::labelToMap).collect(Collectors.toList()));
-            Update update = new Update().set("data", data);
-            template.updateFirst(query, update, Settings.class, CollectionName.SETTINGS);
-        }
-
         return GeneralSettings.builder()
                 .serverDisplayName(getStringValue(data, "serverDisplayName"))
                 .discordWebhookUrl(getStringValue(data, "discordWebhookUrl"))
                 .homepageIconUrl(getStringValue(data, "homepageIconUrl"))
                 .panelIconUrl(getStringValue(data, "panelIconUrl"))
-                .labels(labels)
-                .bugReportTags(bugReportTags)
-                .playerReportTags(playerReportTags)
-                .appealTags(appealTags)
+                .labels(getLabelsValue(data, "labels"))
                 .build();
     }
 
@@ -84,18 +65,12 @@ public class GeneralSettingsService {
         data.put("discordWebhookUrl", newSettings.getDiscordWebhookUrl() != null ? newSettings.getDiscordWebhookUrl() : "");
         data.put("homepageIconUrl", newSettings.getHomepageIconUrl() != null ? newSettings.getHomepageIconUrl() : "");
         data.put("panelIconUrl", newSettings.getPanelIconUrl() != null ? newSettings.getPanelIconUrl() : "");
-
-        // New labels system
-        if (newSettings.getLabels() != null) {
-            data.put("labels", newSettings.getLabels().stream().map(this::labelToMap).collect(Collectors.toList()));
-        } else {
-            data.put("labels", new ArrayList<>());
-        }
-
-        // Deprecated: kept for backwards compatibility
-        data.put("bugReportTags", newSettings.getBugReportTags() != null ? newSettings.getBugReportTags() : new ArrayList<>());
-        data.put("playerReportTags", newSettings.getPlayerReportTags() != null ? newSettings.getPlayerReportTags() : new ArrayList<>());
-        data.put("appealTags", newSettings.getAppealTags() != null ? newSettings.getAppealTags() : new ArrayList<>());
+        data.put(
+                "labels",
+                newSettings.getLabels() != null
+                        ? newSettings.getLabels().stream().map(this::labelToMap).collect(Collectors.toList())
+                        : new ArrayList<>()
+        );
 
         Update update = new Update()
                 .set("type", SETTINGS_TYPE_GENERAL)
@@ -109,15 +84,6 @@ public class GeneralSettingsService {
     private String getStringValue(Map<String, Object> data, String key) {
         Object value = data.get(key);
         return value instanceof String ? (String) value : "";
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> getStringListValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        if (value instanceof List) {
-            return new ArrayList<>((List<String>) value);
-        }
-        return new ArrayList<>();
     }
 
     @SuppressWarnings("unchecked")
@@ -150,56 +116,5 @@ public class GeneralSettingsService {
             map.put("description", label.getDescription());
         }
         return map;
-    }
-
-    /**
-     * Migrates legacy tags to the new unified label system with default colors.
-     */
-    private List<Label> migrateTagsToLabels(List<String> bugTags, List<String> playerTags, List<String> appealTags) {
-        List<Label> labels = new ArrayList<>();
-        Set<String> addedNames = new HashSet<>();
-
-        // Default colors for different tag types
-        String bugColor = "#d73a4a";      // Red
-        String playerColor = "#0969da";    // Blue
-        String appealColor = "#8250df";    // Purple
-
-        for (String tag : bugTags) {
-            if (!addedNames.contains(tag.toLowerCase())) {
-                labels.add(Label.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(tag)
-                        .color(bugColor)
-                        .description("Migrated from bug report tags")
-                        .build());
-                addedNames.add(tag.toLowerCase());
-            }
-        }
-
-        for (String tag : playerTags) {
-            if (!addedNames.contains(tag.toLowerCase())) {
-                labels.add(Label.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(tag)
-                        .color(playerColor)
-                        .description("Migrated from player report tags")
-                        .build());
-                addedNames.add(tag.toLowerCase());
-            }
-        }
-
-        for (String tag : appealTags) {
-            if (!addedNames.contains(tag.toLowerCase())) {
-                labels.add(Label.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(tag)
-                        .color(appealColor)
-                        .description("Migrated from appeal tags")
-                        .build());
-                addedNames.add(tag.toLowerCase());
-            }
-        }
-
-        return labels;
     }
 }

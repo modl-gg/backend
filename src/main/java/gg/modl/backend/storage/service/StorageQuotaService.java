@@ -28,7 +28,7 @@ public class StorageQuotaService {
 
         double usedPercentage = maxBytes > 0 ? (double) usedBytes / maxBytes * 100 : 0;
 
-        boolean isPremium = server.getPlan() == ServerPlan.premium;
+        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
         StorageQuotaResponse.AiQuotaInfo aiQuota = buildAiQuotaInfo(server, isPremium);
 
         return new StorageQuotaResponse(
@@ -71,9 +71,9 @@ public class StorageQuotaService {
     }
 
     private long getMaxBytesForServer(Server server) {
-        if (server.getPlan() == ServerPlan.premium) {
+        if (server.getPlan() == ServerPlan.PREMIUM) {
             if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                // Trust the database value directly — support can set values above MAX_PREMIUM_BYTES
+                // Trust the database value directly â€” support can set values above MAX_PREMIUM_BYTES
                 return server.getMaxStorageLimitBytes();
             }
             return DEFAULT_PREMIUM_BYTES;

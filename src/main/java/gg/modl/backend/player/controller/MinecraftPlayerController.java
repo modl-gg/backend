@@ -115,7 +115,7 @@ public class MinecraftPlayerController {
             if (isActive) {
                 // Skip kicks - they are instant punishments and shouldn't be "active"
                 PunishmentType punishmentType = types.stream()
-                        .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                        .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
                         .findFirst()
                         .orElse(null);
                 if (punishmentType != null && punishmentType.isKick()) {
@@ -127,7 +127,7 @@ public class MinecraftPlayerController {
 
         // Include unexecuted kicks (started == null means plugin hasn't acknowledged)
         for (Punishment punishment : player.getPunishments()) {
-            if (punishment.getType_ordinal() != 0) continue;
+            if (punishment.getTypeOrdinal() != 0) continue;
             if (punishment.getStarted() != null) continue; // Already executed
             activePunishments.add(PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator));
         }
@@ -293,7 +293,7 @@ public class MinecraftPlayerController {
                                 "minecraftUuid", mojang.uuid().toString(),
                                 "usernames", List.of(Map.of("username", mojang.name())),
                                 "notes", List.of(),
-                                "ipList", List.of(),
+                                "ipAddresses", List.of(),
                                 "punishments", List.of(),
                                 "pendingNotifications", List.of(),
                                 "data", Map.of()
@@ -340,7 +340,7 @@ public class MinecraftPlayerController {
                                 "minecraftUuid", mojang.uuid().toString(),
                                 "usernames", List.of(Map.of("username", mojang.name())),
                                 "notes", List.of(),
-                                "ipList", List.of(),
+                                "ipAddresses", List.of(),
                                 "punishments", List.of(),
                                 "pendingNotifications", List.of(),
                                 "data", Map.of()
@@ -587,8 +587,7 @@ public class MinecraftPlayerController {
                     return entry;
                 }).toList();
 
-        // Convert IP addresses (ipAddresses -> ipList for plugin compatibility)
-        List<Map<String, Object>> ipList = player.getIpAddresses().stream()
+        List<Map<String, Object>> ipAddresses = player.getIpAddresses().stream()
                 .map(ip -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("ipAddress", ip.getIpAddress());
@@ -616,11 +615,11 @@ public class MinecraftPlayerController {
                 : Collections.emptyList();
 
         Map<String, Object> profile = new LinkedHashMap<>();
-        profile.put("_id", player.getId());
+        profile.put("id", player.getId());
         profile.put("minecraftUuid", player.getMinecraftUuid().toString());
         profile.put("usernames", usernames);
         profile.put("notes", notes);
-        profile.put("ipList", ipList);
+        profile.put("ipAddresses", ipAddresses);
         profile.put("punishments", punishments);
         profile.put("pendingNotifications", pendingNotifications);
         profile.put("data", player.getData());
@@ -648,7 +647,7 @@ public class MinecraftPlayerController {
 
         int bans = 0, mutes = 0, kicks = 0, warnings = 0;
         for (Punishment p : player.getPunishments()) {
-            int ordinal = p.getType_ordinal();
+            int ordinal = p.getTypeOrdinal();
             boolean isBan = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isBan).orElse(false);
             boolean isMute = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isMute).orElse(false);
             boolean isKick = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isKick).orElse(false);
@@ -664,7 +663,7 @@ public class MinecraftPlayerController {
                 .limit(5)
                 .map(p -> {
                     String typeName = types.stream()
-                            .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                            .filter(t -> t.getOrdinal() == p.getTypeOrdinal())
                             .findFirst()
                             .map(PunishmentType::getName)
                             .orElse("Unknown");

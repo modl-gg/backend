@@ -30,7 +30,7 @@ public class PanelServerController {
         Server server = RequestUtil.getRequestServer(request);
 
         return ResponseEntity.ok(Map.of(
-                "status", server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.pending.name(),
+                "status", server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.PENDING.name(),
                 "serverName", server.getServerName(),
                 "emailVerified", server.getEmailVerified() != null && server.getEmailVerified()
         ));

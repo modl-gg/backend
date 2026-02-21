@@ -14,6 +14,7 @@ public class AuthConfiguration {
     private int emailCodeLength = 6;
     private long sessionDurationSeconds = 14 * 24 * 60 * 60;
     private String sessionCookieName = "MODL_SESSION";
+    private String cookieDomain = "";
     private boolean cookieSecure = true;
     private boolean developmentMode = false;
 }

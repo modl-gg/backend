@@ -87,7 +87,7 @@ public class MinecraftDashboardController {
             for (Punishment punishment : player.getPunishments()) {
                 if (statusCalculator.isPunishmentActive(punishment)) {
                     totalPunishments++;
-                    int ordinal = punishment.getType_ordinal();
+                    int ordinal = punishment.getTypeOrdinal();
 
                     boolean isBan = types.stream()
                             .filter(t -> t.getOrdinal() == ordinal)

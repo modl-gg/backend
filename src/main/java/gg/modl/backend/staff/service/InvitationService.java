@@ -55,14 +55,14 @@ public class InvitationService {
             throw new IllegalArgumentException("No emails provided");
         }
 
-        int staffLimit = server.getPlan() == ServerPlan.premium ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+        int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
         long currentStaffCount = template.count(new Query(), Staff.class, CollectionName.STAFF);
         Query pendingQuery = Query.query(Criteria.where("status").is("pending"));
         long pendingInvitationsCount = template.count(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
 
         if (totalCurrentMembers >= staffLimit) {
-            String planName = server.getPlan() == ServerPlan.premium ? "Premium" : "Free";
+            String planName = server.getPlan() == ServerPlan.PREMIUM ? "Premium" : "Free";
             throw new IllegalStateException(
                     String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
                             "Please upgrade your plan or remove existing staff members to invite new ones.",

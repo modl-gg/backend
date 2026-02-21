@@ -131,7 +131,7 @@ public class PublicRegistrationController {
         String emailVerificationToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
 
         // Parse plan
-        ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.premium : ServerPlan.free;
+        ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.PREMIUM : ServerPlan.FREE;
 
         // Create server
         Server server;
@@ -243,7 +243,7 @@ public class PublicRegistrationController {
                 server.getCustomDomain(),
                 server.getServerName(),
                 server.getEmailVerified(),
-                server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.pending.name(),
+                server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.PENDING.name(),
                 getProvisioningMessage(server.getProvisioningStatus())
         ));
     }
@@ -271,7 +271,7 @@ public class PublicRegistrationController {
         }
 
         // Verify provisioning is complete and email is verified
-        if (server.getProvisioningStatus() != ProvisioningStatus.completed) {
+        if (server.getProvisioningStatus() != ProvisioningStatus.COMPLETED) {
             return ResponseEntity.badRequest().body(new AutoLoginResponse(
                     false, "Server setup is not yet complete.", null
             ));
@@ -299,10 +299,10 @@ public class PublicRegistrationController {
     private String getProvisioningMessage(ProvisioningStatus status) {
         if (status == null) return "Your server is queued for setup...";
         return switch (status) {
-            case pending -> "Your server is queued for setup...";
-            case in_progress -> "Setting up your server...";
-            case completed -> "Setup complete!";
-            case failed -> "Setup failed. Please contact support.";
+            case PENDING -> "Your server is queued for setup...";
+            case IN_PROGRESS -> "Setting up your server...";
+            case COMPLETED -> "Setup complete!";
+            case FAILED -> "Setup failed. Please contact support.";
         };
     }
 
@@ -313,6 +313,10 @@ public class PublicRegistrationController {
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
         cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        String cookieDomain = authConfiguration.getCookieDomain();
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            cookie.setDomain(cookieDomain);
+        }
         return cookie;
     }
 

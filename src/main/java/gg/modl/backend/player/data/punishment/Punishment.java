@@ -1,6 +1,5 @@
 package gg.modl.backend.player.data.punishment;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -19,11 +18,10 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 public class Punishment {
     @NotNull
     @Field(value = "id", targetType = FieldType.STRING)
-    @JsonAlias("_id")
     private String id;
 
-    @Field("type_ordinal")
-    private int type_ordinal; // Name is formatted like this to fit existing database schema
+    @Field("typeOrdinal")
+    private int typeOrdinal;
 
     @NotNull
     private String issuerName;

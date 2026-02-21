@@ -89,8 +89,8 @@ public class UsageTrackingService {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(server.getId()));
         Update update = new Update()
-                .set("usage_billing_enabled", enabled)
-                .set("usage_billing_updated_at", new Date());
+                .set("usageBillingEnabled", enabled)
+                .set("usageBillingUpdatedAt", new Date());
 
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
 
@@ -104,14 +104,14 @@ public class UsageTrackingService {
     public void incrementCdnUsage(String serverId, double additionalGB) {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(serverId));
-        Update update = new Update().inc("cdn_usage_current_period", additionalGB);
+        Update update = new Update().inc("cdnUsageCurrentPeriod", additionalGB);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(serverId));
-        Update update = new Update().inc("ai_requests_current_period", additionalRequests);
+        Update update = new Update().inc("aiRequestsCurrentPeriod", additionalRequests);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 
@@ -119,15 +119,15 @@ public class UsageTrackingService {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(serverId));
         Update update = new Update()
-                .set("cdn_usage_current_period", 0.0)
-                .set("ai_requests_current_period", 0L);
+                .set("cdnUsageCurrentPeriod", 0.0)
+                .set("aiRequestsCurrentPeriod", 0L);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 
     public double getCdnLimitGB(Server server) {
-        if (server.getPlan() == ServerPlan.premium) {
+        if (server.getPlan() == ServerPlan.PREMIUM) {
             if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                // Trust database value directly — support can set values above the self-service cap
+                // Trust the database value directly; support can set values above the self-service cap.
                 return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
             }
             return DEFAULT_PREMIUM_CDN_LIMIT_GB;
@@ -138,7 +138,7 @@ public class UsageTrackingService {
     public void updateStorageLimit(Server server, long bytes) {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update().set("max_storage_limit_bytes", bytes);
+        Update update = new Update().set("maxStorageLimitBytes", bytes);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 
@@ -146,8 +146,8 @@ public class UsageTrackingService {
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Query query = Query.query(Criteria.where("_id").is(server.getId()));
         Update update = new Update()
-                .set("max_storage_limit_bytes", maxStorageLimitBytes)
-                .set("max_ai_overage_requests", maxAiOverageRequests);
+                .set("maxStorageLimitBytes", maxStorageLimitBytes)
+                .set("maxAiOverageRequests", maxAiOverageRequests);
         globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
     }
 
@@ -162,3 +162,4 @@ public class UsageTrackingService {
         return globalDb.findOne(query, Server.class, CollectionName.MODL_SERVERS);
     }
 }
+

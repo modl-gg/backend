@@ -32,6 +32,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -177,7 +178,7 @@ public class AITicketAnalysisService {
             return false;
         }
 
-        if (server.getPlan() != ServerPlan.premium) {
+        if (server.getPlan() != ServerPlan.PREMIUM) {
             log.debug("Server {} is not on premium plan", server.getServerName());
             return false;
         }
@@ -188,7 +189,7 @@ public class AITicketAnalysisService {
             return false;
         }
 
-        // Check AI usage cap — fetch fresh server data for current period counts
+        // Check AI usage cap â€” fetch fresh server data for current period counts
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Server freshServer = globalDb.findOne(
                 Query.query(Criteria.where("_id").is(server.getId())),
@@ -301,20 +302,24 @@ public class AITicketAnalysisService {
     }
 
     private String getSystemPrompt(String strictnessLevel) {
+        String normalizedStrictnessLevel = strictnessLevel == null
+                ? "STANDARD"
+                : strictnessLevel.trim().toUpperCase(Locale.ROOT);
         MongoTemplate template = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("strictnessLevel").is(strictnessLevel).and("isActive").is(true));
+        Query query = Query.query(Criteria.where("strictnessLevel").is(normalizedStrictnessLevel).and("isActive").is(true));
         SystemPrompt prompt = template.findOne(query, SystemPrompt.class, PROMPTS_COLLECTION);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
             return prompt.getPrompt();
         }
 
-        return getDefaultPrompt(strictnessLevel);
+        return getDefaultPrompt(normalizedStrictnessLevel);
     }
 
     public String getDefaultPrompt(String level) {
-        String modeInstruction = switch (level) {
-            case "lenient" ->
+        String normalizedLevel = level == null ? "STANDARD" : level.trim().toUpperCase(Locale.ROOT);
+        String modeInstruction = switch (normalizedLevel) {
+            case "LENIENT" ->
                 """
                 LENIENT MODE - Additional Guidelines:
                 - Give players the benefit of the doubt when context is unclear
@@ -326,7 +331,7 @@ public class AITicketAnalysisService {
 
                 If there's any ambiguity about whether something violates rules, err on the side of no action.
                 """;
-            case "strict" ->
+            case "STRICT" ->
                 """
                 STRICT MODE - Additional Guidelines:
                 - Enforce rules rigorously with zero tolerance for violations

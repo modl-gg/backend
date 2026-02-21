@@ -5,6 +5,8 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 @Service
@@ -65,17 +68,24 @@ public class AdminServerService {
         }
 
         if (plan != null && !"all".equals(plan)) {
-            criteriaList.add(Criteria.where("plan").is(plan));
+            try {
+                criteriaList.add(Criteria.where("plan").is(ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT))));
+            } catch (IllegalArgumentException ignored) {
+                criteriaList.add(Criteria.where("plan").is("__invalid_plan__"));
+            }
         }
 
         if (status != null && !"all".equals(status)) {
             switch (status) {
                 case "active" -> {
-                    criteriaList.add(Criteria.where("provisioningStatus").is("completed"));
+                    criteriaList.add(Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED));
                     criteriaList.add(Criteria.where("emailVerified").is(true));
                 }
-                case "pending" -> criteriaList.add(Criteria.where("provisioningStatus").in("pending", "in-progress"));
-                case "failed" -> criteriaList.add(Criteria.where("provisioningStatus").is("failed"));
+                case "pending" -> criteriaList.add(Criteria.where("provisioningStatus").in(
+                        ProvisioningStatus.PENDING,
+                        ProvisioningStatus.IN_PROGRESS
+                ));
+                case "failed" -> criteriaList.add(Criteria.where("provisioningStatus").is(ProvisioningStatus.FAILED));
                 case "unverified" -> criteriaList.add(Criteria.where("emailVerified").is(false));
             }
         }
@@ -105,7 +115,15 @@ public class AdminServerService {
         Update update = new Update();
         updateData.forEach((key, value) -> {
             if (ALLOWED_UPDATE_FIELDS.contains(key)) {
-                update.set(key, value);
+                if ("plan".equals(key) && value instanceof String planValue) {
+                    update.set(key, ServerPlan.valueOf(planValue.trim().toUpperCase(Locale.ROOT)));
+                } else if ("provisioningStatus".equals(key) && value instanceof String provisioningStatusValue) {
+                    update.set(key, ProvisioningStatus.valueOf(provisioningStatusValue.trim().toUpperCase(Locale.ROOT)));
+                } else if ("subscriptionStatus".equals(key) && value instanceof String subscriptionStatusValue) {
+                    update.set(key, SubscriptionStatus.valueOf(subscriptionStatusValue.trim().toUpperCase(Locale.ROOT)));
+                } else {
+                    update.set(key, value);
+                }
             }
         });
         getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
@@ -126,7 +144,7 @@ public class AdminServerService {
     public long bulkSuspend(List<String> serverIds) {
         Query query = Query.query(Criteria.where("_id").in(serverIds));
         Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.failed)
+                .set("provisioningStatus", ProvisioningStatus.FAILED)
                 .set("updatedAt", new Date());
         return getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
     }
@@ -134,7 +152,7 @@ public class AdminServerService {
     public long bulkActivate(List<String> serverIds) {
         Query query = Query.query(Criteria.where("_id").in(serverIds));
         Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.completed)
+                .set("provisioningStatus", ProvisioningStatus.COMPLETED)
                 .set("emailVerified", true)
                 .set("updatedAt", new Date());
         long modified = getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
@@ -156,8 +174,9 @@ public class AdminServerService {
 
     public long bulkUpdatePlan(List<String> serverIds, String plan) {
         Query query = Query.query(Criteria.where("_id").in(serverIds));
+        ServerPlan parsedPlan = ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT));
         Update update = new Update()
-                .set("plan", plan)
+                .set("plan", parsedPlan)
                 .set("updatedAt", new Date());
         return getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
     }
@@ -216,12 +235,12 @@ public class AdminServerService {
         // Reset server to pending state
         Query query = Query.query(Criteria.where("_id").is(server.getId()));
         Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.pending)
+                .set("provisioningStatus", ProvisioningStatus.PENDING)
                 .set("provisioningNotes", "Database reset - awaiting reprovisioning")
                 .unset("lastActivityAt")
-                .unset("customDomain_status")
-                .unset("customDomain_lastChecked")
-                .unset("customDomain_error")
+                .unset("customDomainStatus")
+                .unset("customDomainLastChecked")
+                .unset("customDomainError")
                 .set("updatedAt", new Date());
         getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
     }
