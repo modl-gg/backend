@@ -58,6 +58,11 @@ public class MinecraftTicketsController {
             }
         }
 
+        Map<String, Object> ticketData = new java.util.HashMap<>();
+        if (request.createdServer() != null && !request.createdServer().isBlank()) {
+            ticketData.put("createdServer", request.createdServer());
+        }
+
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
                 .type(mapTicketType(request.type()))
@@ -73,6 +78,7 @@ public class MinecraftTicketsController {
                 .replies(new ArrayList<>())
                 .notes(new ArrayList<>())
                 .chatMessages(chatMessages)
+                .data(ticketData.isEmpty() ? null : ticketData)
                 .priority(request.priority() != null ? request.priority() : "normal")
                 .created(now)
                 .updatedAt(now)
@@ -429,6 +435,7 @@ public class MinecraftTicketsController {
             String reportedPlayerName,
             List<String> chatMessages,
             List<String> tags,
-            String priority
+            String priority,
+            String createdServer
     ) {}
 }
