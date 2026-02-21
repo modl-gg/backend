@@ -4,7 +4,9 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DurationDetail;
+import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +22,14 @@ import java.util.Optional;
 @Slf4j
 public class PlayerStatusCalculator {
     private final PunishmentTypeService punishmentTypeService;
+    private final OffenderThresholdSettingsService offenderThresholdSettingsService;
 
     public PlayerStatus calculateStatus(Server server, List<Punishment> punishments) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        OffenderThresholdSettings thresholdSettings = offenderThresholdSettingsService.getThresholdSettings(server);
+        long socialExpiryMs = thresholdSettings.getSocial().getPointExpiryMs();
+        long gameplayExpiryMs = thresholdSettings.getGameplay().getPointExpiryMs();
+        long now = System.currentTimeMillis();
 
         int socialPoints = 0;
         int gameplayPoints = 0;
@@ -42,6 +49,16 @@ public class PlayerStatusCalculator {
             }
 
             PunishmentType type = typeOpt.get();
+
+            // Check if this punishment's points have expired
+            Date effectiveExpiry = getEffectiveExpiry(punishment);
+            if (effectiveExpiry != null) {
+                long expiryMs = type.isSocial() ? socialExpiryMs : gameplayExpiryMs;
+                if (effectiveExpiry.getTime() + expiryMs < now) {
+                    continue; // Points have expired past the configured window
+                }
+            }
+
             int points = type.getPointsForSeverity(severity != null ? severity : "regular");
 
             if (type.isSocial()) {

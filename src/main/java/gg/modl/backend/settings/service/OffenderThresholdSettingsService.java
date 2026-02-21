@@ -57,7 +57,8 @@ public class OffenderThresholdSettingsService {
             Map<String, Object> thresholds = (Map<String, Object>) categoryData;
             int medium = getIntValue(thresholds, "medium", defaultMedium);
             int habitual = getIntValue(thresholds, "habitual", defaultHabitual);
-            return new OffenderThresholdSettings.CategoryThresholds(medium, habitual);
+            int pointExpiryMonths = getIntValue(thresholds, "pointExpiryMonths", 24);
+            return new OffenderThresholdSettings.CategoryThresholds(medium, habitual, pointExpiryMonths);
         }
         return new OffenderThresholdSettings.CategoryThresholds(defaultMedium, defaultHabitual);
     }
@@ -69,11 +70,13 @@ public class OffenderThresholdSettingsService {
         Map<String, Object> data = Map.of(
                 "social", Map.of(
                         "medium", newSettings.getSocial().getMedium(),
-                        "habitual", newSettings.getSocial().getHabitual()
+                        "habitual", newSettings.getSocial().getHabitual(),
+                        "pointExpiryMonths", newSettings.getSocial().getPointExpiryMonths()
                 ),
                 "gameplay", Map.of(
                         "medium", newSettings.getGameplay().getMedium(),
-                        "habitual", newSettings.getGameplay().getHabitual()
+                        "habitual", newSettings.getGameplay().getHabitual(),
+                        "pointExpiryMonths", newSettings.getGameplay().getPointExpiryMonths()
                 )
         );
 
