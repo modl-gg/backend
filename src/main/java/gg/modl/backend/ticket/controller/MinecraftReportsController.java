@@ -8,6 +8,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.service.TicketNotificationService;
+import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -274,7 +275,12 @@ public class MinecraftReportsController {
         }
 
         Update update = new Update()
-                .set("assignedTo", request.assignee())
+                .set(
+                        "assignedTo",
+                        "none".equalsIgnoreCase(request.assignee())
+                                ? List.of()
+                                : TicketAssigneeUtil.normalizeCsv(request.assignee())
+                )
                 .set("updatedAt", new Date());
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);

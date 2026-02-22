@@ -14,6 +14,7 @@ import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.ticket.dto.response.TicketListItemResponse;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
+import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -99,23 +100,9 @@ public class TicketService {
             query.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        // Filter by assignees (OR logic for multiple assignees, assignedTo stores comma-separated usernames)
-        if (assignees != null && !assignees.isEmpty()) {
-            List<Criteria> assigneeCriteriaList = new ArrayList<>();
-            for (String assignee : assignees) {
-                if (assignee != null && !assignee.isBlank()) {
-                    if (assignee.equals("none")) {
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
-                    } else {
-                        String escaped = java.util.regex.Pattern.quote(assignee);
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").regex("(^|,)" + escaped + "(,|$)"));
-                    }
-                }
-            }
-            if (!assigneeCriteriaList.isEmpty()) {
-                query.addCriteria(new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0])));
-            }
+        Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
+        if (assigneeCriteria != null) {
+            query.addCriteria(assigneeCriteria);
         }
 
         long totalTickets = template.count(query, Ticket.class, CollectionName.TICKETS);
@@ -199,23 +186,9 @@ public class TicketService {
             baseQuery.addCriteria(Criteria.where("tags").all(labels));
         }
 
-        // Filter by assignees (OR logic for multiple assignees, assignedTo stores comma-separated usernames)
-        if (assignees != null && !assignees.isEmpty()) {
-            List<Criteria> assigneeCriteriaList = new ArrayList<>();
-            for (String assignee : assignees) {
-                if (assignee != null && !assignee.isBlank()) {
-                    if (assignee.equals("none")) {
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(null));
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").is(""));
-                    } else {
-                        String escaped = java.util.regex.Pattern.quote(assignee);
-                        assigneeCriteriaList.add(Criteria.where("assignedTo").regex("(^|,)" + escaped + "(,|$)"));
-                    }
-                }
-            }
-            if (!assigneeCriteriaList.isEmpty()) {
-                baseQuery.addCriteria(new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0])));
-            }
+        Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
+        if (assigneeCriteria != null) {
+            baseQuery.addCriteria(assigneeCriteria);
         }
 
         // Count open tickets
@@ -288,8 +261,10 @@ public class TicketService {
 
             // Update assignee
             if (request.assignTo() != null) {
-                String assignee = request.assignTo().equals("none") ? null : request.assignTo();
-                update.set("assignedTo", assignee);
+                List<String> assignees = "none".equalsIgnoreCase(request.assignTo())
+                        ? List.of()
+                        : TicketAssigneeUtil.normalizeCsv(request.assignTo());
+                update.set("assignedTo", assignees);
                 hasChanges = true;
             }
 
@@ -989,6 +964,44 @@ public class TicketService {
         return ticketId;
     }
 
+    private Criteria buildAssigneeCriteria(List<String> assignees) {
+        if (assignees == null || assignees.isEmpty()) {
+            return null;
+        }
+
+        List<Criteria> assigneeCriteriaList = new ArrayList<>();
+        for (String assignee : assignees) {
+            if (assignee == null || assignee.isBlank()) {
+                continue;
+            }
+
+            if ("none".equalsIgnoreCase(assignee)) {
+                assigneeCriteriaList.add(buildUnassignedCriteria());
+                continue;
+            }
+
+            String normalizedAssignee = TicketAssigneeUtil.normalizeSingle(assignee);
+            if (normalizedAssignee != null) {
+                // Equality on array fields matches documents where the array contains the value.
+                assigneeCriteriaList.add(Criteria.where("assignedTo").is(normalizedAssignee));
+            }
+        }
+
+        if (assigneeCriteriaList.isEmpty()) {
+            return null;
+        }
+
+        return new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0]));
+    }
+
+    private Criteria buildUnassignedCriteria() {
+        return new Criteria().orOperator(
+                Criteria.where("assignedTo").exists(false),
+                Criteria.where("assignedTo").is(null),
+                Criteria.where("assignedTo").size(0)
+        );
+    }
+
     private String buildTicketContent(CreateTicketRequest request, Map<String, Object> formDataForContent) {
         StringBuilder content = new StringBuilder();
 
@@ -1087,7 +1100,7 @@ public class TicketService {
                 lastReply,
                 replyCount,
                 ticket.getTags() != null ? ticket.getTags() : new ArrayList<>(),
-                ticket.getAssignedTo(),
+                ticket.getAssignedTo() != null ? ticket.getAssignedTo() : List.of(),
                 ticket.isHidden()
         );
     }

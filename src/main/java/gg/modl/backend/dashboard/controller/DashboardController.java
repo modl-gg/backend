@@ -14,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +21,8 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
 @RequiredArgsConstructor
 public class DashboardController {
+    private static final int MAX_RECENT_ITEMS_LIMIT = 20;
+
     private final DashboardService dashboardService;
 
     @GetMapping("/metrics")
@@ -37,7 +38,8 @@ public class DashboardController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, limit);
+        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
+        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, safeLimit);
         return ResponseEntity.ok(tickets);
     }
 
@@ -47,7 +49,8 @@ public class DashboardController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, limit);
+        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
+        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, safeLimit);
         return ResponseEntity.ok(punishments);
     }
 

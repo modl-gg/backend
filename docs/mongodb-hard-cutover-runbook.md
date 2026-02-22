@@ -178,6 +178,9 @@ Run in `mongosh` before migration.
     });
     const staffRolesLegacyIdFieldCount = tenantDb.staffroles.countDocuments({ id: { $exists: true } });
     const ticketsLegacyCreatorFieldCount = tenantDb.tickets.countDocuments({ creator: { $exists: true } });
+    const ticketsAssignedToNonArrayCount = tenantDb.tickets.countDocuments({
+      $expr: { $ne: [{ $type: "$assignedTo" }, "array"] }
+    });
     const homepageCardsLegacyFieldCount = tenantDb.homepagecards.countDocuments({
       $or: [
         { icon_color: { $exists: true } },
@@ -227,6 +230,7 @@ Run in `mongosh` before migration.
       invitationsMissingExpiresAtCount,
       staffRolesLegacyIdFieldCount,
       ticketsLegacyCreatorFieldCount,
+      ticketsAssignedToNonArrayCount,
       homepageCardsLegacyFieldCount,
       kbCategoriesLegacyFieldCount,
       kbArticlesLegacyFieldCount,
@@ -306,7 +310,9 @@ Run in `mongosh` before migration.
       { name: "uidx_settings_type", key: { type: 1 }, options: { unique: true } }
     ],
     players: [
-      { name: "uidx_players_minecraftUuid", key: { minecraftUuid: 1 }, options: { unique: true, sparse: true } }
+      { name: "uidx_players_minecraftUuid", key: { minecraftUuid: 1 }, options: { unique: true, sparse: true } },
+      { name: "idx_players_punishments_issued_desc", key: { "punishments.issued": -1 }, options: {} },
+      { name: "idx_players_punishments_issuerName_issued_desc", key: { "punishments.issuerName": 1, "punishments.issued": -1 }, options: {} }
     ],
     staffs: [
       { name: "uidx_staff_email", key: { email: 1 }, options: { unique: true } },
@@ -330,6 +336,9 @@ Run in `mongosh` before migration.
       { name: "idx_tickets_creatorUuid_created", key: { creatorUuid: 1, created: -1 }, options: {} },
       { name: "idx_tickets_reportedPlayerUuid_created", key: { reportedPlayerUuid: 1, created: -1 }, options: {} },
       { name: "idx_tickets_locked_created", key: { locked: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_assignedTo_updatedAt", key: { assignedTo: 1, updatedAt: -1 }, options: {} },
+      { name: "idx_tickets_creatorName_created", key: { creatorName: 1, created: -1 }, options: {} },
+      { name: "idx_tickets_replies_name_created", key: { "replies.name": 1, "replies.created": -1 }, options: {} },
       { name: "idx_tickets_tags", key: { tags: 1 }, options: {} }
     ],
     ticket_verifications: [
@@ -1620,6 +1629,70 @@ Run in `mongosh` before migration.
       ],
       `${tenantDbName}.tickets creator -> creatorName`
     );
+
+    runUpdateMany(
+      tenantDb.tickets,
+      { $expr: { $ne: [{ $type: "$assignedTo" }, "array"] } },
+      [
+        {
+          $set: {
+            assignedTo: {
+              $let: {
+                vars: { rawAssignedTo: "$assignedTo" },
+                in: {
+                  $cond: [
+                    { $isArray: "$$rawAssignedTo" },
+                    {
+                      $setUnion: [
+                        {
+                          $filter: {
+                            input: {
+                              $map: {
+                                input: "$$rawAssignedTo",
+                                as: "entry",
+                                in: { $toLower: { $trim: { input: { $toString: "$$entry" } } } }
+                              }
+                            },
+                            as: "entry",
+                            cond: { $gt: [{ $strLenCP: "$$entry" }, 0] }
+                          }
+                        },
+                        []
+                      ]
+                    },
+                    {
+                      $cond: [
+                        { $eq: [{ $type: "$$rawAssignedTo" }, "string"] },
+                        {
+                          $setUnion: [
+                            {
+                              $filter: {
+                                input: {
+                                  $map: {
+                                    input: { $split: ["$$rawAssignedTo", ","] },
+                                    as: "entry",
+                                    in: { $toLower: { $trim: { input: "$$entry" } } }
+                                  }
+                                },
+                                as: "entry",
+                                cond: { $gt: [{ $strLenCP: "$$entry" }, 0] }
+                              }
+                            },
+                            []
+                          ]
+                        },
+                        []
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      `${tenantDbName}.tickets assignedTo -> normalized string array`
+    );
   }
 
   function migrateTenantTicketVerifications(tenantDbName) {
@@ -1803,7 +1876,12 @@ Run after commit-mode migration.
 
   const expectedTenantIndexes = {
     settings: ["_id_", "uidx_settings_type"],
-    players: ["_id_", "uidx_players_minecraftUuid"],
+    players: [
+      "_id_",
+      "uidx_players_minecraftUuid",
+      "idx_players_punishments_issued_desc",
+      "idx_players_punishments_issuerName_issued_desc"
+    ],
     staffs: ["_id_", "uidx_staff_email", "uidx_staff_username", "sidx_staff_assignedMinecraftUuid"],
     staffroles: ["_id_", "uidx_staff_roles_name", "idx_staff_roles_order"],
     invitations: ["_id_", "idx_invitations_email", "uidx_invitations_token", "idx_invitations_expiresAt_ttl"],
@@ -1816,6 +1894,9 @@ Run after commit-mode migration.
       "idx_tickets_creatorUuid_created",
       "idx_tickets_reportedPlayerUuid_created",
       "idx_tickets_locked_created",
+      "idx_tickets_assignedTo_updatedAt",
+      "idx_tickets_creatorName_created",
+      "idx_tickets_replies_name_created",
       "idx_tickets_tags"
     ],
     ticket_verifications: ["_id_", "idx_ticket_verifications_expiresAt_ttl"],
@@ -1940,6 +2021,9 @@ Run after commit-mode migration.
         : d.settings.countDocuments({ type: "aiModeration" }),
       staffRolesLegacyIdField: dbName === GLOBAL_DB ? null : d.staffroles.countDocuments({ id: { $exists: true } }),
       ticketsLegacyCreatorField: dbName === GLOBAL_DB ? null : d.tickets.countDocuments({ creator: { $exists: true } }),
+      ticketsAssignedToNonArray: dbName === GLOBAL_DB
+        ? null
+        : d.tickets.countDocuments({ $expr: { $ne: [{ $type: "$assignedTo" }, "array"] } }),
       homepageCardsLegacyFields: dbName === GLOBAL_DB
         ? null
         : d.homepagecards.countDocuments({

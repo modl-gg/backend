@@ -73,7 +73,14 @@ public class MongoIndexBootstrapService {
         ));
 
         ensureIndexes(template, databaseName, CollectionName.PLAYERS, List.of(
-                IndexSpec.standard("uidx_players_minecraftUuid", doc("minecraftUuid", 1), true, true)
+                IndexSpec.standard("uidx_players_minecraftUuid", doc("minecraftUuid", 1), true, true),
+                IndexSpec.standard("idx_players_punishments_issued_desc", doc("punishments.issued", -1), false, false),
+                IndexSpec.standard(
+                        "idx_players_punishments_issuerName_issued_desc",
+                        doc("punishments.issuerName", 1).append("punishments.issued", -1),
+                        false,
+                        false
+                )
         ));
 
         ensureIndexes(template, databaseName, CollectionName.STAFF, List.of(
@@ -105,6 +112,9 @@ public class MongoIndexBootstrapService {
                 IndexSpec.standard("idx_tickets_creatorUuid_created", doc("creatorUuid", 1).append("created", -1), false, false),
                 IndexSpec.standard("idx_tickets_reportedPlayerUuid_created", doc("reportedPlayerUuid", 1).append("created", -1), false, false),
                 IndexSpec.standard("idx_tickets_locked_created", doc("locked", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_assignedTo_updatedAt", doc("assignedTo", 1).append("updatedAt", -1), false, false),
+                IndexSpec.standard("idx_tickets_creatorName_created", doc("creatorName", 1).append("created", -1), false, false),
+                IndexSpec.standard("idx_tickets_replies_name_created", doc("replies.name", 1).append("replies.created", -1), false, false),
                 IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false)
         ));
 

@@ -161,6 +161,12 @@ public class RateLimitConfig {
         if (path.contains("/dashboard/metrics") || path.contains("/dashboard/activity")) {
             return true;
         }
+        if (path.contains("/dashboard/recent-punishments") || path.contains("/dashboard/recent-tickets")) {
+            return true;
+        }
+        if (path.contains("/ticket-subscriptions/assigned-updates") || path.contains("/ticket-subscriptions/updates")) {
+            return true;
+        }
 
         return false;
     }

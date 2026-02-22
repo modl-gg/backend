@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +26,18 @@ public class PanelKnowledgebaseController {
     private final KnowledgebaseCategoryService categoryService;
     private final KnowledgebaseArticleService articleService;
 
+    public record ArticleResponse(
+            String id,
+            String title,
+            String slug,
+            String content,
+            String categoryId,
+            int ordinal,
+            boolean isVisible,
+            Date createdAt,
+            Date updatedAt
+    ) {}
+
     public record CategoryWithArticlesResponse(
             String id,
             String name,
@@ -32,7 +45,7 @@ public class PanelKnowledgebaseController {
             String description,
             int ordinal,
             boolean isVisible,
-            List<KnowledgebaseArticle> articles
+            List<ArticleResponse> articles
     ) {}
 
     @GetMapping("/categories")
@@ -49,6 +62,9 @@ public class PanelKnowledgebaseController {
                         category.getOrdinal(),
                         category.isVisible(),
                         articleService.getArticlesByCategory(server, category.getId())
+                                .stream()
+                                .map(this::toArticleResponse)
+                                .toList()
                 ))
                 .toList();
 
@@ -101,40 +117,44 @@ public class PanelKnowledgebaseController {
     }
 
     @GetMapping("/categories/{categoryId}/articles")
-    public ResponseEntity<List<KnowledgebaseArticle>> getArticles(
+    public ResponseEntity<List<ArticleResponse>> getArticles(
             @PathVariable String categoryId,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<KnowledgebaseArticle> articles = articleService.getArticlesByCategory(server, categoryId);
+        List<ArticleResponse> articles = articleService.getArticlesByCategory(server, categoryId)
+                .stream()
+                .map(this::toArticleResponse)
+                .toList();
         return ResponseEntity.ok(articles);
     }
 
     @GetMapping("/categories/{categoryId}/articles/{articleId}")
-    public ResponseEntity<KnowledgebaseArticle> getArticle(
+    public ResponseEntity<ArticleResponse> getArticle(
             @PathVariable String categoryId,
             @PathVariable String articleId,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return articleService.getArticleById(server, articleId)
+                .map(this::toArticleResponse)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/categories/{categoryId}/articles")
-    public ResponseEntity<KnowledgebaseArticle> createArticle(
+    public ResponseEntity<ArticleResponse> createArticle(
             @PathVariable String categoryId,
             @RequestBody @Valid CreateArticleRequest createRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         KnowledgebaseArticle article = articleService.createArticle(server, categoryId, createRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(article);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toArticleResponse(article));
     }
 
     @PutMapping("/categories/{categoryId}/articles/{articleId}")
-    public ResponseEntity<KnowledgebaseArticle> updateArticle(
+    public ResponseEntity<ArticleResponse> updateArticle(
             @PathVariable String categoryId,
             @PathVariable String articleId,
             @RequestBody @Valid UpdateArticleRequest updateRequest,
@@ -142,6 +162,7 @@ public class PanelKnowledgebaseController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return articleService.updateArticle(server, articleId, updateRequest)
+                .map(this::toArticleResponse)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -169,5 +190,19 @@ public class PanelKnowledgebaseController {
         Server server = RequestUtil.getRequestServer(request);
         articleService.reorderArticles(server, categoryId, reorderRequest.ids());
         return ResponseEntity.ok(Map.of("message", "Articles reordered"));
+    }
+
+    private ArticleResponse toArticleResponse(KnowledgebaseArticle article) {
+        return new ArticleResponse(
+                article.getId(),
+                article.getTitle(),
+                article.getSlug(),
+                article.getContent(),
+                article.getCategoryId(),
+                article.getOrdinal(),
+                article.isVisible(),
+                article.getCreatedAt(),
+                article.getUpdatedAt()
+        );
     }
 }

@@ -50,7 +50,9 @@ public class Ticket {
 
     private boolean locked;
     private String priority;
-    private String assignedTo;
+
+    @Builder.Default
+    private List<String> assignedTo = new ArrayList<>();
 
     private Date created;
     private Date updatedAt;

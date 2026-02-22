@@ -153,10 +153,6 @@ public class UsageTrackingService {
     }
 
     public long getAiRequestLimit(Server server) {
-        if (!Boolean.TRUE.equals(server.getUsageBillingEnabled())) {
-            return AI_BASE_LIMIT_REQUESTS;
-        }
-
         long overageCap = server.getMaxAiOverageRequests() != null
                 ? Math.max(0, server.getMaxAiOverageRequests())
                 : 0L;
