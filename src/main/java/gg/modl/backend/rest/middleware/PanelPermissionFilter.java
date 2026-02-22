@@ -140,10 +140,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     private String resolveSettingsPermission(String path, String method) {
         String base = RESTMappingV1.PANEL_SETTINGS;
 
-        if (startsWithEndpoint(path, base + "/ticket-labels")) {
-            return isReadOnly(method) ? "ticket.view.all" : "ticket.manage.tags";
-        }
-
         if (startsWithEndpoint(path, base + "/punishment-types")
                 || startsWithEndpoint(path, base + "/status-thresholds")
                 || startsWithEndpoint(path, base + "/ai-moderation")
@@ -161,6 +157,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
                 || startsWithEndpoint(path, base + "/api-keys")
                 || startsWithEndpoint(path, base + "/quick-responses")
                 || startsWithEndpoint(path, base + "/ticket-forms")
+                || startsWithEndpoint(path, base + "/ticket-labels")
                 || startsWithEndpoint(path, base + "/webhooks")) {
             return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
         }
