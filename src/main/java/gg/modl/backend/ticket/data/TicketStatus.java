@@ -3,10 +3,7 @@ package gg.modl.backend.ticket.data;
 public enum TicketStatus {
     UNFINISHED("Unfinished"),
     OPEN("Open"),
-    CLOSED("Closed"),
-    IN_PROGRESS("In Progress"),
-    UNDER_REVIEW("Under Review"),
-    AWAITING_RESPONSE("Awaiting Response");
+    CLOSED("Closed");
 
     private final String displayName;
 

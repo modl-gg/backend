@@ -38,17 +38,17 @@ public class MinecraftDashboardController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        // Get unresolved reports count (tickets where type is report-related and status is open)
+        // Get unresolved reports count (tickets where type is REPORT and status is open)
         Query reportQuery = Query.query(
-                Criteria.where("type").in("PLAYER", "CHAT", "CHEATING", "BEHAVIOR")
-                        .and("status").in("open", "pending", "in_progress")
+                Criteria.where("type").is("REPORT")
+                        .and("status").in("Open", "Unfinished")
         );
         long unresolvedReports = template.count(reportQuery, Ticket.class, CollectionName.TICKETS);
 
         // Get unresolved tickets count (support tickets that are open)
         Query ticketQuery = Query.query(
-                Criteria.where("type").in("SUPPORT", "BUG", "APPEAL", "STAFF", "OTHER")
-                        .and("status").in("open", "pending", "in_progress")
+                Criteria.where("type").in("SUPPORT", "BUG", "APPEAL")
+                        .and("status").in("Open", "Unfinished")
         );
         long unresolvedTickets = template.count(ticketQuery, Ticket.class, CollectionName.TICKETS);
 

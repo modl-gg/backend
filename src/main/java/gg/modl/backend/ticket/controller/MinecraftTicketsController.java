@@ -156,14 +156,12 @@ public class MinecraftTicketsController {
      * Map plugin ticket type to internal type
      */
     private String mapTicketType(String type) {
-        if (type == null) return "OTHER";
+        if (type == null) return "SUPPORT";
         return switch (type.toLowerCase()) {
             case "player", "chat" -> "REPORT";
-            case "staff" -> "STAFF";
             case "bug" -> "BUG";
-            case "support" -> "SUPPORT";
             case "appeal" -> "APPEAL";
-            default -> "OTHER";
+            default -> "SUPPORT";
         };
     }
 
@@ -207,7 +205,7 @@ public class MinecraftTicketsController {
             conditions.add(Criteria.where("type").is(type));
         } else {
             // Default to support tickets (exclude player reports)
-            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL", "STAFF", "OTHER"));
+            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL"));
         }
 
         if (!conditions.isEmpty()) {
@@ -415,6 +413,54 @@ public class MinecraftTicketsController {
     public record ClaimTicketRequest(
             @NotBlank String playerUuid,
             @NotBlank String playerName
+    ) {}
+
+    /**
+     * Fetch tickets by a list of IDs. Returns ticket summaries.
+     */
+    @PostMapping("/by-ids")
+    public ResponseEntity<Map<String, Object>> getTicketsByIds(
+            @RequestBody @Valid TicketsByIdsRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        if (request.ids() == null || request.ids().isEmpty()) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "tickets", List.of()
+            ));
+        }
+
+        Query query = Query.query(Criteria.where("_id").in(request.ids()));
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
+            Map<String, Object> ticket = new LinkedHashMap<>();
+            ticket.put("id", t.getId());
+            ticket.put("type", t.getType());
+            ticket.put("category", t.getCategory());
+            ticket.put("subject", t.getSubject());
+            ticket.put("status", t.getStatus());
+            ticket.put("playerName", t.getCreatorName());
+            ticket.put("playerUuid", t.getCreatorUuid());
+            ticket.put("createdAt", t.getCreated());
+            // Include the body of the first reply
+            if (t.getReplies() != null && !t.getReplies().isEmpty()) {
+                ticket.put("firstReplyContent", t.getReplies().get(0).getContent());
+            }
+            return ticket;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "tickets", ticketList
+        ));
+    }
+
+    public record TicketsByIdsRequest(
+            List<String> ids
     ) {}
 
     /**

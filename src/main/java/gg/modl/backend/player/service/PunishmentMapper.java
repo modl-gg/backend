@@ -120,7 +120,7 @@ public final class PunishmentMapper {
         result.put("id", punishment.getId());
         result.put("type", typeName);
         result.put("category", category);
-        result.put("typeOrdinal", punishment.getTypeOrdinal());
+        result.put("ordinal", punishment.getTypeOrdinal());
         result.put("started", punishment.getStarted() != null);
         result.put("expiration", expires != null ? expires.getTime() : null);
         result.put("description", reason != null ? reason : "No reason specified");

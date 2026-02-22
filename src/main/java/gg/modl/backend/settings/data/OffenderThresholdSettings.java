@@ -31,7 +31,6 @@ public class OffenderThresholdSettings {
 
     @Data
     @NoArgsConstructor
-    @AllArgsConstructor
     public static class CategoryThresholds {
         /**
          * Points threshold for Medium offender level.
@@ -44,6 +43,31 @@ public class OffenderThresholdSettings {
          * Players with points >= this value are "Habitual".
          */
         private int habitual;
+
+        /**
+         * Number of months after a punishment's effective expiry before its points stop counting.
+         * Default: 24 months (2 years). Permanent punishments always count.
+         */
+        private int pointExpiryMonths = 24;
+
+        public CategoryThresholds(int medium, int habitual) {
+            this.medium = medium;
+            this.habitual = habitual;
+            this.pointExpiryMonths = 24;
+        }
+
+        public CategoryThresholds(int medium, int habitual, int pointExpiryMonths) {
+            this.medium = medium;
+            this.habitual = habitual;
+            this.pointExpiryMonths = pointExpiryMonths;
+        }
+
+        /**
+         * Convert pointExpiryMonths to milliseconds for date comparison.
+         */
+        public long getPointExpiryMs() {
+            return (long) pointExpiryMonths * 30L * 24L * 60L * 60L * 1000L;
+        }
 
         /**
          * Calculate the offender level based on points.

@@ -17,6 +17,7 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.servlet.http.HttpServletRequest;
 import gg.modl.backend.validation.RegExpConstants;
 import jakarta.validation.Valid;
@@ -740,7 +741,7 @@ public class MinecraftPunishmentController {
     public record MinecraftCreatePunishmentRequest(
             @NotBlank String targetUuid,
             @NotBlank String issuerName,
-            int typeOrdinal,
+            @JsonProperty("type_ordinal") int typeOrdinal,
             String reason,
             Long duration,
             Map<String, Object> data,
@@ -783,5 +784,56 @@ public class MinecraftPunishmentController {
             @NotBlank String issuerName,
             @NotBlank String option,
             boolean enabled
+    ) {}
+
+    @PostMapping("/{punishmentId}/tickets")
+    public ResponseEntity<Map<String, Object>> modifyPunishmentTickets(
+            @PathVariable String punishmentId,
+            @RequestBody @Valid ModifyTicketsRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest serviceRequest =
+                new gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest(
+                        request.addTicketIds(),
+                        request.removeTicketIds(),
+                        request.modifyAssociatedTickets(),
+                        request.issuerName()
+                );
+
+        Player updated = punishmentService.modifyPunishmentTickets(
+                server, player.getMinecraftUuid(), punishmentId, serviceRequest);
+
+        if (updated == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Failed to modify punishment tickets"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "message", "Punishment tickets modified"
+        ));
+    }
+
+    public record ModifyTicketsRequest(
+            @NotBlank String issuerName,
+            List<String> addTicketIds,
+            List<String> removeTicketIds,
+            boolean modifyAssociatedTickets
     ) {}
 }
