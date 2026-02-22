@@ -3,10 +3,10 @@ package gg.modl.backend.rest.middleware;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
-import gg.modl.backend.role.service.PermissionService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,7 +31,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         if (!path.startsWith(RESTMappingV1.PREFIX_PANEL)) {
             return true;
         }
-        // Auth endpoints are protected by Spring Security permitAll + their own auth flow
         return startsWithEndpoint(path, RESTMappingV1.PANEL_AUTH);
     }
 
@@ -44,9 +43,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         Server server = (Server) request.getAttribute(RequestAttribute.SERVER);
         String email = RequestUtil.getSessionEmail(request);
         if (server == null || email == null) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Insufficient permissions\"}");
+            deny(response);
             return;
         }
 
@@ -57,10 +54,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
         String requiredPermission = resolveRequiredPermission(request.getRequestURI(), request.getMethod());
         if (requiredPermission == null) {
-            // Default-deny: unmapped panel endpoints require super admin
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Insufficient permissions\"}");
+            deny(response);
             return;
         }
 
@@ -68,26 +62,27 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         String role = staffOpt.map(Staff::getRole).orElse(null);
         boolean authorized = role != null && permissionService.hasPermission(server, role, requiredPermission);
         if (!authorized) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Insufficient permissions\"}");
+            deny(response);
             return;
         }
 
         filterChain.doFilter(request, response);
     }
 
+    private void deny(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"success\":false,\"message\":\"Insufficient permissions\"}");
+    }
+
     private String resolveRequiredPermission(String path, String method) {
-        // Staff members management
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_STAFF)) {
             return "admin.staff.manage.members";
         }
-        // Role management
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_ROLES)) {
             return "admin.staff.manage.roles";
         }
 
-        // Settings — split by endpoint
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_BILLING)) {
             return isReadOnly(method) ? "admin.settings.view.billing" : "admin.settings.modify.billing";
         }
@@ -106,10 +101,9 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.storage";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_SETTINGS)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.punishments";
+            return resolveSettingsPermission(path, method);
         }
 
-        // Audit — split by endpoint
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_DASHBOARD)) {
             return "admin.audit.view.dashboard";
         }
@@ -121,7 +115,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return "admin.audit.view.logs";
         }
 
-        // Tickets — sub-permissions for specific operations
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)) {
             return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
         }
@@ -142,6 +135,37 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         }
 
         return null;
+    }
+
+    private String resolveSettingsPermission(String path, String method) {
+        String base = RESTMappingV1.PANEL_SETTINGS;
+
+        if (startsWithEndpoint(path, base + "/ticket-labels")) {
+            return isReadOnly(method) ? "ticket.view.all" : "ticket.manage.tags";
+        }
+
+        if (startsWithEndpoint(path, base + "/punishment-types")
+                || startsWithEndpoint(path, base + "/status-thresholds")
+                || startsWithEndpoint(path, base + "/ai-moderation")
+                || startsWithEndpoint(path, base + "/ai-apply-punishment")
+                || startsWithEndpoint(path, base + "/ai-dismiss-suggestion")) {
+            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.punishments";
+        }
+
+        if (startsWithEndpoint(path, base + "/domain")) {
+            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.domain";
+        }
+
+        if (startsWithEndpoint(path, base + "/general")
+                || startsWithEndpoint(path, base + "/upload-icon")
+                || startsWithEndpoint(path, base + "/api-keys")
+                || startsWithEndpoint(path, base + "/quick-responses")
+                || startsWithEndpoint(path, base + "/ticket-forms")
+                || startsWithEndpoint(path, base + "/webhooks")) {
+            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
+        }
+
+        return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
     }
 
     private boolean startsWithEndpoint(String path, String endpoint) {

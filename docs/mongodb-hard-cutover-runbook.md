@@ -153,10 +153,20 @@ Run in `mongosh` before migration.
       ]
     });
 
+    const generalLegacyLabelsCount = tenantDb.settings.countDocuments({
+      type: "general",
+      "data.labels": { $exists: true }
+    });
+
+    const missingTicketLabelsDocCount = tenantDb.settings.countDocuments({
+      type: "ticketLabels"
+    }) === 0 ? 1 : 0;
+
     const aiStrictnessLowercaseCount = tenantDb.settings.countDocuments({
-      type: "aiModeration",
+      type: "aiModerationSettings",
       "data.strictnessLevel": { $in: ["lenient", "standard", "strict"] }
     });
+    const legacyAiModerationTypeCount = tenantDb.settings.countDocuments({ type: "aiModeration" });
 
     const invitationsLegacyStatusCount = tenantDb.invitations.countDocuments({ status: { $exists: true } });
     const invitationsLegacyExpiresCount = tenantDb.invitations.countDocuments({ expires: { $exists: true } });
@@ -208,7 +218,10 @@ Run in `mongosh` before migration.
       playersLegacyCount,
       ticketLegacyExpiresCount,
       generalLegacyTagsCount,
+      generalLegacyLabelsCount,
+      missingTicketLabelsDocCount,
       aiStrictnessLowercaseCount,
+      legacyAiModerationTypeCount,
       invitationsLegacyStatusCount,
       invitationsLegacyExpiresCount,
       invitationsMissingExpiresAtCount,
@@ -289,6 +302,9 @@ Run in `mongosh` before migration.
   };
 
   const INDEX_MANIFEST_TENANT = {
+    settings: [
+      { name: "uidx_settings_type", key: { type: 1 }, options: { unique: true } }
+    ],
     players: [
       { name: "uidx_players_minecraftUuid", key: { minecraftUuid: 1 }, options: { unique: true, sparse: true } }
     ],
@@ -959,8 +975,108 @@ Run in `mongosh` before migration.
       `${tenantDbName}.settings general legacy tag cleanup`
     );
 
+    const legacyAiModerationDoc = settings.findOne({ type: "aiModeration" });
+    const canonicalAiModerationDoc = settings.findOne({ type: "aiModerationSettings" });
+
+    if (legacyAiModerationDoc && !canonicalAiModerationDoc) {
+      if (CONFIG.DRY_RUN) {
+        log("DRY_RUN", `${tenantDbName}.settings rename aiModeration -> aiModerationSettings`, {
+          sourceId: String(legacyAiModerationDoc._id)
+        });
+      } else {
+        const result = settings.updateOne(
+          { _id: legacyAiModerationDoc._id },
+          { $set: { type: "aiModerationSettings" } }
+        );
+        log("MIGRATE", `${tenantDbName}.settings renamed aiModeration type modified=${result.modifiedCount}`);
+      }
+    } else if (legacyAiModerationDoc && canonicalAiModerationDoc) {
+      const legacyData = legacyAiModerationDoc.data && typeof legacyAiModerationDoc.data === "object"
+        ? legacyAiModerationDoc.data
+        : {};
+      const canonicalData = canonicalAiModerationDoc.data && typeof canonicalAiModerationDoc.data === "object"
+        ? canonicalAiModerationDoc.data
+        : {};
+      const mergedData = Object.assign({}, legacyData, canonicalData);
+
+      if (CONFIG.DRY_RUN) {
+        log("DRY_RUN", `${tenantDbName}.settings merge legacy aiModeration into aiModerationSettings and remove duplicate`, {
+          sourceId: String(legacyAiModerationDoc._id),
+          targetId: String(canonicalAiModerationDoc._id)
+        });
+      } else {
+        settings.updateOne(
+          { _id: canonicalAiModerationDoc._id },
+          { $set: { data: mergedData, updatedAt: new Date() } }
+        );
+        settings.deleteOne({ _id: legacyAiModerationDoc._id });
+        log("MIGRATE", `${tenantDbName}.settings merged and removed legacy aiModeration document`);
+      }
+    }
+
+    const generalDoc = settings.findOne({ type: "general" });
+    const generalLabels = generalDoc && generalDoc.data && Array.isArray(generalDoc.data.labels)
+      ? generalDoc.data.labels
+      : null;
+
+    const ticketLabelsDoc = settings.findOne({ type: "ticketLabels" });
+    if (!ticketLabelsDoc) {
+      const labelPayload = {
+        type: "ticketLabels",
+        data: { labels: Array.isArray(generalLabels) ? generalLabels : [] },
+        version: 0,
+        updatedAt: new Date()
+      };
+
+      if (CONFIG.DRY_RUN) {
+        log("DRY_RUN", `${tenantDbName}.settings create ticketLabels document`, labelPayload);
+      } else {
+        try {
+          settings.insertOne(labelPayload);
+          log("MIGRATE", `${tenantDbName}.settings created ticketLabels document`);
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            logDuplicateKeySkip(`${tenantDbName}.settings create ticketLabels document`, error);
+          } else {
+            throw error;
+          }
+        }
+      }
+    } else if (Array.isArray(generalLabels) && generalLabels.length > 0) {
+      const existingLabels = ticketLabelsDoc.data && Array.isArray(ticketLabelsDoc.data.labels)
+        ? ticketLabelsDoc.data.labels
+        : [];
+
+      if (existingLabels.length === 0) {
+        if (CONFIG.DRY_RUN) {
+          log("DRY_RUN", `${tenantDbName}.settings backfill empty ticketLabels from general.labels`, {
+            sourceId: String(generalDoc?._id || ""),
+            targetId: String(ticketLabelsDoc._id)
+          });
+        } else {
+          const result = settings.updateOne(
+            { _id: ticketLabelsDoc._id },
+            {
+              $set: {
+                "data.labels": generalLabels,
+                updatedAt: new Date()
+              }
+            }
+          );
+          log("MIGRATE", `${tenantDbName}.settings backfill ticketLabels labels modified=${result.modifiedCount}`);
+        }
+      }
+    }
+
+    runUpdateMany(
+      settings,
+      { type: "general", "data.labels": { $exists: true } },
+      { $unset: { "data.labels": "" } },
+      `${tenantDbName}.settings move labels from general -> ticketLabels`
+    );
+
     const strictnessOps = [];
-    settings.find({ type: "aiModeration", "data.strictnessLevel": { $exists: true } }).forEach(doc => {
+    settings.find({ type: "aiModerationSettings", "data.strictnessLevel": { $exists: true } }).forEach(doc => {
       const current = doc?.data?.strictnessLevel;
       const normalized = normalizeEnum(current, STRICTNESS_MAP, "STANDARD");
       if (normalized !== current) {
@@ -973,11 +1089,11 @@ Run in `mongosh` before migration.
       }
 
       if (strictnessOps.length >= CONFIG.BATCH_SIZE) {
-        flushBulk(settings, strictnessOps.splice(0, strictnessOps.length), `${tenantDbName}.settings aiModeration strictness normalization`);
+        flushBulk(settings, strictnessOps.splice(0, strictnessOps.length), `${tenantDbName}.settings aiModerationSettings strictness normalization`);
       }
     });
 
-    flushBulk(settings, strictnessOps, `${tenantDbName}.settings aiModeration strictness normalization`);
+    flushBulk(settings, strictnessOps, `${tenantDbName}.settings aiModerationSettings strictness normalization`);
   }
 
   function migrateTenantStaffRoles(tenantDbName) {
@@ -1686,6 +1802,7 @@ Run after commit-mode migration.
   };
 
   const expectedTenantIndexes = {
+    settings: ["_id_", "uidx_settings_type"],
     players: ["_id_", "uidx_players_minecraftUuid"],
     staffs: ["_id_", "uidx_staff_email", "uidx_staff_username", "sidx_staff_assignedMinecraftUuid"],
     staffroles: ["_id_", "uidx_staff_roles_name", "idx_staff_roles_order"],
@@ -1798,6 +1915,29 @@ Run after commit-mode migration.
               { expiresAt: null }
             ]
           }),
+      settingsLegacyGeneralFields: dbName === GLOBAL_DB
+        ? null
+        : d.settings.countDocuments({
+            type: "general",
+            $or: [
+              { "data.bugReportTags": { $exists: true } },
+              { "data.playerReportTags": { $exists: true } },
+              { "data.appealTags": { $exists: true } },
+              { "data.labels": { $exists: true } }
+            ]
+          }),
+      settingsMissingTicketLabelsDoc: dbName === GLOBAL_DB
+        ? null
+        : (d.settings.countDocuments({ type: "ticketLabels" }) === 0 ? 1 : 0),
+      settingsAiStrictnessLowercase: dbName === GLOBAL_DB
+        ? null
+        : d.settings.countDocuments({
+            type: "aiModerationSettings",
+            "data.strictnessLevel": { $in: ["lenient", "standard", "strict"] }
+          }),
+      settingsLegacyAiModerationType: dbName === GLOBAL_DB
+        ? null
+        : d.settings.countDocuments({ type: "aiModeration" }),
       staffRolesLegacyIdField: dbName === GLOBAL_DB ? null : d.staffroles.countDocuments({ id: { $exists: true } }),
       ticketsLegacyCreatorField: dbName === GLOBAL_DB ? null : d.tickets.countDocuments({ creator: { $exists: true } }),
       homepageCardsLegacyFields: dbName === GLOBAL_DB

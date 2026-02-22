@@ -1,44 +1,34 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
-import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class QuickResponseSettingsService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private static final String SETTINGS_TYPE_QUICK_RESPONSES = "quickResponses";
+
+    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
 
     public QuickResponseSettings getQuickResponseSettings(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        return getQuickResponseSettingsState(server).data();
+    }
 
-        Query query = Query.query(Criteria.where("type").is("quickResponses"));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
-
-        if (settings == null || settings.getData() == null) {
-            return null;
-        }
-
-        try {
-            return objectMapper.convertValue(settings.getData(), QuickResponseSettings.class);
-        } catch (Exception e) {
-            log.error("Failed to parse quick response settings", e);
-            return null;
-        }
+    public VersionedSettings<QuickResponseSettings> getQuickResponseSettingsState(Server server) {
+        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_QUICK_RESPONSES);
+        QuickResponseSettings settings = mapToQuickResponseSettings(state.data());
+        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
     }
 
     public QuickResponseSettings.Action findAction(QuickResponseSettings settings, String categoryId, String actionId) {
@@ -62,19 +52,52 @@ public class QuickResponseSettingsService {
         return null;
     }
 
-    public void updateQuickResponseSettings(Server server, UpdateQuickResponsesRequest quickResponses) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("type").is("quickResponses"));
+    public VersionedSettings<QuickResponseSettings> patchQuickResponseSettings(
+            Server server,
+            long expectedVersion,
+            UpdateQuickResponsesRequest quickResponses
+    ) {
+        QuickResponseSettings currentSettings = getQuickResponseSettings(server);
+        if (quickResponses != null && quickResponses.categories() != null) {
+            currentSettings.setCategories(quickResponses.categories());
+        }
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(quickResponses, Map.class);
+        Map<String, Object> data = objectMapper.convertValue(currentSettings, Map.class);
+        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
+                server,
+                SETTINGS_TYPE_QUICK_RESPONSES,
+                expectedVersion,
+                new LinkedHashMap<>(data)
+        );
+        return new VersionedSettings<>(mapToQuickResponseSettings(updated.data()), updated.version(), updated.updatedAt());
+    }
 
-        org.springframework.data.mongodb.core.query.Update update =
-                new org.springframework.data.mongodb.core.query.Update()
-                        .set("type", "quickResponses")
-                        .set("data", data);
+    public void updateQuickResponseSettings(Server server, UpdateQuickResponsesRequest quickResponses) {
+        long expectedVersion = getQuickResponseSettingsState(server).version();
+        patchQuickResponseSettings(server, expectedVersion, quickResponses);
+    }
 
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+    private QuickResponseSettings mapToQuickResponseSettings(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return defaultQuickResponseSettings();
+        }
+
+        try {
+            QuickResponseSettings mapped = objectMapper.convertValue(data, QuickResponseSettings.class);
+            if (mapped.getCategories() == null) {
+                mapped.setCategories(new ArrayList<>());
+            }
+            return mapped;
+        } catch (Exception e) {
+            log.error("Failed to parse quick response settings", e);
+            return defaultQuickResponseSettings();
+        }
+    }
+
+    private QuickResponseSettings defaultQuickResponseSettings() {
+        QuickResponseSettings settings = new QuickResponseSettings();
+        settings.setCategories(new ArrayList<>());
+        return settings;
     }
 }

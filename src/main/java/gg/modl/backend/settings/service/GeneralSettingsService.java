@@ -1,120 +1,108 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
-import gg.modl.backend.settings.data.Label;
-import gg.modl.backend.settings.data.Settings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class GeneralSettingsService {
     private static final String SETTINGS_TYPE_GENERAL = "general";
+    private static final int MAX_SERVER_NAME_LENGTH = 80;
+    private static final int MAX_URL_LENGTH = 2048;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final SettingsDocumentService settingsDocumentService;
+    private final ObjectMapper objectMapper;
 
     public GeneralSettings getGeneralSettings(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_GENERAL));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
-
-        if (settings == null || settings.getData() == null) {
-            return GeneralSettings.builder()
-                    .serverDisplayName("")
-                    .discordWebhookUrl("")
-                    .homepageIconUrl("")
-                    .panelIconUrl("")
-                    .labels(new ArrayList<>())
-                    .build();
-        }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) settings.getData();
-
-        return GeneralSettings.builder()
-                .serverDisplayName(getStringValue(data, "serverDisplayName"))
-                .discordWebhookUrl(getStringValue(data, "discordWebhookUrl"))
-                .homepageIconUrl(getStringValue(data, "homepageIconUrl"))
-                .panelIconUrl(getStringValue(data, "panelIconUrl"))
-                .labels(getLabelsValue(data, "labels"))
-                .build();
+        return getGeneralSettingsState(server).data();
     }
 
-    public GeneralSettings updateGeneralSettings(Server server, GeneralSettings newSettings) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_GENERAL));
+    public VersionedSettings<GeneralSettings> getGeneralSettingsState(Server server) {
+        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
+        GeneralSettings settings = mapToGeneralSettings(state.data());
+        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+    }
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("serverDisplayName", newSettings.getServerDisplayName() != null ? newSettings.getServerDisplayName() : "");
-        data.put("discordWebhookUrl", newSettings.getDiscordWebhookUrl() != null ? newSettings.getDiscordWebhookUrl() : "");
-        data.put("homepageIconUrl", newSettings.getHomepageIconUrl() != null ? newSettings.getHomepageIconUrl() : "");
-        data.put("panelIconUrl", newSettings.getPanelIconUrl() != null ? newSettings.getPanelIconUrl() : "");
-        data.put(
-                "labels",
-                newSettings.getLabels() != null
-                        ? newSettings.getLabels().stream().map(this::labelToMap).collect(Collectors.toList())
-                        : new ArrayList<>()
+    public VersionedSettings<GeneralSettings> patchGeneralSettings(
+            Server server,
+            long expectedVersion,
+            GeneralSettings patch
+    ) {
+        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
+        Map<String, Object> data = new LinkedHashMap<>(current.data());
+
+        if (patch.getServerDisplayName() != null) {
+            data.put("serverDisplayName", sanitize(patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH));
+        }
+        if (patch.getDiscordWebhookUrl() != null) {
+            data.put("discordWebhookUrl", sanitize(patch.getDiscordWebhookUrl(), MAX_URL_LENGTH));
+        }
+        if (patch.getHomepageIconUrl() != null) {
+            data.put("homepageIconUrl", sanitize(patch.getHomepageIconUrl(), MAX_URL_LENGTH));
+        }
+        if (patch.getPanelIconUrl() != null) {
+            data.put("panelIconUrl", sanitize(patch.getPanelIconUrl(), MAX_URL_LENGTH));
+        }
+
+        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
+                server,
+                SETTINGS_TYPE_GENERAL,
+                expectedVersion,
+                data
         );
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_GENERAL)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
-
-        return getGeneralSettings(server);
+        return new VersionedSettings<>(mapToGeneralSettings(updated.data()), updated.version(), updated.updatedAt());
     }
 
-    private String getStringValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        return value instanceof String ? (String) value : "";
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Label> getLabelsValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        if (value instanceof List) {
-            List<Map<String, Object>> labelMaps = (List<Map<String, Object>>) value;
-            return labelMaps.stream()
-                    .map(this::mapToLabel)
-                    .collect(Collectors.toList());
+    private GeneralSettings mapToGeneralSettings(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return defaultGeneralSettings();
         }
-        return new ArrayList<>();
+
+        try {
+            GeneralSettings mapped = objectMapper.convertValue(data, GeneralSettings.class);
+            String serverDisplayName = sanitize(mapped.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
+            String discordWebhookUrl = sanitize(mapped.getDiscordWebhookUrl(), MAX_URL_LENGTH);
+            String homepageIconUrl = sanitize(mapped.getHomepageIconUrl(), MAX_URL_LENGTH);
+            String panelIconUrl = sanitize(mapped.getPanelIconUrl(), MAX_URL_LENGTH);
+
+            return GeneralSettings.builder()
+                    .serverDisplayName(serverDisplayName != null ? serverDisplayName : "")
+                    .discordWebhookUrl(discordWebhookUrl != null ? discordWebhookUrl : "")
+                    .homepageIconUrl(homepageIconUrl != null ? homepageIconUrl : "")
+                    .panelIconUrl(panelIconUrl != null ? panelIconUrl : "")
+                    .build();
+        } catch (IllegalArgumentException exception) {
+            log.warn("Failed to map general settings, using defaults: {}", exception.getMessage());
+            return defaultGeneralSettings();
+        }
     }
 
-    private Label mapToLabel(Map<String, Object> map) {
-        return Label.builder()
-                .id(map.get("id") != null ? map.get("id").toString() : UUID.randomUUID().toString())
-                .name(map.get("name") != null ? map.get("name").toString() : "")
-                .color(map.get("color") != null ? map.get("color").toString() : "#6b7280")
-                .description(map.get("description") != null ? map.get("description").toString() : null)
+    private GeneralSettings defaultGeneralSettings() {
+        return GeneralSettings.builder()
+                .serverDisplayName("")
+                .discordWebhookUrl("")
+                .homepageIconUrl("")
+                .panelIconUrl("")
                 .build();
     }
 
-    private Map<String, Object> labelToMap(Label label) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("id", label.getId() != null ? label.getId() : UUID.randomUUID().toString());
-        map.put("name", label.getName());
-        map.put("color", label.getColor());
-        if (label.getDescription() != null) {
-            map.put("description", label.getDescription());
+    private String sanitize(String value, int maxLength) {
+        if (value == null) {
+            return null;
         }
-        return map;
+
+        String trimmed = value.trim();
+        if (trimmed.length() <= maxLength) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLength);
     }
 }

@@ -5,13 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class GeneralSettings {
-    private String serverDisplayName;
-    private String discordWebhookUrl;
-    private String homepageIconUrl;
-    private String panelIconUrl;
+public class TicketLabelSettings {
+    @Builder.Default
+    private List<Label> labels = new ArrayList<>();
 }

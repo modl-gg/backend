@@ -3,24 +3,58 @@ package gg.modl.backend.settings.controller;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
-import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.data.*;
+import gg.modl.backend.settings.data.AIModerationSettings;
+import gg.modl.backend.settings.data.DomainSettings;
+import gg.modl.backend.settings.data.GeneralSettings;
+import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.data.QuickResponseSettings;
+import gg.modl.backend.settings.data.TicketFormSettings;
+import gg.modl.backend.settings.data.TicketLabelSettings;
+import gg.modl.backend.settings.data.WebhookSettings;
 import gg.modl.backend.settings.dto.request.ApplyAIPunishmentRequest;
 import gg.modl.backend.settings.dto.request.ConfigureDomainRequest;
+import gg.modl.backend.settings.dto.request.PatchGeneralSettingsRequest;
+import gg.modl.backend.settings.dto.request.PatchQuickResponsesRequest;
+import gg.modl.backend.settings.dto.request.PatchStatusThresholdSettingsRequest;
+import gg.modl.backend.settings.dto.request.PatchTicketFormSettingsRequest;
+import gg.modl.backend.settings.dto.request.PatchTicketLabelSettingsRequest;
 import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import gg.modl.backend.settings.dto.request.VerifyDomainRequest;
-import gg.modl.backend.settings.service.*;
+import gg.modl.backend.settings.service.AIModerationSettingsService;
+import gg.modl.backend.settings.service.ApiKeySettingsService;
+import gg.modl.backend.settings.service.DomainSettingsService;
+import gg.modl.backend.settings.service.GeneralSettingsService;
+import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
+import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.settings.service.TicketFormSettingsService;
+import gg.modl.backend.settings.service.TicketLabelSettingsService;
+import gg.modl.backend.settings.service.VersionedSettings;
+import gg.modl.backend.settings.service.WebhookSettingsService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
@@ -28,6 +62,7 @@ import java.util.*;
 public class PanelSettingsController {
     private final PunishmentTypeService punishmentTypeService;
     private final GeneralSettingsService generalSettingsService;
+    private final TicketLabelSettingsService ticketLabelSettingsService;
     private final ApiKeySettingsService apiKeySettingsService;
     private final AIModerationSettingsService aiModerationSettingsService;
     private final WebhookSettingsService webhookSettingsService;
@@ -35,10 +70,9 @@ public class PanelSettingsController {
     private final DomainSettingsService domainSettingsService;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
-    private final gg.modl.backend.storage.service.StorageQuotaService storageQuotaService;
+    private final StorageQuotaService storageQuotaService;
     private final AITicketAnalysisService aiTicketAnalysisService;
     private final OffenderThresholdSettingsService offenderThresholdSettingsService;
-    private final PermissionService permissionService;
 
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
             "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
@@ -63,7 +97,7 @@ public class PanelSettingsController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PutMapping("/punishment-types/{ordinal}")
+    @PatchMapping("/punishment-types/{ordinal}")
     public ResponseEntity<PunishmentType> updatePunishmentType(
             @PathVariable int ordinal,
             @RequestBody @Valid PunishmentType updatedType,
@@ -120,41 +154,71 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/general")
-    public ResponseEntity<?> getGeneralSettings(HttpServletRequest request) {
+    public ResponseEntity<SettingsEnvelope<GeneralSettings>> getGeneralSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
-        GeneralSettings settings = generalSettingsService.getGeneralSettings(server);
-        return ResponseEntity.ok(settings);
+        return ResponseEntity.ok(toEnvelope(generalSettingsService.getGeneralSettingsState(server)));
     }
 
-    @PutMapping("/general")
-    public ResponseEntity<?> updateGeneralSettings(
-            @RequestBody @Valid GeneralSettings settings,
+    @PatchMapping("/general")
+    public ResponseEntity<SettingsEnvelope<GeneralSettings>> patchGeneralSettings(
+            @RequestBody @Valid PatchGeneralSettingsRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
-        GeneralSettings updated = generalSettingsService.updateGeneralSettings(server, settings);
-        return ResponseEntity.ok(updated);
+
+        GeneralSettings patch = GeneralSettings.builder()
+                .serverDisplayName(body.serverDisplayName())
+                .discordWebhookUrl(body.discordWebhookUrl())
+                .homepageIconUrl(body.homepageIconUrl())
+                .panelIconUrl(body.panelIconUrl())
+                .build();
+
+        VersionedSettings<GeneralSettings> updated = generalSettingsService.patchGeneralSettings(
+                server,
+                body.expectedVersion(),
+                patch
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
+    }
+
+    @GetMapping("/ticket-labels")
+    public ResponseEntity<SettingsEnvelope<TicketLabelSettings>> getTicketLabelSettings(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        return ResponseEntity.ok(toEnvelope(ticketLabelSettingsService.getTicketLabelSettingsState(server)));
+    }
+
+    @PatchMapping("/ticket-labels")
+    public ResponseEntity<SettingsEnvelope<TicketLabelSettings>> patchTicketLabelSettings(
+            @RequestBody @Valid PatchTicketLabelSettingsRequest body,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        VersionedSettings<TicketLabelSettings> updated = ticketLabelSettingsService.patchTicketLabelSettings(
+                server,
+                body.expectedVersion(),
+                body.labels()
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @GetMapping("/status-thresholds")
-    public ResponseEntity<OffenderThresholdSettings> getStatusThresholds(HttpServletRequest request) {
+    public ResponseEntity<SettingsEnvelope<OffenderThresholdSettings>> getStatusThresholds(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        OffenderThresholdSettings settings = offenderThresholdSettingsService.getThresholdSettings(server);
-        return ResponseEntity.ok(settings);
+        return ResponseEntity.ok(toEnvelope(offenderThresholdSettingsService.getThresholdSettingsState(server)));
     }
 
-    @PutMapping("/status-thresholds")
-    public ResponseEntity<OffenderThresholdSettings> updateStatusThresholds(
-            @RequestBody @Valid OffenderThresholdSettings settings,
+    @PatchMapping("/status-thresholds")
+    public ResponseEntity<SettingsEnvelope<OffenderThresholdSettings>> patchStatusThresholds(
+            @RequestBody @Valid PatchStatusThresholdSettingsRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        OffenderThresholdSettings updated = offenderThresholdSettingsService.updateThresholdSettings(server, settings);
-        return ResponseEntity.ok(updated);
+        VersionedSettings<OffenderThresholdSettings> updated = offenderThresholdSettingsService.patchThresholdSettings(
+                server,
+                body.expectedVersion(),
+                body.settings()
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @PostMapping("/api-keys/{type}/generate")
@@ -163,8 +227,6 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
         String apiKey = apiKeySettingsService.generateApiKey(server, type);
         return ResponseEntity.ok(Map.of(
                 "message", "API key generated successfully",
@@ -178,8 +240,6 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
         String apiKey = apiKeySettingsService.revealApiKey(server, type);
 
         if (apiKey == null) {
@@ -195,8 +255,6 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
         boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
 
         if (!deleted) {
@@ -212,8 +270,6 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
         boolean exists = apiKeySettingsService.hasApiKey(server, type);
         return ResponseEntity.ok(Map.of("exists", exists));
     }
@@ -225,7 +281,7 @@ public class PanelSettingsController {
         return ResponseEntity.ok(settings);
     }
 
-    @PutMapping("/ai-moderation")
+    @PatchMapping("/ai-moderation")
     public ResponseEntity<AIModerationSettings> updateAIModerationSettings(
             @RequestBody @Valid AIModerationSettings settings,
             HttpServletRequest request
@@ -242,7 +298,7 @@ public class PanelSettingsController {
         return ResponseEntity.ok(settings);
     }
 
-    @PutMapping("/webhooks")
+    @PatchMapping("/webhooks")
     public ResponseEntity<WebhookSettings> updateWebhookSettings(
             @RequestBody @Valid WebhookSettings settings,
             HttpServletRequest request
@@ -265,20 +321,23 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/ticket-forms")
-    public ResponseEntity<TicketFormSettings> getTicketFormSettings(HttpServletRequest request) {
+    public ResponseEntity<SettingsEnvelope<TicketFormSettings>> getTicketFormSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        TicketFormSettings settings = ticketFormSettingsService.getTicketFormSettings(server);
-        return ResponseEntity.ok(settings);
+        return ResponseEntity.ok(toEnvelope(ticketFormSettingsService.getTicketFormSettingsState(server)));
     }
 
-    @PutMapping("/ticket-forms")
-    public ResponseEntity<TicketFormSettings> updateTicketFormSettings(
-            @RequestBody @Valid TicketFormSettings settings,
+    @PatchMapping("/ticket-forms")
+    public ResponseEntity<SettingsEnvelope<TicketFormSettings>> patchTicketFormSettings(
+            @RequestBody @Valid PatchTicketFormSettingsRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        TicketFormSettings updated = ticketFormSettingsService.updateTicketFormSettings(server, settings);
-        return ResponseEntity.ok(updated);
+        VersionedSettings<TicketFormSettings> updated = ticketFormSettingsService.patchTicketFormSettings(
+                server,
+                body.expectedVersion(),
+                body.settings()
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @GetMapping("/ticket-forms/{type}")
@@ -296,18 +355,6 @@ public class PanelSettingsController {
         return ResponseEntity.ok(form);
     }
 
-    @PutMapping("/ticket-forms/{type}")
-    public ResponseEntity<TicketFormSettings> updateTicketForm(
-            @PathVariable String type,
-            @RequestBody @Valid TicketFormSettings.TicketForm form,
-            HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        TicketFormSettings updated = ticketFormSettingsService.updateFormByType(server, type, form);
-        return ResponseEntity.ok(updated);
-    }
-
-    // Domain Settings Endpoints
     @GetMapping("/domain")
     public ResponseEntity<DomainSettings> getDomainSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
@@ -376,25 +423,23 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/quick-responses")
-    public ResponseEntity<?> getQuickResponses(HttpServletRequest request) {
+    public ResponseEntity<SettingsEnvelope<QuickResponseSettings>> getQuickResponses(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        var settings = quickResponseSettingsService.getQuickResponseSettings(server);
-
-        if (settings == null) {
-            return ResponseEntity.ok(Map.of("categories", List.of()));
-        }
-
-        return ResponseEntity.ok(settings);
+        return ResponseEntity.ok(toEnvelope(quickResponseSettingsService.getQuickResponseSettingsState(server)));
     }
 
-    @PutMapping("/quick-responses")
-    public ResponseEntity<?> updateQuickResponses(
-            @RequestBody @Valid UpdateQuickResponsesRequest quickResponses,
+    @PatchMapping("/quick-responses")
+    public ResponseEntity<SettingsEnvelope<QuickResponseSettings>> patchQuickResponses(
+            @RequestBody @Valid PatchQuickResponsesRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        quickResponseSettingsService.updateQuickResponseSettings(server, quickResponses);
-        return ResponseEntity.ok(Map.of("message", "Quick responses updated successfully"));
+        VersionedSettings<QuickResponseSettings> updated = quickResponseSettingsService.patchQuickResponseSettings(
+                server,
+                body.expectedVersion(),
+                new UpdateQuickResponsesRequest(body.categories())
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @PostMapping("/upload-icon")
@@ -404,36 +449,28 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
 
-        // Validate icon type
         if (!iconType.equals("homepage") && !iconType.equals("panel")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid icon type. Must be 'homepage' or 'panel'."));
         }
 
-        // Validate file
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "No file uploaded"));
         }
 
-        // Validate content type
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP, SVG"));
         }
 
-        // Validate file size
         if (file.getSize() > MAX_ICON_SIZE) {
             return ResponseEntity.badRequest().body(Map.of("error", "File too large. Maximum size is 2MB."));
         }
 
-        // Check if S3 is configured
         if (!s3StorageService.isConfigured()) {
             return ResponseEntity.status(503).body(Map.of("error", "File storage is not configured"));
         }
 
-        // Check storage quota
         if (!storageQuotaService.canUpload(server, file.getSize())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
@@ -454,14 +491,6 @@ public class PanelSettingsController {
         } catch (RuntimeException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file: " + e.getMessage()));
         }
-    }
-
-    private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null || !permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can access server configuration"));
-        }
-        return null;
     }
 
     @PostMapping("/ai-apply-punishment/{ticketId}")
@@ -492,5 +521,18 @@ public class PanelSettingsController {
             return ResponseEntity.badRequest().body(Map.of("error", result.error()));
         }
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private <T> SettingsEnvelope<T> toEnvelope(VersionedSettings<T> settings) {
+        return new SettingsEnvelope<>(
+                settings.data(),
+                new SettingsMeta(settings.version(), settings.updatedAt())
+        );
+    }
+
+    public record SettingsEnvelope<T>(T data, SettingsMeta _meta) {
+    }
+
+    public record SettingsMeta(long version, Date updatedAt) {
     }
 }

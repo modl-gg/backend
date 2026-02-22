@@ -1,18 +1,13 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
-import gg.modl.backend.settings.data.Settings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
@@ -20,77 +15,98 @@ import java.util.Map;
 @Slf4j
 public class OffenderThresholdSettingsService {
     private static final String SETTINGS_TYPE_STATUS_THRESHOLDS = "statusThresholds";
+    private static final int MIN_THRESHOLD = 0;
+    private static final int MAX_THRESHOLD = 10_000;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final SettingsDocumentService settingsDocumentService;
+    private final ObjectMapper objectMapper;
 
     public OffenderThresholdSettings getThresholdSettings(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_STATUS_THRESHOLDS));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        return getThresholdSettingsState(server).data();
+    }
 
-        if (settings == null || settings.getData() == null) {
+    public VersionedSettings<OffenderThresholdSettings> getThresholdSettingsState(Server server) {
+        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_STATUS_THRESHOLDS);
+        OffenderThresholdSettings settings = mapToThresholdSettings(state.data());
+        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+    }
+
+    public VersionedSettings<OffenderThresholdSettings> patchThresholdSettings(
+            Server server,
+            long expectedVersion,
+            OffenderThresholdSettings patch
+    ) {
+        OffenderThresholdSettings current = getThresholdSettings(server);
+        if (patch != null) {
+            if (patch.getSocial() != null) {
+                current.setSocial(sanitizeCategoryThresholds(patch.getSocial()));
+            }
+            if (patch.getGameplay() != null) {
+                current.setGameplay(sanitizeCategoryThresholds(patch.getGameplay()));
+            }
+        }
+
+        current = normalizeSettings(current);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = objectMapper.convertValue(current, Map.class);
+        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
+                server,
+                SETTINGS_TYPE_STATUS_THRESHOLDS,
+                expectedVersion,
+                new LinkedHashMap<>(data)
+        );
+        return new VersionedSettings<>(mapToThresholdSettings(updated.data()), updated.version(), updated.updatedAt());
+    }
+
+    public OffenderThresholdSettings updateThresholdSettings(Server server, OffenderThresholdSettings newSettings) {
+        long expectedVersion = getThresholdSettingsState(server).version();
+        return patchThresholdSettings(server, expectedVersion, newSettings).data();
+    }
+
+    private OffenderThresholdSettings mapToThresholdSettings(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
             return OffenderThresholdSettings.defaults();
         }
 
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) settings.getData();
-
-            OffenderThresholdSettings.CategoryThresholds social = parseThresholds(data, "social", 4, 8);
-            OffenderThresholdSettings.CategoryThresholds gameplay = parseThresholds(data, "gameplay", 5, 10);
-
-            return OffenderThresholdSettings.builder()
-                    .social(social)
-                    .gameplay(gameplay)
-                    .build();
+            OffenderThresholdSettings mapped = objectMapper.convertValue(data, OffenderThresholdSettings.class);
+            if (mapped.getSocial() == null || mapped.getGameplay() == null) {
+                return OffenderThresholdSettings.defaults();
+            }
+            return normalizeSettings(mapped);
         } catch (Exception e) {
             log.warn("Failed to parse status thresholds, using defaults: {}", e.getMessage());
             return OffenderThresholdSettings.defaults();
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private OffenderThresholdSettings.CategoryThresholds parseThresholds(
-            Map<String, Object> data, String category, int defaultMedium, int defaultHabitual) {
-        Object categoryData = data.get(category);
-        if (categoryData instanceof Map) {
-            Map<String, Object> thresholds = (Map<String, Object>) categoryData;
-            int medium = getIntValue(thresholds, "medium", defaultMedium);
-            int habitual = getIntValue(thresholds, "habitual", defaultHabitual);
-            return new OffenderThresholdSettings.CategoryThresholds(medium, habitual);
+    private OffenderThresholdSettings normalizeSettings(OffenderThresholdSettings settings) {
+        OffenderThresholdSettings normalized = settings != null ? settings : OffenderThresholdSettings.defaults();
+        if (normalized.getSocial() == null) {
+            normalized.setSocial(OffenderThresholdSettings.defaults().getSocial());
         }
-        return new OffenderThresholdSettings.CategoryThresholds(defaultMedium, defaultHabitual);
+        if (normalized.getGameplay() == null) {
+            normalized.setGameplay(OffenderThresholdSettings.defaults().getGameplay());
+        }
+
+        normalized.setSocial(sanitizeCategoryThresholds(normalized.getSocial()));
+        normalized.setGameplay(sanitizeCategoryThresholds(normalized.getGameplay()));
+        return normalized;
     }
 
-    public OffenderThresholdSettings updateThresholdSettings(Server server, OffenderThresholdSettings newSettings) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_STATUS_THRESHOLDS));
-
-        Map<String, Object> data = Map.of(
-                "social", Map.of(
-                        "medium", newSettings.getSocial().getMedium(),
-                        "habitual", newSettings.getSocial().getHabitual()
-                ),
-                "gameplay", Map.of(
-                        "medium", newSettings.getGameplay().getMedium(),
-                        "habitual", newSettings.getGameplay().getHabitual()
-                )
-        );
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_STATUS_THRESHOLDS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
-
-        return getThresholdSettings(server);
+    private OffenderThresholdSettings.CategoryThresholds sanitizeCategoryThresholds(
+            OffenderThresholdSettings.CategoryThresholds thresholds
+    ) {
+        int medium = sanitizeThresholdValue(thresholds.getMedium());
+        int habitual = sanitizeThresholdValue(thresholds.getHabitual());
+        if (habitual < medium) {
+            habitual = medium;
+        }
+        return new OffenderThresholdSettings.CategoryThresholds(medium, habitual);
     }
 
-    private int getIntValue(Map<String, Object> data, String key, int defaultValue) {
-        Object value = data.get(key);
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        return defaultValue;
+    private int sanitizeThresholdValue(int value) {
+        return Math.max(MIN_THRESHOLD, Math.min(MAX_THRESHOLD, value));
     }
 }

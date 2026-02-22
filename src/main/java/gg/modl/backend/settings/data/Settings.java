@@ -9,6 +9,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
+import java.util.Date;
+
 @Document(collection = CollectionName.SETTINGS)
 @Data
 @NoArgsConstructor
@@ -23,4 +25,14 @@ public class Settings {
 
     @Field(name = "data")
     private Object data;
+
+    @Field(name = "version")
+    private Long version;
+
+    @Field(name = "updatedAt", targetType = FieldType.DATE_TIME)
+    private Date updatedAt;
+
+    public Settings(String id, String type, Object data) {
+        this(id, type, data, null, null);
+    }
 }

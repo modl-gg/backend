@@ -34,7 +34,8 @@ public class ServerProvisioningService {
             seedAIModerationSettings(template);
             seedTicketForms(template);
             seedQuickResponses(template);
-            seedLabels(template);
+            seedGeneralSettings(template);
+            seedTicketLabelSettings(template);
             List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(template);
             seedHomepageCards(template, categories);
             roleService.createDefaultRoles(server);
@@ -73,7 +74,7 @@ public class ServerProvisioningService {
         data.put("strictnessLevel", "STANDARD");
         data.put("aiPunishmentConfigs", aiPunishmentConfigs);
 
-        Settings settings = new Settings(null, "aiModerationSettings", data);
+        Settings settings = newSettingsDocument("aiModerationSettings", data);
         template.save(settings, CollectionName.SETTINGS);
     }
 
@@ -111,7 +112,7 @@ public class ServerProvisioningService {
         data.put("support", supportForm);
         data.put("application", applicationForm);
 
-        Settings settings = new Settings(null, "ticketForms", data);
+        Settings settings = newSettingsDocument("ticketForms", data);
         template.save(settings, CollectionName.SETTINGS);
     }
 
@@ -249,12 +250,25 @@ public class ServerProvisioningService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("categories", categories);
 
-        Settings settings = new Settings(null, "quickResponses", data);
+        Settings settings = newSettingsDocument("quickResponses", data);
         template.save(settings, CollectionName.SETTINGS);
     }
 
-    private void seedLabels(MongoTemplate template) {
+    private void seedGeneralSettings(MongoTemplate template) {
         if (settingsExist(template, "general")) return;
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("serverDisplayName", "");
+        data.put("discordWebhookUrl", "");
+        data.put("homepageIconUrl", "");
+        data.put("panelIconUrl", "");
+
+        Settings settings = newSettingsDocument("general", data);
+        template.save(settings, CollectionName.SETTINGS);
+    }
+
+    private void seedTicketLabelSettings(MongoTemplate template) {
+        if (settingsExist(template, "ticketLabels")) return;
 
         List<Map<String, Object>> labels = List.of(
                 labelMap("high priority", "#e74c3c", "High priority tickets"),
@@ -265,14 +279,14 @@ public class ServerProvisioningService {
         );
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("serverDisplayName", "");
-        data.put("discordWebhookUrl", "");
-        data.put("homepageIconUrl", "");
-        data.put("panelIconUrl", "");
         data.put("labels", labels);
 
-        Settings settings = new Settings(null, "general", data);
+        Settings settings = newSettingsDocument("ticketLabels", data);
         template.save(settings, CollectionName.SETTINGS);
+    }
+
+    private Settings newSettingsDocument(String type, Map<String, Object> data) {
+        return new Settings(null, type, data, 0L, new Date());
     }
 
     private List<KnowledgebaseCategory> seedKnowledgebaseCategories(MongoTemplate template) {

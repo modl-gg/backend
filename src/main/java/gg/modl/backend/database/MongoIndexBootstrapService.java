@@ -68,6 +68,10 @@ public class MongoIndexBootstrapService {
     }
 
     private void ensureTenantIndexes(String databaseName, MongoTemplate template) {
+        ensureIndexes(template, databaseName, CollectionName.SETTINGS, List.of(
+                IndexSpec.standard("uidx_settings_type", doc("type", 1), true, false)
+        ));
+
         ensureIndexes(template, databaseName, CollectionName.PLAYERS, List.of(
                 IndexSpec.standard("uidx_players_minecraftUuid", doc("minecraftUuid", 1), true, true)
         ));
@@ -193,8 +197,22 @@ public class MongoIndexBootstrapService {
                 }
             }
 
-            ensureIndex(indexOps, spec);
-            log.info("Ensured index {} on {}.{}", spec.name(), databaseName, collectionName);
+            try {
+                ensureIndex(indexOps, spec);
+                log.info("Ensured index {} on {}.{}", spec.name(), databaseName, collectionName);
+            } catch (RuntimeException exception) {
+                if (isDuplicateKeyError(exception)) {
+                    log.warn(
+                            "Skipped index {} on {}.{} due to duplicate key data: {}",
+                            spec.name(),
+                            databaseName,
+                            collectionName,
+                            exception.getMessage()
+                    );
+                    continue;
+                }
+                throw exception;
+            }
         }
     }
 
@@ -282,6 +300,16 @@ public class MongoIndexBootstrapService {
 
     private Document doc(String field, int direction) {
         return new Document(field, direction);
+    }
+
+    private boolean isDuplicateKeyError(RuntimeException exception) {
+        if (exception instanceof MongoCommandException mongoCommandException
+                && mongoCommandException.getErrorCode() == 11000) {
+            return true;
+        }
+
+        String message = exception.getMessage();
+        return message != null && message.contains("E11000");
     }
 
     private record IndexSpec(
