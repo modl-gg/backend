@@ -17,6 +17,8 @@ public class OffenderThresholdSettingsService {
     private static final String SETTINGS_TYPE_STATUS_THRESHOLDS = "statusThresholds";
     private static final int MIN_THRESHOLD = 0;
     private static final int MAX_THRESHOLD = 10_000;
+    private static final int MIN_POINT_EXPIRY_MONTHS = 1;
+    private static final int MAX_POINT_EXPIRY_MONTHS = 60;
 
     private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
@@ -100,13 +102,18 @@ public class OffenderThresholdSettingsService {
     ) {
         int medium = sanitizeThresholdValue(thresholds.getMedium());
         int habitual = sanitizeThresholdValue(thresholds.getHabitual());
+        int pointExpiryMonths = sanitizePointExpiryMonths(thresholds.getPointExpiryMonths());
         if (habitual < medium) {
             habitual = medium;
         }
-        return new OffenderThresholdSettings.CategoryThresholds(medium, habitual);
+        return new OffenderThresholdSettings.CategoryThresholds(medium, habitual, pointExpiryMonths);
     }
 
     private int sanitizeThresholdValue(int value) {
         return Math.max(MIN_THRESHOLD, Math.min(MAX_THRESHOLD, value));
+    }
+
+    private int sanitizePointExpiryMonths(int value) {
+        return Math.max(MIN_POINT_EXPIRY_MONTHS, Math.min(MAX_POINT_EXPIRY_MONTHS, value));
     }
 }
