@@ -89,16 +89,16 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_HOMEPAGE_CARDS)
                 || startsWithEndpoint(path, RESTMappingV1.PANEL_KNOWLEDGEBASE)
                 || startsWithEndpoint(path, RESTMappingV1.PANEL_MEDIA)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.content";
+            return isReadOnly(method) ? "admin.settings.view.content" : "admin.settings.modify.content";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_DOMAIN)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.domain";
+            return isReadOnly(method) ? "admin.settings.view.domain" : "admin.settings.modify.domain";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_MIGRATION)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.migration";
+            return isReadOnly(method) ? "admin.settings.view.migration" : "admin.settings.modify.migration";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_STORAGE)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.storage";
+            return isReadOnly(method) ? "admin.settings.view.storage" : "admin.settings.modify.storage";
         }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_SETTINGS)) {
             return resolveSettingsPermission(path, method);
@@ -145,11 +145,11 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
                 || startsWithEndpoint(path, base + "/ai-moderation")
                 || startsWithEndpoint(path, base + "/ai-apply-punishment")
                 || startsWithEndpoint(path, base + "/ai-dismiss-suggestion")) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.punishments";
+            return isReadOnly(method) ? "admin.settings.view.punishments" : "admin.settings.modify.punishments";
         }
 
         if (startsWithEndpoint(path, base + "/domain")) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify.domain";
+            return isReadOnly(method) ? "admin.settings.view.domain" : "admin.settings.modify.domain";
         }
 
         if (startsWithEndpoint(path, base + "/general")

@@ -27,7 +27,12 @@ public class PermissionService {
     private static final List<Permission> BASE_PERMISSIONS = List.of(
             // Admin permissions
             new Permission("admin.settings.view", "View Settings", "View all system settings (includes all sub-permissions)", "admin"),
+            new Permission("admin.settings.view.punishments", "View Punishments Config", "View punishment type configuration", "admin", "admin.settings.view"),
+            new Permission("admin.settings.view.content", "View Content", "View homepage cards, knowledgebase, media", "admin", "admin.settings.view"),
+            new Permission("admin.settings.view.domain", "View Domain", "View custom domain configuration", "admin", "admin.settings.view"),
             new Permission("admin.settings.view.billing", "View Billing", "View billing, subscription, and payment info", "admin", "admin.settings.view"),
+            new Permission("admin.settings.view.migration", "View Migration", "View import/export data configuration", "admin", "admin.settings.view"),
+            new Permission("admin.settings.view.storage", "View Storage", "View storage configuration", "admin", "admin.settings.view"),
             new Permission("admin.settings.modify", "Modify Settings", "Full control over system settings (includes all sub-permissions)", "admin"),
             new Permission("admin.settings.modify.punishments", "Modify Punishments Config", "Create/edit/delete punishment types", "admin", "admin.settings.modify"),
             new Permission("admin.settings.modify.content", "Modify Content", "Edit homepage cards, knowledgebase, media", "admin", "admin.settings.modify"),
