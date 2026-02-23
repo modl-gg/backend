@@ -12,6 +12,7 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.service.StaffService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -28,6 +29,7 @@ import java.util.Map;
 public class PanelRoleController {
     private final RoleService roleService;
     private final PermissionService permissionService;
+    private final StaffService staffService;
 
     @GetMapping
     public ResponseEntity<RoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -62,14 +64,21 @@ public class PanelRoleController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
+        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
+                .map(staff -> staff.getRole()).orElse(null);
 
         try {
-            RoleResponse role = roleService.createRole(server, createRequest);
+            RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "message", "Role created successfully",
                     "role", role
             ));
         } catch (IllegalArgumentException e) {
+            if (e.getMessage() != null && e.getMessage().contains("authority")) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+            }
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
@@ -81,15 +90,22 @@ public class PanelRoleController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
+        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
+                .map(staff -> staff.getRole()).orElse(null);
 
         try {
-            return roleService.updateRole(server, id, updateRequest)
+            return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
                     .map(role -> ResponseEntity.ok(Map.of(
                             "message", "Role updated successfully",
                             "role", role
                     )))
                     .orElse(ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
+            if (e.getMessage() != null && e.getMessage().contains("authority")) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+            }
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
@@ -100,9 +116,13 @@ public class PanelRoleController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
+        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
+                .map(staff -> staff.getRole()).orElse(null);
 
         try {
-            boolean deleted = roleService.deleteRole(server, id);
+            boolean deleted = roleService.deleteRole(server, id, performerRoleName, isSuperAdmin);
             if (deleted) {
                 return ResponseEntity.ok(Map.of("message", "Role deleted successfully"));
             } else {
@@ -124,8 +144,16 @@ public class PanelRoleController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
+        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
+                .map(staff -> staff.getRole()).orElse(null);
 
-        roleService.reorderRoles(server, reorderRequest);
-        return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
+        try {
+            roleService.reorderRoles(server, reorderRequest, performerRoleName, isSuperAdmin);
+            return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        }
     }
 }
