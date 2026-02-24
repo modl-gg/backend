@@ -189,7 +189,7 @@ public class AITicketAnalysisService {
             return false;
         }
 
-        // Check AI usage cap â€” fetch fresh server data for current period counts
+        // Check AI usage cap, fetch fresh server data for current period counts
         MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
         Server freshServer = globalDb.findOne(
                 Query.query(Criteria.where("_id").is(server.getId())),

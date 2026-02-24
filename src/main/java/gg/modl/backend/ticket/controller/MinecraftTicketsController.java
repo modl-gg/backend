@@ -32,6 +32,7 @@ import java.util.*;
 @RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
+    private static final int MINECRAFT_CHAT_MAX_LENGTH = 256;
     private final DynamicMongoTemplateProvider mongoProvider;
     private final AITicketAnalysisService aiTicketAnalysisService;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -54,7 +55,7 @@ public class MinecraftTicketsController {
         List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
         if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
             for (String msg : request.chatMessages()) {
-                chatMessages.add(new Ticket.ChatMessage(msg, now));
+                chatMessages.add(new Ticket.ChatMessage(msg.substring(0, Math.min(msg.length(), MINECRAFT_CHAT_MAX_LENGTH)), now));
             }
         }
 
