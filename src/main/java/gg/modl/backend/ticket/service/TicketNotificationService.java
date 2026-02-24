@@ -243,9 +243,9 @@ public class TicketNotificationService {
         // Use custom domain override if set, otherwise use the subdomain
         String domain = server.getCustomDomainOverride();
         if (domain == null || domain.isBlank()) {
-            domain = server.getCustomDomain() + ".modl.gg";
+            domain = server.getServerName() + "." + System.getenv("MODL_DOMAIN");
         }
-        return "https://" + domain + "/tickets/" + ticketId;
+        return "https://" + domain + "/ticket/" + ticketId;
     }
 
     /**
