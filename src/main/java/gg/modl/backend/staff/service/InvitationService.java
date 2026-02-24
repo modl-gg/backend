@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -55,14 +56,24 @@ public class InvitationService {
             throw new IllegalArgumentException("No emails provided");
         }
 
-        int staffLimit = server.getPlan() == ServerPlan.premium ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+        List<String> normalizedEmailsToInvite = emailsToInvite.stream()
+                .filter(email -> email != null && !email.isBlank())
+                .map(email -> email.trim().toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+
+        if (normalizedEmailsToInvite.isEmpty()) {
+            throw new IllegalArgumentException("No valid emails provided");
+        }
+
+        int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
         long currentStaffCount = template.count(new Query(), Staff.class, CollectionName.STAFF);
-        Query pendingQuery = Query.query(Criteria.where("status").is("pending"));
+        Query pendingQuery = Query.query(Criteria.where("expiresAt").gt(new Date()));
         long pendingInvitationsCount = template.count(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
 
         if (totalCurrentMembers >= staffLimit) {
-            String planName = server.getPlan() == ServerPlan.premium ? "Premium" : "Free";
+            String planName = server.getPlan() == ServerPlan.PREMIUM ? "Premium" : "Free";
             throw new IllegalStateException(
                     String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
                             "Please upgrade your plan or remove existing staff members to invite new ones.",
@@ -71,17 +82,17 @@ public class InvitationService {
         }
 
         int availableSlots = (int) (staffLimit - totalCurrentMembers);
-        if (emailsToInvite.size() > availableSlots) {
+        if (normalizedEmailsToInvite.size() > availableSlots) {
             throw new IllegalStateException(
                     String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
-                            emailsToInvite.size(), availableSlots)
+                            normalizedEmailsToInvite.size(), availableSlots)
             );
         }
 
         List<String> success = new ArrayList<>();
         List<InviteResultResponse.FailedInvite> failed = new ArrayList<>();
 
-        for (String email : emailsToInvite) {
+        for (String email : normalizedEmailsToInvite) {
             try {
                 processInvitation(template, server, email, request.role(), failed);
                 if (failed.stream().noneMatch(f -> f.email().equals(email))) {
@@ -108,23 +119,25 @@ public class InvitationService {
 
     private void processInvitation(MongoTemplate template, Server server, String email, String role,
                                    List<InviteResultResponse.FailedInvite> failed) {
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+
         // Check if admin email
-        if (server.getAdminEmail() != null && email.equalsIgnoreCase(server.getAdminEmail())) {
-            failed.add(new InviteResultResponse.FailedInvite(email, "Cannot send invitation to the admin email address."));
+        if (server.getAdminEmail() != null && normalizedEmail.equalsIgnoreCase(server.getAdminEmail())) {
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Cannot send invitation to the admin email address."));
             return;
         }
 
         // Check if user already exists
-        Query staffQuery = Query.query(Criteria.where("email").is(email));
+        Query staffQuery = Query.query(Criteria.where("email").is(normalizedEmail));
         if (template.exists(staffQuery, Staff.class, CollectionName.STAFF)) {
-            failed.add(new InviteResultResponse.FailedInvite(email, "Email is already associated with an existing user."));
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Email is already associated with an existing user."));
             return;
         }
 
-        // Check if invitation already pending
-        Query invQuery = Query.query(Criteria.where("email").is(email).and("status").is("pending"));
+        // Check if invitation already pending and still valid
+        Query invQuery = Query.query(Criteria.where("email").is(normalizedEmail).and("expiresAt").gt(new Date()));
         if (template.exists(invQuery, Invitation.class, CollectionName.INVITATIONS)) {
-            failed.add(new InviteResultResponse.FailedInvite(email, "An invitation for this email is already pending."));
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "An invitation for this email is already pending."));
             return;
         }
 
@@ -133,11 +146,10 @@ public class InvitationService {
         Date expiresAt = new Date(System.currentTimeMillis() + INVITATION_EXPIRY_MS);
 
         Invitation invitation = Invitation.builder()
-                .email(email)
+                .email(normalizedEmail)
                 .role(role)
                 .token(token)
                 .expiresAt(expiresAt)
-                .status("pending")
                 .createdAt(new Date())
                 .updatedAt(new Date())
                 .build();
@@ -150,16 +162,16 @@ public class InvitationService {
 
         try {
             emailService.sendStaffInviteEmail(
-                    email,
+                    normalizedEmail,
                     server.getServerName(),
                     role,
                     invitationLink
             );
         } catch (Exception e) {
-            log.error("Failed to send invitation email to {}: {}", email, e.getMessage());
+            log.error("Failed to send invitation email to {}: {}", normalizedEmail, e.getMessage());
             // Remove the invitation since email failed
             template.remove(Query.query(Criteria.where("_id").is(invitation.getId())), Invitation.class, CollectionName.INVITATIONS);
-            failed.add(new InviteResultResponse.FailedInvite(email, "Failed to send invitation email."));
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Failed to send invitation email."));
         }
     }
 
@@ -201,14 +213,14 @@ public class InvitationService {
     public StaffResponse acceptInvitation(Server server, String token) {
         MongoTemplate template = getTemplate(server);
 
-        Query invQuery = Query.query(Criteria.where("token").is(token).and("status").is("pending"));
+        Query invQuery = Query.query(Criteria.where("token").is(token));
         Invitation invitation = template.findOne(invQuery, Invitation.class, CollectionName.INVITATIONS);
 
         if (invitation == null) {
             throw new IllegalArgumentException("Invalid or expired invitation token.");
         }
 
-        if (invitation.getExpiresAt() != null && invitation.getExpiresAt().before(new Date())) {
+        if (invitation.getExpiresAt() == null || invitation.getExpiresAt().before(new Date())) {
             throw new IllegalArgumentException("This invitation has expired. Please request a new invitation.");
         }
 
@@ -231,10 +243,7 @@ public class InvitationService {
 
         template.save(newStaff, CollectionName.STAFF);
 
-        Update update = new Update()
-                .set("status", "accepted")
-                .set("updatedAt", now);
-        template.updateFirst(invQuery, update, Invitation.class, CollectionName.INVITATIONS);
+        template.remove(invQuery, Invitation.class, CollectionName.INVITATIONS);
 
         return new StaffResponse(
                 newStaff.getId(),

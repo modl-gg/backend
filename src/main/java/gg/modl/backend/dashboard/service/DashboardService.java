@@ -10,24 +10,39 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class DashboardService {
+    private static final int RECENT_PUNISHMENT_WINDOW_DAYS = 7;
+    private static final int MAX_RECENT_TICKETS_LIMIT = 20;
+    private static final int MAX_RECENT_PUNISHMENTS_LIMIT = 20;
+    private static final int MAX_ACTIVITY_LIMIT = 100;
+    private static final int MAX_DAYS = 90;
+    private static final int MAX_QUERY_RESULTS = 200;
+
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
     private final PlayerStatusCalculator statusCalculator;
@@ -66,10 +81,20 @@ public class DashboardService {
 
     public List<RecentTicketResponse> getRecentTickets(Server server, int limit) {
         MongoTemplate template = getTemplate(server);
+        int safeLimit = clampLimit(limit, MAX_RECENT_TICKETS_LIMIT);
 
         Query query = Query.query(Criteria.where("status").ne("Unfinished"))
                 .with(Sort.by(Sort.Direction.DESC, "created"))
-                .limit(limit);
+                .limit(safeLimit);
+
+        query.fields()
+                .include("subject")
+                .include("status")
+                .include("priority")
+                .include("created")
+                .include("creatorName")
+                .include("type")
+                .slice("replies", 1);
 
         List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
 
@@ -99,97 +124,96 @@ public class DashboardService {
 
     public List<RecentPunishmentResponse> getRecentPunishments(Server server, int limit) {
         MongoTemplate template = getTemplate(server);
+        int safeLimit = clampLimit(limit, MAX_RECENT_PUNISHMENTS_LIMIT);
+        Date cutoff = new Date(System.currentTimeMillis() - (RECENT_PUNISHMENT_WINDOW_DAYS * 24L * 60 * 60 * 1000));
 
-        long cutoffMs = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000);
-        Date cutoff = new Date(cutoffMs);
+        Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
+        List<Document> punishmentRows = fetchRecentPunishmentRows(
+                template,
+                Criteria.where("punishments.issued").gte(cutoff),
+                safeLimit
+        );
 
-        Query query = Query.query(Criteria.where("punishments.issued").gte(cutoff))
-                .limit(100);
-
-        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
         List<RecentPunishmentResponse> results = new ArrayList<>();
-
-        for (Player player : players) {
-            if (player.getPunishments() == null) continue;
-
-            String playerName = getPlayerUsername(player);
-            String playerUuid = player.getMinecraftUuid() != null ? player.getMinecraftUuid().toString() : "";
-
-            for (Punishment p : player.getPunishments()) {
-                if (p.getIssued() != null && p.getIssued().after(cutoff)) {
-                    String reason = "";
-                    boolean active = statusCalculator.isPunishmentActive(p);
-                    String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
-
-                    if (p.getData() != null) {
-                        Object reasonObj = p.getData().get("reason");
-                        if (reasonObj != null) {
-                            reason = reasonObj.toString();
-                        }
-                    }
-
-                    results.add(new RecentPunishmentResponse(
-                            p.getId(),
-                            playerName,
-                            playerUuid,
-                            typeName,
-                            reason,
-                            p.getIssuerName(),
-                            p.getIssued(),
-                            active
-                    ));
-                }
+        for (Document row : punishmentRows) {
+            Punishment punishment = readPunishment(template, row.get("punishment", Document.class));
+            if (punishment == null || punishment.getIssued() == null || punishment.getIssued().before(cutoff)) {
+                continue;
             }
+
+            normalizePunishmentCollections(punishment);
+
+            String reason = "";
+            if (punishment.getData() != null && punishment.getData().get("reason") != null) {
+                reason = String.valueOf(punishment.getData().get("reason"));
+            }
+
+            String typeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
+            String playerName = extractLatestUsername(row.get("usernames"));
+            String playerUuid = extractMinecraftUuid(row);
+
+            results.add(new RecentPunishmentResponse(
+                    punishment.getId(),
+                    playerName,
+                    playerUuid,
+                    typeName,
+                    reason,
+                    punishment.getIssuerName() != null ? punishment.getIssuerName() : "Unknown",
+                    punishment.getIssued(),
+                    isPunishmentActiveSafely(punishment)
+            ));
         }
 
-        results.sort((a, b) -> b.issued().compareTo(a.issued()));
-
-        if (results.size() > limit) {
-            return results.subList(0, limit);
+        if (results.size() > safeLimit) {
+            return results.subList(0, safeLimit);
         }
 
         return results;
     }
 
-    private String getPlayerUsername(Player player) {
-        if (player.getUsernames() != null && !player.getUsernames().isEmpty()) {
-            return player.getUsernames().get(player.getUsernames().size() - 1).username();
-        }
-        return "Unknown";
-    }
-
-    private static final int MAX_ACTIVITY_LIMIT = 100;
-    private static final int MAX_DAYS = 90;
-    private static final int MAX_QUERY_RESULTS = 200;
-
     public List<ActivityItemResponse> getRecentActivity(Server server, String staffEmail, int limit, int days) {
         MongoTemplate template = getTemplate(server);
         List<ActivityItemResponse> activities = new ArrayList<>();
 
-        int safeLimit = Math.max(1, Math.min(limit, MAX_ACTIVITY_LIMIT));
-        int safeDays = Math.max(1, Math.min(days, MAX_DAYS));
+        int safeLimit = clampLimit(limit, MAX_ACTIVITY_LIMIT);
+        int safeDays = clampLimit(days, MAX_DAYS);
 
         String staffUsername = getStaffUsernameByEmail(template, staffEmail);
         if (staffUsername == null) {
             return activities;
         }
 
+        String normalizedStaffUsername = TicketAssigneeUtil.normalizeSingle(staffUsername);
         Date cutoffDate = new Date(System.currentTimeMillis() - (long) safeDays * 24 * 60 * 60 * 1000);
 
         try {
+            List<Criteria> staffMatchCriteria = new ArrayList<>();
+            staffMatchCriteria.add(Criteria.where("creatorName").is(staffUsername));
+            if (normalizedStaffUsername != null) {
+                staffMatchCriteria.add(Criteria.where("assignedTo").is(normalizedStaffUsername));
+            }
+            staffMatchCriteria.add(Criteria.where("replies.name").is(staffUsername));
+
             Query ticketQuery = Query.query(new Criteria().andOperator(
-                    Criteria.where("created").gte(cutoffDate),
-                    new Criteria().orOperator(
-                            Criteria.where("creator").is(staffUsername),
-                            Criteria.where("assignedTo").regex("(^|,)" + java.util.regex.Pattern.quote(staffUsername) + "(,|$)"),
-                            Criteria.where("replies.name").is(staffUsername)
-                    )
-            )).limit(MAX_QUERY_RESULTS);
+                    Criteria.where("updatedAt").gte(cutoffDate),
+                    new Criteria().orOperator(staffMatchCriteria.toArray(new Criteria[0]))
+            )).with(Sort.by(Sort.Direction.DESC, "updatedAt")).limit(MAX_QUERY_RESULTS);
+
+            ticketQuery.fields()
+                    .include("subject")
+                    .include("category")
+                    .include("created")
+                    .include("creatorName")
+                    .include("replies.name")
+                    .include("replies.created");
+
             List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : tickets) {
-                if (ticket.getCreator() != null && ticket.getCreator().equals(staffUsername)
-                        && ticket.getCreated() != null && ticket.getCreated().after(cutoffDate)) {
+                if (ticket.getCreatorName() != null
+                        && ticket.getCreatorName().equals(staffUsername)
+                        && ticket.getCreated() != null
+                        && ticket.getCreated().after(cutoffDate)) {
                     activities.add(new ActivityItemResponse(
                             "ticket-created-" + ticket.getId(),
                             "new_ticket",
@@ -203,24 +227,27 @@ public class DashboardService {
 
                 if (ticket.getReplies() != null) {
                     for (TicketReply reply : ticket.getReplies()) {
-                        if (reply.getCreated() != null && reply.getCreated().after(cutoffDate)) {
-                            boolean isStaffReply = staffUsername.equals(reply.getName());
-                            String actionType = isStaffReply ? "My reply" : "New reply";
-                            String color = isStaffReply ? "green" : "blue";
-                            String description = isStaffReply
-                                    ? "You replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket"
-                                    : reply.getName() + " replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket";
-
-                            activities.add(new ActivityItemResponse(
-                                    "ticket-reply-" + ticket.getId() + "-" + reply.getCreated().getTime(),
-                                    "mod_action",
-                                    color,
-                                    actionType + " on ticket: " + (ticket.getSubject() != null ? ticket.getSubject() : "No Subject"),
-                                    reply.getCreated(),
-                                    description,
-                                    List.of(new ActivityItemResponse.ActivityAction("View Ticket", "/panel/tickets/" + ticket.getId(), true))
-                            ));
+                        if (reply.getCreated() == null || !reply.getCreated().after(cutoffDate)) {
+                            continue;
                         }
+
+                        boolean isStaffReply = staffUsername.equalsIgnoreCase(reply.getName());
+                        String actionType = isStaffReply ? "My reply" : "New reply";
+                        String color = isStaffReply ? "green" : "blue";
+                        String replyName = reply.getName() != null ? reply.getName() : "Unknown";
+                        String description = isStaffReply
+                                ? "You replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket"
+                                : replyName + " replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket";
+
+                        activities.add(new ActivityItemResponse(
+                                "ticket-reply-" + ticket.getId() + "-" + reply.getCreated().getTime(),
+                                "mod_action",
+                                color,
+                                actionType + " on ticket: " + (ticket.getSubject() != null ? ticket.getSubject() : "No Subject"),
+                                reply.getCreated(),
+                                description,
+                                List.of(new ActivityItemResponse.ActivityAction("View Ticket", "/panel/tickets/" + ticket.getId(), true))
+                        ));
                     }
                 }
             }
@@ -229,35 +256,34 @@ public class DashboardService {
         }
 
         try {
-            Query playerQuery = Query.query(
-                    Criteria.where("punishments.issuerName").is(staffUsername)
-                            .and("punishments.issued").gte(cutoffDate)
-            ).limit(MAX_QUERY_RESULTS);
-            List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
+            Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
+            List<Document> punishmentRows = fetchRecentPunishmentRows(
+                    template,
+                    Criteria.where("punishments.issuerName").is(staffUsername).and("punishments.issued").gte(cutoffDate),
+                    MAX_QUERY_RESULTS
+            );
 
-            for (Player player : players) {
-                String username = player.getUsernames() != null && !player.getUsernames().isEmpty()
-                        ? player.getUsernames().get(player.getUsernames().size() - 1).username()
-                        : "Unknown";
-
-                if (player.getPunishments() != null) {
-                    for (Punishment punishment : player.getPunishments()) {
-                        if (staffUsername.equals(punishment.getIssuerName())
-                                && punishment.getIssued() != null
-                                && punishment.getIssued().after(cutoffDate)) {
-                            String punishmentTypeName = punishmentTypeService.getPunishmentTypeName(server, punishment.getType_ordinal());
-                            activities.add(new ActivityItemResponse(
-                                    "punishment-" + punishment.getId(),
-                                    "new_punishment",
-                                    "red",
-                                    "Applied " + punishmentTypeName + " to " + username,
-                                    punishment.getIssued(),
-                                    "Applied " + punishmentTypeName + " punishment",
-                                    List.of(new ActivityItemResponse.ActivityAction("View Player", "/panel/players/" + player.getMinecraftUuid(), true))
-                            ));
-                        }
-                    }
+            for (Document row : punishmentRows) {
+                Punishment punishment = readPunishment(template, row.get("punishment", Document.class));
+                if (punishment == null || punishment.getIssued() == null || punishment.getIssued().before(cutoffDate)) {
+                    continue;
                 }
+
+                normalizePunishmentCollections(punishment);
+
+                String username = extractLatestUsername(row.get("usernames"));
+                String punishmentTypeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
+                String playerUuid = extractMinecraftUuid(row);
+
+                activities.add(new ActivityItemResponse(
+                        "punishment-" + punishment.getId(),
+                        "new_punishment",
+                        "red",
+                        "Applied " + punishmentTypeName + " to " + username,
+                        punishment.getIssued(),
+                        "Applied " + punishmentTypeName + " punishment",
+                        List.of(new ActivityItemResponse.ActivityAction("View Player", "/panel/players/" + playerUuid, true))
+                ));
             }
         } catch (Exception e) {
             log.error("Error fetching punishment activities", e);
@@ -272,10 +298,102 @@ public class DashboardService {
         return activities;
     }
 
+    private List<Document> fetchRecentPunishmentRows(MongoTemplate template, Criteria punishmentCriteria, int limit) {
+        Aggregation aggregation = Aggregation.newAggregation(
+                Aggregation.match(punishmentCriteria),
+                Aggregation.unwind("punishments"),
+                Aggregation.match(punishmentCriteria),
+                Aggregation.sort(Sort.by(Sort.Direction.DESC, "punishments.issued")),
+                Aggregation.limit(limit),
+                Aggregation.project("minecraftUuid", "usernames")
+                        .and("punishments").as("punishment")
+        );
+
+        AggregationResults<Document> aggregationResults =
+                template.aggregate(aggregation, CollectionName.PLAYERS, Document.class);
+        return aggregationResults.getMappedResults();
+    }
+
+    private Punishment readPunishment(MongoTemplate template, Document punishmentDocument) {
+        if (punishmentDocument == null) {
+            return null;
+        }
+
+        try {
+            return template.getConverter().read(Punishment.class, punishmentDocument);
+        } catch (Exception e) {
+            log.warn("Failed to parse punishment document for dashboard response", e);
+            return null;
+        }
+    }
+
+    private Map<Integer, String> buildPunishmentTypeNameByOrdinal(Server server) {
+        Map<Integer, String> names = new HashMap<>();
+        for (PunishmentType punishmentType : punishmentTypeService.getPunishmentTypes(server)) {
+            names.put(punishmentType.getOrdinal(), punishmentType.getName());
+        }
+        return names;
+    }
+
+    private void normalizePunishmentCollections(Punishment punishment) {
+        if (punishment.getModifications() == null) {
+            punishment.setModifications(new ArrayList<>());
+        }
+        if (punishment.getNotes() == null) {
+            punishment.setNotes(new ArrayList<>());
+        }
+        if (punishment.getEvidence() == null) {
+            punishment.setEvidence(new ArrayList<>());
+        }
+        if (punishment.getAttachedTicketIds() == null) {
+            punishment.setAttachedTicketIds(new ArrayList<>());
+        }
+    }
+
+    private boolean isPunishmentActiveSafely(Punishment punishment) {
+        try {
+            return statusCalculator.isPunishmentActive(punishment);
+        } catch (Exception e) {
+            log.warn("Failed to calculate punishment active state for punishment id={}", punishment.getId(), e);
+            return false;
+        }
+    }
+
+    private String extractLatestUsername(Object usernamesValue) {
+        if (!(usernamesValue instanceof List<?> usernames) || usernames.isEmpty()) {
+            return "Unknown";
+        }
+
+        Object lastEntry = usernames.get(usernames.size() - 1);
+        if (lastEntry instanceof Document entryDocument) {
+            Object username = entryDocument.get("username");
+            if (username != null && !String.valueOf(username).isBlank()) {
+                return String.valueOf(username);
+            }
+        } else if (lastEntry instanceof Map<?, ?> entryMap) {
+            Object username = entryMap.get("username");
+            if (username != null && !String.valueOf(username).isBlank()) {
+                return String.valueOf(username);
+            }
+        }
+
+        return "Unknown";
+    }
+
+    private String extractMinecraftUuid(Document row) {
+        Object value = row.get("minecraftUuid");
+        return value != null ? String.valueOf(value) : "";
+    }
+
     private String getStaffUsernameByEmail(MongoTemplate template, String email) {
         Query query = Query.query(Criteria.where("email").is(email));
+        query.fields().include("username");
         Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
         return staff != null ? staff.getUsername() : null;
+    }
+
+    private int clampLimit(int value, int max) {
+        return Math.max(1, Math.min(value, max));
     }
 
     private MongoTemplate getTemplate(Server server) {

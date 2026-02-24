@@ -27,7 +27,6 @@ public class Ticket {
     private String subject;
     private String status;
 
-    private String creator;
     private String creatorUuid;
     private String creatorName;
     private String creatorAvatar;
@@ -51,7 +50,9 @@ public class Ticket {
 
     private boolean locked;
     private String priority;
-    private String assignedTo;
+
+    @Builder.Default
+    private List<String> assignedTo = new ArrayList<>();
 
     private Date created;
     private Date updatedAt;

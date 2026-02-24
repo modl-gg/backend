@@ -6,7 +6,12 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.validation.RegExpConstants;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -29,18 +34,11 @@ public class MinecraftNotificationController {
 
     @PostMapping("/acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgeNotifications(
-            @RequestBody AcknowledgeRequest request,
+            @RequestBody @Valid AcknowledgeRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        if (request.playerUuid() == null || request.notificationIds() == null || request.notificationIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", 400,
-                    "message", "playerUuid and notificationIds are required"
-            ));
-        }
 
         Query query = Query.query(Criteria.where("minecraftUuid").is(request.playerUuid()));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
@@ -53,9 +51,13 @@ public class MinecraftNotificationController {
             ));
         }
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pending = (List<Map<String, Object>>)
-                player.getData().getOrDefault("pendingNotifications", List.of());
+        Object rawPending = player.getData().getOrDefault("pendingNotifications", List.of());
+        List<Map<String, Object>> pending = rawPending instanceof List<?> list
+                ? list.stream().filter(e -> e instanceof Map<?, ?>).map(e -> {
+                    @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) e;
+                    return m;
+                }).toList()
+                : List.of();
 
         List<Map<String, Object>> remaining = pending.stream()
                 .filter(n -> {
@@ -75,8 +77,8 @@ public class MinecraftNotificationController {
     }
 
     public record AcknowledgeRequest(
-            String playerUuid,
-            List<String> notificationIds,
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
+            @NotEmpty List<@NotBlank String> notificationIds,
             String acknowledgedAt
     ) {}
 }

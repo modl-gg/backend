@@ -9,6 +9,7 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.SubscriptionUpdateResponse;
 import gg.modl.backend.ticket.dto.response.TicketSubscriptionResponse;
+import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -23,6 +24,9 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class TicketSubscriptionService {
+    private static final int MAX_UPDATES_LIMIT = 25;
+    private static final int MAX_TICKETS_TO_SCAN = 250;
+
     private final DynamicMongoTemplateProvider mongoProvider;
 
     public List<TicketSubscriptionResponse> getSubscriptions(Server server, String staffEmail) {
@@ -75,6 +79,7 @@ public class TicketSubscriptionService {
 
     public List<SubscriptionUpdateResponse> getUpdates(Server server, String staffEmail, int limit) {
         MongoTemplate template = getTemplate(server);
+        int safeLimit = clampLimit(limit);
 
         Query staffQuery = Query.query(Criteria.where("email").is(staffEmail));
         Staff staff = template.findOne(staffQuery, Staff.class, CollectionName.STAFF);
@@ -94,8 +99,14 @@ public class TicketSubscriptionService {
 
         Query ticketQuery = Query.query(
                 Criteria.where("_id").in(subscribedTicketIds)
+                        .and("status").ne("Unfinished")
                         .and("replies.0").exists(true)
-        );
+        ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "updatedAt"))
+         .limit(ticketScanLimit(safeLimit));
+        ticketQuery.fields()
+                .include("subject")
+                .include("replies")
+                .include("updatedAt");
 
         List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
@@ -125,7 +136,7 @@ public class TicketSubscriptionService {
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "-" + latestReply.getId(),
+                        ticket.getId() + "::" + latestReply.getId(),
                         ticket.getId(),
                         ticketTitle,
                         latestReply.getContent(),
@@ -137,17 +148,20 @@ public class TicketSubscriptionService {
                 ));
             }
 
-            if (updates.size() >= limit) {
+            if (updates.size() >= safeLimit) {
                 break;
             }
         }
 
         updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
-        return updates.stream().limit(limit).toList();
+        return updates.stream().limit(safeLimit).toList();
     }
 
     public boolean markAsRead(Server server, String staffEmail, String updateId) {
-        String ticketId = updateId.split("-")[0];
+        String ticketId = updateId.split("::")[0];
+
+        // Ensure a subscription exists (assigned tickets may not have one yet)
+        ensureSubscription(server, ticketId, staffEmail);
 
         MongoTemplate template = getTemplate(server);
 
@@ -193,6 +207,9 @@ public class TicketSubscriptionService {
     }
 
     public void markTicketAsRead(Server server, String ticketId, String staffEmail) {
+        // Ensure a subscription exists (assigned tickets may not have one yet)
+        ensureSubscription(server, ticketId, staffEmail);
+
         MongoTemplate template = getTemplate(server);
 
         Query query = Query.query(
@@ -211,6 +228,7 @@ public class TicketSubscriptionService {
      */
     public List<SubscriptionUpdateResponse> getAssignedTicketUpdates(Server server, String staffEmail, int limit) {
         MongoTemplate template = getTemplate(server);
+        int safeLimit = clampLimit(limit);
 
         // Find staff to get their username for matching assignedTo
         Query staffQuery = Query.query(Criteria.where("email").is(staffEmail));
@@ -220,16 +238,24 @@ public class TicketSubscriptionService {
             return Collections.emptyList();
         }
 
-        // Get staff username or email prefix for matching assignedTo
-        String staffIdentifier = staff.getUsername() != null ? staff.getUsername() : staffEmail.split("@")[0];
-        String escapedIdentifier = java.util.regex.Pattern.quote(staffIdentifier);
+        // assignedTo values are normalized and stored as lowercase usernames.
+        String rawStaffIdentifier = staff.getUsername() != null ? staff.getUsername() : staffEmail.split("@")[0];
+        String staffIdentifier = TicketAssigneeUtil.normalizeSingle(rawStaffIdentifier);
+        if (staffIdentifier == null) {
+            return Collections.emptyList();
+        }
 
-        // Find tickets assigned to this staff member (assignedTo stores comma-separated usernames)
+        // Equality on array field matches documents where assignedTo contains the username.
         Query ticketQuery = Query.query(
-                Criteria.where("assignedTo").regex("(^|,)" + escapedIdentifier + "(,|$)")
+                Criteria.where("assignedTo").is(staffIdentifier)
                         .and("replies.0").exists(true)
                         .and("status").ne("Unfinished")
-        );
+        ).with(org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "updatedAt"))
+         .limit(ticketScanLimit(safeLimit));
+        ticketQuery.fields()
+                .include("subject")
+                .include("replies")
+                .include("updatedAt");
 
         List<Ticket> tickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
@@ -255,7 +281,13 @@ public class TicketSubscriptionService {
             // Get recent replies that the staff hasn't seen
             List<TicketReply> unreadReplies = ticket.getReplies().stream()
                     .filter(reply -> reply.getCreated() != null)
-                    .filter(reply -> !reply.isStaff() || !staffIdentifier.equals(reply.getName()))  // Exclude own replies
+                    .filter(reply -> {
+                        if (!reply.isStaff()) {
+                            return true;
+                        }
+                        String replyName = TicketAssigneeUtil.normalizeSingle(reply.getName());
+                        return !staffIdentifier.equals(replyName);
+                    })  // Exclude own replies
                     .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
                     .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
                     .toList();
@@ -265,7 +297,7 @@ public class TicketSubscriptionService {
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "-" + latestReply.getId(),
+                        ticket.getId() + "::" + latestReply.getId(),
                         ticket.getId(),
                         ticketTitle,
                         latestReply.getContent(),
@@ -280,10 +312,18 @@ public class TicketSubscriptionService {
 
         // Sort by most recent and limit
         updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
-        return updates.stream().limit(limit).toList();
+        return updates.stream().limit(safeLimit).toList();
     }
 
     private MongoTemplate getTemplate(Server server) {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
+    }
+
+    private int clampLimit(int limit) {
+        return Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
+    }
+
+    private int ticketScanLimit(int limit) {
+        return Math.min(MAX_TICKETS_TO_SCAN, Math.max(50, limit * 10));
     }
 }

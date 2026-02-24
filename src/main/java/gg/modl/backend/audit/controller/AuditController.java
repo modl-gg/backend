@@ -1,5 +1,6 @@
 package gg.modl.backend.audit.controller;
 
+import gg.modl.backend.audit.dto.request.BulkRollbackRequest;
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
@@ -7,22 +8,42 @@ import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.audit.service.AuditService;
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUDIT)
 @RequiredArgsConstructor
 public class AuditController {
     private final AuditService auditService;
+
+    private static final Set<String> ALLOWED_TABLES = Set.of(
+            CollectionName.MODL_SERVERS,
+            CollectionName.PLAYERS,
+            CollectionName.SESSIONS,
+            CollectionName.AUTH_CODES,
+            CollectionName.SETTINGS,
+            CollectionName.STAFF,
+            CollectionName.STAFF_ROLES,
+            CollectionName.INVITATIONS,
+            CollectionName.TICKETS,
+            CollectionName.TICKET_VERIFICATIONS,
+            CollectionName.LOGS,
+            CollectionName.KNOWLEDGEBASE_CATEGORIES,
+            CollectionName.KNOWLEDGEBASE_ARTICLES,
+            CollectionName.HOMEPAGE_CARDS
+    );
 
     @GetMapping("/staff-performance")
     public ResponseEntity<List<StaffPerformanceResponse>> getStaffPerformance(
@@ -150,7 +171,7 @@ public class AuditController {
 
     @PostMapping("/punishments/bulk-rollback")
     public ResponseEntity<?> bulkRollback(
-            @RequestBody Map<String, Object> bulkRequest,
+            @RequestBody @Valid BulkRollbackRequest bulkRequest,
             HttpServletRequest request
     ) {
         // TODO: Implement time-based bulk rollback
@@ -165,6 +186,10 @@ public class AuditController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+
+        if (!ALLOWED_TABLES.contains(table)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid table name"));
+        }
 
         try {
             Map<String, Object> result = auditService.getDatabaseTable(server, table, limit, skip);

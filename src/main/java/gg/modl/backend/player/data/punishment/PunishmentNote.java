@@ -6,7 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.util.Date;
 
 public record PunishmentNote(
-        @NotNull @Field("_id") String id,
+        @NotNull @Field("id") String id,
         @NotNull String text,
         @NotNull Date date,
         @NotNull String issuerName

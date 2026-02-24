@@ -63,7 +63,7 @@ public class MinecraftRolesController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
@@ -98,7 +98,7 @@ public class MinecraftRolesController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {

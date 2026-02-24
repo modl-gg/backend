@@ -40,7 +40,7 @@ public class StaffService {
         MongoTemplate template = getTemplate(server);
 
         List<Staff> staffMembers = template.findAll(Staff.class, CollectionName.STAFF);
-        Query pendingQuery = Query.query(Criteria.where("status").is("pending"));
+        Query pendingQuery = Query.query(Criteria.where("expiresAt").gt(new Date()));
         List<Invitation> pendingInvitations = template.find(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
 
         List<StaffResponse> result = new ArrayList<>();
@@ -258,7 +258,8 @@ public class StaffService {
         if (request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()) {
             playerQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUuid()));
         } else {
-            playerQuery = Query.query(Criteria.where("usernames.username").regex("^" + request.minecraftUsername() + "$", "i"));
+            String escapedUsername = Pattern.quote(request.minecraftUsername().trim());
+            playerQuery = Query.query(Criteria.where("usernames.username").regex("^" + escapedUsername + "$", "i"));
         }
 
         Player player = template.findOne(playerQuery, Player.class, CollectionName.PLAYERS);

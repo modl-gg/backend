@@ -7,7 +7,7 @@ public record MigrationPlayerData(
         String minecraftUuid,
         List<UsernameData> usernames,
         List<NoteData> notes,
-        List<IPData> ipList,
+        List<IPData> ipAddresses,
         List<PunishmentData> punishments,
         Map<String, Object> data
 ) {
@@ -27,9 +27,9 @@ public record MigrationPlayerData(
     ) {}
 
     public record PunishmentData(
-            String _id,
+            String id,
             String type,
-            int type_ordinal,
+            int typeOrdinal,
             String reason,
             String issued,
             String issuerName,

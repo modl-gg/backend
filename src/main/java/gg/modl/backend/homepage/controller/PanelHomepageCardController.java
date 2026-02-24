@@ -36,16 +36,16 @@ public class PanelHomepageCardController {
             String title,
             String description,
             String icon,
-            String icon_color,
-            String action_type,
-            String action_url,
-            String action_button_text,
-            String category_id,
-            String background_color,
-            boolean is_enabled,
+            String iconColor,
+            String actionType,
+            String actionUrl,
+            String actionButtonText,
+            String categoryId,
+            String backgroundColor,
+            boolean isEnabled,
             int ordinal,
-            Date created_at,
-            Date updated_at,
+            Date createdAt,
+            Date updatedAt,
             EmbeddedCategory category
     ) {}
 
@@ -100,7 +100,7 @@ public class PanelHomepageCardController {
     @PutMapping("/{id}")
     public ResponseEntity<HomepageCard> updateCard(
             @PathVariable String id,
-            @RequestBody UpdateCardRequest updateRequest,
+            @RequestBody @Valid UpdateCardRequest updateRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -124,7 +124,7 @@ public class PanelHomepageCardController {
 
     @PutMapping("/reorder")
     public ResponseEntity<?> reorderCards(
-            @RequestBody ReorderRequest reorderRequest,
+            @RequestBody @Valid ReorderRequest reorderRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

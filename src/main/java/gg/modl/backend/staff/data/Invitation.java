@@ -1,5 +1,6 @@
 package gg.modl.backend.staff.data;
 
+import gg.modl.backend.database.CollectionName;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,7 +11,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.Date;
 
-@Document
+@Document(collection = CollectionName.INVITATIONS)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -19,18 +20,16 @@ public class Invitation {
     @Id
     private String id;
 
-    @Indexed(name = "email_1")
+    @Indexed(name = "idx_invitations_email")
     private String email;
 
     private String role;
 
-    @Indexed(name = "token_1", unique = true)
+    @Indexed(name = "uidx_invitations_token", unique = true)
     private String token;
 
+    @Indexed(name = "idx_invitations_expiresAt_ttl", expireAfter = "0s")
     private Date expiresAt;
-
-    @Builder.Default
-    private String status = "pending";
 
     private Date createdAt;
 

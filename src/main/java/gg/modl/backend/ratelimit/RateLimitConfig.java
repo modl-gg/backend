@@ -3,14 +3,19 @@ package gg.modl.backend.ratelimit;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.Refill;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class RateLimitConfig {
+
+    private static final int MAX_BUCKETS_PER_TIER = 50_000;
 
     private final Map<String, Map<String, Bucket>> buckets = new ConcurrentHashMap<>();
 
@@ -22,9 +27,11 @@ public class RateLimitConfig {
         PANEL_AUDIT(200, Duration.ofMinutes(1)), // Higher limit for audit/analytics pages
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
+        PUBLIC_MEDIA_UPLOAD(30, Duration.ofMinutes(1)),
         PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
         PUBLIC_TICKET_VERIFY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
+        AUTH_SEND_CODE(2, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
         MIGRATION(5, Duration.ofHours(1)),
@@ -50,7 +57,14 @@ public class RateLimitConfig {
     public Bucket resolveBucket(String clientKey, RateLimitTier tier) {
         String tierName = tier.name();
         return buckets
-                .computeIfAbsent(tierName, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(tierName, k -> Collections.synchronizedMap(
+                        new LinkedHashMap<>(64, 0.75f, true) {
+                            @Override
+                            protected boolean removeEldestEntry(Map.Entry<String, Bucket> eldest) {
+                                return size() > MAX_BUCKETS_PER_TIER;
+                            }
+                        }
+                ))
                 .computeIfAbsent(clientKey, k -> createBucket(tier));
     }
 
@@ -76,6 +90,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/panel/auth/")) {
+            if (path.equals("/v1/panel/auth/send-email-code")) {
+                return RateLimitTier.AUTH_SEND_CODE;
+            }
             return RateLimitTier.AUTH;
         }
 
@@ -106,6 +123,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/public/")) {
+            if (path.startsWith("/v1/public/media/") && "POST".equalsIgnoreCase(method)) {
+                return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
+            }
             if (path.startsWith("/v1/public/tickets") && "POST".equalsIgnoreCase(method)) {
                 if (path.contains("/verify") || path.contains("/request-verification")) {
                     return RateLimitTier.PUBLIC_TICKET_VERIFY;
@@ -139,6 +159,12 @@ public class RateLimitConfig {
         }
 
         if (path.contains("/dashboard/metrics") || path.contains("/dashboard/activity")) {
+            return true;
+        }
+        if (path.contains("/dashboard/recent-punishments") || path.contains("/dashboard/recent-tickets")) {
+            return true;
+        }
+        if (path.contains("/ticket-subscriptions/assigned-updates") || path.contains("/ticket-subscriptions/updates")) {
             return true;
         }
 

@@ -8,6 +8,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.service.TicketNotificationService;
+import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -61,7 +62,7 @@ public class MinecraftReportsController {
             report.put("id", t.getId());
             report.put("type", t.getCategory() != null ? t.getCategory() : t.getType()); // Use category (player/chat) as the type
             report.put("category", t.getCategory()); // Original report category
-            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : "Unknown");
             report.put("reporterUuid", t.getCreatorUuid());
             report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
             report.put("reportedPlayerName", t.getReportedPlayer());
@@ -233,7 +234,7 @@ public class MinecraftReportsController {
             report.put("id", t.getId());
             report.put("type", t.getCategory() != null ? t.getCategory() : t.getType());
             report.put("category", t.getCategory());
-            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : t.getCreator());
+            report.put("reporterName", t.getCreatorName() != null ? t.getCreatorName() : "Unknown");
             report.put("reporterUuid", t.getCreatorUuid());
             report.put("reportedPlayerUuid", t.getReportedPlayerUuid());
             report.put("reportedPlayerName", t.getReportedPlayer());
@@ -274,8 +275,12 @@ public class MinecraftReportsController {
         }
 
         Update update = new Update()
-                .set("assignedTo", request.assignee())
-                .set("status", "in_progress")
+                .set(
+                        "assignedTo",
+                        "none".equalsIgnoreCase(request.assignee())
+                                ? List.of()
+                                : TicketAssigneeUtil.normalizeCsv(request.assignee())
+                )
                 .set("updatedAt", new Date());
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);

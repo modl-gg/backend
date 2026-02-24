@@ -18,8 +18,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.time.Instant;
 import java.util.Base64;
+import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -44,7 +44,7 @@ public class AuthService {
         AuthCode authCode = new AuthCode();
         authCode.setEmail(normalizedEmail);
         authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(Instant.now().plusSeconds(authConfiguration.getEmailCodeExpiry()));
+        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
 
         mongo.save(authCode);
 
@@ -70,7 +70,7 @@ public class AuthService {
         AuthCode authCode = new AuthCode();
         authCode.setEmail(normalizedEmail);
         authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(Instant.now().plusSeconds(authConfiguration.getEmailCodeExpiry()));
+        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
 
         mongo.save(authCode);
 
@@ -88,15 +88,23 @@ public class AuthService {
         return verifyCodeInternal(mongo, email, code);
     }
 
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+
     private boolean verifyCodeInternal(MongoTemplate mongo, String email, String code) {
         String normalizedEmail = email.toLowerCase();
 
         Query query = new Query(Criteria.where("email").is(normalizedEmail)
-                .and("expiresAt").gt(Instant.now()));
+                .and("expiresAt").gt(new Date()));
 
         AuthCode authCode = mongo.findOne(query, AuthCode.class);
 
         if (authCode == null) {
+            return false;
+        }
+
+        // Invalidate code after too many failed attempts
+        if (authCode.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
+            mongo.remove(authCode);
             return false;
         }
 
@@ -108,6 +116,11 @@ public class AuthService {
 
         if (valid) {
             mongo.remove(authCode);
+        } else {
+            // Increment failed attempts counter
+            org.springframework.data.mongodb.core.query.Update update = new org.springframework.data.mongodb.core.query.Update()
+                    .inc("failedAttempts", 1);
+            mongo.updateFirst(query, update, AuthCode.class);
         }
 
         return valid;

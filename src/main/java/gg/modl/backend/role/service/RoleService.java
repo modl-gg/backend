@@ -11,7 +11,6 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -22,11 +21,11 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class RoleService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PermissionService permissionService;
@@ -53,7 +52,7 @@ public class RoleService {
     public Optional<RoleResponse> getRoleById(Server server, String id) {
         MongoTemplate template = getTemplate(server);
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
@@ -64,14 +63,22 @@ public class RoleService {
         return Optional.of(toRoleResponse(role, staffCount));
     }
 
-    public RoleResponse createRole(Server server, CreateRoleRequest request) {
+    public RoleResponse createRole(Server server, CreateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         MongoTemplate template = getTemplate(server);
+        String roleName = request.name() != null ? request.name().trim() : "";
+        ensureRoleNameAvailable(template, roleName, null);
 
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
         List<String> filteredPermissions = request.permissions().stream()
                 .filter(validPermissions::contains)
                 .toList();
+
+        // Filter permissions to only those the performer can grant
+        if (!isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
+        }
 
         // Generate unique ID
         String id = "custom-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
@@ -83,7 +90,7 @@ public class RoleService {
 
         StaffRole newRole = StaffRole.builder()
                 .id(id)
-                .name(request.name())
+                .name(roleName)
                 .description(request.description())
                 .permissions(new ArrayList<>(filteredPermissions))
                 .isDefault(false)
@@ -97,7 +104,7 @@ public class RoleService {
         return toRoleResponse(newRole, 0);
     }
 
-    public Optional<RoleResponse> updateRole(Server server, String id, UpdateRoleRequest request) {
+    public Optional<RoleResponse> updateRole(Server server, String id, UpdateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         MongoTemplate template = getTemplate(server);
 
         // Cannot update Super Admin role
@@ -105,15 +112,34 @@ public class RoleService {
             throw new IllegalArgumentException("Cannot modify Super Admin role");
         }
 
+        // Hierarchy check: performer must have higher authority than the target role
+        if (!isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            Query targetQuery = Query.query(Criteria.where("_id").is(id));
+            StaffRole targetRole = template.findOne(targetQuery, StaffRole.class, CollectionName.STAFF_ROLES);
+            if (targetRole != null) {
+                assertHigherAuthority(performerRole, targetRole);
+            }
+        }
+
+        String roleName = request.name() != null ? request.name().trim() : "";
+        ensureRoleNameAvailable(template, roleName, id);
+
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
         List<String> filteredPermissions = request.permissions().stream()
                 .filter(validPermissions::contains)
                 .toList();
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        // Filter permissions to only those the performer can grant
+        if (!isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
+        }
+
+        Query query = Query.query(Criteria.where("_id").is(id));
         Update update = new Update()
-                .set("name", request.name())
+                .set("name", roleName)
                 .set("description", request.description())
                 .set("permissions", filteredPermissions)
                 .set("updatedAt", new Date());
@@ -132,7 +158,7 @@ public class RoleService {
         return Optional.of(toRoleResponse(updated, staffCount));
     }
 
-    public boolean deleteRole(Server server, String id) {
+    public boolean deleteRole(Server server, String id, String performerRoleName, boolean isSuperAdmin) {
         MongoTemplate template = getTemplate(server);
 
         // Cannot delete Super Admin role
@@ -141,11 +167,17 @@ public class RoleService {
         }
 
         // Check if any staff are using this role
-        Query roleQuery = Query.query(Criteria.where("id").is(id));
+        Query roleQuery = Query.query(Criteria.where("_id").is(id));
         StaffRole role = template.findOne(roleQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
         if (role == null) {
             return false;
+        }
+
+        // Hierarchy check: performer must have higher authority than the target role
+        if (!isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            assertHigherAuthority(performerRole, role);
         }
 
         int staffCount = getStaffCountForRole(server, role.getName());
@@ -153,17 +185,40 @@ public class RoleService {
             throw new IllegalStateException("Cannot delete role that is currently assigned to staff members");
         }
 
-        Query deleteQuery = Query.query(Criteria.where("id").is(id));
+        Query deleteQuery = Query.query(Criteria.where("_id").is(id));
         DeleteResult result = template.remove(deleteQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
         return result.getDeletedCount() > 0;
     }
 
-    public void reorderRoles(Server server, ReorderRolesRequest request) {
+    public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleName, boolean isSuperAdmin) {
         MongoTemplate template = getTemplate(server);
 
+        if (!isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            int performerOrder = performerRole.getOrder();
+
+            for (ReorderRolesRequest.RoleOrderItem item : request.roleOrder()) {
+                // Look up the role being reordered
+                Query roleQuery = Query.query(Criteria.where("_id").is(item.id()));
+                StaffRole targetRole = template.findOne(roleQuery, StaffRole.class, CollectionName.STAFF_ROLES);
+
+                if (targetRole == null) continue;
+
+                // Performer cannot reorder roles at or above their own authority level
+                if (targetRole.getOrder() <= performerOrder) {
+                    throw new IllegalArgumentException("You do not have authority to reorder this role");
+                }
+
+                // Cannot promote a role to the performer's level or above
+                if (item.order() <= performerOrder) {
+                    throw new IllegalArgumentException("You cannot promote a role to or above your own authority level");
+                }
+            }
+        }
+
         request.roleOrder().forEach(item -> {
-            Query query = Query.query(Criteria.where("id").is(item.id()));
+            Query query = Query.query(Criteria.where("_id").is(item.id()));
             Update update = new Update().set("order", item.order());
             template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
         });
@@ -262,8 +317,50 @@ public class RoleService {
         );
 
         for (StaffRole role : defaultRoles) {
-            Query query = Query.query(Criteria.where("id").is(role.getId()));
+            Query query = Query.query(Criteria.where("_id").is(role.getId()));
             template.upsert(query, buildUpdateFromRole(role), CollectionName.STAFF_ROLES);
+        }
+    }
+
+    // --- Authorization helpers ---
+
+    private StaffRole resolvePerformerRole(Server server, String roleName, boolean isSuperAdmin) {
+        if (isSuperAdmin) {
+            // Synthetic super-admin role with order 0 and all permissions
+            return StaffRole.builder()
+                    .id("super-admin")
+                    .name("Super Admin")
+                    .permissions(new ArrayList<>(permissionService.getAllPermissionIds(server)))
+                    .order(0)
+                    .build();
+        }
+        if (roleName == null || roleName.isBlank()) {
+            throw new IllegalArgumentException("You do not have authority to perform this action");
+        }
+        return permissionService.getRoleByName(server, roleName)
+                .orElseThrow(() -> new IllegalArgumentException("You do not have authority to perform this action"));
+    }
+
+    private boolean performerHasPermission(StaffRole performerRole, String permission) {
+        if ("super-admin".equals(performerRole.getId()) || "Super Admin".equals(performerRole.getName())) {
+            return true;
+        }
+        for (String perm : performerRole.getPermissions()) {
+            if (perm.equals(permission)) return true;
+            if (permission.startsWith(perm + ".")) return true;
+        }
+        return false;
+    }
+
+    private List<String> filterToGrantablePermissions(StaffRole performerRole, List<String> permissions) {
+        return permissions.stream()
+                .filter(p -> performerHasPermission(performerRole, p))
+                .toList();
+    }
+
+    private void assertHigherAuthority(StaffRole performerRole, StaffRole targetRole) {
+        if (performerRole.getOrder() >= targetRole.getOrder()) {
+            throw new IllegalArgumentException("You do not have authority to modify a role at or above your own level");
         }
     }
 
@@ -281,7 +378,7 @@ public class RoleService {
             int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
 
             for (StaffRole role : problematicRoles) {
-                Query updateQuery = Query.query(Criteria.where("mongoId").is(role.getMongoId()));
+                Query updateQuery = Query.query(Criteria.where("_id").is(role.getId()));
                 Update update = new Update().set("order", nextOrder++);
                 template.updateFirst(updateQuery, update, StaffRole.class, CollectionName.STAFF_ROLES);
             }
@@ -328,7 +425,6 @@ public class RoleService {
 
     private Update buildUpdateFromRole(StaffRole role) {
         return new Update()
-                .set("id", role.getId())
                 .set("name", role.getName())
                 .set("description", role.getDescription())
                 .set("permissions", role.getPermissions())
@@ -336,6 +432,23 @@ public class RoleService {
                 .set("order", role.getOrder())
                 .setOnInsert("createdAt", role.getCreatedAt())
                 .set("updatedAt", role.getUpdatedAt());
+    }
+
+    private void ensureRoleNameAvailable(MongoTemplate template, String roleName, String excludeRoleId) {
+        if (roleName == null || roleName.isBlank()) {
+            throw new IllegalArgumentException("Role name cannot be empty");
+        }
+
+        Criteria criteria = Criteria.where("name")
+                .regex("^" + Pattern.quote(roleName) + "$", "i");
+        if (excludeRoleId != null && !excludeRoleId.isBlank()) {
+            criteria = criteria.and("_id").ne(excludeRoleId);
+        }
+
+        Query query = Query.query(criteria);
+        if (template.exists(query, StaffRole.class, CollectionName.STAFF_ROLES)) {
+            throw new IllegalArgumentException("A role with this name already exists");
+        }
     }
 
     // Helper class for aggregation results

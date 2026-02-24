@@ -6,6 +6,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
@@ -31,18 +32,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.security.SecureRandom;
-import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_REGISTRATION)
 @RequiredArgsConstructor
 @Slf4j
 public class PublicRegistrationController {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
     private static final long AUTO_LOGIN_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
@@ -52,7 +51,15 @@ public class PublicRegistrationController {
     private final EmailService emailService;
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
-    private final Map<String, Long> rateLimitMap = new ConcurrentHashMap<>();
+    private static final int MAX_RATE_LIMIT_ENTRIES = 10_000;
+    private final Map<String, Long> rateLimitMap = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
+                    return size() > MAX_RATE_LIMIT_ENTRIES;
+                }
+            }
+    );
 
     @Value("${modl.app-domain}")
     private String appDomain;
@@ -67,7 +74,7 @@ public class PublicRegistrationController {
             return ResponseEntity.badRequest().body(new RegisterResponse(false, "Validation failed", null));
         }
 
-        String clientIp = getClientIp(request);
+        String clientIp = RequestUtil.getClientIp(request);
 
         // Check rate limit
         long now = System.currentTimeMillis();
@@ -121,10 +128,10 @@ public class PublicRegistrationController {
         }
 
         // Generate email verification token
-        String emailVerificationToken = generateSecureToken();
+        String emailVerificationToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
 
         // Parse plan
-        ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.premium : ServerPlan.free;
+        ServerPlan plan = requestData.plan().equalsIgnoreCase("premium") ? ServerPlan.PREMIUM : ServerPlan.FREE;
 
         // Create server
         Server server;
@@ -168,6 +175,15 @@ public class PublicRegistrationController {
 
     @GetMapping("/verify")
     public ResponseEntity<?> verifyEmail(@RequestParam String token) {
+        return verifyEmailInternal(token);
+    }
+
+    @PostMapping("/verify")
+    public ResponseEntity<?> verifyEmailPost(@RequestBody @Valid TokenRequest body) {
+        return verifyEmailInternal(body.token());
+    }
+
+    private ResponseEntity<?> verifyEmailInternal(String token) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.badRequest().body(new VerifyResponse(false, "Verification token is required.", null, null));
         }
@@ -178,7 +194,7 @@ public class PublicRegistrationController {
         }
 
         // Generate auto-login token for seamless setup flow
-        String autoLoginToken = generateSecureToken();
+        String autoLoginToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
         Date tokenExpiry = new Date(System.currentTimeMillis() + AUTO_LOGIN_TOKEN_EXPIRY_MS);
         serverService.setAutoLoginToken(server, autoLoginToken, tokenExpiry);
 
@@ -192,6 +208,15 @@ public class PublicRegistrationController {
 
     @GetMapping("/setup-status")
     public ResponseEntity<?> getSetupStatus(@RequestParam String token) {
+        return getSetupStatusInternal(token);
+    }
+
+    @PostMapping("/setup-status")
+    public ResponseEntity<?> getSetupStatusPost(@RequestBody @Valid TokenRequest body) {
+        return getSetupStatusInternal(body.token());
+    }
+
+    private ResponseEntity<?> getSetupStatusInternal(String token) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.badRequest().body(new SetupStatusResponse(
                     null, null, false, null, "Token is required."
@@ -218,7 +243,7 @@ public class PublicRegistrationController {
                 server.getCustomDomain(),
                 server.getServerName(),
                 server.getEmailVerified(),
-                server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.pending.name(),
+                server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.PENDING.name(),
                 getProvisioningMessage(server.getProvisioningStatus())
         ));
     }
@@ -246,7 +271,7 @@ public class PublicRegistrationController {
         }
 
         // Verify provisioning is complete and email is verified
-        if (server.getProvisioningStatus() != ProvisioningStatus.completed) {
+        if (server.getProvisioningStatus() != ProvisioningStatus.COMPLETED) {
             return ResponseEntity.badRequest().body(new AutoLoginResponse(
                     false, "Server setup is not yet complete.", null
             ));
@@ -274,10 +299,10 @@ public class PublicRegistrationController {
     private String getProvisioningMessage(ProvisioningStatus status) {
         if (status == null) return "Your server is queued for setup...";
         return switch (status) {
-            case pending -> "Your server is queued for setup...";
-            case in_progress -> "Setting up your server...";
-            case completed -> "Setup complete!";
-            case failed -> "Setup failed. Please contact support.";
+            case PENDING -> "Your server is queued for setup...";
+            case IN_PROGRESS -> "Setting up your server...";
+            case COMPLETED -> "Setup complete!";
+            case FAILED -> "Setup failed. Please contact support.";
         };
     }
 
@@ -288,30 +313,16 @@ public class PublicRegistrationController {
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
         cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        String cookieDomain = authConfiguration.getCookieDomain();
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            cookie.setDomain(cookieDomain);
+        }
         return cookie;
     }
 
     private void sendVerificationEmail(String email, String verificationLink) throws Exception {
         EmailHTMLTemplate.HTMLEmail htmlEmail = EmailHTMLTemplate.REGISTRATION_VERIFY_LINK.build(verificationLink);
         emailService.send(email, htmlEmail);
-    }
-
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-        return request.getRemoteAddr();
-    }
-
-    private String generateSecureToken() {
-        byte[] tokenBytes = new byte[TOKEN_BYTE_LENGTH];
-        SECURE_RANDOM.nextBytes(tokenBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
     }
 
     private void cleanupRateLimitMap(long now) {
@@ -332,7 +343,9 @@ public class PublicRegistrationController {
 
     public record VerifyResponse(boolean success, String message, String subdomain, String autoLoginToken) {}
 
-    public record SetupStatusResponse(String subdomain, String serverName, boolean emailVerified, String provisioningStatus, String message) {}
+    public record SetupStatusResponse(String subdomain, String serverName, Boolean emailVerified, String provisioningStatus, String message) {}
+
+    public record TokenRequest(@NotBlank String token) {}
 
     public record AutoLoginRequest(@NotBlank String token) {}
 

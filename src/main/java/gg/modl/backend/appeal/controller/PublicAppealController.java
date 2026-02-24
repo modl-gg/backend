@@ -2,6 +2,7 @@ package gg.modl.backend.appeal.controller;
 
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
+import gg.modl.backend.appeal.dto.response.PublicAppealResponse;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
@@ -16,8 +17,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -34,26 +33,7 @@ public class PublicAppealController {
         Server server = RequestUtil.getRequestServer(request);
 
         return appealService.getAppealById(server, id)
-                .map(appeal -> {
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("id", appeal.id());
-                    response.put("_id", appeal.id());
-                    response.put("type", appeal.type());
-                    response.put("subject", appeal.subject());
-                    response.put("status", appeal.status());
-                    response.put("creator", appeal.creator() != null ? appeal.creator() : "");
-                    response.put("creatorUuid", appeal.creatorUuid() != null ? appeal.creatorUuid() : "");
-                    response.put("created", appeal.date());
-                    response.put("date", appeal.date());
-                    response.put("locked", appeal.locked());
-                    response.put("replies", appeal.messages() != null ? appeal.messages() : Collections.emptyList());
-                    response.put("messages", appeal.messages() != null ? appeal.messages() : Collections.emptyList());
-                    response.put("notes", appeal.notes() != null ? appeal.notes() : Collections.emptyList());
-                    response.put("tags", appeal.tags() != null ? appeal.tags() : Collections.emptyList());
-                    response.put("data", appeal.data() != null ? appeal.data() : Map.of());
-                    return ResponseEntity.ok(response);
-                })
-                .<ResponseEntity<?>>map(r -> r)
+                .map(appeal -> ResponseEntity.ok((Object) PublicAppealResponse.fromTicketResponse(appeal)))
                 .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
                         .body(Map.of("error", "Appeal not found")));
     }

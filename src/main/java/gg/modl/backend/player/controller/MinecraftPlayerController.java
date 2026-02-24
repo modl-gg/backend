@@ -10,6 +10,7 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.AccountLinkingService;
 import gg.modl.backend.player.service.MojangApiService;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentMapper;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
@@ -60,7 +61,7 @@ public class MinecraftPlayerController {
                     .map(e -> e.getField() + ": '" + e.getRejectedValue() + "' - " + e.getDefaultMessage())
                     .reduce((a, b) -> a + "; " + b)
                     .orElse("Unknown validation error");
-            System.err.println("[LOGIN] Validation failed: " + errors);
+            log.warn("[LOGIN] Validation failed: {}", errors);
             return ResponseEntity.badRequest().body(Map.of(
                     "status", 400,
                     "success", false,
@@ -114,29 +115,33 @@ public class MinecraftPlayerController {
             if (isActive) {
                 // Skip kicks - they are instant punishments and shouldn't be "active"
                 PunishmentType punishmentType = types.stream()
-                        .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                        .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
                         .findFirst()
                         .orElse(null);
                 if (punishmentType != null && punishmentType.isKick()) {
                     continue;
                 }
-                activePunishments.add(toSimplePunishment(punishment, types));
+                activePunishments.add(PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator));
             }
         }
 
         // Include unexecuted kicks (started == null means plugin hasn't acknowledged)
         for (Punishment punishment : player.getPunishments()) {
-            if (punishment.getType_ordinal() != 0) continue;
+            if (punishment.getTypeOrdinal() != 0) continue;
             if (punishment.getStarted() != null) continue; // Already executed
-            activePunishments.add(toSimplePunishment(punishment, types));
+            activePunishments.add(PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator));
         }
 
         // Deduplicate: keep only the oldest active punishment per category (BAN, MUTE)
         activePunishments = deduplicateActivePunishments(activePunishments);
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>)
-                player.getData().getOrDefault("pendingNotifications", List.of());
+        Object rawNotifications = player.getData().getOrDefault("pendingNotifications", List.of());
+        List<Map<String, Object>> pendingNotifications = rawNotifications instanceof List<?> list
+                ? list.stream().filter(e -> e instanceof Map<?, ?>).map(e -> {
+                    @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) e;
+                    return m;
+                }).toList()
+                : List.of();
 
         // Ask the plugin to do IP geo lookup if the IP has no geo data yet
         List<String> pendingIpLookups = new ArrayList<>();
@@ -163,7 +168,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/disconnect")
     public ResponseEntity<Map<String, Object>> disconnect(
-            @RequestBody DisconnectRequest request,
+            @RequestBody @Valid DisconnectRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -186,7 +191,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/update-server")
     public ResponseEntity<Map<String, Object>> updateServer(
-            @RequestBody UpdateServerRequest request,
+            @RequestBody @Valid UpdateServerRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -288,7 +293,7 @@ public class MinecraftPlayerController {
                                 "minecraftUuid", mojang.uuid().toString(),
                                 "usernames", List.of(Map.of("username", mojang.name())),
                                 "notes", List.of(),
-                                "ipList", List.of(),
+                                "ipAddresses", List.of(),
                                 "punishments", List.of(),
                                 "pendingNotifications", List.of(),
                                 "data", Map.of()
@@ -321,7 +326,7 @@ public class MinecraftPlayerController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("usernames.username").regex("^" + username + "$", "i"));
+        Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(username) + "$", "i"));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
 
         if (player == null && queryMojang) {
@@ -335,7 +340,7 @@ public class MinecraftPlayerController {
                                 "minecraftUuid", mojang.uuid().toString(),
                                 "usernames", List.of(Map.of("username", mojang.name())),
                                 "notes", List.of(),
-                                "ipList", List.of(),
+                                "ipAddresses", List.of(),
                                 "punishments", List.of(),
                                 "pendingNotifications", List.of(),
                                 "data", Map.of()
@@ -361,7 +366,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/lookup")
     public ResponseEntity<Map<String, Object>> lookupPlayer(
-            @RequestBody LookupRequest request,
+            @RequestBody @Valid LookupRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -375,7 +380,7 @@ public class MinecraftPlayerController {
             Query query = Query.query(Criteria.where("minecraftUuid").is(queryStr));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         } else {
-            Query query = Query.query(Criteria.where("usernames.username").regex("^" + queryStr + "$", "i"));
+            Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(queryStr) + "$", "i"));
             player = template.findOne(query, Player.class, CollectionName.PLAYERS);
         }
 
@@ -504,8 +509,10 @@ public class MinecraftPlayerController {
 
         // 2. Also include accounts from data.linkedAccounts field
         if (player.getData() != null && player.getData().containsKey("linkedAccounts")) {
-            @SuppressWarnings("unchecked")
-            List<String> storedLinkedUuids = (List<String>) player.getData().get("linkedAccounts");
+            Object rawLinked = player.getData().get("linkedAccounts");
+            List<String> storedLinkedUuids = rawLinked instanceof List<?> list
+                    ? list.stream().filter(e -> e instanceof String).map(e -> (String) e).toList()
+                    : null;
             if (storedLinkedUuids != null && !storedLinkedUuids.isEmpty()) {
                 List<String> missingUuids = storedLinkedUuids.stream()
                         .filter(u -> !addedUuids.contains(u))
@@ -558,50 +565,6 @@ public class MinecraftPlayerController {
         ));
     }
 
-    private Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types) {
-        Map<String, Object> data = punishment.getData();
-        Date expires = statusCalculator.getEffectiveExpiry(punishment);
-
-        PunishmentType punishmentType = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .orElse(null);
-
-        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-        String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
-
-        // Determine effective category: BAN, MUTE, or OTHER
-        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
-        String category = effectiveCategory != null ? effectiveCategory : "OTHER";
-
-        // For manual punishments (ordinals 0-5: kick, mute, ban, security ban, linked ban, blacklist),
-        // the reason is stored as the first non-auto-generated note
-        String reason = null;
-        if (punishment.getType_ordinal() <= 5 && punishment.getNotes() != null && !punishment.getNotes().isEmpty()) {
-            for (var note : punishment.getNotes()) {
-                String noteText = note.text();
-                if (noteText != null && !isAutoGeneratedNote(noteText)) {
-                    reason = noteText;
-                    break;
-                }
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", punishment.getId());
-        result.put("type", typeName);
-        result.put("category", category);
-        result.put("ordinal", punishment.getType_ordinal());
-        result.put("started", punishment.getStarted() != null);
-        result.put("expiration", expires != null ? expires.getTime() : null);
-        result.put("description", reason != null ? reason : "No reason specified");
-        result.put("issuerName", punishment.getIssuerName());
-        result.put("issuedAt", punishment.getIssued().getTime());
-        result.put("playerDescription", playerDescription);
-
-        return result;
-    }
-
     private Map<String, Object> toPlayerProfile(Player player, List<PunishmentType> punishmentTypes) {
         // Convert usernames to the format expected by the plugin
         List<Map<String, Object>> usernames = player.getUsernames().stream()
@@ -624,8 +587,7 @@ public class MinecraftPlayerController {
                     return entry;
                 }).toList();
 
-        // Convert IP addresses (ipAddresses -> ipList for plugin compatibility)
-        List<Map<String, Object>> ipList = player.getIpAddresses().stream()
+        List<Map<String, Object>> ipAddresses = player.getIpAddresses().stream()
                 .map(ip -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("ipAddress", ip.getIpAddress());
@@ -641,109 +603,28 @@ public class MinecraftPlayerController {
 
         // Convert punishments to the format expected by the plugin
         List<Map<String, Object>> punishments = player.getPunishments().stream()
-                .map(p -> toPunishmentMap(p, punishmentTypes)).toList();
+                .map(p -> PunishmentMapper.toPunishmentMap(p, punishmentTypes)).toList();
 
         // Get pending notifications from player data
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> pendingNotifications = (List<Map<String, Object>>) player.getData()
-                .getOrDefault("pendingNotifications", Collections.emptyList());
+        Object rawPending = player.getData().getOrDefault("pendingNotifications", Collections.emptyList());
+        List<Map<String, Object>> pendingNotifications = rawPending instanceof List<?> list
+                ? list.stream().filter(e -> e instanceof Map<?, ?>).map(e -> {
+                    @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) e;
+                    return m;
+                }).toList()
+                : Collections.emptyList();
 
         Map<String, Object> profile = new LinkedHashMap<>();
-        profile.put("_id", player.getId());
+        profile.put("id", player.getId());
         profile.put("minecraftUuid", player.getMinecraftUuid().toString());
         profile.put("usernames", usernames);
         profile.put("notes", notes);
-        profile.put("ipList", ipList);
+        profile.put("ipAddresses", ipAddresses);
         profile.put("punishments", punishments);
         profile.put("pendingNotifications", pendingNotifications);
         profile.put("data", player.getData());
 
         return profile;
-    }
-
-    private Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        map.put("id", punishment.getId());
-        map.put("issuerName", punishment.getIssuerName());
-        map.put("issued", punishment.getIssued());
-        map.put("started", punishment.getStarted());
-
-        // Include the actual type ordinal for proper lookup
-        int ordinal = punishment.getType_ordinal();
-        map.put("typeOrdinal", ordinal);
-
-        // Look up the actual punishment type name from the configured types
-        String actualTypeName = punishmentTypes.stream()
-                .filter(t -> t.getOrdinal() == ordinal)
-                .findFirst()
-                .map(PunishmentType::getName)
-                .orElse(null);
-
-        // Convert type_ordinal to Type enum name for plugin compatibility (legacy)
-        String legacyTypeName = switch (ordinal) {
-            case 0 -> "KICK";
-            case 1 -> "MUTE";
-            case 2 -> "BAN";
-            case 3 -> "SECURITY_BAN";
-            case 4 -> "LINKED_BAN";
-            case 5 -> "BLACKLIST";
-            default -> "KICK"; // Legacy fallback
-        };
-        map.put("type", legacyTypeName);
-
-        // Include the actual type name in the data map for display
-        Map<String, Object> dataWithTypeName = punishment.getData() != null ?
-                new LinkedHashMap<>(punishment.getData()) : new LinkedHashMap<>();
-        if (actualTypeName != null) {
-            dataWithTypeName.put("typeName", actualTypeName);
-        }
-
-        // Convert modifications - include effectiveDuration for duration changes
-        List<Map<String, Object>> modifications = punishment.getModifications().stream()
-                .map(m -> {
-                    Map<String, Object> mod = new LinkedHashMap<>();
-                    mod.put("id", m.id());
-                    mod.put("type", m.type());
-                    mod.put("date", m.date());
-                    mod.put("issuerName", m.issuerName());
-                    mod.put("effectiveDuration", m.effectiveDuration());
-                    mod.put("data", m.data());
-                    return mod;
-                }).toList();
-        map.put("modifications", modifications);
-
-        // Convert notes
-        List<Map<String, Object>> notes = punishment.getNotes().stream()
-                .map(n -> {
-                    Map<String, Object> note = new LinkedHashMap<>();
-                    note.put("id", n.id());
-                    note.put("text", n.text());
-                    note.put("issuerName", n.issuerName());
-                    note.put("date", n.date());
-                    return note;
-                }).toList();
-        map.put("notes", notes);
-
-        // Convert evidence
-        List<Map<String, Object>> evidence = punishment.getEvidence().stream()
-                .map(e -> {
-                    Map<String, Object> ev = new LinkedHashMap<>();
-                    ev.put("text", e.text());
-                    ev.put("url", e.url());
-                    ev.put("type", e.type());
-                    ev.put("uploadedBy", e.uploadedBy());
-                    ev.put("uploadedAt", e.uploadedAt());
-                    ev.put("fileName", e.fileName());
-                    ev.put("fileType", e.fileType());
-                    ev.put("fileSize", e.fileSize());
-                    return ev;
-                }).toList();
-        map.put("evidence", evidence);
-
-        map.put("attachedTicketIds", punishment.getAttachedTicketIds());
-        map.put("data", dataWithTypeName);
-
-        return map;
     }
 
     private Map<String, Object> buildLookupResponse(Server server, Player player, List<PunishmentType> types) {
@@ -766,7 +647,7 @@ public class MinecraftPlayerController {
 
         int bans = 0, mutes = 0, kicks = 0, warnings = 0;
         for (Punishment p : player.getPunishments()) {
-            int ordinal = p.getType_ordinal();
+            int ordinal = p.getTypeOrdinal();
             boolean isBan = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isBan).orElse(false);
             boolean isMute = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isMute).orElse(false);
             boolean isKick = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isKick).orElse(false);
@@ -782,7 +663,7 @@ public class MinecraftPlayerController {
                 .limit(5)
                 .map(p -> {
                     String typeName = types.stream()
-                            .filter(t -> t.getOrdinal() == p.getType_ordinal())
+                            .filter(t -> t.getOrdinal() == p.getTypeOrdinal())
                             .findFirst()
                             .map(PunishmentType::getName)
                             .orElse("Unknown");
@@ -840,13 +721,13 @@ public class MinecraftPlayerController {
 
     @PostMapping("/pardon")
     public ResponseEntity<Map<String, Object>> pardonPlayer(
-            @RequestBody PardonPlayerRequest request,
+            @RequestBody @Valid PardonPlayerRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("usernames.username").regex("^" + request.playerName() + "$", "i"));
+        Query query = Query.query(Criteria.where("usernames.username").regex("^" + java.util.regex.Pattern.quote(request.playerName()) + "$", "i"));
         Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
 
         if (player == null) {
@@ -876,12 +757,10 @@ public class MinecraftPlayerController {
             } else {
                 // Specific type pardon (unban/unmute) - pardon both active and expired punishments of matching type
                 String pType = request.punishmentType().toLowerCase();
-                int ordinal = punishment.getType_ordinal();
-                boolean isBan = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isBan).orElse(false);
-                boolean isMute = types.stream().filter(t -> t.getOrdinal() == ordinal).findFirst().map(PunishmentType::isMute).orElse(false);
+                String effectiveCategory = statusCalculator.getEffectiveCategory(punishment, types);
 
-                if (pType.equals("ban") && isBan) shouldPardon = true;
-                if (pType.equals("mute") && isMute) shouldPardon = true;
+                if (pType.equals("ban") && "BAN".equals(effectiveCategory)) shouldPardon = true;
+                if (pType.equals("mute") && "MUTE".equals(effectiveCategory)) shouldPardon = true;
             }
 
             if (shouldPardon) {
@@ -966,11 +845,17 @@ public class MinecraftPlayerController {
             boolean hosting
     ) {}
 
-    public record DisconnectRequest(String minecraftUuid, long sessionDurationMs) {}
+    public record DisconnectRequest(
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+            long sessionDurationMs
+    ) {}
 
-    public record UpdateServerRequest(String minecraftUuid, String serverName) {}
+    public record UpdateServerRequest(
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+            @NotBlank String serverName
+    ) {}
 
-    public record LookupRequest(String query, Boolean queryMojang) {
+    public record LookupRequest(@NotBlank String query, Boolean queryMojang) {
         public boolean shouldQueryMojang() {
             return queryMojang == null || queryMojang;
         }
@@ -982,8 +867,8 @@ public class MinecraftPlayerController {
     ) {}
 
     public record PardonPlayerRequest(
-            String playerName,
-            String issuerName,
+            @NotBlank String playerName,
+            @NotBlank String issuerName,
             String punishmentType,
             String reason
     ) {}
@@ -1004,8 +889,8 @@ public class MinecraftPlayerController {
                     oldestByCategory.put(category, p);
                 } else {
                     // Keep the one with the older issuedAt timestamp
-                    long existingIssued = (Long) existing.get("issuedAt");
-                    long currentIssued = (Long) p.get("issuedAt");
+                    long existingIssued = existing.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
+                    long currentIssued = p.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
                     if (currentIssued < existingIssued) {
                         oldestByCategory.put(category, p);
                     }
@@ -1018,18 +903,4 @@ public class MinecraftPlayerController {
         return result;
     }
 
-    /**
-     * Check if a note text is auto-generated by the system.
-     * Auto-generated notes should be skipped when looking for the punishment reason.
-     */
-    private boolean isAutoGeneratedNote(String noteText) {
-        if (noteText == null) return true;
-        String lower = noteText.toLowerCase();
-        return lower.equals("issued punishment") ||
-               lower.equals("pardoned punishment") ||
-               lower.equals("added evidence") ||
-               lower.startsWith("changed duration to ") ||
-               lower.startsWith("enabled ") ||
-               lower.startsWith("disabled ");
-    }
 }

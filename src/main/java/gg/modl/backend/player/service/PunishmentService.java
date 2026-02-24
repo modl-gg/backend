@@ -168,9 +168,19 @@ public class PunishmentService {
 
         // Build notes
         List<PunishmentNote> notes = new ArrayList<>();
+        String enforcementType = newPunishmentType != null && newPunishmentType.isKick() ? "kick"
+                : "BAN".equals(newCategory) ? "ban"
+                : "MUTE".equals(newCategory) ? "mute"
+                : "punishment";
+        String issuedNote = calculatedDuration != null && calculatedDuration > 0
+                ? "issued " + PunishmentMapper.formatDuration(calculatedDuration, false) + " " + enforcementType
+                : "issued permanent " + enforcementType;
+        if ("kick".equals(enforcementType)) {
+            issuedNote = "issued kick";
+        }
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
-                "issued punishment",
+                issuedNote,
                 now,
                 request.issuerName()
         ));
@@ -210,11 +220,11 @@ public class PunishmentService {
 
         String punishmentId = IdGenerator.generatePunishmentId();
 
-        // Set started = null for plugin-created punishments (pending plugin acknowledgement),
-        // queued punishments (waiting behind an active one), or kicks (which need plugin execution)
-        boolean pendingAck = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
-        boolean isKick = request.typeOrdinal() == 0;
-        Date startedDate = ("Unstarted".equals(data.get("status")) || pendingAck || isKick) ? null : now;
+        // Set started = null so punishments only begin when the plugin acknowledges them
+        // (i.e., when the player is online). This applies to all sources (panel, plugin, etc.).
+        // Queued ("Unstarted") and kick punishments also remain null.
+        Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
+        Date startedDate = null;
 
         Punishment punishment = new Punishment(
                 punishmentId,
@@ -229,7 +239,7 @@ public class PunishmentService {
                 data
         );
 
-        // Convert to raw Document to avoid Spring Data wrapping embedded @Field("_id") objects in arrays
+        // Convert to raw Document to keep embedded array entries as plain objects.
         Document punishmentDoc = (Document) template.getConverter().convertToMongoType(punishment);
         Update update = new Update().push("punishments", punishmentDoc);
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
@@ -250,10 +260,12 @@ public class PunishmentService {
                         .and("punishments.id").is(punishmentId)
         );
 
+        Date now = new Date();
+
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 request.type(),
-                new Date(),
+                now,
                 request.issuerName(),
                 request.reason() != null ? request.reason() : "",
                 request.effectiveDuration(),
@@ -262,6 +274,19 @@ public class PunishmentService {
         );
 
         Update update = new Update().push("punishments.$.modifications", modification);
+
+        // If this is a duration change on an unstarted punishment, force-start it now
+        if (request.effectiveDuration() != null) {
+            Player player = findPlayerByUuid(template, playerUuid);
+            if (player != null) {
+                Punishment target = player.getPunishments().stream()
+                        .filter(p -> p.getId().equals(punishmentId))
+                        .findFirst().orElse(null);
+                if (target != null && target.getStarted() == null) {
+                    update.set("punishments.$.started", now);
+                }
+            }
+        }
 
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
         return findPlayerByUuid(template, playerUuid);
@@ -329,7 +354,7 @@ public class PunishmentService {
                     results.add(new PunishmentSearchResult(
                             punishment.getId(),
                             username,
-                            punishment.getType_ordinal(),
+                            punishment.getTypeOrdinal(),
                             statusCalculator.isPunishmentActive(punishment) ? "Active" : "Inactive",
                             punishment.getIssued()
                     ));
@@ -414,7 +439,7 @@ public class PunishmentService {
                 Punishment toPromote = oldest.get();
                 MongoTemplate template = getTemplate(server);
 
-                // Promote by removing "Unstarted" status — do NOT set started here.
+                // Promote by removing "Unstarted" status â€” do NOT set started here.
                 // The sync will deliver the punishment as pending, and the plugin will
                 // acknowledge it (which sets started) after caching/enforcing.
                 Query findQuery = Query.query(Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString()));
@@ -516,7 +541,7 @@ public class PunishmentService {
         for (Punishment punishment : player.getPunishments()) {
             if (!statusCalculator.isPunishmentActive(punishment)) continue;
 
-            int ordinal = punishment.getType_ordinal();
+            int ordinal = punishment.getTypeOrdinal();
             PunishmentType type = types.stream()
                     .filter(t -> t.getOrdinal() == ordinal)
                     .findFirst()
@@ -614,7 +639,7 @@ public class PunishmentService {
         int count = 0;
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -622,7 +647,7 @@ public class PunishmentService {
 
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId")) &&
                         statusCalculator.isPunishmentActive(punishment)) {
@@ -657,6 +682,10 @@ public class PunishmentService {
                             .push("punishments.$.notes", note)
                             .set("punishments.$.data.duration", newDuration);
 
+                    if (punishment.getStarted() == null) {
+                        update.set("punishments.$.started", now);
+                    }
+
                     template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
                     count++;
                 }
@@ -670,7 +699,7 @@ public class PunishmentService {
         int count = 0;
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -678,7 +707,7 @@ public class PunishmentService {
 
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId")) &&
                         statusCalculator.isPunishmentActive(punishment)) {
@@ -734,7 +763,7 @@ public class PunishmentService {
         List<Map<String, Object>> results = new ArrayList<>();
 
         Query query = new Query(Criteria.where("punishments").elemMatch(
-                Criteria.where("type_ordinal").is(4)
+                Criteria.where("typeOrdinal").is(4)
                         .and("data.linkedBanId").is(parentPunishmentId)
         ));
 
@@ -745,7 +774,7 @@ public class PunishmentService {
                     player.getUsernames().get(player.getUsernames().size() - 1).username();
 
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getType_ordinal() == 4 &&
+                if (punishment.getTypeOrdinal() == 4 &&
                         punishment.getData() != null &&
                         parentPunishmentId.equals(punishment.getData().get("linkedBanId"))) {
 
@@ -774,9 +803,12 @@ public class PunishmentService {
         String punishmentId = IdGenerator.generatePunishmentId();
 
         List<PunishmentNote> notes = new ArrayList<>();
+        String linkedBanNote = duration != null && duration > 0
+                ? "issued " + PunishmentMapper.formatDuration(duration, false) + " ban"
+                : "issued permanent ban";
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
-                "issued punishment",
+                linkedBanNote,
                 now,
                 "System"
         ));
@@ -972,7 +1004,7 @@ public class PunishmentService {
         String playerUsername = player != null && !player.getUsernames().isEmpty() ?
                 player.getUsernames().get(player.getUsernames().size() - 1).username() : null;
 
-        int ordinal = punishment.getType_ordinal();
+        int ordinal = punishment.getTypeOrdinal();
 
         return new PunishmentResponse(
                 punishment.getId(),
@@ -999,3 +1031,4 @@ public class PunishmentService {
         );
     }
 }
+

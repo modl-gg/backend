@@ -219,7 +219,7 @@ public class MigrationProcessor {
                     .minecraftUuid(UUID.fromString(uuid))
                     .usernames(parseUsernames(data.get("usernames")))
                     .notes(parseNotes(data.get("notes")))
-                    .ipAddresses(parseIpList(data.get("ipList")))
+                    .ipAddresses(parseIpAddresses(data.get("ipAddresses")))
                     .punishments(parsePunishments(data.get("punishments")))
                     .data(parseData(data.get("data")))
                     .build();
@@ -323,7 +323,7 @@ public class MigrationProcessor {
         return result;
     }
 
-    private List<IPEntry> parseIpList(Object data) {
+    private List<IPEntry> parseIpAddresses(Object data) {
         List<IPEntry> result = new ArrayList<>();
         if (!(data instanceof List<?>)) {
             return result;
@@ -377,7 +377,7 @@ public class MigrationProcessor {
             if (!(item instanceof Map<?, ?>)) continue;
             Map<?, ?> map = (Map<?, ?>) item;
 
-            String id = (String) map.get("_id");
+            String id = (String) map.get("id");
             if (id == null) {
                 id = UUID.randomUUID().toString();
             }
@@ -392,13 +392,16 @@ public class MigrationProcessor {
                 issuerName = "Unknown";
             }
 
-            Object typeOrdinalObj = map.get("type_ordinal");
-            if (typeOrdinalObj == null) {
-                typeOrdinalObj = map.get("typeOrdinal");
-            }
+            Object typeOrdinalObj = map.get("typeOrdinal");
             int typeOrdinal = 0;
             if (typeOrdinalObj instanceof Number) {
                 typeOrdinal = ((Number) typeOrdinalObj).intValue();
+            } else if (typeOrdinalObj instanceof String typeOrdinalString) {
+                try {
+                    typeOrdinal = Integer.parseInt(typeOrdinalString);
+                } catch (NumberFormatException ignored) {
+                    typeOrdinal = 0;
+                }
             }
 
             List<PunishmentNote> notes = new ArrayList<>();

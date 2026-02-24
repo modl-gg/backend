@@ -2,9 +2,13 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.admin.data.SystemPrompt;
+import gg.modl.backend.admin.dto.request.ToggleMaintenanceRequest;
+import gg.modl.backend.admin.dto.request.UpdatePromptRequest;
+import gg.modl.backend.admin.dto.request.UpdateRateLimitsRequest;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -98,10 +103,10 @@ public class AdminSystemController {
     }
 
     @PostMapping("/maintenance/toggle")
-    public ResponseEntity<?> toggleMaintenance(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> toggleMaintenance(@RequestBody @Valid ToggleMaintenanceRequest request) {
         try {
-            boolean enabled = (Boolean) request.getOrDefault("enabled", false);
-            String message = (String) request.get("message");
+            boolean enabled = request.enabled();
+            String message = request.message();
 
             SystemConfig config = getOrCreateConfig();
             config.getGeneral().setMaintenanceMode(enabled);
@@ -143,15 +148,15 @@ public class AdminSystemController {
     }
 
     @PutMapping("/rate-limits")
-    public ResponseEntity<?> updateRateLimits(@RequestBody Map<String, Integer> request) {
+    public ResponseEntity<?> updateRateLimits(@RequestBody @Valid UpdateRateLimitsRequest request) {
         try {
             SystemConfig config = getOrCreateConfig();
 
-            if (request.containsKey("rateLimitRequests")) {
-                config.getPerformance().setRateLimitRequests(request.get("rateLimitRequests"));
+            if (request.rateLimitRequests() != null) {
+                config.getPerformance().setRateLimitRequests(request.rateLimitRequests());
             }
-            if (request.containsKey("rateLimitWindow")) {
-                config.getPerformance().setRateLimitWindow(request.get("rateLimitWindow"));
+            if (request.rateLimitWindow() != null) {
+                config.getPerformance().setRateLimitWindow(request.rateLimitWindow());
             }
             config.setUpdatedAt(new Date());
 
@@ -177,31 +182,32 @@ public class AdminSystemController {
     }
 
     @PutMapping("/prompts/{strictnessLevel}")
-    public ResponseEntity<?> updatePrompt(@PathVariable String strictnessLevel, @RequestBody Map<String, String> request) {
+    public ResponseEntity<?> updatePrompt(@PathVariable String strictnessLevel, @RequestBody @Valid UpdatePromptRequest request) {
         try {
-            if (!List.of("lenient", "standard", "strict").contains(strictnessLevel)) {
+            String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
+            if (normalizedStrictnessLevel == null) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
 
-            String prompt = request.get("prompt");
-            if (prompt == null || prompt.trim().isEmpty()) {
+            String prompt = request.prompt();
+            if (prompt.trim().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Prompt content is required"));
             }
 
-            Query query = Query.query(Criteria.where("strictnessLevel").is(strictnessLevel));
+            Query query = Query.query(Criteria.where("strictnessLevel").is(normalizedStrictnessLevel));
             Update update = new Update()
                     .set("prompt", prompt.trim())
                     .set("updatedAt", new Date())
-                    .setOnInsert("strictnessLevel", strictnessLevel)
+                    .setOnInsert("strictnessLevel", normalizedStrictnessLevel)
                     .setOnInsert("isActive", true)
                     .setOnInsert("createdAt", new Date());
 
             getTemplate().upsert(query, update, SystemPrompt.class, PROMPTS_COLLECTION);
 
             SystemPrompt updated = getTemplate().findOne(query, SystemPrompt.class, PROMPTS_COLLECTION);
-            log.info("System prompt for {} level updated", strictnessLevel);
+            log.info("System prompt for {} level updated", normalizedStrictnessLevel);
 
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt for " + strictnessLevel + " level updated successfully"));
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt for " + normalizedStrictnessLevel + " level updated successfully"));
         } catch (Exception e) {
             log.error("Error updating system prompt", e);
             return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update system prompt"));
@@ -211,30 +217,43 @@ public class AdminSystemController {
     @PostMapping("/prompts/{strictnessLevel}/reset")
     public ResponseEntity<?> resetPrompt(@PathVariable String strictnessLevel) {
         try {
-            if (!List.of("lenient", "standard", "strict").contains(strictnessLevel)) {
+            String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
+            if (normalizedStrictnessLevel == null) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
 
-            String defaultPrompt = ticketAnalysisService.getDefaultPrompt(strictnessLevel);
+            String defaultPrompt = ticketAnalysisService.getDefaultPrompt(normalizedStrictnessLevel);
 
-            Query query = Query.query(Criteria.where("strictnessLevel").is(strictnessLevel));
+            Query query = Query.query(Criteria.where("strictnessLevel").is(normalizedStrictnessLevel));
             Update update = new Update()
                     .set("prompt", defaultPrompt)
                     .set("updatedAt", new Date())
-                    .setOnInsert("strictnessLevel", strictnessLevel)
+                    .setOnInsert("strictnessLevel", normalizedStrictnessLevel)
                     .setOnInsert("isActive", true)
                     .setOnInsert("createdAt", new Date());
 
             getTemplate().upsert(query, update, SystemPrompt.class, PROMPTS_COLLECTION);
 
             SystemPrompt reset = getTemplate().findOne(query, SystemPrompt.class, PROMPTS_COLLECTION);
-            log.info("System prompt for {} level reset to default", strictnessLevel);
+            log.info("System prompt for {} level reset to default", normalizedStrictnessLevel);
 
-            return ResponseEntity.ok(Map.of("success", true, "data", reset, "message", "System prompt for " + strictnessLevel + " level reset to default"));
+            return ResponseEntity.ok(Map.of("success", true, "data", reset, "message", "System prompt for " + normalizedStrictnessLevel + " level reset to default"));
         } catch (Exception e) {
             log.error("Error resetting system prompt", e);
             return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to reset system prompt"));
         }
+    }
+
+    private String normalizeStrictnessLevel(String strictnessLevel) {
+        if (strictnessLevel == null || strictnessLevel.isBlank()) {
+            return null;
+        }
+
+        String normalized = strictnessLevel.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "LENIENT", "STANDARD", "STRICT" -> normalized;
+            default -> null;
+        };
     }
 
     @PostMapping("/services/{service}/restart")

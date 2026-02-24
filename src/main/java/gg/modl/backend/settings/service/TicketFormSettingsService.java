@@ -1,20 +1,14 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.data.TicketFormSettings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
@@ -23,40 +17,42 @@ import java.util.Map;
 public class TicketFormSettingsService {
     private static final String SETTINGS_TYPE_TICKET_FORMS = "ticketForms";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
 
     public TicketFormSettings getTicketFormSettings(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_TICKET_FORMS));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        return getTicketFormSettingsState(server).data();
+    }
 
-        if (settings == null || settings.getData() == null) {
-            return getDefaultTicketFormSettings();
-        }
+    public VersionedSettings<TicketFormSettings> getTicketFormSettingsState(Server server) {
+        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_FORMS);
+        TicketFormSettings settings = mapToTicketFormSettings(state.data());
+        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+    }
 
-        try {
-            return objectMapper.convertValue(settings.getData(), TicketFormSettings.class);
-        } catch (Exception e) {
-            log.error("Error converting ticket form settings", e);
-            return getDefaultTicketFormSettings();
-        }
+    public VersionedSettings<TicketFormSettings> patchTicketFormSettings(
+            Server server,
+            long expectedVersion,
+            TicketFormSettings newSettings
+    ) {
+        TicketFormSettings merged = newSettings != null ? newSettings : getDefaultTicketFormSettings();
+        ensureFormDefaults(merged);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = objectMapper.convertValue(merged, Map.class);
+
+        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
+                server,
+                SETTINGS_TYPE_TICKET_FORMS,
+                expectedVersion,
+                new LinkedHashMap<>(data)
+        );
+
+        return new VersionedSettings<>(mapToTicketFormSettings(updated.data()), updated.version(), updated.updatedAt());
     }
 
     public TicketFormSettings updateTicketFormSettings(Server server, TicketFormSettings newSettings) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_TICKET_FORMS));
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_TICKET_FORMS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
-
-        return getTicketFormSettings(server);
+        long expectedVersion = getTicketFormSettingsState(server).version();
+        return patchTicketFormSettings(server, expectedVersion, newSettings).data();
     }
 
     public TicketFormSettings.TicketForm getFormByType(Server server, String formType) {
@@ -81,23 +77,76 @@ public class TicketFormSettingsService {
             case "application", "staff" -> settings.setApplication(form);
             case "player" -> settings.setPlayer(form);
             case "chat" -> settings.setChat(form);
+            default -> {
+                // no-op for unknown form type
+            }
         }
 
         return updateTicketFormSettings(server, settings);
     }
 
+    private TicketFormSettings mapToTicketFormSettings(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return getDefaultTicketFormSettings();
+        }
+
+        try {
+            TicketFormSettings mapped = objectMapper.convertValue(data, TicketFormSettings.class);
+            ensureFormDefaults(mapped);
+            return mapped;
+        } catch (Exception e) {
+            log.error("Error converting ticket form settings", e);
+            return getDefaultTicketFormSettings();
+        }
+    }
+
+    private void ensureFormDefaults(TicketFormSettings settings) {
+        if (settings.getBug() == null) {
+            settings.setBug(emptyForm());
+        }
+        if (settings.getSupport() == null) {
+            settings.setSupport(emptyForm());
+        }
+        if (settings.getApplication() == null) {
+            settings.setApplication(emptyForm());
+        }
+        if (settings.getPlayer() == null) {
+            settings.setPlayer(emptyForm());
+        }
+        if (settings.getChat() == null) {
+            settings.setChat(emptyForm());
+        }
+
+        sanitizeForm(settings.getBug());
+        sanitizeForm(settings.getSupport());
+        sanitizeForm(settings.getApplication());
+        sanitizeForm(settings.getPlayer());
+        sanitizeForm(settings.getChat());
+    }
+
+    private void sanitizeForm(TicketFormSettings.TicketForm form) {
+        if (form.getFields() == null) {
+            form.setFields(new ArrayList<>());
+        }
+        if (form.getSections() == null) {
+            form.setSections(new ArrayList<>());
+        }
+    }
+
     private TicketFormSettings getDefaultTicketFormSettings() {
-        TicketFormSettings.TicketForm emptyForm = TicketFormSettings.TicketForm.builder()
+        return TicketFormSettings.builder()
+                .bug(emptyForm())
+                .support(emptyForm())
+                .application(emptyForm())
+                .player(emptyForm())
+                .chat(emptyForm())
+                .build();
+    }
+
+    private TicketFormSettings.TicketForm emptyForm() {
+        return TicketFormSettings.TicketForm.builder()
                 .fields(new ArrayList<>())
                 .sections(new ArrayList<>())
-                .build();
-
-        return TicketFormSettings.builder()
-                .bug(emptyForm)
-                .support(emptyForm)
-                .application(emptyForm)
-                .player(emptyForm)
-                .chat(emptyForm)
                 .build();
     }
 }

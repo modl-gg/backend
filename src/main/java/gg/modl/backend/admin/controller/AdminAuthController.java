@@ -2,7 +2,11 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.AdminUser;
 import gg.modl.backend.admin.service.AdminAuthService;
+import gg.modl.backend.auth.AuthService;
+import gg.modl.backend.auth.session.AuthSessionData;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,11 +20,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_AUTH)
@@ -29,10 +35,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdminAuthController {
     private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
     private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final int SESSION_TOKEN_BYTES = 32;
 
     private final AdminAuthService adminAuthService;
+    private final AuthService authService;
+    private final SessionService sessionService;
 
     @Value("${modl.cookie-domain:}")
     private String cookieDomain;
@@ -42,9 +48,6 @@ public class AdminAuthController {
 
     @Value("${modl.development-mode:false}")
     private boolean developmentMode;
-
-    // Simple in-memory session store (in production, use Redis or database)
-    private final Map<String, AdminSession> sessions = new ConcurrentHashMap<>();
 
     @PostMapping("/request-code")
     public ResponseEntity<?> requestCode(
@@ -56,17 +59,15 @@ public class AdminAuthController {
         }
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
-        if (adminOpt.isEmpty()) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid email address"));
+        if (adminOpt.isPresent()) {
+            try {
+                authService.sendAdminLoginCode(request.email());
+            } catch (Exception e) {
+                log.error("Failed to send verification code", e);
+            }
         }
 
-        try {
-            adminAuthService.sendVerificationCode(request.email());
-            return ResponseEntity.ok(new ApiResponse(true, "Verification code sent to your email"));
-        } catch (Exception e) {
-            log.error("Failed to send verification code", e);
-            return ResponseEntity.status(500).body(new ApiResponse(false, "Failed to send verification code"));
-        }
+        return ResponseEntity.ok(new ApiResponse(true, "If this email is registered, a verification code has been sent"));
     }
 
     @PostMapping("/login")
@@ -80,25 +81,22 @@ public class AdminAuthController {
             return ResponseEntity.badRequest().body(new ApiResponse(false, "Email and code are required"));
         }
 
+        // Always verify code regardless of user existence to prevent timing-based enumeration
+        boolean codeValid = authService.verifyAdminCode(loginRequest.email(), loginRequest.code());
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.email());
-        if (adminOpt.isEmpty()) {
+
+        if (adminOpt.isEmpty() || !codeValid) {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid credentials"));
         }
 
-        if (!adminAuthService.verifyCode(loginRequest.email(), loginRequest.code())) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid or expired code"));
-        }
-
         AdminUser admin = adminOpt.get();
-        String clientIp = getClientIp(request);
+        String clientIp = RequestUtil.getClientIp(request);
         adminAuthService.updateLastActivity(admin.getEmail(), clientIp);
 
-        // Create session with cryptographically secure token
-        String sessionId = generateSecureToken();
-        sessions.put(sessionId, new AdminSession(admin.getId(), admin.getEmail()));
+        AuthSessionData session = sessionService.createAdminSession(admin.getEmail());
 
         // Set session cookie with security attributes
-        Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, sessionId);
+        Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, session.getId());
         sessionCookie.setHttpOnly(true);
         sessionCookie.setSecure(cookieSecure);
         sessionCookie.setPath("/");
@@ -115,21 +113,22 @@ public class AdminAuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
-        String sessionId = extractSessionId(request);
-        if (sessionId != null) {
-            sessions.remove(sessionId);
+        Set<String> sessionEmails = new LinkedHashSet<>();
+
+        for (String sessionId : extractSessionIds(request)) {
+            sessionService.findValidAdminSession(sessionId)
+                    .map(AuthSessionData::getEmail)
+                    .ifPresent(sessionEmails::add);
+            sessionService.invalidateAdminSession(sessionId);
         }
 
-        Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
-        expiredCookie.setHttpOnly(true);
-        expiredCookie.setSecure(cookieSecure);
-        expiredCookie.setPath("/");
-        expiredCookie.setMaxAge(0);
-        expiredCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
-        if (cookieDomain != null && !cookieDomain.isEmpty()) {
-            expiredCookie.setDomain(cookieDomain);
+        for (String sessionEmail : sessionEmails) {
+            sessionService.invalidateAllAdminSessionsForEmail(sessionEmail);
         }
-        response.addCookie(expiredCookie);
+
+        for (Cookie expiredCookie : createExpiredSessionCookies()) {
+            response.addCookie(expiredCookie);
+        }
 
         return ResponseEntity.ok(new ApiResponse(true, "Logout successful"));
     }
@@ -141,14 +140,15 @@ public class AdminAuthController {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Not authenticated"));
         }
 
-        AdminSession session = sessions.get(sessionId);
-        if (session == null) {
+        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
+        if (sessionOpt.isEmpty()) {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
         }
+        AuthSessionData session = sessionOpt.get();
 
-        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.email());
+        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.getEmail());
         if (adminOpt.isEmpty()) {
-            sessions.remove(sessionId);
+            sessionService.invalidateAdminSession(sessionId);
             return ResponseEntity.status(401).body(new ApiResponse(false, "User not found"));
         }
 
@@ -160,8 +160,18 @@ public class AdminAuthController {
     // Helper to check if request is authenticated (for use by other admin controllers)
     public Optional<AdminSession> getAuthenticatedSession(HttpServletRequest request) {
         String sessionId = extractSessionId(request);
-        if (sessionId == null) return Optional.empty();
-        return Optional.ofNullable(sessions.get(sessionId));
+        if (sessionId == null) {
+            return Optional.empty();
+        }
+
+        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AuthSessionData session = sessionOpt.get();
+        return adminAuthService.findByEmail(session.getEmail())
+                .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
     }
 
     private String extractSessionId(HttpServletRequest request) {
@@ -175,22 +185,46 @@ public class AdminAuthController {
         return null;
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
+    private Set<String> extractSessionIds(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Set.of();
         }
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-        return request.getRemoteAddr();
+
+        return Arrays.stream(cookies)
+                .filter(cookie -> ADMIN_SESSION_COOKIE.equals(cookie.getName()))
+                .map(Cookie::getValue)
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private String generateSecureToken() {
-        byte[] bytes = new byte[SESSION_TOKEN_BYTES];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    private List<Cookie> createExpiredSessionCookies() {
+        List<Cookie> cookies = new ArrayList<>();
+        cookies.add(createExpiredSessionCookie(null));
+
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            cookies.add(createExpiredSessionCookie(cookieDomain));
+            if (!cookieDomain.startsWith(".")) {
+                cookies.add(createExpiredSessionCookie("." + cookieDomain));
+            } else if (cookieDomain.length() > 1) {
+                cookies.add(createExpiredSessionCookie(cookieDomain.substring(1)));
+            }
+        }
+
+        return cookies;
+    }
+
+    private Cookie createExpiredSessionCookie(String domain) {
+        Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
+        expiredCookie.setHttpOnly(true);
+        expiredCookie.setSecure(cookieSecure);
+        expiredCookie.setPath("/");
+        expiredCookie.setMaxAge(0);
+        expiredCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
+        if (domain != null) {
+            expiredCookie.setDomain(domain);
+        }
+        return expiredCookie;
     }
 
     // Request/Response records
@@ -201,5 +235,5 @@ public class AdminAuthController {
     public record UserData(String email, java.util.Date lastActivityAt) {}
     public record SessionResponse(boolean success, SessionData data) {}
     public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
-    public record AdminSession(String adminId, String email) {}
+    public record AdminSession(String adminId, String email, Date createdAt) {}
 }

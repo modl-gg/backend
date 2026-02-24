@@ -21,10 +21,13 @@ public class FilterConfig {
     @Value("${modl.dev.server-domain:}")
     private String devServerDomain;
 
+    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://modl.top,https://admin.modl.top}")
+    private String systemOrigins;
+
     @Bean
     public FilterRegistrationBean<ServerHeaderFilter> serverDomainFilter() {
         FilterRegistrationBean<ServerHeaderFilter> registrationBean = new FilterRegistrationBean<>();
-        registrationBean.setFilter(new ServerHeaderFilter(serverService, developmentMode, devServerDomain));
+        registrationBean.setFilter(new ServerHeaderFilter(serverService, developmentMode, devServerDomain, systemOrigins));
         registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
         registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
         return registrationBean;

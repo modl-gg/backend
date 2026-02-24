@@ -4,7 +4,9 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DurationDetail;
+import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +22,14 @@ import java.util.Optional;
 @Slf4j
 public class PlayerStatusCalculator {
     private final PunishmentTypeService punishmentTypeService;
+    private final OffenderThresholdSettingsService offenderThresholdSettingsService;
 
     public PlayerStatus calculateStatus(Server server, List<Punishment> punishments) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        OffenderThresholdSettings thresholdSettings = offenderThresholdSettingsService.getThresholdSettings(server);
+        long socialExpiryMs = thresholdSettings.getSocial().getPointExpiryMs();
+        long gameplayExpiryMs = thresholdSettings.getGameplay().getPointExpiryMs();
+        long now = System.currentTimeMillis();
 
         int socialPoints = 0;
         int gameplayPoints = 0;
@@ -32,7 +39,7 @@ public class PlayerStatusCalculator {
                 continue;
             }
 
-            int typeOrdinal = punishment.getType_ordinal();
+            int typeOrdinal = punishment.getTypeOrdinal();
             Map<String, Object> data = punishment.getData();
             String severity = data != null ? (String) data.get("severity") : null;
 
@@ -42,6 +49,16 @@ public class PlayerStatusCalculator {
             }
 
             PunishmentType type = typeOpt.get();
+
+            // Check if this punishment's points have expired
+            Date effectiveExpiry = getEffectiveExpiry(punishment);
+            if (effectiveExpiry != null) {
+                long expiryMs = type.isSocial() ? socialExpiryMs : gameplayExpiryMs;
+                if (effectiveExpiry.getTime() + expiryMs < now) {
+                    continue; // Points have expired past the configured window
+                }
+            }
+
             int points = type.getPointsForSeverity(severity != null ? severity : "regular");
 
             if (type.isSocial()) {
@@ -61,7 +78,7 @@ public class PlayerStatusCalculator {
         String pId = punishment.getId();
 
         // Kicks (ordinal 0) are instant and never considered "active"
-        if (punishment.getType_ordinal() == 0) {
+        if (punishment.getTypeOrdinal() == 0) {
             return false;
         }
 
@@ -82,21 +99,6 @@ public class PlayerStatusCalculator {
             if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
                 return false;
             }
-        }
-
-        // Check legacy "expires" field first
-        Object expiresObj = data.get("expires");
-        if (expiresObj != null) {
-            Date expires;
-            if (expiresObj instanceof Date) {
-                expires = (Date) expiresObj;
-            } else if (expiresObj instanceof Long) {
-                expires = new Date((Long) expiresObj);
-            } else {
-                return true;
-            }
-
-            return !expires.before(new Date());
         }
 
         // Check duration-based expiry
@@ -144,12 +146,11 @@ public class PlayerStatusCalculator {
             return new Date(durationBase.getTime() + duration);
         }
 
-        // Otherwise count from started date (original unmodified punishment)
-        Date started = punishment.getStarted();
-        if (started == null) {
-            return null; // Not started yet, no expiry
-        }
-        return new Date(started.getTime() + duration);
+        // Count from started date, or current time if not yet started
+        // (unstarted punishments use current time so the plugin receives a proper
+        // expiration for display â€” nothing is persisted until the plugin acknowledges)
+        Date baseDate = punishment.getStarted() != null ? punishment.getStarted() : new Date();
+        return new Date(baseDate.getTime() + duration);
     }
 
     /**
@@ -160,7 +161,7 @@ public class PlayerStatusCalculator {
      */
     public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
         PunishmentType pt = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
                 .findFirst()
                 .orElse(null);
         return getEffectiveCategory(pt, punishment.getData());

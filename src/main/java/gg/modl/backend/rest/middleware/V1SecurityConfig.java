@@ -23,6 +23,8 @@ public class V1SecurityConfig {
     private final SessionAuthenticationFilter sessionAuthenticationFilter;
     private final ApiKeyFilter apiKeyFilter;
     private final AdminAuthFilter adminAuthFilter;
+    private final PanelPermissionFilter panelPermissionFilter;
+    private final OriginCsrfFilter originCsrfFilter;
     private final DynamicCorsConfigurationSource dynamicCorsConfigurationSource;
 
     @Bean
@@ -35,7 +37,7 @@ public class V1SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/v1").permitAll()
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers(RESTMappingV1.HEALTH).permitAll()
                         .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
                         .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
@@ -49,6 +51,8 @@ public class V1SecurityConfig {
                 .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(sessionAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(adminAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(panelPermissionFilter, SessionAuthenticationFilter.class)
+                .addFilterAfter(originCsrfFilter, AdminAuthFilter.class)
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .build();

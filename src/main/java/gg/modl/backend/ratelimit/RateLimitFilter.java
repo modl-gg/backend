@@ -1,5 +1,6 @@
 package gg.modl.backend.ratelimit;
 
+import gg.modl.backend.rest.RequestUtil;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
@@ -22,8 +23,12 @@ import java.io.IOException;
 public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitConfig rateLimitConfig;
 
-    private static final String RATE_LIMIT_REMAINING_HEADER = "X-Rate-Limit-Remaining";
-    private static final String RATE_LIMIT_RETRY_AFTER_HEADER = "X-Rate-Limit-Retry-After-Seconds";
+    // Canonical response headers
+    private static final String RATE_LIMIT_REMAINING_HEADER = "X-RateLimit-Remaining";
+    private static final String RATE_LIMIT_RETRY_AFTER_HEADER = "X-RateLimit-Retry-After";
+    // Legacy aliases kept for compatibility with existing clients/proxies
+    private static final String RATE_LIMIT_REMAINING_HEADER_LEGACY = "X-Rate-Limit-Remaining";
+    private static final String RATE_LIMIT_RETRY_AFTER_HEADER_LEGACY = "X-Rate-Limit-Retry-After-Seconds";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -44,11 +49,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
 
         if (probe.isConsumed()) {
-            response.setHeader(RATE_LIMIT_REMAINING_HEADER, String.valueOf(probe.getRemainingTokens()));
+            String remaining = String.valueOf(probe.getRemainingTokens());
+            response.setHeader(RATE_LIMIT_REMAINING_HEADER, remaining);
+            response.setHeader(RATE_LIMIT_REMAINING_HEADER_LEGACY, remaining);
             filterChain.doFilter(request, response);
         } else {
             long waitTimeSeconds = probe.getNanosToWaitForRefill() / 1_000_000_000;
-            response.setHeader(RATE_LIMIT_RETRY_AFTER_HEADER, String.valueOf(waitTimeSeconds));
+            String retryAfter = String.valueOf(waitTimeSeconds);
+            response.setHeader(RATE_LIMIT_RETRY_AFTER_HEADER, retryAfter);
+            response.setHeader(RATE_LIMIT_RETRY_AFTER_HEADER_LEGACY, retryAfter);
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":" + waitTimeSeconds + "}");
@@ -58,24 +67,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String resolveClientKey(HttpServletRequest request) {
-        String serverDomain = request.getHeader("X-Server-Domain");
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        String realIp = request.getHeader("X-Real-IP");
-
-        String ip;
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            ip = forwardedFor.split(",")[0].trim();
-        } else if (realIp != null && !realIp.isBlank()) {
-            ip = realIp;
-        } else {
-            ip = request.getRemoteAddr();
-        }
-
-        if (serverDomain != null && !serverDomain.isBlank()) {
-            return serverDomain + ":" + ip;
-        }
-
-        return ip;
+        return RequestUtil.getClientIp(request);
     }
 
     @Override

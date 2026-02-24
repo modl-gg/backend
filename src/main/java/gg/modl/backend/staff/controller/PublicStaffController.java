@@ -18,10 +18,28 @@ public class PublicStaffController {
     private final InvitationService invitationService;
 
     @GetMapping("/invitations/accept")
-    public ResponseEntity<?> acceptInvitation(
+    public ResponseEntity<?> acceptInvitationGet(
             @RequestParam(required = false) String token,
             HttpServletRequest request
     ) {
+        return acceptInvitationInternal(token, request);
+    }
+
+    @PostMapping("/invitations/accept")
+    public ResponseEntity<?> acceptInvitationPost(
+            @RequestParam(required = false) String token,
+            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request
+    ) {
+        String resolvedToken = token;
+        if ((resolvedToken == null || resolvedToken.isBlank()) && body != null) {
+            resolvedToken = body.get("token");
+        }
+
+        return acceptInvitationInternal(resolvedToken, request);
+    }
+
+    private ResponseEntity<?> acceptInvitationInternal(String token, HttpServletRequest request) {
         if (token == null || token.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", "Invalid invitation link."));

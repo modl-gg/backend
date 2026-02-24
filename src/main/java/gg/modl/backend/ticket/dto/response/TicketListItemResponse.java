@@ -18,7 +18,7 @@ public record TicketListItemResponse(
         TicketReply lastReply,
         int replyCount,
         List<String> tags,
-        String assignedTo,
+        List<String> assignedTo,
         boolean hidden
 ) {
 }

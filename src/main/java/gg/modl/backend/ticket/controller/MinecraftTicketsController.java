@@ -32,6 +32,7 @@ import java.util.*;
 @RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
+    private static final int MINECRAFT_CHAT_MAX_LENGTH = 256;
     private final DynamicMongoTemplateProvider mongoProvider;
     private final AITicketAnalysisService aiTicketAnalysisService;
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -54,8 +55,13 @@ public class MinecraftTicketsController {
         List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
         if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
             for (String msg : request.chatMessages()) {
-                chatMessages.add(new Ticket.ChatMessage(msg, now));
+                chatMessages.add(new Ticket.ChatMessage(msg.substring(0, Math.min(msg.length(), MINECRAFT_CHAT_MAX_LENGTH)), now));
             }
+        }
+
+        Map<String, Object> ticketData = new java.util.HashMap<>();
+        if (request.createdServer() != null && !request.createdServer().isBlank()) {
+            ticketData.put("createdServer", request.createdServer());
         }
 
         Ticket ticket = Ticket.builder()
@@ -64,7 +70,6 @@ public class MinecraftTicketsController {
                 .category(request.type())
                 .subject(request.subject())
                 .status("Open")
-                .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
                 .reportedPlayer(request.reportedPlayerName())
@@ -73,6 +78,7 @@ public class MinecraftTicketsController {
                 .replies(new ArrayList<>())
                 .notes(new ArrayList<>())
                 .chatMessages(chatMessages)
+                .data(ticketData.isEmpty() ? null : ticketData)
                 .priority(request.priority() != null ? request.priority() : "normal")
                 .created(now)
                 .updatedAt(now)
@@ -127,7 +133,6 @@ public class MinecraftTicketsController {
                 .category(request.type())
                 .subject(request.subject())
                 .status("Unfinished") // Unfinished tickets start as Unfinished
-                .creator(request.creatorUuid())
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
                 .tags(request.tags() != null ? request.tags() : new ArrayList<>())
@@ -152,14 +157,12 @@ public class MinecraftTicketsController {
      * Map plugin ticket type to internal type
      */
     private String mapTicketType(String type) {
-        if (type == null) return "OTHER";
+        if (type == null) return "SUPPORT";
         return switch (type.toLowerCase()) {
             case "player", "chat" -> "REPORT";
-            case "staff" -> "STAFF";
             case "bug" -> "BUG";
-            case "support" -> "SUPPORT";
             case "appeal" -> "APPEAL";
-            default -> "OTHER";
+            default -> "SUPPORT";
         };
     }
 
@@ -203,7 +206,7 @@ public class MinecraftTicketsController {
             conditions.add(Criteria.where("type").is(type));
         } else {
             // Default to support tickets (exclude player reports)
-            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL", "STAFF", "OTHER"));
+            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL"));
         }
 
         if (!conditions.isEmpty()) {
@@ -255,7 +258,7 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
-        Query query = Query.query(Criteria.where("id").is(id));
+        Query query = Query.query(Criteria.where("_id").is(id));
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
         if (ticket == null) {
@@ -365,9 +368,8 @@ public class MinecraftTicketsController {
             ));
         }
 
-        // Store the old creator name to update replies
-        // Check both creatorName and creator fields (TicketService uses creator for name)
-        String oldCreatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : ticket.getCreator();
+        // Store the old creator name to update replies.
+        String oldCreatorName = ticket.getCreatorName();
 
         // Update all replies that match the old creator name (Web User format)
         // This changes "{name} (Web User)" to the verified player name
@@ -385,11 +387,9 @@ public class MinecraftTicketsController {
         }
 
         // Update the ticket with the player's information
-        // Note: creator field stores the display name, creatorUuid stores the UUID
         Update update = new Update()
                 .set("creatorUuid", request.playerUuid())
                 .set("creatorName", request.playerName())
-                .set("creator", request.playerName())
                 .set("updatedAt", new Date());
 
         // Update replies if we modified them
@@ -417,6 +417,54 @@ public class MinecraftTicketsController {
     ) {}
 
     /**
+     * Fetch tickets by a list of IDs. Returns ticket summaries.
+     */
+    @PostMapping("/by-ids")
+    public ResponseEntity<Map<String, Object>> getTicketsByIds(
+            @RequestBody @Valid TicketsByIdsRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        if (request.ids() == null || request.ids().isEmpty()) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "tickets", List.of()
+            ));
+        }
+
+        Query query = Query.query(Criteria.where("_id").in(request.ids()));
+        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+
+        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
+            Map<String, Object> ticket = new LinkedHashMap<>();
+            ticket.put("id", t.getId());
+            ticket.put("type", t.getType());
+            ticket.put("category", t.getCategory());
+            ticket.put("subject", t.getSubject());
+            ticket.put("status", t.getStatus());
+            ticket.put("playerName", t.getCreatorName());
+            ticket.put("playerUuid", t.getCreatorUuid());
+            ticket.put("createdAt", t.getCreated());
+            // Include the body of the first reply
+            if (t.getReplies() != null && !t.getReplies().isEmpty()) {
+                ticket.put("firstReplyContent", t.getReplies().get(0).getContent());
+            }
+            return ticket;
+        }).toList();
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "tickets", ticketList
+        ));
+    }
+
+    public record TicketsByIdsRequest(
+            List<String> ids
+    ) {}
+
+    /**
      * Request record for creating tickets from the Minecraft plugin
      */
     public record CreateTicketRequest(
@@ -429,6 +477,7 @@ public class MinecraftTicketsController {
             String reportedPlayerName,
             List<String> chatMessages,
             List<String> tags,
-            String priority
+            String priority,
+            String createdServer
     ) {}
 }

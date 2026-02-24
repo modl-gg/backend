@@ -115,7 +115,7 @@ public class AppealService {
                 .status("Open")
                 .subject("Appeal for Punishment: " + request.punishmentId())
                 .tags(new ArrayList<>())
-                .creator(username)
+                .creatorName(username)
                 .creatorUuid(request.playerUuid())
                 .notes(new ArrayList<>())
                 .replies(new ArrayList<>(List.of(initialReply)))
@@ -459,9 +459,9 @@ public class AppealService {
                 "Ban Appeal",
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
                 ticket.getStatus(),
-                ticket.getCreator(),
+                ticket.getCreatorName(),
                 ticket.getCreatorUuid(),
-                ticket.getCreator(),
+                ticket.getCreatorName(),
                 ticket.getReportedPlayer(),
                 ticket.getReportedPlayerUuid(),
                 ticket.getCreated(),

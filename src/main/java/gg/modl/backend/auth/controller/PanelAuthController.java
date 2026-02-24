@@ -32,9 +32,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH)
@@ -46,7 +49,6 @@ public class PanelAuthController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
-    private Optional<Staff> result;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -60,8 +62,9 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
+        // Always return generic success to prevent email enumeration
         if (!isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+            return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
 
         try {
@@ -88,8 +91,9 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
+        // Return same error as invalid code to prevent email enumeration
         if (!isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.status(403).body(new AuthResponse(false, AuthResponseMessage.UNAUTHORIZED_EMAIL));
+            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 
         boolean valid = authService.verifyCode(server, requestData.email(), requestData.code());
@@ -109,14 +113,20 @@ public class PanelAuthController {
     @PostMapping("/logout")
     public ResponseEntity<AuthResponse> logout(HttpServletRequest request, HttpServletResponse response) {
         Server server = RequestUtil.getRequestServer(request);
-        String sessionId = extractSessionId(request);
+        Set<String> sessionIds = extractSessionIds(request);
+        String sessionEmail = RequestUtil.getSessionEmail(request);
 
-        if (sessionId != null) {
+        for (String sessionId : sessionIds) {
             sessionService.invalidateSession(server, sessionId);
         }
 
-        Cookie expiredCookie = createExpiredSessionCookie();
-        response.addCookie(expiredCookie);
+        if (sessionEmail != null && !sessionEmail.isBlank()) {
+            sessionService.invalidateAllSessionsForEmail(server, sessionEmail);
+        }
+
+        for (Cookie cookie : createExpiredSessionCookies()) {
+            response.addCookie(cookie);
+        }
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
     }
@@ -219,34 +229,66 @@ public class PanelAuthController {
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        String cookieDomain = getConfiguredCookieDomain();
+        if (cookieDomain != null) {
+            cookie.setDomain(cookieDomain);
+        }
 
         return cookie;
     }
 
-    private Cookie createExpiredSessionCookie() {
+    private List<Cookie> createExpiredSessionCookies() {
+        List<Cookie> cookies = new ArrayList<>();
+        cookies.add(createExpiredSessionCookie(null));
+
+        String cookieDomain = getConfiguredCookieDomain();
+        if (cookieDomain != null) {
+            cookies.add(createExpiredSessionCookie(cookieDomain));
+            if (!cookieDomain.startsWith(".")) {
+                cookies.add(createExpiredSessionCookie("." + cookieDomain));
+            } else if (cookieDomain.length() > 1) {
+                cookies.add(createExpiredSessionCookie(cookieDomain.substring(1)));
+            }
+        }
+
+        return cookies;
+    }
+
+    private Cookie createExpiredSessionCookie(String domain) {
         Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), "");
 
         cookie.setHttpOnly(true);
         cookie.setSecure(authConfiguration.isCookieSecure());
         cookie.setPath("/");
         cookie.setMaxAge(0);
-        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "None");
+        cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
+        if (domain != null) {
+            cookie.setDomain(domain);
+        }
 
         return cookie;
     }
 
-    private String extractSessionId(HttpServletRequest request) {
+    private Set<String> extractSessionIds(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
-            return null;
+            return Set.of();
         }
 
         return Arrays.stream(cookies)
                 .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
                 .map(Cookie::getValue)
-                .findFirst()
-                .orElse(null);
+                .filter(value -> value != null && !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private String getConfiguredCookieDomain() {
+        String cookieDomain = authConfiguration.getCookieDomain();
+        if (cookieDomain == null || cookieDomain.isBlank()) {
+            return null;
+        }
+        return cookieDomain;
     }
 
     private boolean isAuthorizedEmail(Server server, String email) {

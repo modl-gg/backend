@@ -293,17 +293,61 @@ public class S3StorageService {
     }
 
     private String buildKey(Server server, String uploadType, String fileName, String entityId) {
+        String safeUploadType = sanitizeSegment(uploadType, "other");
+        String safeFileName = sanitizeFileName(fileName);
+
         if (entityId != null && !entityId.isBlank()) {
-            String folder = "ticket".equals(uploadType) ? "tickets" : uploadType;
-            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, entityId, fileName);
+            String safeEntityId = sanitizeSegment(entityId, UUID.randomUUID().toString());
+            String folder = "ticket".equals(safeUploadType) ? "tickets" : safeUploadType;
+            // Always randomize stored object names to prevent collisions/overwrite in shared entity folders.
+            String uniqueName = UUID.randomUUID() + "-" + safeFileName;
+            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, safeEntityId, uniqueName);
         }
+
         String uuid = UUID.randomUUID().toString();
-        String extension = fileName.contains(".") ? fileName.substring(fileName.lastIndexOf(".")) : "";
-        return String.format("%s/%s/%s%s", server.getDatabaseName(), uploadType, uuid, extension);
+        int dotIndex = safeFileName.lastIndexOf('.');
+        String extension = dotIndex >= 0 ? safeFileName.substring(dotIndex) : "";
+        return String.format("%s/%s/%s%s", server.getDatabaseName(), safeUploadType, uuid, extension);
     }
 
     private String extractFileName(String key) {
         return key.substring(key.lastIndexOf("/") + 1);
+    }
+
+    private String sanitizeFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return "upload.bin";
+        }
+
+        String basename = fileName.replace('\\', '/');
+        int slashIndex = basename.lastIndexOf('/');
+        if (slashIndex >= 0) {
+            basename = basename.substring(slashIndex + 1);
+        }
+
+        basename = basename.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (basename.isBlank()) {
+            return "upload.bin";
+        }
+        if (basename.length() > 128) {
+            return basename.substring(0, 128);
+        }
+        return basename;
+    }
+
+    private String sanitizeSegment(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+
+        String sanitized = value.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (sanitized.isBlank()) {
+            return fallback;
+        }
+        if (sanitized.length() > 128) {
+            return sanitized.substring(0, 128);
+        }
+        return sanitized;
     }
 
     /**

@@ -163,34 +163,17 @@ public class PlayerService {
     }
 
     public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
-        Optional<Player> playerOpt = findByMinecraftUuid(server, UUID.fromString(minecraftUuid));
-        if (playerOpt.isEmpty()) {
-            return;
-        }
-        Player player = playerOpt.get();
-
-        // Modify the IPEntry in Java, then write the whole ipAddresses list back.
-        // This avoids issues with the MongoDB ipAddresses field structure (stored as object
-        // with numeric keys instead of a proper array, breaking positional/index updates).
-        boolean found = false;
-        for (IPEntry entry : player.getIpAddresses()) {
-            if (entry.getIpAddress().equals(ipAddress)) {
-                entry.setCountry((String) ipInfo.get("country"));
-                entry.setRegion((String) ipInfo.get("region"));
-                entry.setAsn((String) ipInfo.get("asn"));
-                entry.setProxy(Boolean.TRUE.equals(ipInfo.get("proxy")));
-                entry.setHosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            return;
-        }
-
         MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("_id").is(player.getId()));
-        Update update = new Update().set("ipAddresses", player.getIpAddresses());
+        Query query = Query.query(
+                Criteria.where("minecraftUuid").is(minecraftUuid)
+                        .and("ipAddresses.ipAddress").is(ipAddress)
+        );
+        Update update = new Update()
+                .set("ipAddresses.$.country", (String) ipInfo.get("country"))
+                .set("ipAddresses.$.region", (String) ipInfo.get("region"))
+                .set("ipAddresses.$.asn", (String) ipInfo.get("asn"))
+                .set("ipAddresses.$.proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
+                .set("ipAddresses.$.hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
         template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
     }
 
@@ -318,7 +301,7 @@ public class PlayerService {
         Map<String, Object> data = punishment.getData();
         boolean active = statusCalculator.isPunishmentActive(punishment);
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
-        int ordinal = punishment.getType_ordinal();
+        int ordinal = punishment.getTypeOrdinal();
 
         return new PunishmentResponse(
                 punishment.getId(),
@@ -348,7 +331,7 @@ public class PlayerService {
     private String calculatePlayerStatus(Server server, Player player) {
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                int ordinal = punishment.getType_ordinal();
+                int ordinal = punishment.getTypeOrdinal();
                 boolean isBan = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
                         .map(type -> type.isBan())
                         .orElse(false);

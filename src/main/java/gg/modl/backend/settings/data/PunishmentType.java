@@ -1,6 +1,5 @@
 package gg.modl.backend.settings.data;
 
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -13,11 +12,9 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PunishmentType {
-    @JsonAlias("_id")
     private Integer id;
     private String name;
     private String category;
-    @JsonAlias("isCustomizable")
     private Boolean customizable;
     private Integer ordinal;
 
@@ -35,7 +32,6 @@ public class PunishmentType {
 
     private Boolean canBeAltBlocking;
     private Boolean canBeStatWiping;
-    @JsonAlias("isAppealable")
     private Boolean appealable;
 
     private AppealForm appealForm;
@@ -56,15 +52,25 @@ public class PunishmentType {
     }
 
     public boolean isBan() {
-        return ordinal == 2 || ordinal == 3 || ordinal == 4 || ordinal == 5;
+        // Core types (ordinals 0-5) are hardcoded
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal >= 2;
+        }
+        return category != null && category.toLowerCase().contains("ban");
     }
 
     public boolean isMute() {
-        return ordinal == 1;
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal == 1;
+        }
+        return category != null && category.toLowerCase().contains("mute");
     }
 
     public boolean isKick() {
-        return ordinal == 0;
+        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
+            return ordinal == 0;
+        }
+        return category != null && category.toLowerCase().contains("kick");
     }
 
     public int getPointsForSeverity(String severity) {

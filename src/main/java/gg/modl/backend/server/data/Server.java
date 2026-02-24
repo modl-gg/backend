@@ -25,12 +25,12 @@ public class Server {
 
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-    @Indexed(name = "serverName_1", unique = true)
+    @Indexed(name = "uidx_servers_serverName", unique = true)
     private final String serverName;
 
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "customDomain_1", unique = true)
+    @Indexed(name = "uidx_servers_customDomain", unique = true)
     private final String customDomain;
 
     @Nullable
@@ -40,23 +40,23 @@ public class Server {
     // Admin & Verification
     @NotNull
     @Field(name = ServerField.ADMIN_EMAIL, targetType = FieldType.STRING)
-    @Indexed(name = "adminEmail_1", unique = true)
+    @Indexed(name = "uidx_servers_adminEmail", unique = true)
     private String adminEmail;
 
     @NotNull
     @Field(name = "emailVerified", targetType = FieldType.BOOLEAN)
-    @Indexed(name = "emailVerified_1")
+    @Indexed(name = "idx_servers_emailVerified")
     private Boolean emailVerified;
 
     @Nullable
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
-    @Indexed(name = "emailVerificationToken_1", unique = true, sparse = true)
+    @Indexed(name = "uidx_servers_emailVerificationToken", unique = true, sparse = true)
     private String emailVerificationToken;
 
     // Provisioning & Status
     @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
-    @Indexed(name = "provisioningStatus_1")
+    @Indexed(name = "idx_servers_provisioningStatus")
     private ProvisioningStatus provisioningStatus;
 
     @Nullable
@@ -65,7 +65,7 @@ public class Server {
 
     @Nullable
     @Field(name = "provisioningSignInToken", targetType = FieldType.STRING)
-    @Indexed(name = "provisioningSignInToken_1", unique = true, sparse = true)
+    @Indexed(name = "uidx_servers_provisioningSignInToken", unique = true, sparse = true)
     private String provisioningSignInToken;
 
     @Nullable
@@ -78,47 +78,51 @@ public class Server {
     private ServerPlan plan;
 
     @Nullable
-    @Field(name = "subscription_status", targetType = FieldType.STRING)
+    @Field(name = "subscriptionStatus", targetType = FieldType.STRING)
     private SubscriptionStatus subscriptionStatus;
 
     @Nullable
-    @Field(name = "current_period_start", targetType = FieldType.DATE_TIME)
+    @Field(name = "currentPeriodStart", targetType = FieldType.DATE_TIME)
     private Date currentPeriodStart;
 
     @Nullable
-    @Field(name = "current_period_end", targetType = FieldType.DATE_TIME)
+    @Field(name = "currentPeriodEnd", targetType = FieldType.DATE_TIME)
     private Date currentPeriodEnd;
 
     @Nullable
-    @Field(name = "stripe_customer_id", targetType = FieldType.STRING)
-    @Indexed(name = "stripe_customer_id_1", unique = true, sparse = true)
+    @Field(name = "stripeCustomerId", targetType = FieldType.STRING)
+    @Indexed(name = "uidx_servers_stripeCustomerId", unique = true, sparse = true)
     private String stripeCustomerId;
 
     @Nullable
-    @Field(name = "stripe_subscription_id", targetType = FieldType.STRING)
-    @Indexed(name = "stripe_subscription_id_1", unique = true, sparse = true)
+    @Field(name = "stripeSubscriptionId", targetType = FieldType.STRING)
+    @Indexed(name = "uidx_servers_stripeSubscriptionId", unique = true, sparse = true)
     private String stripeSubscriptionId;
 
     // Usage Tracking & Billing
     @Nullable
-    @Field(name = "cdn_usage_current_period", targetType = FieldType.DOUBLE)
+    @Field(name = "cdnUsageCurrentPeriod", targetType = FieldType.DOUBLE)
     private Double cdnUsageCurrentPeriod; // GB used in current billing period
 
     @Nullable
-    @Field(name = "ai_requests_current_period", targetType = FieldType.INT64)
+    @Field(name = "aiRequestsCurrentPeriod", targetType = FieldType.INT64)
     private Long aiRequestsCurrentPeriod; // AI requests used in current billing period
 
     @Nullable
-    @Field(name = "usage_billing_enabled", targetType = FieldType.BOOLEAN)
+    @Field(name = "usageBillingEnabled", targetType = FieldType.BOOLEAN)
     private Boolean usageBillingEnabled; // Whether to charge for overages
 
     @Nullable
-    @Field(name = "usage_billing_updated_at", targetType = FieldType.DATE_TIME)
+    @Field(name = "usageBillingUpdatedAt", targetType = FieldType.DATE_TIME)
     private Date usageBillingUpdatedAt;
 
     @Nullable
-    @Field(name = "max_storage_limit_bytes", targetType = FieldType.INT64)
+    @Field(name = "maxStorageLimitBytes", targetType = FieldType.INT64)
     private Long maxStorageLimitBytes;
+
+    @Nullable
+    @Field(name = "maxAiOverageRequests", targetType = FieldType.INT64)
+    private Long maxAiOverageRequests;
 
     // Migration Settings
     @Nullable
@@ -128,7 +132,7 @@ public class Server {
     // Custom Domain Management
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "customDomain_override_1", unique = true, sparse = true)
+    @Indexed(name = "uidx_servers_customDomainOverride", unique = true, sparse = true)
     private String customDomainOverride;
 
     @Nullable
@@ -136,22 +140,22 @@ public class Server {
     private CustomDomainStatus customDomainStatus;
 
     @Nullable
-    @Field(name = "customDomain_lastChecked", targetType = FieldType.DATE_TIME)
+    @Field(name = "customDomainLastChecked", targetType = FieldType.DATE_TIME)
     private Date customDomainLastChecked;
 
     @Nullable
-    @Field(name = "customDomain_error", targetType = FieldType.STRING)
+    @Field(name = "customDomainError", targetType = FieldType.STRING)
     private String customDomainError;
 
     @Nullable
-    @Field(name = "customDomain_cloudflareId", targetType = FieldType.STRING)
-    @Indexed(name = "customDomain_cloudflareId_1", unique = true, sparse = true)
+    @Field(name = "customDomainCloudflareId", targetType = FieldType.STRING)
+    @Indexed(name = "uidx_servers_customDomainCloudflareId", unique = true, sparse = true)
     private String customDomainCloudflareId;
 
     // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)
-    @Indexed(name = "apiKey_1", unique = true, sparse = true)
+    @Indexed(name = "uidx_servers_apiKey", unique = true, sparse = true)
     private String apiKey;
 
     // Analytics/Stats
@@ -162,7 +166,7 @@ public class Server {
     // Timestamps
     @Nullable
     @Field(name = "createdAt", targetType = FieldType.DATE_TIME)
-    @Indexed(name = "createdAt_1")
+    @Indexed(name = "idx_servers_createdAt")
     private Date createdAt;
 
     @Nullable

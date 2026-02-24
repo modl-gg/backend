@@ -292,12 +292,12 @@ public class AuditService {
                     Aggregation.match(Criteria.where("punishments").exists(true).ne(Collections.emptyList())),
                     Aggregation.unwind("punishments"),
                     // Exclude kicks (ordinal 0) and unstarted punishments early
-                    Aggregation.match(Criteria.where("punishments.type_ordinal").ne(0)
+                    Aggregation.match(Criteria.where("punishments.typeOrdinal").ne(0)
                             .and("punishments.data.status").ne("Unstarted")),
                     Aggregation.project()
                             .and("punishments.id").as("punishmentId")
                             .and("minecraftUuid").as("playerId")
-                            .and("punishments.type_ordinal").as("typeOrdinal")
+                            .and("punishments.typeOrdinal").as("typeOrdinal")
                             .and("punishments.issuerName").as("issuerName")
                             .and("punishments.issued").as("issued")
                             .and("punishments.started").as("started")
@@ -386,7 +386,7 @@ public class AuditService {
     private Punishment reconstructPunishment(Document doc) {
         Punishment p = new Punishment();
         p.setId(doc.getString("punishmentId"));
-        p.setType_ordinal(doc.getInteger("typeOrdinal", 0));
+        p.setTypeOrdinal(doc.getInteger("typeOrdinal", 0));
         p.setIssuerName(doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
         p.setIssued(doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
         p.setStarted(doc.getDate("started"));
@@ -611,7 +611,7 @@ public class AuditService {
                     template.updateFirst(updateQuery, update, CollectionName.PLAYERS);
 
                     // Create audit log for this rollback
-                    int typeOrdinal = punishment.getInteger("type_ordinal", 0);
+                    int typeOrdinal = punishment.getInteger("typeOrdinal", 0);
                     String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
 
                     AuditLog rollbackLog = AuditLog.builder()
@@ -665,7 +665,7 @@ public class AuditService {
                     Aggregation.project()
                             .and("punishments.id").as("punishmentId")
                             .and("minecraftUuid").as("playerId") // Use minecraftUuid instead of _id
-                            .and("punishments.type_ordinal").as("typeOrdinal")
+                            .and("punishments.typeOrdinal").as("typeOrdinal")
                             .and("punishments.issued").as("issued")
                             .and("punishments.started").as("started")
                             .and("punishments.data.reason").as("reason")
@@ -861,11 +861,11 @@ public class AuditService {
                 matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
             }
 
-            // Aggregate punishments by type_ordinal
+            // Aggregate punishments by typeOrdinal
             Aggregation aggregation = Aggregation.newAggregation(
                     Aggregation.unwind("punishments"),
                     Aggregation.match(matchCriteria),
-                    Aggregation.group("punishments.type_ordinal").count().as("count"),
+                    Aggregation.group("punishments.typeOrdinal").count().as("count"),
                     Aggregation.sort(Sort.Direction.DESC, "count")
             );
 
@@ -986,3 +986,4 @@ public class AuditService {
         return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 }
+

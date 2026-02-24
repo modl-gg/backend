@@ -18,6 +18,8 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)
 @RequiredArgsConstructor
 public class TicketSubscriptionController {
+    private static final int MAX_UPDATES_LIMIT = 25;
+
     private final TicketSubscriptionService subscriptionService;
 
     @GetMapping
@@ -64,7 +66,8 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, limit);
+        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, safeLimit);
         return ResponseEntity.ok(updates);
     }
 
@@ -84,6 +87,22 @@ public class TicketSubscriptionController {
         return ResponseEntity.ok(Map.of("message", "Update marked as read", "modified", result));
     }
 
+    @PostMapping("/tickets/{ticketId}/read")
+    public ResponseEntity<?> markTicketAsRead(
+            @PathVariable String ticketId,
+            HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        String staffEmail = RequestUtil.getSessionEmail(request);
+
+        if (staffEmail == null || staffEmail.isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+        }
+
+        subscriptionService.markTicketAsRead(server, ticketId, staffEmail);
+        return ResponseEntity.ok(Map.of("message", "All updates for ticket marked as read"));
+    }
+
     @GetMapping("/assigned-updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getAssignedUpdates(
             @RequestParam(defaultValue = "10") int limit,
@@ -96,7 +115,8 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, limit);
+        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, safeLimit);
         return ResponseEntity.ok(updates);
     }
 }

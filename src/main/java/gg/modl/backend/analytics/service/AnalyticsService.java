@@ -142,7 +142,7 @@ public class AnalyticsService {
                 if (startDate != null && p.getIssued().before(startDate)) continue;
 
                 // Count by type
-                String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getType_ordinal());
+                String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getTypeOrdinal());
                 typeCountMap.merge(typeName, 1, Integer::sum);
 
                 // Count by staff

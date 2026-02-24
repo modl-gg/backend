@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.time.Instant;
+import java.util.Date;
 
 @Document(collection = CollectionName.AUTH_CODES)
 @Data
@@ -18,13 +18,16 @@ import java.time.Instant;
 public class AuthCode {
     @Id
     @Field
-    @Indexed(name = "email_1", unique = true)
+    @Indexed(name = "uidx_auth_codes_email", unique = true)
     private String email;
 
     @Field
     private String codeHash;
 
     @Field
-    @Indexed(name = "expiresAt_1", expireAfter = "0s")
-    private Instant expiresAt;
+    private int failedAttempts;
+
+    @Field
+    @Indexed(name = "idx_auth_codes_expiresAt_ttl", expireAfter = "0s")
+    private Date expiresAt;
 }

@@ -16,6 +16,7 @@ public record CreateTicketRequest(
         String reportedPlayerName,
         List<Map<String, Object>> chatMessages,
         Map<String, Object> formData,
+        List<Object> attachments,
         List<String> tags,
         String priority,
         String creatorIdentifier,

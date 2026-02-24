@@ -77,8 +77,7 @@ public class PanelStaffController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get current user email from session
-        String currentUserEmail = ""; // Placeholder
+        String currentUserEmail = RequestUtil.getSessionEmail(request);
 
         try {
             return staffService.updateStaff(server, username, updateRequest, currentUserEmail)
@@ -98,9 +97,10 @@ public class PanelStaffController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get current user from session
-        String performerEmail = "";
-        String performerRole = "";
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        String performerRole = staffService.getStaffByEmail(server, performerEmail)
+                .map(staff -> staff.getRole())
+                .orElse("");
 
         try {
             return staffService.updateStaffRole(server, id, roleRequest.role(), performerEmail, performerRole)
@@ -120,9 +120,10 @@ public class PanelStaffController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get current user from session
-        String removerEmail = "";
-        String removerRole = "";
+        String removerEmail = RequestUtil.getSessionEmail(request);
+        String removerRole = staffService.getStaffByEmail(server, removerEmail)
+                .map(staff -> staff.getRole())
+                .orElse("");
 
         try {
             boolean deleted = staffService.deleteStaff(server, id, removerEmail, removerRole);
@@ -141,8 +142,7 @@ public class PanelStaffController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // TODO: Get current user email from session
-        String inviterEmail = "";
+        String inviterEmail = RequestUtil.getSessionEmail(request);
 
         try {
             InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail);
@@ -178,7 +178,7 @@ public class PanelStaffController {
     @PatchMapping("/{username}/minecraft-player")
     public ResponseEntity<?> assignMinecraftPlayer(
             @PathVariable String username,
-            @RequestBody AssignMinecraftPlayerRequest assignRequest,
+            @RequestBody @Valid AssignMinecraftPlayerRequest assignRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

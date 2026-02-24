@@ -34,7 +34,7 @@ public class HomepageCardService {
 
     public List<HomepageCard> getVisibleCards(Server server) {
         MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("is_enabled").is(true))
+        Query query = Query.query(Criteria.where("isEnabled").is(true))
                 .with(Sort.by(Sort.Direction.ASC, "ordinal"));
         return template.find(query, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);
     }
@@ -79,7 +79,7 @@ public class HomepageCardService {
             return Optional.empty();
         }
 
-        Update update = new Update().set("updated_at", new Date());
+        Update update = new Update().set("updatedAt", new Date());
 
         if (request.title() != null) {
             update.set("title", request.title());
@@ -91,25 +91,25 @@ public class HomepageCardService {
             update.set("icon", request.icon());
         }
         if (request.iconColor() != null) {
-            update.set("icon_color", request.iconColor());
+            update.set("iconColor", request.iconColor());
         }
         if (request.actionType() != null) {
-            update.set("action_type", request.actionType());
+            update.set("actionType", request.actionType());
         }
         if (request.actionUrl() != null) {
-            update.set("action_url", request.actionUrl());
+            update.set("actionUrl", request.actionUrl());
         }
         if (request.actionButtonText() != null) {
-            update.set("action_button_text", request.actionButtonText());
+            update.set("actionButtonText", request.actionButtonText());
         }
         if (request.categoryId() != null) {
-            update.set("category_id", request.categoryId());
+            update.set("categoryId", request.categoryId());
         }
         if (request.backgroundColor() != null) {
-            update.set("background_color", request.backgroundColor());
+            update.set("backgroundColor", request.backgroundColor());
         }
         if (request.isEnabled() != null) {
-            update.set("is_enabled", request.isEnabled());
+            update.set("isEnabled", request.isEnabled());
         }
 
         template.updateFirst(query, update, HomepageCard.class, CollectionName.HOMEPAGE_CARDS);

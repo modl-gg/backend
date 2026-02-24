@@ -52,7 +52,7 @@ public class AIModerationSettingsService {
             return AIModerationSettings.builder()
                     .enableAIReview(false)
                     .enableAutomatedActions(false)
-                    .strictnessLevel("standard")
+                    .strictnessLevel("STANDARD")
                     .aiPunishmentConfigs(new HashMap<>())
                     .build();
         }
@@ -76,7 +76,7 @@ public class AIModerationSettingsService {
         return AIModerationSettings.builder()
                 .enableAIReview(false)
                 .enableAutomatedActions(false)
-                .strictnessLevel("standard")
+                .strictnessLevel("STANDARD")
                 .aiPunishmentConfigs(defaultConfigs)
                 .build();
     }

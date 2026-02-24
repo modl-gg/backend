@@ -6,6 +6,7 @@ import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentMapper;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
@@ -15,7 +16,11 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.validation.RegExpConstants;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -43,7 +48,7 @@ public class MinecraftSyncController {
 
     @PostMapping("/sync")
     public ResponseEntity<Map<String, Object>> sync(
-            @RequestBody SyncRequest syncRequest,
+            @RequestBody @Valid SyncRequest syncRequest,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -126,7 +131,7 @@ public class MinecraftSyncController {
 
                     // Include recently modified punishments even if inactive (e.g., pardons)
                     if (recentlyModified) {
-                        Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                        Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                         recentlyModifiedPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
@@ -150,7 +155,7 @@ public class MinecraftSyncController {
                         }
                     }
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -167,9 +172,9 @@ public class MinecraftSyncController {
                     if (punishment.getIssued() == null || !punishment.getIssued().toInstant().isAfter(lastSync)) continue;
 
                     String category = statusCalculator.getEffectiveCategory(punishment, types);
-                    if (category == null) continue; // Not a ban or mute — no enforcement needed
+                    if (category == null) continue; // Not a ban or mute â€” no enforcement needed
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -178,13 +183,13 @@ public class MinecraftSyncController {
                 }
 
                 // Include unexecuted kicks (ordinal 0) that haven't been acknowledged yet.
-                // Kicks bypass the active/category system — they're one-time actions.
+                // Kicks bypass the active/category system â€” they're one-time actions.
                 // started == null means the plugin hasn't executed the kick yet.
                 for (Punishment punishment : player.getPunishments()) {
-                    if (punishment.getType_ordinal() != 0) continue;
+                    if (punishment.getTypeOrdinal() != 0) continue;
                     if (punishment.getStarted() != null) continue; // Already executed
 
-                    Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                    Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
@@ -209,7 +214,7 @@ public class MinecraftSyncController {
                         if (!statusCalculator.isPunishmentActive(punishment) || punishment.getStarted() == null) continue;
                         String cat = statusCalculator.getEffectiveCategory(punishment, types);
                         if (cat != null && pardonedCategories.contains(cat)) {
-                            Map<String, Object> simplePunishment = toSimplePunishment(punishment, types);
+                            Map<String, Object> simplePunishment = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator);
                             pendingPunishments.add(Map.of(
                                     "minecraftUuid", uuid,
                                     "username", username,
@@ -220,11 +225,13 @@ public class MinecraftSyncController {
                     }
                 }
 
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> pending = (List<Map<String, Object>>) player.getData().get("pendingNotifications");
-                if (pending != null) {
-                    for (Map<String, Object> notification : pending) {
-                        Map<String, Object> notif = new HashMap<>(notification);
+                Object rawPending = player.getData().get("pendingNotifications");
+                if (rawPending instanceof List<?> pendingList) {
+                    for (Object item : pendingList) {
+                        if (!(item instanceof Map<?, ?> notification)) continue;
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> typedNotification = (Map<String, Object>) notification;
+                        Map<String, Object> notif = new HashMap<>(typedNotification);
                         notif.put("targetPlayerUuid", uuid);
                         playerNotifications.add(notif);
                     }
@@ -274,67 +281,6 @@ public class MinecraftSyncController {
         ));
     }
 
-    private Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types) {
-        Map<String, Object> data = punishment.getData();
-        Date expires = statusCalculator.getEffectiveExpiry(punishment);
-
-        PunishmentType punishmentType = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
-                .findFirst()
-                .orElse(null);
-
-        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
-        String category = effectiveCategory != null ? effectiveCategory : "OTHER";
-        String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
-
-        // For manual punishments (ordinals 0-5: kick, mute, ban, security ban, linked ban, blacklist),
-        // the reason is stored as the first non-auto-generated note
-        String reason = null;
-        if (punishment.getType_ordinal() <= 5 && punishment.getNotes() != null && !punishment.getNotes().isEmpty()) {
-            for (var note : punishment.getNotes()) {
-                String noteText = note.text();
-                if (noteText != null && !isAutoGeneratedNote(noteText)) {
-                    reason = noteText;
-                    break;
-                }
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("id", punishment.getId());
-        result.put("type", typeName);
-        result.put("category", category);
-        result.put("ordinal", punishment.getType_ordinal());
-        result.put("started", punishment.getStarted() != null);
-        result.put("expiration", expires != null ? expires.getTime() : null);
-        result.put("description", reason != null ? reason : "No reason specified");
-        result.put("issuerName", punishment.getIssuerName());
-        result.put("issuedAt", punishment.getIssued().getTime());
-        result.put("playerDescription", playerDescription);
-        result.put("modifications", punishment.getModifications().stream().map(m -> {
-                Map<String, Object> modMap = new LinkedHashMap<>();
-                modMap.put("type", m.type());
-                modMap.put("timestamp", m.date() != null ? m.date().getTime() : null);
-                modMap.put("effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L);
-                modMap.put("issuerName", m.issuerName());
-                return modMap;
-        }).toList());
-
-        return result;
-    }
-
-    private boolean isAutoGeneratedNote(String noteText) {
-        if (noteText == null) return true;
-        String lower = noteText.toLowerCase();
-        return lower.equals("issued punishment") ||
-               lower.equals("pardoned punishment") ||
-               lower.equals("added evidence") ||
-               lower.startsWith("changed duration to ") ||
-               lower.startsWith("enabled ") ||
-               lower.startsWith("disabled ");
-    }
-
     private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,
                                                              List<PunishmentType> types,
                                                              List<Map<String, Object>> recentlyModifiedPunishments,
@@ -351,21 +297,53 @@ public class MinecraftSyncController {
             List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : recentTickets) {
+                String ticketType = ticket.getType();
+
+                // Skip staff application tickets - no in-game notification
+                if ("STAFF".equalsIgnoreCase(ticketType)) {
+                    continue;
+                }
+
                 String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
                 String ticketId = ticket.getId();
-                String serverName = server.getServerName() != null ? server.getServerName() : "Unknown";
+
+                // Use the Minecraft server name from ticket data if available
+                String createdServer = null;
+                if (ticket.getData() != null) {
+                    Object cs = ticket.getData().get("createdServer");
+                    if (cs instanceof String s && !s.isBlank()) {
+                        createdServer = s;
+                    }
+                }
+
+                // Build message based on ticket type
+                String message;
+                if ("REPORT".equalsIgnoreCase(ticketType)) {
+                    String reportedPlayer = ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "Unknown";
+                    String category = ticket.getCategory();
+                    String categoryLabel = category != null && category.toLowerCase().contains("chat") ? "Chat" : "Gameplay";
+                    message = creatorName + ": reported " + reportedPlayer;
+                    if (createdServer != null) {
+                        message += " on " + createdServer;
+                    }
+                    message += " (" + categoryLabel + ")";
+                } else {
+                    message = creatorName + ": created " + ticketId;
+                    if (createdServer != null) {
+                        message += " on " + createdServer;
+                    }
+                }
 
                 Map<String, Object> notif = new LinkedHashMap<>();
                 notif.put("id", "ticket_" + ticketId);
                 notif.put("type", "TICKET_CREATED");
-                notif.put("message", creatorName + ": created " + ticketId + " on " + serverName);
+                notif.put("message", message);
                 notif.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
 
                 // Include data for hover/click in plugin
                 Map<String, Object> data = new LinkedHashMap<>();
                 data.put("ticketId", ticketId);
                 data.put("creatorName", creatorName);
-                data.put("serverName", serverName);
                 data.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
 
                 // Get first reply content, stripped of ** and ```
@@ -409,7 +387,7 @@ public class MinecraftSyncController {
                 for (Punishment punishment : player.getPunishments()) {
                     if (punishment.getIssued() != null && punishment.getIssued().toInstant().isAfter(lastSync)) {
                         PunishmentType punishmentType = types.stream()
-                                .filter(t -> t.getOrdinal() == punishment.getType_ordinal())
+                                .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
                                 .findFirst()
                                 .orElse(null);
                         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
@@ -433,25 +411,26 @@ public class MinecraftSyncController {
 
         // 3. Recent pardons from already-computed recentlyModifiedPunishments
         for (Map<String, Object> modified : recentlyModifiedPunishments) {
+            if (!(modified.get("punishment") instanceof Map<?, ?> rawPunishment)) continue;
             @SuppressWarnings("unchecked")
-            Map<String, Object> punishment = (Map<String, Object>) modified.get("punishment");
-            String username = (String) modified.get("username");
+            Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
+            String username = modified.get("username") instanceof String u ? u : "Unknown";
 
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> modifications = (List<Map<String, Object>>) punishment.get("modifications");
-            if (modifications != null) {
-                for (Map<String, Object> mod : modifications) {
-                    String modType = (String) mod.get("type");
-                    if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType) || "SYSTEM_PARDON".equals(modType)) {
-                        String pardoner = (String) mod.get("issuerName");
-                        String typeName = (String) punishment.get("type");
-                        Map<String, Object> notif = new LinkedHashMap<>();
-                        notif.put("id", "pardon_" + punishment.get("id"));
-                        notif.put("type", "PUNISHMENT_PARDONED");
-                        notif.put("message", (pardoner != null ? pardoner : "System") + ": pardoned " + username + "'s " + (typeName != null ? typeName : "punishment"));
-                        notif.put("timestamp", mod.get("timestamp"));
-                        notifications.add(notif);
-                    }
+            if (!(punishment.get("modifications") instanceof List<?> rawMods)) continue;
+            for (Object rawMod : rawMods) {
+                if (!(rawMod instanceof Map<?, ?> rawModMap)) continue;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> mod = (Map<String, Object>) rawModMap;
+                String modType = mod.get("type") instanceof String s ? s : null;
+                if ("MANUAL_PARDON".equals(modType) || "APPEAL_ACCEPT".equals(modType) || "SYSTEM_PARDON".equals(modType)) {
+                    String pardoner = mod.get("issuerName") instanceof String s ? s : null;
+                    String typeName = punishment.get("type") instanceof String s ? s : null;
+                    Map<String, Object> notif = new LinkedHashMap<>();
+                    notif.put("id", "pardon_" + punishment.get("id"));
+                    notif.put("type", "PUNISHMENT_PARDONED");
+                    notif.put("message", (pardoner != null ? pardoner : "System") + ": pardoned " + username + "'s " + (typeName != null ? typeName : "punishment"));
+                    notif.put("timestamp", mod.get("timestamp"));
+                    notifications.add(notif);
                 }
             }
         }
@@ -459,16 +438,20 @@ public class MinecraftSyncController {
         return notifications;
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> deduplicatePendingPunishments(List<Map<String, Object>> punishments) {
         // Key: "uuid|category" -> oldest punishment entry
         Map<String, Map<String, Object>> oldestByPlayerCategory = new LinkedHashMap<>();
         List<Map<String, Object>> result = new ArrayList<>();
 
         for (Map<String, Object> entry : punishments) {
-            String uuid = (String) entry.get("minecraftUuid");
-            Map<String, Object> punishment = (Map<String, Object>) entry.get("punishment");
-            String category = (String) punishment.get("category");
+            String uuid = entry.get("minecraftUuid") instanceof String s ? s : "";
+            if (!(entry.get("punishment") instanceof Map<?, ?> rawPunishment)) {
+                result.add(entry);
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
+            String category = punishment.get("category") instanceof String s ? s : null;
 
             if ("BAN".equals(category) || "MUTE".equals(category)) {
                 String key = uuid + "|" + category;
@@ -476,9 +459,11 @@ public class MinecraftSyncController {
                 if (existing == null) {
                     oldestByPlayerCategory.put(key, entry);
                 } else {
-                    Map<String, Object> existingPunishment = (Map<String, Object>) existing.get("punishment");
-                    long existingIssued = (Long) existingPunishment.get("issuedAt");
-                    long currentIssued = (Long) punishment.get("issuedAt");
+                    if (!(existing.get("punishment") instanceof Map<?, ?> rawExisting)) continue;
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> existingPunishment = (Map<String, Object>) rawExisting;
+                    long existingIssued = existingPunishment.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
+                    long currentIssued = punishment.get("issuedAt") instanceof Number n ? n.longValue() : 0L;
                     if (currentIssued < existingIssued) {
                         oldestByPlayerCategory.put(key, entry);
                     }
@@ -519,13 +504,13 @@ public class MinecraftSyncController {
 
     public record SyncRequest(
             String lastSyncTimestamp,
-            List<OnlinePlayer> onlinePlayers,
+            @Valid List<OnlinePlayer> onlinePlayers,
             ServerStatus serverStatus
     ) {}
 
     public record OnlinePlayer(
-            String uuid,
-            String username,
+            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
+            @NotBlank String username,
             String ipAddress
     ) {}
 

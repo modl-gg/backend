@@ -46,7 +46,7 @@ public class ServerService {
     }
 
     public void createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail) {
-        createServer(serverName, customDomain, adminEmail, null, ServerPlan.free);
+        createServer(serverName, customDomain, adminEmail, null, ServerPlan.FREE);
     }
 
     public Server createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail,
@@ -55,8 +55,8 @@ public class ServerService {
         String databaseName = generateDatabaseName(customDomain);
 
         Server server = new Server(serverName, customDomain, databaseName, adminEmail, false, plan);
-        server.setProvisioningStatus(ProvisioningStatus.pending);
-        server.setSubscriptionStatus(SubscriptionStatus.inactive);
+        server.setProvisioningStatus(ProvisioningStatus.PENDING);
+        server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
         server.setCreatedAt(now);
         server.setUpdatedAt(now);
 
@@ -83,13 +83,10 @@ public class ServerService {
             return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
         }
 
-        // Look for custom domain with active status, or legacy domains where status is not set
+        // Strictly require active custom domain status after schema cutover.
         Criteria customDomainCriteria = new Criteria().andOperator(
                 Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain),
-                new Criteria().orOperator(
-                        Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.active.name()),
-                        Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).exists(false)
-                )
+                Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.ACTIVE.name())
         );
         return db.findOne(new Query(customDomainCriteria), Server.class, CollectionName.MODL_SERVERS);
     }
@@ -170,7 +167,7 @@ public class ServerService {
 
         server.setEmailVerified(true);
         server.setEmailVerificationToken(null);
-        server.setProvisioningStatus(ProvisioningStatus.completed);
+        server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
         server.setUpdatedAt(new Date());
         Server saved = db.save(server, CollectionName.MODL_SERVERS);
 

@@ -1,9 +1,12 @@
 package gg.modl.backend.admin.controller;
 
+import gg.modl.backend.admin.dto.request.ExportAnalyticsRequest;
+import gg.modl.backend.admin.dto.request.GenerateReportRequest;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.data.Server;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -226,9 +229,9 @@ public class AdminAnalyticsController {
     }
 
     @PostMapping("/export")
-    public ResponseEntity<?> exportAnalytics(@RequestBody Map<String, String> request) {
-        String type = request.getOrDefault("type", "json");
-        String range = request.getOrDefault("range", "30d");
+    public ResponseEntity<?> exportAnalytics(@RequestBody @Valid ExportAnalyticsRequest request) {
+        String type = request.type() != null ? request.type() : "json";
+        String range = request.range() != null ? request.range() : "30d";
 
         if ("csv".equals(type)) {
             return ResponseEntity.ok()
@@ -247,7 +250,7 @@ public class AdminAnalyticsController {
     }
 
     @PostMapping("/report")
-    public ResponseEntity<?> generateReport(@RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> generateReport(@RequestBody @Valid GenerateReportRequest request) {
         return ResponseEntity.status(501).body(Map.of("success", false, "error", "Report generation not implemented"));
     }
 }

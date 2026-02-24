@@ -8,6 +8,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.AddReplyRequest;
 import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
+import gg.modl.backend.ticket.dto.request.VerifyTicketCodeRequest;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketService;
@@ -126,7 +127,9 @@ public class PublicTicketController {
                     response.put("type", ticketResponse.type());
                     response.put("subject", ticketResponse.subject());
                     response.put("status", ticketResponse.status());
-                    response.put("creator", ticketResponse.creator() != null ? ticketResponse.creator() : "");
+                    String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
+                    response.put("creatorName", creatorName);
+                    response.put("creator", creatorName);
                     response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
                     response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
                     response.put("created", ticketResponse.date());
@@ -218,7 +221,7 @@ public class PublicTicketController {
     @PostMapping("/{id}/submit")
     public ResponseEntity<?> submitTicketForm(
             @PathVariable String id,
-            @RequestBody SubmitTicketFormRequest submitRequest,
+            @RequestBody @Valid SubmitTicketFormRequest submitRequest,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -273,18 +276,12 @@ public class PublicTicketController {
     @PostMapping("/{id}/verify")
     public ResponseEntity<?> verifyCode(
             @PathVariable String id,
-            @RequestBody Map<String, String> body,
+            @RequestBody @Valid VerifyTicketCodeRequest body,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        String code = body.get("code");
-        if (code == null || code.isBlank()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Bad Request", "message", "Code is required"));
-        }
-
-        String token = verificationService.verifyCode(server, id, code);
+        String token = verificationService.verifyCode(server, id, body.code());
         if (token == null) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Forbidden", "message", "Invalid or expired code"));

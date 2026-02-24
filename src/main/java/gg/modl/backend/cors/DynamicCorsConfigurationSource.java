@@ -1,5 +1,6 @@
 package gg.modl.backend.cors;
 
+import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
@@ -9,11 +10,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import jakarta.annotation.PostConstruct;
+
 import java.net.URI;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Component
@@ -27,13 +32,48 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     @Value("${modl.cors.app-domains:modl.gg,modl.top}")
     private String appDomains;
 
-    private final ConcurrentHashMap<String, CachedOrigin> originCache = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_SIZE = 10_000;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000;
+
+    private final Map<String, CachedOrigin> originCache = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CachedOrigin> eldest) {
+                    return size() > MAX_CACHE_SIZE;
+                }
+            }
+    );
+
+    private volatile Set<String> parsedSystemOrigins = Set.of();
+    private volatile Set<String> parsedAppDomains = Set.of();
+
+    @PostConstruct
+    void initParsedOrigins() {
+        if (systemOrigins != null && !systemOrigins.isBlank()) {
+            parsedSystemOrigins = Arrays.stream(systemOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .collect(Collectors.toUnmodifiableSet());
+        }
+        if (appDomains != null && !appDomains.isBlank()) {
+            parsedAppDomains = Arrays.stream(appDomains.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .collect(Collectors.toUnmodifiableSet());
+        }
+    }
 
     @Override
     public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
         String origin = request.getHeader("Origin");
         if (origin == null) {
+            return null;
+        }
+
+        String path = request.getRequestURI();
+        boolean adminPath = isAdminPath(path);
+
+        if (adminPath && !isSystemOrigin(origin)) {
             return null;
         }
 
@@ -44,11 +84,23 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         CorsConfiguration config = new CorsConfiguration();
         config.addAllowedOrigin(origin);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setExposedHeaders(List.of("X-RateLimit-Remaining", "X-RateLimit-Retry-After"));
+        config.setAllowedHeaders(List.of("Content-Type", "X-Server-Domain", "X-API-Key", "Cookie", "Accept", "Origin", "Authorization"));
+        config.setExposedHeaders(List.of(
+                "X-RateLimit-Remaining",
+                "X-RateLimit-Retry-After",
+                "X-Rate-Limit-Remaining",
+                "X-Rate-Limit-Retry-After-Seconds"
+        ));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
         return config;
+    }
+
+    private boolean isAdminPath(String path) {
+        return path != null && (
+                path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
+                        || path.equals(RESTMappingV1.PREFIX_ADMIN)
+        );
     }
 
     private boolean isOriginAllowed(String origin) {
@@ -81,21 +133,11 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     }
 
     private boolean isSystemOrigin(String origin) {
-        if (systemOrigins == null || systemOrigins.isBlank()) {
-            return false;
-        }
-        Set<String> origins = Arrays.stream(systemOrigins.split(","))
-                .map(String::trim)
-                .collect(Collectors.toSet());
-        return origins.contains(origin);
+        return parsedSystemOrigins.contains(origin);
     }
 
     private boolean isAppDomainOrSubdomain(String host) {
-        if (appDomains == null || appDomains.isBlank()) {
-            return false;
-        }
-        return Arrays.stream(appDomains.split(","))
-                .map(String::trim)
+        return parsedAppDomains.stream()
                 .anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
     }
 

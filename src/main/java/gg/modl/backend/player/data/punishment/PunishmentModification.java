@@ -8,7 +8,7 @@ import java.util.Date;
 import java.util.Map;
 
 public record PunishmentModification(
-        @NotNull @Field("_id") String id,
+        @NotNull @Field("id") String id,
         @NotNull String type,
         @NotNull Date date,
         @NotNull String issuerName,

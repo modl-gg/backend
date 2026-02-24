@@ -9,7 +9,7 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.time.Instant;
+import java.util.Date;
 
 @Document(collection = CollectionName.SESSIONS)
 @Data
@@ -20,13 +20,13 @@ public class AuthSessionData {
     private String id;
 
     @Field
-    @Indexed(name = "email_1")
+    @Indexed(name = "idx_sessions_email")
     private String email;
 
     @Field
-    private Instant createdAt;
+    private Date createdAt;
 
     @Field
-    @Indexed(name = "expiresAt_1", expireAfter = "0s")
-    private Instant expiresAt;
+    @Indexed(name = "idx_sessions_expiresAt_ttl", expireAfter = "0s")
+    private Date expiresAt;
 }
