@@ -26,6 +26,7 @@ public record PunishmentResponse(
         @Nullable Boolean altBlocking,
         @Nullable Boolean statWiping,
         @Nullable String offenseLevel,
+        @Nullable String effectiveCategory,
         List<PunishmentModification> modifications,
         List<PunishmentNote> notes,
         List<PunishmentEvidence> evidence,

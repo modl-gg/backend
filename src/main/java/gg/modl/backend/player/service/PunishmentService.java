@@ -1006,6 +1006,10 @@ public class PunishmentService {
 
         int ordinal = punishment.getTypeOrdinal();
 
+        // Compute effective category (BAN, MUTE, or null) using the uniform calculation
+        PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal).orElse(null);
+        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
+
         return new PunishmentResponse(
                 punishment.getId(),
                 punishmentTypeService.getPunishmentTypeName(server, ordinal),
@@ -1024,6 +1028,7 @@ public class PunishmentService {
                 data != null ? (Boolean) data.get("altBlocking") : null,
                 data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
                 data != null ? (String) data.get("offenseLevel") : null,
+                effectiveCategory,
                 punishment.getModifications(),
                 punishment.getNotes(),
                 punishment.getEvidence(),
