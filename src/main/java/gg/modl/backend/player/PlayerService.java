@@ -335,6 +335,7 @@ public class PlayerService {
     }
 
     private String calculatePlayerStatus(Server server, Player player) {
+        boolean hasMute = false;
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
@@ -342,7 +343,14 @@ public class PlayerService {
                 if ("BAN".equals(category)) {
                     return "Banned";
                 }
+                if ("MUTE".equals(category)) {
+                    hasMute = true;
+                }
             }
+        }
+
+        if (hasMute) {
+            return "Muted";
         }
 
         Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
