@@ -179,7 +179,13 @@ public class PlayerStatusCalculator {
 
         // Social/gameplay types: determine from DurationDetail
         if (data != null) {
-            String severity = data.get("severity") instanceof String s ? s : "regular";
+            // Normalize severity from display format to internal keys
+            String rawSeverity = data.get("severity") instanceof String s ? s : "regular";
+            String severity = switch (rawSeverity.toLowerCase()) {
+                case "low", "lenient" -> "low";
+                case "aggravated", "severe" -> "severe";
+                default -> "regular";
+            };
             String offenseLevel = data.get("offenseLevel") instanceof String s ? s : "normal";
             DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
             if (detail != null) {
