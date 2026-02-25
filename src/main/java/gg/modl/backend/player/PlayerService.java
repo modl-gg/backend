@@ -12,6 +12,7 @@ import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -303,6 +304,10 @@ public class PlayerService {
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
         int ordinal = punishment.getTypeOrdinal();
 
+        // Compute effective category (BAN, MUTE, or null) using the uniform calculation
+        PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal).orElse(null);
+        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
+
         return new PunishmentResponse(
                 punishment.getId(),
                 punishmentTypeService.getPunishmentTypeName(server, ordinal),
@@ -321,6 +326,7 @@ public class PlayerService {
                 data != null ? (Boolean) data.get("altBlocking") : null,
                 data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
                 data != null ? (String) data.get("offenseLevel") : null,
+                effectiveCategory,
                 punishment.getModifications(),
                 punishment.getNotes(),
                 punishment.getEvidence(),
@@ -331,11 +337,9 @@ public class PlayerService {
     private String calculatePlayerStatus(Server server, Player player) {
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                int ordinal = punishment.getTypeOrdinal();
-                boolean isBan = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
-                        .map(type -> type.isBan())
-                        .orElse(false);
-                if (isBan) {
+                PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
+                String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());
+                if ("BAN".equals(category)) {
                     return "Banned";
                 }
             }

@@ -171,16 +171,11 @@ public class AccountLinkingService {
 
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                int ordinal = punishment.getTypeOrdinal();
-                boolean isBan = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
-                        .map(type -> type.isBan())
-                        .orElse(false);
-                boolean isMute = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
-                        .map(type -> type.isMute())
-                        .orElse(false);
-                if (isBan) {
+                var pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
+                String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());
+                if ("BAN".equals(category)) {
                     activeBans++;
-                } else if (isMute) {
+                } else if ("MUTE".equals(category)) {
                     activeMutes++;
                 }
             }
