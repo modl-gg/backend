@@ -91,6 +91,24 @@ public class ServerService {
         return db.findOne(new Query(customDomainCriteria), Server.class, CollectionName.MODL_SERVERS);
     }
 
+    /**
+     * Returns the matching app domain (e.g. "modl.gg") if the given domain is a subdomain of one,
+     * or null if it's a custom domain.
+     */
+    @Nullable
+    public String getAppDomain(@NotNull String domain) {
+        for (String appDomain : appDomains) {
+            String suffix = "." + appDomain;
+            if (domain.endsWith(suffix)) {
+                String subdomain = domain.substring(0, domain.length() - suffix.length());
+                if (!subdomain.isBlank() && !subdomain.contains(".")) {
+                    return appDomain;
+                }
+            }
+        }
+        return null;
+    }
+
     @Nullable
     private String extractSubdomain(@NotNull String domain) {
         for (String appDomain : appDomains) {

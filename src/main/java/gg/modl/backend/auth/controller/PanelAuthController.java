@@ -6,9 +6,11 @@ import gg.modl.backend.auth.AuthService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestHeader;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
@@ -49,6 +51,7 @@ public class PanelAuthController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
+    private final ServerService serverService;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -104,7 +107,7 @@ public class PanelAuthController {
 
         AuthSessionData session = sessionService.createSession(server, requestData.email());
 
-        Cookie sessionCookie = createSessionCookie(session.getId());
+        Cookie sessionCookie = createSessionCookie(request, session.getId());
         response.addCookie(sessionCookie);
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGIN_SUCCESS));
@@ -124,7 +127,7 @@ public class PanelAuthController {
             sessionService.invalidateAllSessionsForEmail(server, sessionEmail);
         }
 
-        for (Cookie cookie : createExpiredSessionCookies()) {
+        for (Cookie cookie : createExpiredSessionCookies(request)) {
             response.addCookie(cookie);
         }
 
@@ -222,7 +225,7 @@ public class PanelAuthController {
             .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));
     }
 
-    private Cookie createSessionCookie(String sessionId) {
+    private Cookie createSessionCookie(HttpServletRequest request, String sessionId) {
         Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), sessionId);
 
         cookie.setHttpOnly(true);
@@ -230,7 +233,7 @@ public class PanelAuthController {
         cookie.setPath("/");
         cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
         cookie.setAttribute("SameSite", authConfiguration.isDevelopmentMode() ? "Lax" : "Strict");
-        String cookieDomain = getConfiguredCookieDomain();
+        String cookieDomain = resolveEffectiveCookieDomain(request);
         if (cookieDomain != null) {
             cookie.setDomain(cookieDomain);
         }
@@ -238,11 +241,11 @@ public class PanelAuthController {
         return cookie;
     }
 
-    private List<Cookie> createExpiredSessionCookies() {
+    private List<Cookie> createExpiredSessionCookies(HttpServletRequest request) {
         List<Cookie> cookies = new ArrayList<>();
         cookies.add(createExpiredSessionCookie(null));
 
-        String cookieDomain = getConfiguredCookieDomain();
+        String cookieDomain = resolveEffectiveCookieDomain(request);
         if (cookieDomain != null) {
             cookies.add(createExpiredSessionCookie(cookieDomain));
             if (!cookieDomain.startsWith(".")) {
@@ -250,6 +253,12 @@ public class PanelAuthController {
             } else if (cookieDomain.length() > 1) {
                 cookies.add(createExpiredSessionCookie(cookieDomain.substring(1)));
             }
+        }
+
+        // Also expire any cookies set with the configured domain (for migration from old cookies)
+        String configuredDomain = getConfiguredCookieDomain();
+        if (configuredDomain != null && !configuredDomain.equals(cookieDomain)) {
+            cookies.add(createExpiredSessionCookie(configuredDomain));
         }
 
         return cookies;
@@ -281,6 +290,26 @@ public class PanelAuthController {
                 .map(Cookie::getValue)
                 .filter(value -> value != null && !value.isBlank())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * Determines the cookie domain based on the request's server domain.
+     * For app subdomains (e.g. server.modl.gg), uses the configured app domain (modl.gg).
+     * For custom domains (e.g. customserver.com), returns null so the browser
+     * scopes the cookie to the exact response host.
+     */
+    private String resolveEffectiveCookieDomain(HttpServletRequest request) {
+        String serverDomain = request.getHeader(RequestHeader.SERVER_DOMAIN);
+        if (serverDomain != null && !serverDomain.isBlank()) {
+            String appDomain = serverService.getAppDomain(serverDomain);
+            if (appDomain != null) {
+                return appDomain;
+            }
+            // Custom domain — don't set a cookie domain so it defaults to the response host
+            return null;
+        }
+        // Fallback to configured domain
+        return getConfiguredCookieDomain();
     }
 
     private String getConfiguredCookieDomain() {
