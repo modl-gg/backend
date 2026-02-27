@@ -67,8 +67,14 @@ public class PanelAuthController {
 
         // Always return generic success to prevent email enumeration
         if (!isAuthorizedEmail(server, requestData.email())) {
+            log.warn("send-email-code: email {} not authorized for server {} (db={}). isSuperAdmin={}, staffExists={}",
+                    requestData.email(), server.getCustomDomain(), server.getDatabaseName(),
+                    permissionService.isSuperAdmin(server, requestData.email()),
+                    staffService.getStaffByEmail(server, requestData.email()).isPresent());
             return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
+
+        log.info("send-email-code: sending login code to {} for server {}", requestData.email(), server.getCustomDomain());
 
         try {
             authService.sendUserLoginCode(server, requestData.email());
