@@ -208,6 +208,39 @@ public class PlayerStatusCalculator {
         }
     }
 
+    /**
+     * Returns true when a punishment has naturally expired (not pardoned, not permanent, not a kick).
+     * Used to detect punishments eligible for stat-wipe execution.
+     */
+    public boolean isPunishmentNaturallyExpired(Punishment punishment) {
+        // Must have been started
+        if (punishment.getStarted() == null) {
+            return false;
+        }
+
+        // Kicks are instant, not expirable
+        if (punishment.getTypeOrdinal() == 0) {
+            return false;
+        }
+
+        // Must not have been pardoned
+        for (PunishmentModification mod : punishment.getModifications()) {
+            String type = mod.type();
+            if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
+                return false;
+            }
+        }
+
+        // Must have a finite expiry (not permanent)
+        Date effectiveExpiry = getEffectiveExpiry(punishment);
+        if (effectiveExpiry == null) {
+            return false;
+        }
+
+        // Must have expired
+        return effectiveExpiry.before(new Date());
+    }
+
     public record PlayerStatus(
             String social,
             String gameplay,

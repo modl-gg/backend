@@ -786,6 +786,70 @@ public class MinecraftPunishmentController {
             boolean enabled
     ) {}
 
+    @PostMapping("/{punishmentId}/stat-wipe-acknowledge")
+    public ResponseEntity<Map<String, Object>> acknowledgeStatWipe(
+            @PathVariable String punishmentId,
+            @RequestBody @Valid StatWipeAcknowledgeRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
+        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
+
+        if (player == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        Punishment punishment = player.getPunishments().stream()
+                .filter(p -> p.getId().equals(punishmentId))
+                .findFirst()
+                .orElse(null);
+
+        if (punishment == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Punishment not found"
+            ));
+        }
+
+        // Verify wipeAfterExpiry is still enabled
+        Map<String, Object> data = punishment.getData();
+        if (data == null || !Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) {
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "message", "Stat wipe no longer enabled for this punishment"
+            ));
+        }
+
+        // Mark as completed
+        Query updateQuery = Query.query(
+                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
+                        .and("punishments.id").is(punishmentId)
+        );
+
+        Update update = new Update()
+                .set("punishments.$.data.statWipeCompleted", true)
+                .set("punishments.$.data.statWipeCompletedAt", new Date());
+        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "message", "Stat wipe acknowledged"
+        ));
+    }
+
+    public record StatWipeAcknowledgeRequest(
+            @NotBlank String punishmentId,
+            String serverName,
+            boolean success
+    ) {}
+
     @PostMapping("/{punishmentId}/tickets")
     public ResponseEntity<Map<String, Object>> modifyPunishmentTickets(
             @PathVariable String punishmentId,

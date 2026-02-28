@@ -251,6 +251,9 @@ public class MinecraftSyncController {
 
         List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template);
 
+        // Find pending stat wipes (expired punishments with wipeAfterExpiry=true that haven't been wiped yet)
+        List<Map<String, Object>> pendingStatWipes = findPendingStatWipes(template);
+
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pendingPunishments", pendingPunishments);
         data.put("recentlyStartedPunishments", List.of());
@@ -258,6 +261,7 @@ public class MinecraftSyncController {
         data.put("playerNotifications", playerNotifications);
         data.put("staffNotifications", staffNotifications);
         data.put("activeStaffMembers", activeStaffMembers);
+        data.put("pendingStatWipes", pendingStatWipes);
         data.put("staffPermissionsUpdatedAt", server.getStaffPermissionsUpdatedAt() != null
                 ? server.getStaffPermissionsUpdatedAt().getTime() : null);
         data.put("punishmentTypesUpdatedAt", server.getPunishmentTypesUpdatedAt() != null
@@ -283,6 +287,47 @@ public class MinecraftSyncController {
                 "timestamp", now.toString(),
                 "data", data
         ));
+    }
+
+    private List<Map<String, Object>> findPendingStatWipes(MongoTemplate template) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            Query query = Query.query(
+                    Criteria.where("punishments").elemMatch(
+                            Criteria.where("data.wipeAfterExpiry").is(true)
+                                    .and("data.statWipeCompleted").ne(true)
+                                    .and("started").ne(null)
+                    )
+            );
+            query.limit(50);
+            List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+
+            for (Player player : players) {
+                String uuid = player.getMinecraftUuid().toString();
+                String username = player.getUsernames().isEmpty() ? "Unknown"
+                        : player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+                for (Punishment punishment : player.getPunishments()) {
+                    Map<String, Object> data = punishment.getData();
+                    if (data == null) continue;
+                    if (!Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) continue;
+                    if (Boolean.TRUE.equals(data.get("statWipeCompleted"))) continue;
+                    if (!statusCalculator.isPunishmentNaturallyExpired(punishment)) continue;
+
+                    result.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishmentId", punishment.getId()
+                    ));
+
+                    if (result.size() >= 50) break;
+                }
+                if (result.size() >= 50) break;
+            }
+        } catch (Exception e) {
+            // Collection may not have matching documents, ignore
+        }
+        return result;
     }
 
     private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,
