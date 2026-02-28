@@ -73,11 +73,15 @@ public class MinecraftSyncController {
             }
         }
 
-        // Reconcile online status: mark players as offline if not in the plugin's online list
-        Query staleOnlineQuery = Query.query(
-                Criteria.where("data.isOnline").is(true)
-                        .and("minecraftUuid").nin(onlineUuids)
-        );
+        // Reconcile online status: mark players as offline if not in the plugin's online list.
+        // When serverName is provided, only mark offline players whose lastServer matches,
+        // preventing multi-server setups from thrashing each other's online status.
+        Criteria staleOnlineCriteria = Criteria.where("data.isOnline").is(true)
+                .and("minecraftUuid").nin(onlineUuids);
+        if (syncRequest.serverName() != null && !syncRequest.serverName().isBlank()) {
+            staleOnlineCriteria = staleOnlineCriteria.and("data.lastServer").is(syncRequest.serverName());
+        }
+        Query staleOnlineQuery = Query.query(staleOnlineCriteria);
         Update markOffline = new Update()
                 .set("data.isOnline", false)
                 .set("data.lastLogout", Date.from(now));
@@ -505,7 +509,8 @@ public class MinecraftSyncController {
     public record SyncRequest(
             String lastSyncTimestamp,
             @Valid List<OnlinePlayer> onlinePlayers,
-            ServerStatus serverStatus
+            ServerStatus serverStatus,
+            String serverName
     ) {}
 
     public record OnlinePlayer(
