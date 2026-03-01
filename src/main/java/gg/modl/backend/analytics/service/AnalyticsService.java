@@ -8,7 +8,6 @@ import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
-import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
@@ -22,12 +21,16 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
+    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
+
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
 
@@ -118,67 +121,52 @@ public class AnalyticsService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        // Query players with punishments (filter by date if startDate is not null)
-        Query query;
-        if (startDate != null) {
-            query = Query.query(Criteria.where("punishments.issued").gte(startDate));
-        } else {
-            query = Query.query(Criteria.where("punishments").exists(true));
-        }
-        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+        List<Document> pipeline = buildPunishmentAnalyticsPipeline(startDate);
+        List<Document> aggregateResults = template.getCollection(CollectionName.PLAYERS)
+                .aggregate(pipeline)
+                .into(new ArrayList<>());
 
-        // Aggregate punishment data
-        Map<String, Integer> typeCountMap = new HashMap<>();
+        if (aggregateResults.isEmpty()) {
+            return new PunishmentAnalyticsResponse(List.of(), List.of(), List.of(), List.of());
+        }
+
+        Document facetResults = aggregateResults.get(0);
+        Map<Integer, String> punishmentTypeNames = resolvePunishmentTypeNames(server);
+
+        List<PunishmentAnalyticsResponse.TypeCount> byType = toDocumentList(facetResults.get("byType")).stream()
+                .map(doc -> {
+                    Object rawTypeOrdinal = doc.get("_id");
+                    Integer typeOrdinal = rawTypeOrdinal instanceof Number number ? number.intValue() : null;
+                    String typeName = typeOrdinal != null
+                            ? punishmentTypeNames.getOrDefault(typeOrdinal, "Unknown")
+                            : "Unknown";
+                    return new PunishmentAnalyticsResponse.TypeCount(typeName, toInt(doc.get("count")));
+                })
+                .sorted((a, b) -> Integer.compare(b.count(), a.count()))
+                .toList();
+
         Map<String, Integer> staffCountMap = new HashMap<>();
-        Map<String, Integer> dailyCountMap = new TreeMap<>();
-
-        java.time.format.DateTimeFormatter dateFormatter = java.time.format.DateTimeFormatter.ofPattern("MMM dd");
-
-        for (Player player : players) {
-            if (player.getPunishments() == null) continue;
-
-            for (Punishment p : player.getPunishments()) {
-                if (p.getIssued() == null) continue;
-                if (startDate != null && p.getIssued().before(startDate)) continue;
-
-                // Count by type
-                String typeName = punishmentTypeService.getPunishmentTypeName(server, p.getTypeOrdinal());
-                typeCountMap.merge(typeName, 1, Integer::sum);
-
-                // Count by staff
-                String issuer = p.getIssuerName() != null ? p.getIssuerName() : "Unknown";
-                staffCountMap.merge(issuer, 1, Integer::sum);
-
-                // Count by day
-                String dateKey = java.time.Instant.ofEpochMilli(p.getIssued().getTime())
-                        .atZone(java.time.ZoneId.systemDefault())
-                        .toLocalDate()
-                        .format(dateFormatter);
-                dailyCountMap.merge(dateKey, 1, Integer::sum);
-            }
+        for (Document document : toDocumentList(facetResults.get("byStaff"))) {
+            String staffName = normalizeStaffName(document.get("_id"));
+            staffCountMap.merge(staffName, toInt(document.get("count")), Integer::sum);
         }
-
-        // Convert to response format
-        List<PunishmentAnalyticsResponse.TypeCount> byType = typeCountMap.entrySet().stream()
-                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
-                .map(e -> new PunishmentAnalyticsResponse.TypeCount(e.getKey(), e.getValue()))
-                .toList();
-
         List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet().stream()
-                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
                 .limit(20)
-                .map(e -> new PunishmentAnalyticsResponse.StaffPunishment(e.getKey(), e.getValue()))
+                .map(entry -> new PunishmentAnalyticsResponse.StaffPunishment(entry.getKey(), entry.getValue()))
                 .toList();
 
-        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyCountMap.entrySet().stream()
-                .map(e -> new PunishmentAnalyticsResponse.DailyPunishment(e.getKey(), e.getValue()))
+        Map<String, Integer> dailyPunishmentMap = new LinkedHashMap<>();
+        for (Document document : toDocumentList(facetResults.get("daily"))) {
+            String dayLabel = formatPunishmentDay(document.getString("_id"));
+            dailyPunishmentMap.merge(dayLabel, toInt(document.get("count")), Integer::sum);
+        }
+        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyPunishmentMap.entrySet().stream()
+                .map(entry -> new PunishmentAnalyticsResponse.DailyPunishment(entry.getKey(), entry.getValue()))
                 .toList();
 
-        // For severity, we would need to extract it from the punishment data
-        // For now, return an empty list as severity info may not be stored in the current schema
-        List<PunishmentAnalyticsResponse.SeverityCount> bySeverity = Collections.emptyList();
-
-        return new PunishmentAnalyticsResponse(byType, bySeverity, dailyPunishments, byStaff);
+        // Severity is not represented in the stored punishment analytics schema today.
+        return new PunishmentAnalyticsResponse(byType, List.of(), dailyPunishments, byStaff);
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
@@ -308,6 +296,101 @@ public class AnalyticsService {
                 new PlayerActivityResponse.SuspiciousActivity(proxyCount, hostingCount);
 
         return new PlayerActivityResponse(newPlayersTrend, loginsByCountry, suspiciousActivity);
+    }
+
+    private List<Document> buildPunishmentAnalyticsPipeline(Date startDate) {
+        List<Document> pipeline = new ArrayList<>();
+        if (startDate != null) {
+            // Pre-filter documents so Mongo can leverage the multikey issued index before unwind.
+            pipeline.add(new Document("$match", new Document("punishments.issued", new Document("$gte", startDate))));
+        }
+
+        pipeline.add(new Document("$unwind", "$punishments"));
+
+        pipeline.add(new Document("$match", new Document("punishments.issued", new Document("$type", "date"))));
+
+        if (startDate != null) {
+            // Post-filter to keep only punishment entries in-range after unwind.
+            pipeline.add(new Document("$match", new Document("punishments.issued", new Document("$gte", startDate))));
+        }
+
+        Document byTypeFacet = new Document("$group", new Document("_id", "$punishments.typeOrdinal")
+                .append("count", new Document("$sum", 1)));
+        Document sortByCountDesc = new Document("$sort", new Document("count", -1));
+
+        Document byStaffFacet = new Document("$group", new Document("_id", "$punishments.issuerName")
+                .append("count", new Document("$sum", 1)));
+
+        Document byDayFacet = new Document("$group", new Document("_id",
+                new Document("$dateToString",
+                        new Document("format", "%Y-%m-%d")
+                                .append("date", "$punishments.issued")
+                                .append("timezone", ANALYTICS_TIME_ZONE)))
+                .append("count", new Document("$sum", 1)));
+        Document sortByDayAsc = new Document("$sort", new Document("_id", 1));
+
+        pipeline.add(new Document("$facet", new Document("byType", List.of(byTypeFacet, sortByCountDesc))
+                .append("byStaff", List.of(byStaffFacet, sortByCountDesc))
+                .append("daily", List.of(byDayFacet, sortByDayAsc))));
+
+        return pipeline;
+    }
+
+    private Map<Integer, String> resolvePunishmentTypeNames(Server server) {
+        Map<Integer, String> typeNames = new HashMap<>();
+        punishmentTypeService.getPunishmentTypes(server).forEach(type ->
+                typeNames.put(type.getOrdinal(), type.getName())
+        );
+        return typeNames;
+    }
+
+    private List<Document> toDocumentList(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return List.of();
+        }
+
+        List<Document> documents = new ArrayList<>();
+        for (Object item : rawList) {
+            if (item instanceof Document document) {
+                documents.add(document);
+            }
+        }
+        return documents;
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private String normalizeStaffName(Object rawStaffName) {
+        if (rawStaffName == null) {
+            return "Unknown";
+        }
+
+        String normalized = rawStaffName.toString().trim();
+        return normalized.isBlank() ? "Unknown" : normalized;
+    }
+
+    private String formatPunishmentDay(String dateKey) {
+        if (dateKey == null || dateKey.isBlank()) {
+            return "Unknown";
+        }
+
+        try {
+            return LocalDate.parse(dateKey).format(DateTimeFormatter.ofPattern("MMM dd"));
+        } catch (Exception ignored) {
+            return dateKey;
+        }
     }
 
     private String normalizeCategory(String type) {

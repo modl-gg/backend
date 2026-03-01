@@ -2,6 +2,7 @@ package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.player.data.Player;
@@ -233,7 +234,19 @@ public class TicketNotificationService {
             return null;
         }
         Object email = ticket.getData().get("creatorEmail");
-        return email != null ? email.toString() : null;
+        if (email == null) {
+            return null;
+        }
+
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email.toString());
+        if (normalizedEmail == null) {
+            log.warn("Skipping ticket email notification for {} due to invalid creator email: {}",
+                    ticket.getId(),
+                email);
+            return null;
+        }
+
+        return normalizedEmail;
     }
 
     /**

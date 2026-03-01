@@ -39,7 +39,7 @@ public class AdminServerController {
             @RequestParam(defaultValue = "desc") String order) {
 
         int pageNum = Math.max(1, page);
-        int limitNum = Math.min(100, Math.max(1, limit));
+        int limitNum = Math.min(50, Math.max(1, limit));
         int skip = (pageNum - 1) * limitNum;
 
         List<Server> servers = serverService.findServers(search, plan, status, sort, order, skip, limitNum);
@@ -56,6 +56,25 @@ public class AdminServerController {
                                 "pages", (int) Math.ceil((double) total / limitNum)
                         )
                 )
+        ));
+    }
+
+    @PostMapping("/usage/batch")
+    public ResponseEntity<?> getUsageBatch(@RequestBody @Valid UsageBatchRequest request) {
+        if (request.serverIds() == null || request.serverIds().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Missing required field: serverIds"));
+        }
+
+        if (request.serverIds().size() > 50) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Maximum 50 server IDs per request"));
+        }
+
+        boolean forceRefresh = Boolean.TRUE.equals(request.forceRefresh());
+        Map<String, AdminServerService.UsageSummary> usage = serverService.getUsageStatsForServerIds(request.serverIds(), forceRefresh);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", Map.of("usage", usage)
         ));
     }
 
@@ -270,6 +289,7 @@ public class AdminServerController {
     // Request records
     public record SearchRequest(String query, Map<String, Object> filters) {}
     public record ExportRequest(String format, Map<String, Object> filters) {}
+    public record UsageBatchRequest(List<String> serverIds, Boolean forceRefresh) {}
     public record CreateServerRequest(
             @NotBlank String serverName,
             @NotBlank String customDomain,

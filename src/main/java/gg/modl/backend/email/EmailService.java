@@ -18,8 +18,6 @@ public class EmailService {
     private final EmailConfiguration config;
 
     public void send(String toEmail, String subject, String htmlBody) throws MessagingException, UnsupportedEncodingException {
-        log.info("Sending email to={}, subject='{}', from={}", toEmail, subject, config.getFromEmailAddress());
-
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
 
@@ -29,7 +27,6 @@ public class EmailService {
         helper.setText(htmlBody, true);
 
         mailSender.send(mimeMessage);
-        log.info("Email sent successfully to={}, subject='{}'", toEmail, subject);
     }
 
     public void send(String toEmail, EmailHTMLTemplate.HTMLEmail email) throws MessagingException, UnsupportedEncodingException {

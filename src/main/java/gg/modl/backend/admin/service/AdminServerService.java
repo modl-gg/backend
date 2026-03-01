@@ -26,6 +26,9 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 @Slf4j
 public class AdminServerService {
+    private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
+    private static final int MAX_USAGE_BATCH_SIZE = 50;
+
     private final DynamicMongoTemplateProvider mongoProvider;
     private final ServerProvisioningService provisioningService;
 
@@ -37,13 +40,24 @@ public class AdminServerService {
         Query query = buildFilterQuery(search, plan, status);
 
         // Validate and set sort
-        List<String> allowedSortFields = Arrays.asList("serverName", "customDomain", "adminEmail", "plan", "createdAt", "updatedAt", "userCount", "ticketCount", "provisioningStatus", "lastActivityAt");
+        List<String> allowedSortFields = Arrays.asList("serverName", "customDomain", "adminEmail", "plan", "createdAt", "updatedAt", "userCount", "provisioningStatus", "lastActivityAt");
         String field = allowedSortFields.contains(sortField) ? sortField : "createdAt";
         Sort.Direction direction = "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;
 
         query.with(Sort.by(direction, field));
         query.skip(skip).limit(limit);
-        query.fields().exclude("emailVerificationToken", "provisioningSignInToken");
+        query.fields()
+                .include("serverName")
+                .include("customDomain")
+                .include("adminEmail")
+                .include("plan")
+                .include("emailVerified")
+                .include("provisioningStatus")
+                .include("createdAt")
+                .include("updatedAt")
+                .include("userCount")
+                .include("ticketCount")
+                .include("lastActivityAt");
 
         return getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
     }
@@ -51,6 +65,91 @@ public class AdminServerService {
     public long countServers(String search, String plan, String status) {
         Query query = buildFilterQuery(search, plan, status);
         return getTemplate().count(query, Server.class, CollectionName.MODL_SERVERS);
+    }
+
+    public void refreshUsageStatsForActiveServers(int maxServers) {
+        int boundedLimit = Math.max(1, Math.min(maxServers, 500));
+        Date now = new Date();
+        Date staleCutoff = new Date(now.getTime() - USAGE_STATS_TTL_MILLIS);
+
+        Criteria staleCriteria = new Criteria().orOperator(
+                Criteria.where("lastStatsUpdatedAt").exists(false),
+                Criteria.where("lastStatsUpdatedAt").lt(staleCutoff)
+        );
+
+        Query query = Query.query(new Criteria().andOperator(
+                Criteria.where("databaseName").ne(null),
+                Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED),
+                Criteria.where("emailVerified").is(true),
+                staleCriteria
+        ));
+        query.with(Sort.by(Sort.Direction.ASC, "lastStatsUpdatedAt"));
+        query.limit(boundedLimit);
+        query.fields()
+                .include("serverName")
+                .include("customDomain")
+                .include("databaseName")
+                .include("adminEmail")
+                .include("emailVerified")
+                .include("plan")
+                .include("userCount")
+                .include("ticketCount")
+                .include("lastStatsUpdatedAt")
+                .include("lastActivityAt")
+                .include("updatedAt");
+
+        List<Server> servers = getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
+        for (Server server : servers) {
+            getOrComputeUsageStats(server, now, false);
+        }
+    }
+
+    public Map<String, UsageSummary> getUsageStatsForServerIds(List<String> serverIds, boolean forceRefresh) {
+        if (serverIds == null || serverIds.isEmpty()) {
+            return Map.of();
+        }
+
+        List<String> filteredIds = serverIds.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(id -> !id.isEmpty())
+                .distinct()
+                .limit(MAX_USAGE_BATCH_SIZE)
+                .toList();
+
+        if (filteredIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Query query = Query.query(Criteria.where("_id").in(filteredIds));
+        query.fields()
+                .include("serverName")
+                .include("customDomain")
+                .include("databaseName")
+                .include("adminEmail")
+                .include("emailVerified")
+                .include("plan")
+                .include("userCount")
+                .include("ticketCount")
+                .include("lastStatsUpdatedAt")
+                .include("lastActivityAt")
+                .include("updatedAt");
+
+        Date now = new Date();
+        List<Server> servers = getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
+        Map<String, UsageSummary> usageByServerId = new HashMap<>();
+
+        for (Server server : servers) {
+            ComputedUsage usage = getOrComputeUsageStats(server, now, forceRefresh);
+            usageByServerId.put(server.getId(), new UsageSummary(
+                    usage.userCount(),
+                    usage.ticketCount(),
+                    usage.updatedAt(),
+                    usage.fromCache()
+            ));
+        }
+
+        return usageByServerId;
     }
 
     private Query buildFilterQuery(String search, String plan, String status) {
@@ -183,10 +282,13 @@ public class AdminServerService {
 
     public Map<String, Object> getServerStats(Server server) {
         Map<String, Object> stats = new HashMap<>();
+        Date now = new Date();
 
         if (server.getDatabaseName() == null) {
-            stats.put("totalPlayers", 0);
-            stats.put("totalTickets", 0);
+            long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
+            long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
+            stats.put("totalPlayers", cachedUsers);
+            stats.put("totalTickets", cachedTickets);
             stats.put("totalLogs", 0);
             stats.put("lastActivity", server.getUpdatedAt());
             stats.put("databaseSize", 0);
@@ -200,6 +302,8 @@ public class AdminServerService {
             long tickets = serverDb.count(new Query(), "tickets");
             long logs = serverDb.count(new Query(), "logs");
 
+            persistUsageStats(server.getId(), players, tickets, now);
+
             stats.put("totalPlayers", players);
             stats.put("totalTickets", tickets);
             stats.put("totalLogs", logs);
@@ -211,8 +315,10 @@ public class AdminServerService {
 
         } catch (Exception e) {
             log.warn("Failed to get stats for server {}: {}", server.getServerName(), e.getMessage());
-            stats.put("totalPlayers", 0);
-            stats.put("totalTickets", 0);
+            long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
+            long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
+            stats.put("totalPlayers", cachedUsers);
+            stats.put("totalTickets", cachedTickets);
             stats.put("totalLogs", 0);
             stats.put("lastActivity", server.getUpdatedAt());
             stats.put("databaseSize", 0);
@@ -244,4 +350,52 @@ public class AdminServerService {
                 .set("updatedAt", new Date());
         getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
     }
+
+    private ComputedUsage getOrComputeUsageStats(Server server, Date now, boolean forceRefresh) {
+        long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
+        long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
+
+        if (!forceRefresh && isUsageStatsCacheFresh(server, now)) {
+            return new ComputedUsage(cachedUsers, cachedTickets, server.getLastStatsUpdatedAt(), true);
+        }
+
+        if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
+            persistUsageStats(server.getId(), cachedUsers, cachedTickets, now);
+            return new ComputedUsage(cachedUsers, cachedTickets, now, false);
+        }
+
+        try {
+            MongoTemplate serverDb = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+            long players = serverDb.count(new Query(), "players");
+            long tickets = serverDb.count(new Query(), "tickets");
+            persistUsageStats(server.getId(), players, tickets, now);
+            return new ComputedUsage(players, tickets, now, false);
+        } catch (Exception e) {
+            log.warn("Failed to refresh usage stats for server {}: {}", server.getServerName(), e.getMessage());
+            Date updatedAt = server.getLastStatsUpdatedAt() != null ? server.getLastStatsUpdatedAt() : now;
+            return new ComputedUsage(cachedUsers, cachedTickets, updatedAt, true);
+        }
+    }
+
+    private boolean isUsageStatsCacheFresh(Server server, Date now) {
+        if (server.getLastStatsUpdatedAt() == null) {
+            return false;
+        }
+
+        long ageMillis = now.getTime() - server.getLastStatsUpdatedAt().getTime();
+        return ageMillis >= 0 && ageMillis <= USAGE_STATS_TTL_MILLIS;
+    }
+
+    private void persistUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
+        Query query = Query.query(Criteria.where("_id").is(serverId));
+        Update update = new Update()
+                .set("userCount", userCount)
+                .set("ticketCount", ticketCount)
+                .set("lastStatsUpdatedAt", updatedAt);
+        getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
+    }
+
+    private record ComputedUsage(long userCount, long ticketCount, Date updatedAt, boolean fromCache) {}
+
+    public record UsageSummary(long userCount, long ticketCount, Date updatedAt, boolean fromCache) {}
 }

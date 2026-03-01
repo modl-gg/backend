@@ -6,5 +6,6 @@ public final class ServerField {
     public static final String SERVER_NAME = "serverName";
     public static final String CUSTOM_DOMAIN = "customDomainOverride";
     public static final String CUSTOM_DOMAIN_STATUS = "customDomainStatus";
+    public static final String CUSTOM_DOMAIN_GRANDFATHERED = "customDomainGrandfathered";
     public static final String API_KEY = "apiKey";
 }

@@ -2,6 +2,7 @@ package gg.modl.backend.server.service;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.MongoIndexBootstrapService;
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.role.service.RoleService;
@@ -21,6 +22,7 @@ import java.util.*;
 @Slf4j
 public class ServerProvisioningService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final MongoIndexBootstrapService mongoIndexBootstrapService;
     private final RoleService roleService;
 
     /**
@@ -31,6 +33,7 @@ public class ServerProvisioningService {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
         try {
+            mongoIndexBootstrapService.createIndexes(template);
             seedAIModerationSettings(template);
             seedTicketForms(template);
             seedQuickResponses(template);

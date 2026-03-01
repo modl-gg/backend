@@ -126,6 +126,7 @@ public class BillingService {
                 currentStatus != null ? currentStatus.name() : null,
                 currentPeriodStart,
                 currentPeriodEnd,
+                server.getCustomDomainGrandfathered(),
                 server.getMaxStorageLimitBytes(),
                 server.getMaxAiOverageRequests()
         );

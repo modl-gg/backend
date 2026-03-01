@@ -7,6 +7,7 @@ public record BillingStatusResponse(
         String subscriptionStatus,
         Date currentPeriodStart,
         Date currentPeriodEnd,
+        Boolean customDomainGrandfathered,
         Long maxStorageLimitBytes,
         Long maxAiOverageRequests
 ) {}

@@ -24,6 +24,7 @@ import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import gg.modl.backend.settings.dto.request.VerifyDomainRequest;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.ApiKeySettingsService;
+import gg.modl.backend.settings.service.CustomDomainAccessService;
 import gg.modl.backend.settings.service.DomainSettingsService;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
@@ -68,6 +69,7 @@ public class PanelSettingsController {
     private final WebhookSettingsService webhookSettingsService;
     private final TicketFormSettingsService ticketFormSettingsService;
     private final DomainSettingsService domainSettingsService;
+    private final CustomDomainAccessService customDomainAccessService;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
@@ -369,6 +371,10 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             DomainSettings settings = domainSettingsService.configureDomain(server, body.customDomain().trim());
@@ -384,6 +390,10 @@ public class PanelSettingsController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             DomainSettings settings = domainSettingsService.verifyDomain(server, body.domain().trim());
@@ -413,6 +423,10 @@ public class PanelSettingsController {
     @DeleteMapping("/domain")
     public ResponseEntity<?> removeDomain(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
+        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             domainSettingsService.removeDomain(server);
@@ -534,5 +548,15 @@ public class PanelSettingsController {
     }
 
     public record SettingsMeta(long version, Date updatedAt) {
+    }
+
+    private ResponseEntity<?> requireCustomDomainWriteAccess(Server server) {
+        if (customDomainAccessService.canManageCustomDomain(server)) {
+            return null;
+        }
+
+        return ResponseEntity.status(403).body(Map.of(
+                "message", "Custom domains require Premium unless your server is grandfathered."
+        ));
     }
 }

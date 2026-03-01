@@ -165,4 +165,36 @@ class PublicTicketApiTest {
         ));
         assertEquals(403, response.statusCode());
     }
+
+    @Test
+    void createTicketRejectsInvalidEmail() throws Exception {
+        var response = api.publicPost("/v1/public/tickets", Map.of(
+                "type", "bug_report",
+                "subject", "Public API Test - invalid email",
+                "creatorName", "PublicUser",
+                "creatorEmail", "asfas"
+        ));
+
+        int status = response.statusCode();
+        assertTrue(status == 400 || status == 429, "Expected 400 or 429 but got " + status);
+    }
+
+    @Test
+    void submitTicketFormRejectsInvalidEmail() throws Exception {
+        var createResponse = api.publicPost("/v1/public/tickets/unfinished", Map.of(
+                "type", "bug_report",
+                "creatorUuid", testUuid
+        ));
+        if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) return;
+        String ticketId = JsonHelper.parseObject(createResponse.body()).get("ticketId").getAsString();
+
+        var response = api.publicPost("/v1/public/tickets/" + ticketId + "/submit", Map.of(
+                "subject", "Invalid email submit test",
+                "creatorEmail", "asfas",
+                "formData", Map.of("description", "Test submission")
+        ));
+
+        int status = response.statusCode();
+        assertTrue(status == 400 || status == 429, "Expected 400 or 429 but got " + status);
+    }
 }

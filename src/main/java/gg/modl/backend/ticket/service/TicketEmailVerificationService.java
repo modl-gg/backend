@@ -2,6 +2,7 @@ package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
@@ -43,7 +44,7 @@ public class TicketEmailVerificationService {
     public String sendVerificationCode(Server server, Ticket ticket) {
         String email = getCreatorEmail(ticket);
         if (email == null || email.isBlank()) {
-            throw new IllegalStateException("No email associated with this ticket");
+            throw new IllegalStateException("No valid email associated with this ticket");
         }
 
         String code = String.format("%06d", RANDOM.nextInt(1000000));
@@ -79,7 +80,7 @@ public class TicketEmailVerificationService {
             throw new RuntimeException("Failed to send verification email");
         }
 
-        return maskEmail(email);
+        return EmailAddressUtil.mask(email);
     }
 
     /**
@@ -143,13 +144,18 @@ public class TicketEmailVerificationService {
     private String getCreatorEmail(Ticket ticket) {
         if (ticket.getData() == null) return null;
         Object email = ticket.getData().get("creatorEmail");
-        return email != null ? email.toString() : null;
-    }
+        if (email == null) {
+            return null;
+        }
 
-    private String maskEmail(String email) {
-        int atIndex = email.indexOf('@');
-        if (atIndex <= 1) return email;
-        return email.charAt(0) + "***" + email.substring(atIndex);
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email.toString());
+        if (normalizedEmail == null) {
+            log.warn("Skipping ticket verification email for {} due to invalid creator email: {}",
+                    ticket.getId(),
+                    email);
+        }
+
+        return normalizedEmail;
     }
 
     private String hashCode(String code) {

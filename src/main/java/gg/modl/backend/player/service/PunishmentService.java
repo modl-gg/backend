@@ -120,6 +120,14 @@ public class PunishmentService {
             }
         }
 
+        // Fallback: check data map for duration (panel sends duration inside data for manual punishments)
+        if (calculatedDuration == null) {
+            Object dataDuration = data.get("duration");
+            if (dataDuration instanceof Number n) {
+                calculatedDuration = n.longValue();
+            }
+        }
+
         if (calculatedDuration != null && calculatedDuration != 0) {
             data.put("duration", calculatedDuration);
         }

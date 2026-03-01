@@ -14,6 +14,7 @@ public class DomainSettings {
     private DomainStatus status;
     private boolean accessingFromCustomDomain;
     private String modlSubdomainUrl;
+    private boolean canManageCustomDomain;
 
     @Data
     @Builder

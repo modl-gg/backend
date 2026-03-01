@@ -60,9 +60,6 @@ public final class RESTMappingV1 {
     private static final String STORAGE = "/storage";
     public static final String PANEL_STORAGE = PREFIX_PANEL + STORAGE;
 
-    private static final String DOMAIN = "/domain";
-    public static final String PANEL_DOMAIN = PREFIX_PANEL + DOMAIN;
-
     // Knowledgebase & Homepage
     private static final String KNOWLEDGEBASE = "/knowledgebase";
     public static final String PANEL_KNOWLEDGEBASE = PREFIX_PANEL + KNOWLEDGEBASE;

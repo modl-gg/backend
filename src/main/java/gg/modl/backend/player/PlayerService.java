@@ -24,8 +24,10 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,44 +37,120 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 @Slf4j
 public class PlayerService {
+    private static final int SEARCH_RESULT_LIMIT = 20;
+    private static final int SEARCH_CANDIDATE_LIMIT = 100;
+
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
 
     public List<PlayerSearchResult> searchPlayers(Server server, String searchTerm) {
         MongoTemplate template = getTemplate(server);
-        List<PlayerSearchResult> results = new ArrayList<>();
+        String normalizedSearch = searchTerm == null ? "" : searchTerm.trim();
+        if (normalizedSearch.isEmpty()) {
+            return List.of();
+        }
 
         Query query = new Query();
-        if (isUuid(searchTerm)) {
-            query.addCriteria(Criteria.where("minecraftUuid").is(searchTerm));
+        if (isUuid(normalizedSearch)) {
+            query.addCriteria(Criteria.where("minecraftUuid").is(UUID.fromString(normalizedSearch).toString()));
+            query.limit(SEARCH_RESULT_LIMIT);
         } else {
-            Pattern pattern = Pattern.compile(Pattern.quote(searchTerm), Pattern.CASE_INSENSITIVE);
+            Pattern pattern = Pattern.compile(Pattern.quote(normalizedSearch), Pattern.CASE_INSENSITIVE);
             query.addCriteria(Criteria.where("usernames.username").regex(pattern));
+            query.limit(SEARCH_CANDIDATE_LIMIT);
         }
-        query.limit(20);
 
         List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
-
-        for (Player player : players) {
-            String username = player.getUsernames().isEmpty() ? "Unknown" :
-                    player.getUsernames().get(player.getUsernames().size() - 1).username();
-
-            String status = calculatePlayerStatus(server, player);
-            Date lastOnline = getLastOnline(player);
-            boolean isOnline = Boolean.TRUE.equals(
-                    player.getData() != null ? player.getData().get("isOnline") : null);
-
-            results.add(new PlayerSearchResult(
-                    player.getMinecraftUuid().toString(),
-                    username,
-                    status,
-                    lastOnline,
-                    isOnline
-            ));
+        if (!isUuid(normalizedSearch)) {
+            String normalizedSearchLower = normalizedSearch.toLowerCase(Locale.ROOT);
+            players = players.stream()
+                    .sorted(Comparator
+                            .comparingInt((Player player) -> computeMatchRank(player, normalizedSearchLower))
+                            .thenComparing((Player a, Player b) -> Long.compare(getLastLoginMillis(b), getLastLoginMillis(a)))
+                            .thenComparing(player -> player.getMinecraftUuid().toString()))
+                    .limit(SEARCH_RESULT_LIMIT)
+                    .toList();
         }
 
-        return results;
+        return players.stream()
+                .map(player -> toPlayerSearchResult(server, player))
+                .toList();
+    }
+
+    private PlayerSearchResult toPlayerSearchResult(Server server, Player player) {
+        String username = player.getUsernames().isEmpty() ? "Unknown" :
+                player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+        String status = calculatePlayerStatus(server, player);
+        Date lastOnline = getLastOnline(player);
+        boolean isOnline = Boolean.TRUE.equals(
+                player.getData() != null ? player.getData().get("isOnline") : null);
+
+        return new PlayerSearchResult(
+                player.getMinecraftUuid().toString(),
+                username,
+                status,
+                lastOnline,
+                isOnline
+        );
+    }
+
+    private int computeMatchRank(Player player, String normalizedSearchLower) {
+        List<UsernameEntry> usernames = player.getUsernames();
+        if (usernames == null || usernames.isEmpty()) {
+            return 6;
+        }
+
+        String currentUsername = usernames.get(usernames.size() - 1).username();
+        if (equalsIgnoreCase(currentUsername, normalizedSearchLower)) {
+            return 0;
+        }
+
+        for (int i = 0; i < usernames.size() - 1; i++) {
+            if (equalsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
+                return 1;
+            }
+        }
+
+        if (startsWithIgnoreCase(currentUsername, normalizedSearchLower)) {
+            return 2;
+        }
+
+        for (int i = 0; i < usernames.size() - 1; i++) {
+            if (startsWithIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
+                return 3;
+            }
+        }
+
+        if (containsIgnoreCase(currentUsername, normalizedSearchLower)) {
+            return 4;
+        }
+
+        for (int i = 0; i < usernames.size() - 1; i++) {
+            if (containsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
+                return 5;
+            }
+        }
+
+        return 6;
+    }
+
+    private long getLastLoginMillis(Player player) {
+        Date lastOnline = getLastOnline(player);
+        return lastOnline != null ? lastOnline.getTime() : Long.MIN_VALUE;
+    }
+
+    private boolean equalsIgnoreCase(String value, String normalizedSearchLower) {
+        return value != null && value.toLowerCase(Locale.ROOT).equals(normalizedSearchLower);
+    }
+
+    private boolean startsWithIgnoreCase(String value, String normalizedSearchLower) {
+        return value != null && value.toLowerCase(Locale.ROOT).startsWith(normalizedSearchLower);
+    }
+
+    private boolean containsIgnoreCase(String value, String normalizedSearchLower) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(normalizedSearchLower);
     }
 
     public Optional<PlayerDetailResponse> getPlayerDetails(Server server, UUID minecraftUuid) {
