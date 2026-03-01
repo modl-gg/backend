@@ -251,9 +251,9 @@ public class MinecraftSyncController {
 
         List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template);
 
-        // Stat wipes are now triggered on player login, not during sync.
-        // Keep the field in the response for backward compatibility with older plugin versions.
-        List<Map<String, Object>> pendingStatWipes = List.of();
+        // Stat wipe kick is triggered on player login; the actual command execution
+        // happens via the sync loop (proxy setups can't use plugin messaging at login denial time).
+        List<Map<String, Object>> pendingStatWipes = findPendingStatWipes(template);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pendingPunishments", pendingPunishments);
@@ -288,6 +288,47 @@ public class MinecraftSyncController {
                 "timestamp", now.toString(),
                 "data", data
         ));
+    }
+
+    private List<Map<String, Object>> findPendingStatWipes(MongoTemplate template) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try {
+            Query query = Query.query(
+                    Criteria.where("punishments").elemMatch(
+                            Criteria.where("data.wipeAfterExpiry").is(true)
+                                    .and("data.statWipeCompleted").ne(true)
+                                    .and("started").ne(null)
+                    )
+            );
+            query.limit(50);
+            List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+
+            for (Player player : players) {
+                String uuid = player.getMinecraftUuid().toString();
+                String username = player.getUsernames().isEmpty() ? "Unknown"
+                        : player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+                for (Punishment punishment : player.getPunishments()) {
+                    Map<String, Object> data = punishment.getData();
+                    if (data == null) continue;
+                    if (!Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) continue;
+                    if (Boolean.TRUE.equals(data.get("statWipeCompleted"))) continue;
+                    if (!statusCalculator.isPunishmentNaturallyExpired(punishment)) continue;
+
+                    result.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishmentId", punishment.getId()
+                    ));
+
+                    if (result.size() >= 50) break;
+                }
+                if (result.size() >= 50) break;
+            }
+        } catch (Exception e) {
+            // Collection may not have matching documents, ignore
+        }
+        return result;
     }
 
     private List<Map<String, Object>> getRecentStaffEvents(MongoTemplate template, Instant lastSync,
