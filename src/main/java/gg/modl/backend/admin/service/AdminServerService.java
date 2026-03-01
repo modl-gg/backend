@@ -57,9 +57,7 @@ public class AdminServerService {
                 .include("updatedAt")
                 .include("userCount")
                 .include("ticketCount")
-                .include("lastActivityAt")
-                .exclude("emailVerificationToken")
-                .exclude("provisioningSignInToken");
+                .include("lastActivityAt");
 
         return getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
     }
