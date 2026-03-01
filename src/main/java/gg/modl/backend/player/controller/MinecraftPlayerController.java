@@ -153,6 +153,24 @@ public class MinecraftPlayerController {
             }
         }
 
+        // Find pending stat wipes (expired punishments with wipeAfterExpiry=true that haven't been wiped yet)
+        List<Map<String, Object>> pendingStatWipes = new ArrayList<>();
+        for (Punishment punishment : player.getPunishments()) {
+            Map<String, Object> data = punishment.getData();
+            if (data == null) continue;
+            if (!Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) continue;
+            if (Boolean.TRUE.equals(data.get("statWipeCompleted"))) continue;
+            if (!statusCalculator.isPunishmentNaturallyExpired(punishment)) continue;
+
+            String username = player.getUsernames().isEmpty() ? "Unknown"
+                    : player.getUsernames().get(player.getUsernames().size() - 1).username();
+            pendingStatWipes.add(Map.of(
+                    "minecraftUuid", playerUuid.toString(),
+                    "username", username,
+                    "punishmentId", punishment.getId()
+            ));
+        }
+
         boolean isNewPlayer = player.getUsernames().size() == 1;
         Map<String, Object> responseBody = new LinkedHashMap<>();
         responseBody.put("status", isNewPlayer ? 201 : 200);
@@ -160,6 +178,9 @@ public class MinecraftPlayerController {
         responseBody.put("pendingNotifications", pendingNotifications);
         if (!pendingIpLookups.isEmpty()) {
             responseBody.put("pendingIpLookups", pendingIpLookups);
+        }
+        if (!pendingStatWipes.isEmpty()) {
+            responseBody.put("pendingStatWipes", pendingStatWipes);
         }
 
         return ResponseEntity.status(isNewPlayer ? HttpStatus.CREATED : HttpStatus.OK)
