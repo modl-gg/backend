@@ -9,6 +9,7 @@ import gg.modl.backend.admin.dto.request.TogglePm2Request;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -51,15 +52,15 @@ public class AdminMonitoringController {
             // Server counts
             long totalServers = getTemplate().count(new Query(), Server.class, CollectionName.MODL_SERVERS);
             long activeServers = getTemplate().count(
-                    Query.query(Criteria.where("provisioningStatus").is("completed").and("emailVerified").is(true)),
+                    Query.query(Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED).and("emailVerified").is(true)),
                     Server.class, CollectionName.MODL_SERVERS
             );
             long pendingServers = getTemplate().count(
-                    Query.query(Criteria.where("provisioningStatus").in("pending", "in-progress")),
+                    Query.query(Criteria.where("provisioningStatus").in(ProvisioningStatus.PENDING, ProvisioningStatus.IN_PROGRESS)),
                     Server.class, CollectionName.MODL_SERVERS
             );
             long failedServers = getTemplate().count(
-                    Query.query(Criteria.where("provisioningStatus").is("failed")),
+                    Query.query(Criteria.where("provisioningStatus").is(ProvisioningStatus.FAILED)),
                     Server.class, CollectionName.MODL_SERVERS
             );
 
@@ -256,7 +257,7 @@ public class AdminMonitoringController {
 
             // Failed servers check
             long failedCount = getTemplate().count(
-                    Query.query(Criteria.where("provisioningStatus").is("failed")),
+                    Query.query(Criteria.where("provisioningStatus").is(ProvisioningStatus.FAILED)),
                     Server.class, CollectionName.MODL_SERVERS
             );
             String serverStatus = failedCount > 0 ? "degraded" : "healthy";

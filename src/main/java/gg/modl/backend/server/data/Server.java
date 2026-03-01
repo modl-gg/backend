@@ -164,6 +164,21 @@ public class Server {
 
     // Analytics/Stats
     @Nullable
+    @Field(name = "userCount", targetType = FieldType.INT64)
+    @Indexed(name = "idx_servers_userCount")
+    private Long userCount;
+
+    @Nullable
+    @Field(name = "ticketCount", targetType = FieldType.INT64)
+    @Indexed(name = "idx_servers_ticketCount")
+    private Long ticketCount;
+
+    @Nullable
+    @Field(name = "lastStatsUpdatedAt", targetType = FieldType.DATE_TIME)
+    @Indexed(name = "idx_servers_lastStatsUpdatedAt")
+    private Date lastStatsUpdatedAt;
+
+    @Nullable
     @Field(name = "lastActivityAt", targetType = FieldType.DATE_TIME)
     private Date lastActivityAt;
 

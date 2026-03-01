@@ -2,9 +2,11 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.dto.request.ExportAnalyticsRequest;
 import gg.modl.backend.admin.dto.request.GenerateReportRequest;
+import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +30,7 @@ import java.util.*;
 @Slf4j
 public class AdminAnalyticsController {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final AdminServerService adminServerService;
 
     private MongoTemplate getTemplate() {
         return mongoProvider.getGlobalDatabase();
@@ -48,8 +51,11 @@ public class AdminAnalyticsController {
 
             // Overview metrics
             long totalServers = getTemplate().count(new Query(), Server.class, CollectionName.MODL_SERVERS);
+            int refreshLimit = totalServers <= 200 ? (int) Math.max(totalServers, 1) : 50;
+            adminServerService.refreshUsageStatsForActiveServers(refreshLimit);
+
             long activeServers = getTemplate().count(
-                    Query.query(Criteria.where("updatedAt").gte(Date.from(Instant.now().minus(30, ChronoUnit.DAYS)))),
+                    Query.query(Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED).and("emailVerified").is(true)),
                     Server.class, CollectionName.MODL_SERVERS
             );
 
@@ -58,8 +64,8 @@ public class AdminAnalyticsController {
                     Aggregation.group().sum("userCount").as("totalUsers").sum("ticketCount").as("totalTickets")
             );
             Document userTicketResult = getTemplate().aggregate(userTicketAgg, CollectionName.MODL_SERVERS, Document.class).getUniqueMappedResult();
-            long totalUsers = userTicketResult != null ? userTicketResult.getInteger("totalUsers", 0) : 0;
-            long totalTickets = userTicketResult != null ? userTicketResult.getInteger("totalTickets", 0) : 0;
+            long totalUsers = getLong(userTicketResult, "totalUsers");
+            long totalTickets = getLong(userTicketResult, "totalTickets");
 
             // Growth rates
             long currentPeriodServers = getTemplate().count(Query.query(Criteria.where("createdAt").gte(startDate)), Server.class, CollectionName.MODL_SERVERS);
@@ -94,14 +100,18 @@ public class AdminAnalyticsController {
             List<Document> regTrendResults = getTemplate().aggregate(regTrendAgg, CollectionName.MODL_SERVERS, Document.class).getMappedResults();
 
             // Top servers by users
-            Query topServersQuery = new Query(Criteria.where("userCount").gt(0));
+            Query topServersQuery = Query.query(new Criteria().andOperator(
+                    Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED),
+                    Criteria.where("emailVerified").is(true),
+                    Criteria.where("userCount").gt(0)
+            ));
             topServersQuery.with(Sort.by(Sort.Direction.DESC, "userCount"));
             topServersQuery.limit(10);
             List<Server> topServers = getTemplate().find(topServersQuery, Server.class, CollectionName.MODL_SERVERS);
 
             // Calculate averages
             long serversWithData = getTemplate().count(
-                    Query.query(Criteria.where("provisioningStatus").is("completed").and("userCount").gt(0)),
+                    Query.query(Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED).and("userCount").gt(0)),
                     Server.class, CollectionName.MODL_SERVERS
             );
             double avgPlayersPerServer = serversWithData > 0 ? (double) totalUsers / serversWithData : 0;
@@ -252,5 +262,18 @@ public class AdminAnalyticsController {
     @PostMapping("/report")
     public ResponseEntity<?> generateReport(@RequestBody @Valid GenerateReportRequest request) {
         return ResponseEntity.status(501).body(Map.of("success", false, "error", "Report generation not implemented"));
+    }
+
+    private long getLong(Document document, String fieldName) {
+        if (document == null) {
+            return 0L;
+        }
+
+        Object value = document.get(fieldName);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+
+        return 0L;
     }
 }
