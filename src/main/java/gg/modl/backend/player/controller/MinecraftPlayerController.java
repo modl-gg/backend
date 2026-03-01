@@ -780,8 +780,8 @@ public class MinecraftPlayerController {
                 String pType = request.punishmentType().toLowerCase();
                 String effectiveCategory = statusCalculator.getEffectiveCategory(punishment, types);
 
-                if (pType.equals("ban") && "BAN".equals(effectiveCategory)) shouldPardon = true;
-                if (pType.equals("mute") && "MUTE".equals(effectiveCategory)) shouldPardon = true;
+                if (pType.equals("ban") && "BAN".equals(effectiveCategory)) shouldPardon = isActive || isUnstarted;
+                if (pType.equals("mute") && "MUTE".equals(effectiveCategory)) shouldPardon = isActive || isUnstarted;
             }
 
             if (shouldPardon) {
