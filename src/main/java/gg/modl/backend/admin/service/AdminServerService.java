@@ -86,7 +86,12 @@ public class AdminServerService {
         query.with(Sort.by(Sort.Direction.ASC, "lastStatsUpdatedAt"));
         query.limit(boundedLimit);
         query.fields()
+                .include("serverName")
+                .include("customDomain")
                 .include("databaseName")
+                .include("adminEmail")
+                .include("emailVerified")
+                .include("plan")
                 .include("userCount")
                 .include("ticketCount")
                 .include("lastStatsUpdatedAt")
@@ -118,7 +123,12 @@ public class AdminServerService {
 
         Query query = Query.query(Criteria.where("_id").in(filteredIds));
         query.fields()
+                .include("serverName")
+                .include("customDomain")
                 .include("databaseName")
+                .include("adminEmail")
+                .include("emailVerified")
+                .include("plan")
                 .include("userCount")
                 .include("ticketCount")
                 .include("lastStatsUpdatedAt")
