@@ -2,6 +2,7 @@ package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
@@ -316,8 +317,9 @@ public class TicketService {
         if (request.priority() != null) {
             data.put("priority", request.priority());
         }
-        if (request.creatorEmail() != null) {
-            data.put("creatorEmail", request.creatorEmail());
+        String creatorEmail = EmailAddressUtil.normalizeIfValid(request.creatorEmail());
+        if (creatorEmail != null) {
+            data.put("creatorEmail", creatorEmail);
         }
         if (request.creatorIdentifier() != null) {
             data.put("creatorIdentifier", request.creatorIdentifier());
@@ -684,22 +686,14 @@ public class TicketService {
             ticket.setSubject(request.subject());
         }
 
+        Map<String, Object> existingData = ticket.getData() != null ? new HashMap<>(ticket.getData()) : new HashMap<>();
+        boolean hasDataUpdates = false;
+
         if (request.formData() != null && !request.formData().isEmpty()) {
-            Map<String, Object> existingData = ticket.getData() != null ? new HashMap<>(ticket.getData()) : new HashMap<>();
-            existingData.putAll(request.formData());
+            existingData.putAll(sanitizeFormDataForDataStore(request.formData()));
+            hasDataUpdates = true;
 
-            if (request.formData().containsKey("contact_email") || request.formData().containsKey("email")) {
-                Object email = request.formData().getOrDefault("contact_email", request.formData().get("email"));
-                if (email != null) {
-                    existingData.put("creatorEmail", email);
-                }
-            }
-
-            if (request.creatorIdentifier() != null) {
-                existingData.put("creatorIdentifier", request.creatorIdentifier());
-            }
-
-            // Handle emailAuthEnabled from form data
+            // Handle emailAuthEnabled from form data.
             Object emailAuthValue = request.formData().get("emailAuthEnabled");
             if (emailAuthValue != null) {
                 boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
@@ -708,10 +702,24 @@ public class TicketService {
                 existingData.put("emailAuthEnabled", emailAuth);
             }
 
-            update.set("data", existingData);
             update.set("formData", request.formData());
-            ticket.setData(existingData);
             ticket.setFormData(request.formData());
+        }
+
+        String creatorEmail = resolveCreatorEmail(request);
+        if (creatorEmail != null) {
+            existingData.put("creatorEmail", creatorEmail);
+            hasDataUpdates = true;
+        }
+
+        if (request.creatorIdentifier() != null) {
+            existingData.put("creatorIdentifier", request.creatorIdentifier());
+            hasDataUpdates = true;
+        }
+
+        if (hasDataUpdates) {
+            update.set("data", existingData);
+            ticket.setData(existingData);
         }
 
         // Create initial reply from submitted form data/attachments (only if no replies exist yet)
@@ -740,6 +748,33 @@ public class TicketService {
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
         return Optional.of(toTicketResponse(ticket));
+    }
+
+    private String resolveCreatorEmail(SubmitTicketFormRequest request) {
+        String explicitCreatorEmail = EmailAddressUtil.normalizeIfValid(request.creatorEmail());
+        if (explicitCreatorEmail != null) {
+            return explicitCreatorEmail;
+        }
+
+        if (request.formData() == null || request.formData().isEmpty()) {
+            return null;
+        }
+
+        Object legacyEmail = request.formData().containsKey("contact_email")
+                ? request.formData().get("contact_email")
+                : request.formData().get("email");
+        if (legacyEmail == null) {
+            return null;
+        }
+
+        return EmailAddressUtil.normalizeIfValid(legacyEmail.toString());
+    }
+
+    private Map<String, Object> sanitizeFormDataForDataStore(Map<String, Object> formData) {
+        Map<String, Object> sanitized = new LinkedHashMap<>(formData);
+        sanitized.remove("creatorEmail");
+        sanitized.remove("creatorIdentifier");
+        return sanitized;
     }
 
     /**
