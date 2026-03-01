@@ -120,11 +120,9 @@ public class InvitationService {
     private void processInvitation(MongoTemplate template, Server server, String email, String role,
                                    List<InviteResultResponse.FailedInvite> failed) {
         String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
-        log.info("processInvitation: email={}, server={}, db={}", normalizedEmail, server.getCustomDomain(), server.getDatabaseName());
 
         // Check if admin email
         if (server.getAdminEmail() != null && normalizedEmail.equalsIgnoreCase(server.getAdminEmail())) {
-            log.info("processInvitation: rejected - is admin email");
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Cannot send invitation to the admin email address."));
             return;
         }
@@ -132,7 +130,6 @@ public class InvitationService {
         // Check if user already exists
         Query staffQuery = Query.query(Criteria.where("email").is(normalizedEmail));
         if (template.exists(staffQuery, Staff.class, CollectionName.STAFF)) {
-            log.info("processInvitation: rejected - staff already exists for {}", normalizedEmail);
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Email is already associated with an existing user."));
             return;
         }
@@ -140,7 +137,6 @@ public class InvitationService {
         // Check if invitation already pending and still valid
         Query invQuery = Query.query(Criteria.where("email").is(normalizedEmail).and("expiresAt").gt(new Date()));
         if (template.exists(invQuery, Invitation.class, CollectionName.INVITATIONS)) {
-            log.info("processInvitation: rejected - pending invitation already exists for {}", normalizedEmail);
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "An invitation for this email is already pending."));
             return;
         }
