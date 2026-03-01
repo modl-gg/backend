@@ -31,6 +31,7 @@ public class DomainSettingsService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final CloudflareClient cloudflareClient;
     private final DynamicCorsConfigurationSource corsConfigurationSource;
+    private final CustomDomainAccessService customDomainAccessService;
 
     public DomainSettings getDomainSettings(Server server, String requestHost) {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
@@ -39,6 +40,7 @@ public class DomainSettingsService {
 
         String modlSubdomainUrl = "https://" + server.getCustomDomain() + ".modl.gg";
         boolean accessingFromCustomDomain = false;
+        boolean canManageCustomDomain = customDomainAccessService.canManageCustomDomain(server);
 
         if (settings == null || settings.getData() == null) {
             return DomainSettings.builder()
@@ -46,6 +48,7 @@ public class DomainSettingsService {
                     .status(null)
                     .accessingFromCustomDomain(false)
                     .modlSubdomainUrl(modlSubdomainUrl)
+                    .canManageCustomDomain(canManageCustomDomain)
                     .build();
         }
 
@@ -78,6 +81,7 @@ public class DomainSettingsService {
                 .status(status)
                 .accessingFromCustomDomain(accessingFromCustomDomain)
                 .modlSubdomainUrl(modlSubdomainUrl)
+                .canManageCustomDomain(canManageCustomDomain)
                 .build();
     }
 
@@ -161,6 +165,7 @@ public class DomainSettingsService {
                 .status(status)
                 .accessingFromCustomDomain(false)
                 .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
+                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
                 .build();
     }
 
@@ -278,6 +283,7 @@ public class DomainSettingsService {
                 .status(status)
                 .accessingFromCustomDomain(false)
                 .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
+                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
                 .build();
     }
 

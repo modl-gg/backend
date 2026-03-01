@@ -91,9 +91,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
                 || startsWithEndpoint(path, RESTMappingV1.PANEL_MEDIA)) {
             return isReadOnly(method) ? "admin.settings.view.content" : "admin.settings.modify.content";
         }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_DOMAIN)) {
-            return isReadOnly(method) ? "admin.settings.view.domain" : "admin.settings.modify.domain";
-        }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_MIGRATION)) {
             return isReadOnly(method) ? "admin.settings.view.migration" : "admin.settings.modify.migration";
         }

@@ -152,6 +152,10 @@ public class Server {
     @Indexed(name = "uidx_servers_customDomainCloudflareId", unique = true, sparse = true)
     private String customDomainCloudflareId;
 
+    @Nullable
+    @Field(name = ServerField.CUSTOM_DOMAIN_GRANDFATHERED, targetType = FieldType.BOOLEAN)
+    private Boolean customDomainGrandfathered;
+
     // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)
