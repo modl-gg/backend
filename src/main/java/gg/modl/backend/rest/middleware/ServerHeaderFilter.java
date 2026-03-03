@@ -56,24 +56,32 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain chain) throws ServletException, IOException {
-        String serverDomain = request.getHeader(RequestHeader.SERVER_DOMAIN);
+        String requestHost = resolveRequestHost(request);
+        String legacyServerDomainHeader = normalizeServerDomain(request.getHeader(RequestHeader.SERVER_DOMAIN));
 
-        // In development mode, use the configured dev server domain if header is localhost
+        String serverDomain = requestHost != null ? requestHost : legacyServerDomainHeader;
+
+        // In development mode, use the configured dev server domain for localhost requests.
         if (developmentMode && devServerDomain != null && !devServerDomain.isBlank()) {
-            if (serverDomain == null || serverDomain.isBlank() ||
-                serverDomain.equals("localhost") || serverDomain.startsWith("127.0.0.1")) {
+            if (serverDomain == null || serverDomain.isBlank() || isLocalhost(serverDomain)) {
                 serverDomain = devServerDomain;
             }
         }
 
         if (serverDomain == null || serverDomain.isBlank()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing server domain (X-Server-Domain)");
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing server domain host");
             return;
         }
 
         String normalizedServerDomain = normalizeServerDomain(serverDomain);
         if (normalizedServerDomain == null || normalizedServerDomain.isBlank()) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid server domain format");
+            return;
+        }
+
+        if (requestHost != null && legacyServerDomainHeader != null
+                && !requestHost.equalsIgnoreCase(legacyServerDomainHeader)) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Mismatched server domain headers");
             return;
         }
 
@@ -88,8 +96,37 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return;
         }
 
+        request.setAttribute(RequestAttribute.SERVER_DOMAIN, normalizedServerDomain);
         request.setAttribute(RequestAttribute.SERVER, server);
         chain.doFilter(request, response);
+    }
+
+    @Nullable
+    private String resolveRequestHost(HttpServletRequest request) {
+        String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
+        if (forwardedHost != null) {
+            return forwardedHost;
+        }
+
+        String host = normalizeServerDomain(request.getHeader("Host"));
+        if (host != null) {
+            return host;
+        }
+
+        return normalizeServerDomain(request.getServerName());
+    }
+
+    @Nullable
+    private String extractFirstForwardedHost(@Nullable String forwardedHostHeader) {
+        if (forwardedHostHeader == null || forwardedHostHeader.isBlank()) {
+            return null;
+        }
+
+        int separatorIndex = forwardedHostHeader.indexOf(',');
+        String firstForwardedHost = separatorIndex >= 0
+                ? forwardedHostHeader.substring(0, separatorIndex).trim()
+                : forwardedHostHeader.trim();
+        return normalizeServerDomain(firstForwardedHost);
     }
 
     private Set<String> parseSystemOrigins(@Nullable String origins) {

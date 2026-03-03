@@ -2,6 +2,7 @@ package gg.modl.backend.rest.middleware;
 
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -135,12 +136,12 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return false;
         }
 
-        String serverDomain = request.getHeader(RequestHeader.SERVER_DOMAIN);
-        if (serverDomain == null || serverDomain.isBlank()) {
+        String serverDomain = resolveRequestServerDomain(request);
+        if (serverDomain == null) {
             return false;
         }
 
-        return originHost.equalsIgnoreCase(serverDomain.trim());
+        return originHost.equalsIgnoreCase(serverDomain);
     }
 
     private boolean isAllowedReferer(HttpServletRequest request, String referer) {
@@ -172,12 +173,27 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
     }
 
     private String extractHost(String origin) {
+        if (origin == null || origin.isBlank()) {
+            return null;
+        }
+
+        String normalized = origin.contains("://") ? origin : "https://" + origin;
         try {
-            URI uri = URI.create(origin);
+            URI uri = URI.create(normalized);
             return uri.getHost();
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    private String resolveRequestServerDomain(HttpServletRequest request) {
+        Object attributeValue = request.getAttribute(RequestAttribute.SERVER_DOMAIN);
+        if (attributeValue instanceof String serverDomain && !serverDomain.isBlank()) {
+            return serverDomain.trim();
+        }
+
+        String serverDomainHeader = request.getHeader(RequestHeader.SERVER_DOMAIN);
+        return extractHost(serverDomainHeader);
     }
 
 }
