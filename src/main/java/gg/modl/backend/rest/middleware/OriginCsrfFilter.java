@@ -53,30 +53,23 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return true;
         }
 
-        String method = request.getMethod();
-        if ("GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method) || "OPTIONS".equalsIgnoreCase(method)) {
+        final String method = request.getMethod();
+        if (method.equalsIgnoreCase("GET") || method.equalsIgnoreCase("HEAD") || method.equalsIgnoreCase("OPTIONS")) {
             return true;
         }
 
-        String path = request.getRequestURI();
-        boolean panelOrAdmin = path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
-                || path.equals(RESTMappingV1.PREFIX_PANEL)
-                || path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
-                || path.equals(RESTMappingV1.PREFIX_ADMIN);
-        if (!panelOrAdmin) {
-            return true;
-        }
+        final String path = request.getRequestURI();
+        final boolean panelOrAdmin = path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
+                                     || path.equals(RESTMappingV1.PREFIX_PANEL)
+                                     || path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
+                                     || path.equals(RESTMappingV1.PREFIX_ADMIN);
 
-        return !hasSessionCookie(request);
+        return !panelOrAdmin || !hasSessionCookie(request);
     }
 
     @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            @NotNull HttpServletResponse response,
-            @NotNull FilterChain filterChain
-    ) throws ServletException, IOException {
-        String origin = request.getHeader("Origin");
+    protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain filterChain) throws ServletException, IOException {
+        final String origin = request.getHeader("Origin");
         if (origin != null) {
             if (isAllowedOrigin(request, origin)) {
                 filterChain.doFilter(request, response);
@@ -86,7 +79,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return;
         }
 
-        String referer = request.getHeader("Referer");
+        final String referer = request.getHeader("Referer");
         if (referer != null) {
             if (isAllowedReferer(request, referer)) {
                 filterChain.doFilter(request, response);

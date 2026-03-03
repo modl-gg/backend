@@ -28,7 +28,8 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        final String path = request.getRequestURI();
+
         return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT);
     }
 
@@ -38,39 +39,26 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             @NotNull HttpServletResponse response,
             @NotNull FilterChain chain
     ) throws ServletException, IOException {
-        String apiKey = request.getHeader(RequestHeader.API_KEY);
+        final String apiKey = request.getHeader(RequestHeader.API_KEY);
 
         if (apiKey == null || apiKey.isBlank()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"API key required\"}");
             return;
         }
 
-        Server server = apiKeyService.findServerByApiKey(apiKey);
+        final Server server = apiKeyService.findServerByApiKey(apiKey);
         if (server == null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Invalid API key\"}");
             return;
         }
 
         request.setAttribute(RequestAttribute.SERVER, server);
 
-        List<SimpleGrantedAuthority> authorities = List.of(
-                new SimpleGrantedAuthority(RESTSecurityRole.MINECRAFT)
-        );
-
-        UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken(
-                        server.getId(),
-                        null,
-                        authorities
-                );
+        final List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(RESTSecurityRole.MINECRAFT));
+        final UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(server.getId(), null, authorities);
 
         authentication.setDetails(server);
         SecurityContextHolder.getContext().setAuthentication(authentication);
-
         chain.doFilter(request, response);
     }
 }

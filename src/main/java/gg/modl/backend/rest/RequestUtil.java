@@ -13,7 +13,7 @@ import java.util.Optional;
 import java.util.Objects;
 
 public final class RequestUtil {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
             Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
                     .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
@@ -35,10 +35,6 @@ public final class RequestUtil {
         return session != null ? session.getEmail() : null;
     }
 
-    /**
-     * Get the current username from the session.
-     * Falls back to email if username lookup fails.
-     */
     @NotNull
     public static String getCurrentUsername(HttpServletRequest request) {
         AuthSessionData session = getSession(request);
@@ -70,7 +66,7 @@ public final class RequestUtil {
 
     public static String generateSecureToken(int byteLength) {
         byte[] bytes = new byte[byteLength];
-        SECURE_RANDOM.nextBytes(bytes);
+        RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 

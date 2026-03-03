@@ -226,7 +226,7 @@ public class PunishmentService {
             }
         }
 
-        String punishmentId = IdGenerator.generatePunishmentId();
+        String punishmentId = IdGenerator.generate();
 
         // Set started = null so punishments only begin when the plugin acknowledges them
         // (i.e., when the player is online). This applies to all sources (panel, plugin, etc.).
@@ -808,7 +808,7 @@ public class PunishmentService {
             data.put("duration", duration);
         }
 
-        String punishmentId = IdGenerator.generatePunishmentId();
+        String punishmentId = IdGenerator.generate();
 
         List<PunishmentNote> notes = new ArrayList<>();
         String linkedBanNote = duration != null && duration > 0

@@ -18,8 +18,8 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 public class TurnstileService {
-    private final TurnstileConfiguration config;
     private final RestTemplate restTemplate = new RestTemplate();
+    private final TurnstileConfiguration config;
 
     @Value("${modl.development-mode:false}")
     private boolean developmentMode;
@@ -36,19 +36,18 @@ public class TurnstileService {
         }
 
         try {
-            HttpHeaders headers = new HttpHeaders();
+            final HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            final MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
             body.add("secret", config.getSecretKey());
             body.add("response", token);
             if (remoteIp != null && !remoteIp.isEmpty()) {
                 body.add("remoteip", remoteIp);
             }
 
-            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
-
-            TurnstileResponse response = restTemplate.postForObject(
+            final HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(body, headers);
+            final TurnstileResponse response = restTemplate.postForObject(
                     config.getVerifyUrl(),
                     request,
                     TurnstileResponse.class
@@ -57,10 +56,6 @@ public class TurnstileService {
             if (response == null) {
                 log.error("Turnstile validation returned null response");
                 return false;
-            }
-
-            if (!response.success()) {
-                log.warn("Turnstile validation failed: {}", response.errorCodes());
             }
 
             return response.success();

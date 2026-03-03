@@ -26,17 +26,19 @@ public class FilterConfig {
 
     @Bean
     public FilterRegistrationBean<ServerHeaderFilter> serverDomainFilter() {
-        FilterRegistrationBean<ServerHeaderFilter> registrationBean = new FilterRegistrationBean<>();
+        final FilterRegistrationBean<ServerHeaderFilter> registrationBean = new FilterRegistrationBean<>();
         registrationBean.setFilter(new ServerHeaderFilter(serverService, developmentMode, devServerDomain, systemOrigins));
         registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
         registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+
         return registrationBean;
     }
 
     @Bean
     public FilterRegistrationBean<ApiKeyFilter> apiKeyFilterRegistration() {
-        FilterRegistrationBean<ApiKeyFilter> registrationBean = new FilterRegistrationBean<>(apiKeyFilter);
+        final FilterRegistrationBean<ApiKeyFilter> registrationBean = new FilterRegistrationBean<>(apiKeyFilter);
         registrationBean.setEnabled(false);
+
         return registrationBean;
     }
 }
