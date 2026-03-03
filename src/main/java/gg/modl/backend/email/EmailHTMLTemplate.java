@@ -1,6 +1,6 @@
 package gg.modl.backend.email;
 
-import static gg.modl.backend.ModlConstants.BRAND_NAME;
+import static gg.modl.backend.Constants.BRAND_NAME;
 
 public interface EmailHTMLTemplate {
     CodeTemplate USER_CODE = (serverName, code) -> new HTMLEmail(

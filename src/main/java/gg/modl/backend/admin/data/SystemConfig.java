@@ -1,6 +1,6 @@
 package gg.modl.backend.admin.data;
 
-import gg.modl.backend.ModlConstants;
+import gg.modl.backend.Constants;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -29,7 +29,7 @@ public class SystemConfig {
     @Data
     public static class GeneralConfig {
         private String systemName = "modl Admin";
-        private String adminEmail = ModlConstants.Email.ADMIN;
+        private String adminEmail = Constants.Email.ADMIN;
         private String timezone = "UTC";
         private String defaultLanguage = "en";
         private boolean maintenanceMode = false;
@@ -52,7 +52,7 @@ public class SystemConfig {
         private int passwordMinLength = 8;
         private boolean passwordRequireSpecial = false;
         private List<String> ipWhitelist = new ArrayList<>();
-        private List<String> corsOrigins = new ArrayList<>(List.of(ModlConstants.Domain.HTTPS_ADMIN));
+        private List<String> corsOrigins = new ArrayList<>(List.of(Constants.Domain.HTTPS_ADMIN));
     }
 
     @Data

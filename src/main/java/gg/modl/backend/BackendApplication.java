@@ -6,7 +6,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
 public class BackendApplication {
-
     public static void main(String[] args) {
         final Dotenv dotenv = Dotenv.load();
         dotenv.entries().forEach(entry ->
@@ -15,5 +14,4 @@ public class BackendApplication {
 
         SpringApplication.run(BackendApplication.class, args);
     }
-
 }
