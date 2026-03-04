@@ -262,14 +262,19 @@ public class RoleService {
         List<String> adminPerms = new ArrayList<>(List.of(
                 "admin.settings.view", "admin.staff.manage", "admin.audit.view",
                 "punishment.modify",
-                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
+                "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+                "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
+                "staff.maintenance", "staff.freeze", "staff.staffmode", "staff.vanish",
+                "staff.target", "staff.intercept", "staff.chatlogs", "staff.commandlogs"
         ));
         adminPerms.addAll(ALL_PUNISHMENT_PERMS);
 
         // Moderator permissions
         List<String> moderatorPerms = new ArrayList<>(List.of(
                 "punishment.modify",
-                "ticket.view.all", "ticket.reply.all", "ticket.close.all"
+                "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+                "staff.freeze", "staff.staffmode", "staff.vanish", "staff.target",
+                "staff.chatlogs", "staff.commandlogs"
         ));
         moderatorPerms.addAll(MODERATOR_PUNISHMENT_PERMS);
 

@@ -17,6 +17,8 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import org.bson.Document;
+
 import java.util.List;
 import java.util.Map;
 
@@ -42,13 +44,12 @@ public class MinecraftChatLogController {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
         for (ChatLogEntry entry : request.entries()) {
-            Map<String, Object> doc = Map.of(
-                    "uuid", entry.uuid(),
-                    "username", entry.username(),
-                    "message", entry.message(),
-                    "timestamp", entry.timestamp(),
-                    "server", entry.server() != null ? entry.server() : ""
-            );
+            Document doc = new Document();
+            doc.put("uuid", entry.uuid());
+            doc.put("username", entry.username());
+            doc.put("message", entry.message());
+            doc.put("timestamp", entry.timestamp());
+            doc.put("server", entry.server() != null ? entry.server() : "");
             template.save(doc, CHAT_LOGS_COLLECTION);
         }
 
@@ -66,13 +67,12 @@ public class MinecraftChatLogController {
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
 
         for (CommandLogEntry entry : request.entries()) {
-            Map<String, Object> doc = Map.of(
-                    "uuid", entry.uuid(),
-                    "username", entry.username(),
-                    "command", entry.command(),
-                    "timestamp", entry.timestamp(),
-                    "server", entry.server() != null ? entry.server() : ""
-            );
+            Document doc = new Document();
+            doc.put("uuid", entry.uuid());
+            doc.put("username", entry.username());
+            doc.put("command", entry.command());
+            doc.put("timestamp", entry.timestamp());
+            doc.put("server", entry.server() != null ? entry.server() : "");
             template.save(doc, COMMAND_LOGS_COLLECTION);
         }
 

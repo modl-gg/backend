@@ -56,6 +56,19 @@ public class PermissionService {
             new Permission("punishment.modify.evidence", "Manage Evidence", "Add and view evidence on punishments", "punishment", "punishment.modify"),
             new Permission("punishment.modify.options", "Toggle Options", "Toggle alt-blocking and stat-wipe options", "punishment", "punishment.modify"),
 
+            // Staff tool permissions
+            new Permission("staff.chat.toggle", "Toggle Chat", "Toggle server chat on/off", "staff"),
+            new Permission("staff.chat.clear", "Clear Chat", "Clear server chat", "staff"),
+            new Permission("staff.chat.slow", "Slow Chat", "Set slow mode on server chat", "staff"),
+            new Permission("staff.maintenance", "Maintenance Mode", "Toggle server maintenance mode", "staff"),
+            new Permission("staff.freeze", "Freeze Players", "Freeze and unfreeze players", "staff"),
+            new Permission("staff.staffmode", "Staff Mode", "Enter and exit staff mode", "staff"),
+            new Permission("staff.vanish", "Vanish", "Toggle vanish visibility", "staff"),
+            new Permission("staff.target", "Target Players", "Target and follow players", "staff"),
+            new Permission("staff.intercept", "Intercept Chat", "Intercept and view all network chat", "staff"),
+            new Permission("staff.chatlogs", "Chat Logs", "View player chat history", "staff"),
+            new Permission("staff.commandlogs", "Command Logs", "View player command history", "staff"),
+
             // Ticket permissions
             new Permission("ticket.view.all", "View All Tickets", "View all tickets (includes all sub-permissions)", "ticket"),
             new Permission("ticket.view.all.notes", "View Staff Notes", "View internal staff notes on tickets", "ticket", "ticket.view.all"),
@@ -73,7 +86,8 @@ public class PermissionService {
     private static final Map<String, String> PERMISSION_CATEGORIES = Map.of(
             "punishment", "Punishment Permissions",
             "ticket", "Ticket Permissions",
-            "admin", "Administrative Permissions"
+            "admin", "Administrative Permissions",
+            "staff", "Staff Tool Permissions"
     );
 
     public List<Permission> getBasePermissions() {
