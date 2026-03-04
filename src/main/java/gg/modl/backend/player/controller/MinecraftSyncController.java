@@ -267,6 +267,32 @@ public class MinecraftSyncController {
         data.put("punishmentTypesUpdatedAt", server.getPunishmentTypesUpdatedAt() != null
                 ? server.getPunishmentTypesUpdatedAt().getTime() : null);
 
+        // Include undelivered staff 2FA verifications
+        try {
+            List<Map> verifications = template.find(
+                    Query.query(Criteria.where("delivered").is(false)),
+                    Map.class,
+                    "staff_2fa_verifications"
+            );
+            if (!verifications.isEmpty()) {
+                data.put("staff2faVerifications", verifications.stream().map(v -> Map.of(
+                        "minecraftUuid", v.get("minecraftUuid"),
+                        "ip", v.get("ip"),
+                        "verifiedAt", v.get("verifiedAt")
+                )).toList());
+
+                // Mark as delivered
+                Update markDelivered = new Update().set("delivered", true);
+                template.updateMulti(
+                        Query.query(Criteria.where("delivered").is(false)),
+                        markDelivered,
+                        "staff_2fa_verifications"
+                );
+            }
+        } catch (Exception e) {
+            // staff_2fa_verifications collection may not exist yet, ignore
+        }
+
         // Check for active migration task that needs plugin action
         try {
             Query migrationQuery = Query.query(
