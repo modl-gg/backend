@@ -23,6 +23,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -253,6 +254,10 @@ public class MinecraftSyncController {
 
         // Stat wipes are handled on player login, not via sync
         List<Map<String, Object>> pendingStatWipes = List.of();
+
+        // Process chat/command logs included in sync request
+        persistChatLogs(template, syncRequest.chatLogs());
+        persistCommandLogs(template, syncRequest.commandLogs());
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pendingPunishments", pendingPunishments);
@@ -536,12 +541,43 @@ public class MinecraftSyncController {
         return result;
     }
 
+    private void persistChatLogs(MongoTemplate template, List<ChatLogEntry> chatLogs) {
+        if (chatLogs == null || chatLogs.isEmpty()) return;
+        for (ChatLogEntry entry : chatLogs) {
+            Document doc = new Document();
+            doc.put("uuid", entry.uuid());
+            doc.put("username", entry.username());
+            doc.put("message", entry.message());
+            doc.put("timestamp", entry.timestamp());
+            doc.put("server", entry.server() != null ? entry.server() : "");
+            template.save(doc, "chat_logs");
+        }
+    }
+
+    private void persistCommandLogs(MongoTemplate template, List<CommandLogEntry> commandLogs) {
+        if (commandLogs == null || commandLogs.isEmpty()) return;
+        for (CommandLogEntry entry : commandLogs) {
+            Document doc = new Document();
+            doc.put("uuid", entry.uuid());
+            doc.put("username", entry.username());
+            doc.put("command", entry.command());
+            doc.put("timestamp", entry.timestamp());
+            doc.put("server", entry.server() != null ? entry.server() : "");
+            template.save(doc, "command_logs");
+        }
+    }
+
     public record SyncRequest(
             String lastSyncTimestamp,
             @Valid List<OnlinePlayer> onlinePlayers,
             ServerStatus serverStatus,
-            String serverName
+            String serverName,
+            List<ChatLogEntry> chatLogs,
+            List<CommandLogEntry> commandLogs
     ) {}
+
+    public record ChatLogEntry(String uuid, String username, String message, long timestamp, String server) {}
+    public record CommandLogEntry(String uuid, String username, String command, long timestamp, String server) {}
 
     public record OnlinePlayer(
             @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
