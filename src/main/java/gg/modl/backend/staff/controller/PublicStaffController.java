@@ -91,16 +91,17 @@ public class PublicStaffController {
             return ResponseEntity.notFound().build();
         }
 
-        // Add IP to verifiedIps, clear the token fields, and flag for sync delivery
+        // Set 7-day session bound to the IP, clear the token fields, and flag for sync delivery
         long now = Instant.now().toEpochMilli();
-        Staff.VerifiedIp verifiedIp = new Staff.VerifiedIp(staff.getTwoFactorTokenIp(), now);
+        long sessionExpiresAt = now + (7L * 24 * 60 * 60 * 1000); // 7 days
 
         Update update = new Update()
                 .unset("twoFactorToken")
-                .unset("twoFactorTokenIp")
                 .unset("twoFactorTokenCreatedAt")
                 .set("twoFactorPendingDelivery", true)
-                .push("verifiedIps", verifiedIp);
+                .set("twoFactorSessionIp", staff.getTwoFactorTokenIp())
+                .unset("twoFactorTokenIp")
+                .set("twoFactorSessionExpiresAt", sessionExpiresAt);
         template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
 
         return ResponseEntity.ok(Map.of("status", "verified"));

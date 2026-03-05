@@ -11,7 +11,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -34,6 +37,25 @@ public class MinecraftStaffController {
 
         List<Staff> allStaff = template.findAll(Staff.class, CollectionName.STAFF);
 
+        // Aggregate punishment counts per issuerName
+        Map<String, Integer> punishmentCounts = new HashMap<>();
+        try {
+            Aggregation aggregation = Aggregation.newAggregation(
+                    Aggregation.unwind("punishments"),
+                    Aggregation.group("punishments.issuerName").count().as("count")
+            );
+            AggregationResults<Document> results = template.aggregate(
+                    aggregation, CollectionName.PLAYERS, Document.class);
+            for (Document doc : results.getMappedResults()) {
+                String issuerName = doc.getString("_id");
+                if (issuerName != null) {
+                    punishmentCounts.put(issuerName, doc.getInteger("count", 0));
+                }
+            }
+        } catch (Exception ignored) {
+            // If aggregation fails (e.g., no players collection), continue with zero counts
+        }
+
         List<Map<String, Object>> staffList = new ArrayList<>();
 
         for (Staff staff : allStaff) {
@@ -41,6 +63,14 @@ public class MinecraftStaffController {
             StaffRole role = template.findOne(roleQuery, StaffRole.class, CollectionName.STAFF_ROLES);
 
             List<String> permissions = role != null ? role.getPermissions() : List.of();
+
+            // Look up punishment count by assignedMinecraftUsername first, then username
+            int punishmentsIssuedCount = 0;
+            if (staff.getAssignedMinecraftUsername() != null && punishmentCounts.containsKey(staff.getAssignedMinecraftUsername())) {
+                punishmentsIssuedCount = punishmentCounts.get(staff.getAssignedMinecraftUsername());
+            } else if (staff.getUsername() != null && punishmentCounts.containsKey(staff.getUsername())) {
+                punishmentsIssuedCount = punishmentCounts.get(staff.getUsername());
+            }
 
             Map<String, Object> staffData = new LinkedHashMap<>();
             staffData.put("id", staff.getId());
@@ -50,6 +80,9 @@ public class MinecraftStaffController {
             staffData.put("minecraftUuid", staff.getAssignedMinecraftUuid());
             staffData.put("minecraftUsername", staff.getAssignedMinecraftUsername());
             staffData.put("permissions", permissions);
+            staffData.put("lastSeen", staff.getLastSeen());
+            staffData.put("totalPlaytimeMs", staff.getTotalPlaytimeMs());
+            staffData.put("punishmentsIssuedCount", punishmentsIssuedCount);
             staffData.put("createdAt", staff.getCreatedAt());
             staffData.put("updatedAt", staff.getUpdatedAt());
             staffList.add(staffData);
@@ -138,7 +171,42 @@ public class MinecraftStaffController {
         ));
     }
 
+    @PostMapping("/disconnect")
+    public ResponseEntity<Map<String, Object>> staffDisconnect(
+            @RequestBody @Valid StaffDisconnectRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        Query query = Query.query(Criteria.where("assignedMinecraftUuid").is(request.minecraftUuid()));
+        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+
+        if (staff == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Staff member not found"
+            ));
+        }
+
+        Update update = new Update()
+                .set("lastSeen", new Date())
+                .inc("totalPlaytimeMs", request.sessionDurationMs());
+
+        template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true
+        ));
+    }
+
     public record UpdateRoleRequest(
             @NotBlank String role
+    ) {}
+
+    public record StaffDisconnectRequest(
+            @NotBlank String minecraftUuid,
+            long sessionDurationMs
     ) {}
 }

@@ -62,9 +62,16 @@ public class Staff {
     @Builder.Default
     private boolean twoFactorPendingDelivery = false;
 
-    /** History of verified IPs with timestamps. */
+    /** IP address the session is bound to (set on verification). */
+    private String twoFactorSessionIp;
+
+    /** Epoch millis when the current 2FA session expires (7-day TTL set on verification). */
+    private Long twoFactorSessionExpiresAt;
+
+    private Date lastSeen;
+
     @Builder.Default
-    private List<VerifiedIp> verifiedIps = new ArrayList<>();
+    private Long totalPlaytimeMs = 0L;
 
     private Date createdAt;
 
@@ -94,16 +101,6 @@ public class Staff {
         private String frequency;
         private NotificationSettings emailNotifications;
         private NotificationSettings pushNotifications;
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    @Builder
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public static class VerifiedIp {
-        private String ip;
-        private Long verifiedAt;
     }
 
     @Data

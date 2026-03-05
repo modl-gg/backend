@@ -250,7 +250,17 @@ public class MinecraftSyncController {
         // Generate staff notifications for recent events
         List<Map<String, Object>> staffNotifications = getRecentStaffEvents(template, lastSync, types, recentlyModifiedPunishments, server);
 
-        List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template);
+        // Build UUID -> IP map from online players for 2FA session IP matching
+        Map<String, String> onlinePlayerIps = new HashMap<>();
+        if (syncRequest.onlinePlayers() != null) {
+            for (OnlinePlayer op : syncRequest.onlinePlayers()) {
+                if (op.uuid() != null && op.ipAddress() != null) {
+                    onlinePlayerIps.put(op.uuid(), op.ipAddress());
+                }
+            }
+        }
+
+        List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template, onlinePlayerIps);
 
         // Stat wipes are handled on player login, not via sync
         List<Map<String, Object>> pendingStatWipes = List.of();
@@ -279,29 +289,16 @@ public class MinecraftSyncController {
             List<Staff> pendingStaff = template.find(pendingQuery, Staff.class, CollectionName.STAFF);
 
             if (!pendingStaff.isEmpty()) {
-                data.put("staff2faVerifications", pendingStaff.stream().map(s -> {
-                    // Get the most recent verified IP for this delivery
-                    var ips = s.getVerifiedIps();
-                    String ip = "";
-                    long verifiedAt = 0;
-                    if (ips != null && !ips.isEmpty()) {
-                        var latest = ips.get(ips.size() - 1);
-                        ip = latest.getIp() != null ? latest.getIp() : "";
-                        verifiedAt = latest.getVerifiedAt() != null ? latest.getVerifiedAt() : 0;
-                    }
-                    return Map.<String, Object>of(
-                            "minecraftUuid", s.getAssignedMinecraftUuid(),
-                            "ip", ip,
-                            "verifiedAt", verifiedAt
-                    );
-                }).toList());
+                data.put("staff2faVerifications", pendingStaff.stream().map(s -> Map.<String, Object>of(
+                        "minecraftUuid", s.getAssignedMinecraftUuid()
+                )).toList());
 
                 // Mark as delivered
                 Update markDelivered = new Update().set("twoFactorPendingDelivery", false);
                 template.updateMulti(pendingQuery, markDelivered, Staff.class, CollectionName.STAFF);
             }
         } catch (Exception e) {
-            // verifiedIps may not exist on old documents, ignore
+            // Ignore errors on old documents
         }
 
         // Check for active migration task that needs plugin action
@@ -521,7 +518,7 @@ public class MinecraftSyncController {
         return result;
     }
 
-    private List<Map<String, Object>> getActiveStaffMembers(MongoTemplate template) {
+    private List<Map<String, Object>> getActiveStaffMembers(MongoTemplate template, Map<String, String> onlinePlayerIps) {
         Query staffQuery = Query.query(
                 Criteria.where("assignedMinecraftUuid").exists(true).ne(null).ne("")
         );
@@ -534,16 +531,12 @@ public class MinecraftSyncController {
 
             List<String> permissions = role != null ? role.getPermissions() : List.of();
 
-            // Build verified IPs list for 2FA IP history persistence
-            List<Map<String, Object>> verifiedIpMaps = new ArrayList<>();
-            if (staff.getVerifiedIps() != null) {
-                for (Staff.VerifiedIp vip : staff.getVerifiedIps()) {
-                    verifiedIpMaps.add(Map.of(
-                            "ip", vip.getIp() != null ? vip.getIp() : "",
-                            "verifiedAt", vip.getVerifiedAt() != null ? vip.getVerifiedAt() : 0L
-                    ));
-                }
-            }
+            // Compute whether the staff member has a valid 2FA session (not expired + IP matches)
+            String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
+            boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null
+                    && staff.getTwoFactorSessionExpiresAt() > Instant.now().toEpochMilli()
+                    && staff.getTwoFactorSessionIp() != null
+                    && staff.getTwoFactorSessionIp().equals(currentIp);
 
             Map<String, Object> entry = new java.util.HashMap<>();
             entry.put("minecraftUuid", staff.getAssignedMinecraftUuid());
@@ -552,7 +545,7 @@ public class MinecraftSyncController {
             entry.put("staffRole", staff.getRole() != null ? staff.getRole() : "");
             entry.put("permissions", permissions);
             entry.put("email", staff.getEmail() != null ? staff.getEmail() : "");
-            entry.put("verifiedIps", verifiedIpMaps);
+            entry.put("twoFactorSessionValid", sessionValid);
             result.add(entry);
         }
 
