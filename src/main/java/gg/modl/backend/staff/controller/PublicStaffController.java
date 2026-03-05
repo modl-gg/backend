@@ -1,14 +1,20 @@
 package gg.modl.backend.staff.controller;
 
+import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.InvitationService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.Map;
 
 @RestController
@@ -16,6 +22,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PublicStaffController {
     private final InvitationService invitationService;
+    private final DynamicMongoTemplateProvider mongoProvider;
 
     @GetMapping("/invitations/accept")
     public ResponseEntity<?> acceptInvitationGet(
@@ -65,5 +72,41 @@ public class PublicStaffController {
             return ResponseEntity.internalServerError()
                     .body(Map.of("message", "Internal server error."));
         }
+    }
+
+    private static final String TOKENS_COLLECTION = "staff_2fa_tokens";
+    private static final String VERIFICATIONS_COLLECTION = "staff_2fa_verifications";
+
+    @PostMapping("/2fa/verify/{token}")
+    public ResponseEntity<Map<String, Object>> verify2faToken(
+            @PathVariable String token,
+            HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+
+        // Find the unverified token
+        Query query = Query.query(Criteria.where("token").is(token).and("verified").is(false));
+        Map tokenDoc = template.findOne(query, Map.class, TOKENS_COLLECTION);
+
+        if (tokenDoc == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Mark as verified
+        Update update = new Update();
+        update.set("verified", true);
+        update.set("verifiedAt", Instant.now().toEpochMilli());
+        template.updateFirst(query, update, TOKENS_COLLECTION);
+
+        // Store the verification so the sync response can deliver it to the plugin
+        Map<String, Object> verification = Map.of(
+                "minecraftUuid", tokenDoc.get("minecraftUuid"),
+                "ip", tokenDoc.get("ip"),
+                "verifiedAt", Instant.now().toEpochMilli(),
+                "delivered", false
+        );
+        template.save(verification, VERIFICATIONS_COLLECTION);
+
+        return ResponseEntity.ok(Map.of("status", "verified"));
     }
 }
