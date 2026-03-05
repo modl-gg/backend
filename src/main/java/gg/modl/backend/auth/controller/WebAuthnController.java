@@ -9,6 +9,9 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -33,6 +36,7 @@ public class WebAuthnController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
+    private final ObjectMapper objectMapper;
 
     // --- Registration (requires session) ---
 
@@ -46,10 +50,10 @@ public class WebAuthnController {
         Server server = RequestUtil.getRequestServer(request);
         try {
             WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, email);
-            return ResponseEntity.ok(Map.of(
-                    "challengeId", result.challengeId(),
-                    "options", result.optionsJson()
-            ));
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("challengeId", result.challengeId());
+            response.set("options", objectMapper.readTree(result.optionsJson()));
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to start WebAuthn registration for {}", email, e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start registration"));
@@ -133,10 +137,10 @@ public class WebAuthnController {
         Server server = RequestUtil.getRequestServer(request);
         try {
             WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server);
-            return ResponseEntity.ok(Map.of(
-                    "challengeId", result.challengeId(),
-                    "options", result.optionsJson()
-            ));
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("challengeId", result.challengeId());
+            response.set("options", objectMapper.readTree(result.optionsJson()));
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to start discoverable WebAuthn authentication", e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start authentication"));
@@ -161,11 +165,11 @@ public class WebAuthnController {
 
         try {
             WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, body.email());
-            return ResponseEntity.ok(Map.of(
-                    "hasPasskeys", true,
-                    "challengeId", result.challengeId(),
-                    "options", result.optionsJson()
-            ));
+            ObjectNode response = objectMapper.createObjectNode();
+            response.put("hasPasskeys", true);
+            response.put("challengeId", result.challengeId());
+            response.set("options", objectMapper.readTree(result.optionsJson()));
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Failed to start WebAuthn authentication for {}", body.email(), e);
             return ResponseEntity.ok(Map.of("hasPasskeys", false));
