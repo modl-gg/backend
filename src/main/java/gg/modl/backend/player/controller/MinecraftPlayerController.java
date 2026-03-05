@@ -618,7 +618,6 @@ public class MinecraftPlayerController {
         List<Map<String, Object>> ipAddresses = player.getIpAddresses().stream()
                 .map(ip -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
-                    entry.put("ipAddress", ip.getIpAddress());
                     entry.put("country", ip.getCountry());
                     entry.put("region", ip.getRegion());
                     entry.put("asn", ip.getAsn());
