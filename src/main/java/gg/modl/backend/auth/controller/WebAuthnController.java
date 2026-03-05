@@ -21,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import gg.modl.backend.rest.RequestAttribute;
+
 import java.util.List;
 import java.util.Map;
 
@@ -47,7 +49,7 @@ public class WebAuthnController {
 
         Server server = RequestUtil.getRequestServer(request);
         try {
-            WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, email);
+            WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, getRequestDomain(request), email);
             Object options = objectMapper.readValue(result.optionsJson(), Object.class);
             return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
         } catch (Exception e) {
@@ -67,7 +69,7 @@ public class WebAuthnController {
 
         Server server = RequestUtil.getRequestServer(request);
         try {
-            webAuthnService.finishRegistration(server, email, body.challengeId(), body.response(), body.name());
+            webAuthnService.finishRegistration(server, getRequestDomain(request), email, body.challengeId(), body.response(), body.name());
             return ResponseEntity.ok(Map.of("success", true));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -132,7 +134,7 @@ public class WebAuthnController {
     public ResponseEntity<?> loginStart(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         try {
-            WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server);
+            WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server, getRequestDomain(request));
             Object options = objectMapper.readValue(result.optionsJson(), Object.class);
             return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
         } catch (Exception e) {
@@ -158,7 +160,7 @@ public class WebAuthnController {
         }
 
         try {
-            WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, body.email());
+            WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, getRequestDomain(request), body.email());
             Object options = objectMapper.readValue(result.optionsJson(), Object.class);
             return ResponseEntity.ok(Map.of(
                     "hasPasskeys", true,
@@ -179,7 +181,7 @@ public class WebAuthnController {
         Server server = RequestUtil.getRequestServer(request);
 
         try {
-            String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response());
+            String email = webAuthnService.finishAuthentication(server, getRequestDomain(request), body.challengeId(), body.response());
 
             // Verify this email is still authorized
             if (!isAuthorizedEmail(server, email)) {
@@ -201,6 +203,10 @@ public class WebAuthnController {
     }
 
     // --- Helpers ---
+
+    private String getRequestDomain(HttpServletRequest request) {
+        return (String) request.getAttribute(RequestAttribute.SERVER_DOMAIN);
+    }
 
     private boolean isAuthorizedEmail(Server server, String email) {
         if (permissionService.isSuperAdmin(server, email)) {

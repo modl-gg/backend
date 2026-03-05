@@ -33,9 +33,9 @@ public class WebAuthnService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final AuthConfiguration authConfiguration;
 
-    private RelyingParty buildRelyingParty(Server server, MongoTemplate mongo) {
-        String rpId = resolveRpId(server);
-        Set<String> origins = resolveOrigins(server, rpId);
+    private RelyingParty buildRelyingParty(Server server, String requestDomain, MongoTemplate mongo) {
+        String rpId = resolveRpId(requestDomain);
+        Set<String> origins = resolveOrigins(requestDomain, rpId);
         CredentialRepositoryAdapter credRepo = new CredentialRepositoryAdapter(mongo);
 
         return RelyingParty.builder()
@@ -49,28 +49,26 @@ public class WebAuthnService {
                 .build();
     }
 
-    private String resolveRpId(Server server) {
-        String domain = server.getCustomDomain();
-        if (domain != null && domain.endsWith(".modl.gg")) {
+    private String resolveRpId(String requestDomain) {
+        if (requestDomain != null && requestDomain.endsWith(".modl.gg")) {
             return "modl.gg";
         }
-        if (domain != null && !domain.isBlank()) {
-            return domain;
+        if (requestDomain != null && !requestDomain.isBlank()) {
+            return requestDomain;
         }
         return "modl.gg";
     }
 
-    private Set<String> resolveOrigins(Server server, String rpId) {
+    private Set<String> resolveOrigins(String requestDomain, String rpId) {
         Set<String> origins = new HashSet<>();
         if (authConfiguration.isDevelopmentMode()) {
             origins.add("http://localhost:3000");
             origins.add("http://localhost:5173");
         }
-        String domain = server.getCustomDomain();
-        if (domain != null && !domain.isBlank()) {
-            origins.add("https://" + domain);
+        if (requestDomain != null && !requestDomain.isBlank()) {
+            origins.add("https://" + requestDomain);
         }
-        if (!rpId.equals(domain)) {
+        if (!rpId.equals(requestDomain)) {
             origins.add("https://" + rpId);
         }
         return origins;
@@ -88,9 +86,9 @@ public class WebAuthnService {
 
     // --- Registration ---
 
-    public StartRegistrationResult startRegistration(Server server, String email) {
+    public StartRegistrationResult startRegistration(Server server, String requestDomain, String email) {
         MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, mongo);
+        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
 
         UserIdentity userIdentity = UserIdentity.builder()
                 .name(email)
@@ -123,9 +121,9 @@ public class WebAuthnService {
         }
     }
 
-    public void finishRegistration(Server server, String email, String challengeId, String responseJson, String credentialName) throws Exception {
+    public void finishRegistration(Server server, String requestDomain, String email, String challengeId, String responseJson, String credentialName) throws Exception {
         MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, mongo);
+        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
 
         WebAuthnChallenge challenge = findAndDeleteChallenge(mongo, challengeId);
         if (challenge == null) {
@@ -171,9 +169,9 @@ public class WebAuthnService {
         return mongo.exists(query, WebAuthnCredential.class);
     }
 
-    public StartAuthenticationResult startDiscoverableAuthentication(Server server) {
+    public StartAuthenticationResult startDiscoverableAuthentication(Server server, String requestDomain) {
         MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, mongo);
+        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
 
         AssertionRequest assertionRequest = rp.startAssertion(
                 StartAssertionOptions.builder()
@@ -196,9 +194,9 @@ public class WebAuthnService {
         }
     }
 
-    public StartAuthenticationResult startAuthentication(Server server, String email) {
+    public StartAuthenticationResult startAuthentication(Server server, String requestDomain, String email) {
         MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, mongo);
+        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
 
         AssertionRequest assertionRequest = rp.startAssertion(
                 StartAssertionOptions.builder()
@@ -222,9 +220,9 @@ public class WebAuthnService {
         }
     }
 
-    public String finishAuthentication(Server server, String challengeId, String responseJson) throws Exception {
+    public String finishAuthentication(Server server, String requestDomain, String challengeId, String responseJson) throws Exception {
         MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, mongo);
+        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
 
         WebAuthnChallenge challenge = findAndDeleteChallenge(mongo, challengeId);
         if (challenge == null) {
