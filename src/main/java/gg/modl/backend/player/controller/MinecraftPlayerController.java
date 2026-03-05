@@ -244,10 +244,17 @@ public class MinecraftPlayerController {
                     ? (Date) player.getData().get("lastLogin")
                     : null;
 
+            Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
+            long totalPlaytimeMs = 0;
+            if (playtimeObj instanceof Number) {
+                totalPlaytimeMs = ((Number) playtimeObj).longValue() * 1000;
+            }
+
             Map<String, Object> p = new LinkedHashMap<>();
             p.put("uuid", player.getMinecraftUuid().toString());
             p.put("username", username);
             p.put("joinedAt", joinedAt);
+            p.put("totalPlaytimeMs", totalPlaytimeMs);
             return p;
         }).toList();
 

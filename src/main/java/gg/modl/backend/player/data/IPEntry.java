@@ -16,7 +16,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class IPEntry {
-    @NotNull
+    @Nullable
     private String ipAddress;
 
     @Nullable

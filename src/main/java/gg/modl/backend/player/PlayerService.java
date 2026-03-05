@@ -347,8 +347,22 @@ public class PlayerService {
                 .map(p -> toPunishmentResponse(server, p))
                 .toList();
 
-        IPEntry latestIp = player.getIpAddresses().isEmpty() ? null :
-                player.getIpAddresses().get(player.getIpAddresses().size() - 1);
+        // Strip raw IP addresses from response — only keep metadata (country, region, etc.)
+        List<IPEntry> sanitizedIps = player.getIpAddresses().stream()
+                .map(ip -> IPEntry.builder()
+                        .ipAddress(null)
+                        .country(ip.getCountry())
+                        .region(ip.getRegion())
+                        .asn(ip.getAsn())
+                        .proxy(ip.isProxy())
+                        .hosting(ip.isHosting())
+                        .firstLogin(ip.getFirstLogin())
+                        .logins(ip.getLogins())
+                        .build())
+                .toList();
+
+        IPEntry latestIp = sanitizedIps.isEmpty() ? null :
+                sanitizedIps.get(sanitizedIps.size() - 1);
 
         String lastServer = player.getData() != null ? (String) player.getData().get("lastServer") : null;
 
@@ -363,7 +377,7 @@ public class PlayerService {
                 player.getMinecraftUuid().toString(),
                 player.getUsernames(),
                 player.getNotes(),
-                player.getIpAddresses(),
+                sanitizedIps,
                 punishmentResponses,
                 player.getData(),
                 status.social(),
