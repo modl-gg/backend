@@ -272,30 +272,36 @@ public class MinecraftSyncController {
         data.put("punishmentTypesUpdatedAt", server.getPunishmentTypesUpdatedAt() != null
                 ? server.getPunishmentTypesUpdatedAt().getTime() : null);
 
-        // Include undelivered staff 2FA verifications
+        // Include undelivered staff 2FA verifications (stored on Staff documents)
         try {
-            List<Map> verifications = template.find(
-                    Query.query(Criteria.where("delivered").is(false)),
-                    Map.class,
-                    "staff_2fa_verifications"
-            );
-            if (!verifications.isEmpty()) {
-                data.put("staff2faVerifications", verifications.stream().map(v -> Map.of(
-                        "minecraftUuid", v.get("minecraftUuid"),
-                        "ip", v.get("ip"),
-                        "verifiedAt", v.get("verifiedAt")
-                )).toList());
+            Query pendingQuery = Query.query(Criteria.where("twoFactorPendingDelivery").is(true)
+                    .and("assignedMinecraftUuid").exists(true).ne(null).ne(""));
+            List<Staff> pendingStaff = template.find(pendingQuery, Staff.class, CollectionName.STAFF);
+
+            if (!pendingStaff.isEmpty()) {
+                data.put("staff2faVerifications", pendingStaff.stream().map(s -> {
+                    // Get the most recent verified IP for this delivery
+                    var ips = s.getVerifiedIps();
+                    String ip = "";
+                    long verifiedAt = 0;
+                    if (ips != null && !ips.isEmpty()) {
+                        var latest = ips.get(ips.size() - 1);
+                        ip = latest.getIp() != null ? latest.getIp() : "";
+                        verifiedAt = latest.getVerifiedAt() != null ? latest.getVerifiedAt() : 0;
+                    }
+                    return Map.<String, Object>of(
+                            "minecraftUuid", s.getAssignedMinecraftUuid(),
+                            "ip", ip,
+                            "verifiedAt", verifiedAt
+                    );
+                }).toList());
 
                 // Mark as delivered
-                Update markDelivered = new Update().set("delivered", true);
-                template.updateMulti(
-                        Query.query(Criteria.where("delivered").is(false)),
-                        markDelivered,
-                        "staff_2fa_verifications"
-                );
+                Update markDelivered = new Update().set("twoFactorPendingDelivery", false);
+                template.updateMulti(pendingQuery, markDelivered, Staff.class, CollectionName.STAFF);
             }
         } catch (Exception e) {
-            // staff_2fa_verifications collection may not exist yet, ignore
+            // verifiedIps may not exist on old documents, ignore
         }
 
         // Check for active migration task that needs plugin action
@@ -528,14 +534,26 @@ public class MinecraftSyncController {
 
             List<String> permissions = role != null ? role.getPermissions() : List.of();
 
-            result.add(Map.of(
-                    "minecraftUuid", staff.getAssignedMinecraftUuid(),
-                    "minecraftUsername", staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
-                    "staffUsername", staff.getUsername() != null ? staff.getUsername() : "",
-                    "staffRole", staff.getRole() != null ? staff.getRole() : "",
-                    "permissions", permissions,
-                    "email", staff.getEmail() != null ? staff.getEmail() : ""
-            ));
+            // Build verified IPs list for 2FA IP history persistence
+            List<Map<String, Object>> verifiedIpMaps = new ArrayList<>();
+            if (staff.getVerifiedIps() != null) {
+                for (Staff.VerifiedIp vip : staff.getVerifiedIps()) {
+                    verifiedIpMaps.add(Map.of(
+                            "ip", vip.getIp() != null ? vip.getIp() : "",
+                            "verifiedAt", vip.getVerifiedAt() != null ? vip.getVerifiedAt() : 0L
+                    ));
+                }
+            }
+
+            Map<String, Object> entry = new java.util.HashMap<>();
+            entry.put("minecraftUuid", staff.getAssignedMinecraftUuid());
+            entry.put("minecraftUsername", staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "");
+            entry.put("staffUsername", staff.getUsername() != null ? staff.getUsername() : "");
+            entry.put("staffRole", staff.getRole() != null ? staff.getRole() : "");
+            entry.put("permissions", permissions);
+            entry.put("email", staff.getEmail() != null ? staff.getEmail() : "");
+            entry.put("verifiedIps", verifiedIpMaps);
+            result.add(entry);
         }
 
         return result;

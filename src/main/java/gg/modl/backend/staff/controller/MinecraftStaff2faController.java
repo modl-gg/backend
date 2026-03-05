@@ -1,14 +1,16 @@
 package gg.modl.backend.staff.controller;
 
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.data.Staff;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,19 +19,23 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_STAFF)
-@RequiredArgsConstructor
 @Slf4j
 public class MinecraftStaff2faController {
 
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final String modlDomain;
 
-    private static final String COLLECTION = "staff_2fa_tokens";
+    public MinecraftStaff2faController(
+            DynamicMongoTemplateProvider mongoProvider,
+            @Value("${modl.domain:modl.gg}") String modlDomain) {
+        this.mongoProvider = mongoProvider;
+        this.modlDomain = modlDomain;
+    }
 
     @PostMapping("/2fa/generate")
     public ResponseEntity<Map<String, Object>> generate2faToken(
@@ -41,19 +47,22 @@ public class MinecraftStaff2faController {
         String token = UUID.randomUUID().toString();
         long now = Instant.now().toEpochMilli();
 
-        // Store token in DB (must be mutable for MongoDB to insert _id)
-        Map<String, Object> tokenDoc = new HashMap<>();
-        tokenDoc.put("token", token);
-        tokenDoc.put("minecraftUuid", request.minecraftUuid());
-        tokenDoc.put("ip", request.ip());
-        tokenDoc.put("createdAt", now);
-        tokenDoc.put("verified", false);
-        template.save(tokenDoc, COLLECTION);
+        // Store token directly on the Staff document
+        Query staffQuery = Query.query(Criteria.where("assignedMinecraftUuid").is(request.minecraftUuid()));
+        Update update = new Update()
+                .set("twoFactorToken", token)
+                .set("twoFactorTokenIp", request.ip())
+                .set("twoFactorTokenCreatedAt", now);
+        var result = template.updateFirst(staffQuery, update, Staff.class, CollectionName.STAFF);
+
+        if (result.getMatchedCount() == 0) {
+            return ResponseEntity.notFound().build();
+        }
 
         // Build verify URL using server's panel domain
         String domain = server.getCustomDomainOverride();
         if (domain == null || domain.isBlank()) {
-            domain = server.getCustomDomain() + ".modl.gg";
+            domain = server.getCustomDomain() + "." + modlDomain;
         }
         String verifyUrl = "https://" + domain + "/verify/" + token;
 
@@ -61,39 +70,6 @@ public class MinecraftStaff2faController {
                 "token", token,
                 "verifyUrl", verifyUrl
         ));
-    }
-
-    // Called from the panel when staff clicks the verification link
-    @PostMapping("/2fa/verify/{token}")
-    public ResponseEntity<Map<String, Object>> verifyToken(
-            @PathVariable String token,
-            HttpServletRequest httpRequest) {
-        Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        // Find the token
-        Query query = Query.query(Criteria.where("token").is(token).and("verified").is(false));
-        Map tokenDoc = template.findOne(query, Map.class, COLLECTION);
-
-        if (tokenDoc == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // Mark as verified
-        Update update = new Update();
-        update.set("verified", true);
-        update.set("verifiedAt", Instant.now().toEpochMilli());
-        template.updateFirst(query, update, COLLECTION);
-
-        // Store the verification so the sync response can deliver it
-        Map<String, Object> verification = new HashMap<>();
-        verification.put("minecraftUuid", tokenDoc.get("minecraftUuid"));
-        verification.put("ip", tokenDoc.get("ip"));
-        verification.put("verifiedAt", Instant.now().toEpochMilli());
-        verification.put("delivered", false);
-        template.save(verification, "staff_2fa_verifications");
-
-        return ResponseEntity.ok(Map.of("status", "verified"));
     }
 
     public record Generate2faRequest(

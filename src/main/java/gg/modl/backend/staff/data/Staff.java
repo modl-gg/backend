@@ -47,6 +47,25 @@ public class Staff {
 
     private TicketSubscriptionSettings ticketSubscriptionSettings;
 
+    // --- Staff 2FA ---
+
+    /** Current pending 2FA verification token (cleared after verification). */
+    private String twoFactorToken;
+
+    /** IP address associated with the pending token. */
+    private String twoFactorTokenIp;
+
+    /** Timestamp (epoch millis) when the pending token was created. */
+    private Long twoFactorTokenCreatedAt;
+
+    /** True when a verification has completed but the plugin hasn't been notified yet. */
+    @Builder.Default
+    private boolean twoFactorPendingDelivery = false;
+
+    /** History of verified IPs with timestamps. */
+    @Builder.Default
+    private List<VerifiedIp> verifiedIps = new ArrayList<>();
+
     private Date createdAt;
 
     private Date updatedAt;
@@ -75,6 +94,16 @@ public class Staff {
         private String frequency;
         private NotificationSettings emailNotifications;
         private NotificationSettings pushNotifications;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class VerifiedIp {
+        private String ip;
+        private Long verifiedAt;
     }
 
     @Data
