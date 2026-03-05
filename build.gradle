@@ -46,6 +46,9 @@ dependencies {
     implementation platform('software.amazon.awssdk:bom:2.29.0')
     implementation 'software.amazon.awssdk:s3'
 
+    // WebAuthn / Passkeys
+    implementation 'com.yubico:webauthn-server-core:2.5.4'
+
     // Utilities
     implementation 'com.github.slugify:slugify:3.0.7'
 

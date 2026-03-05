@@ -9,8 +9,8 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -28,11 +28,19 @@ import java.util.*;
  * 2. Creates an in-game notification for the player (if they have a Minecraft UUID)
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class TicketNotificationService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final EmailService emailService;
+    private final String modlDomain;
+
+    public TicketNotificationService(DynamicMongoTemplateProvider mongoProvider,
+                                     EmailService emailService,
+                                     @Value("${modl.domain:modl.gg}") String modlDomain) {
+        this.mongoProvider = mongoProvider;
+        this.emailService = emailService;
+        this.modlDomain = modlDomain;
+    }
 
     /**
      * Send notifications when a staff member replies to a ticket.
@@ -256,7 +264,7 @@ public class TicketNotificationService {
         // Use custom domain override if set, otherwise use the subdomain
         String domain = server.getCustomDomainOverride();
         if (domain == null || domain.isBlank()) {
-            domain = server.getServerName() + ".modl.gg";
+            domain = server.getServerName() + "." + modlDomain;
         }
         return "https://" + domain + "/ticket/" + ticketId;
     }

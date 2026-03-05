@@ -77,6 +77,15 @@ public class MongoIndexBootstrapService {
                 IndexSpec.standard("idx_knowledgebase_articles_isVisible_categoryId_ordinal", doc("isVisible", 1).append("categoryId", 1).append("ordinal", 1), false, false)
         ));
 
+        ensureIndexes(template, CollectionName.WEBAUTHN_CREDENTIALS, List.of(
+                IndexSpec.standard("idx_webauthn_credentials_email", doc("email", 1), false, false),
+                IndexSpec.standard("uidx_webauthn_credentials_credentialId", doc("credentialId", 1), true, false)
+        ));
+
+        ensureIndexes(template, CollectionName.WEBAUTHN_CHALLENGES, List.of(
+                IndexSpec.ttl("idx_webauthn_challenges_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
+
         ensureIndexes(template, CollectionName.HOMEPAGE_CARDS, List.of(
                 IndexSpec.standard("idx_homepage_cards_ordinal", doc("ordinal", 1), false, false),
                 IndexSpec.standard("idx_homepage_cards_isEnabled_ordinal", doc("isEnabled", 1).append("ordinal", 1), false, false),
