@@ -31,6 +31,9 @@ public class WebAuthnCredential {
     private long signatureCount;
 
     @Field
+    private String userHandle;
+
+    @Field
     private String name;
 
     @Field

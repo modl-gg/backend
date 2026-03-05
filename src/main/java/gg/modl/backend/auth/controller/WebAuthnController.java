@@ -128,6 +128,21 @@ public class WebAuthnController {
 
     // --- Login (no session required) ---
 
+    @PostMapping("/login/start")
+    public ResponseEntity<?> loginStart(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        try {
+            WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server);
+            return ResponseEntity.ok(Map.of(
+                    "challengeId", result.challengeId(),
+                    "options", result.optionsJson()
+            ));
+        } catch (Exception e) {
+            log.error("Failed to start discoverable WebAuthn authentication", e);
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start authentication"));
+        }
+    }
+
     @PostMapping("/login/options")
     public ResponseEntity<?> loginOptions(
             HttpServletRequest request,

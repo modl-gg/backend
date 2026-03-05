@@ -79,7 +79,8 @@ public class MongoIndexBootstrapService {
 
         ensureIndexes(template, CollectionName.WEBAUTHN_CREDENTIALS, List.of(
                 IndexSpec.standard("idx_webauthn_credentials_email", doc("email", 1), false, false),
-                IndexSpec.standard("uidx_webauthn_credentials_credentialId", doc("credentialId", 1), true, false)
+                IndexSpec.standard("uidx_webauthn_credentials_credentialId", doc("credentialId", 1), true, false),
+                IndexSpec.standard("idx_webauthn_credentials_userHandle", doc("userHandle", 1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.WEBAUTHN_CHALLENGES, List.of(

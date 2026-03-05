@@ -153,6 +153,7 @@ public class WebAuthnService {
 
         WebAuthnCredential cred = new WebAuthnCredential();
         cred.setEmail(email.trim().toLowerCase(Locale.ROOT));
+        cred.setUserHandle(userHandle(email).getBase64Url());
         cred.setCredentialId(result.getKeyId().getId().getBase64Url());
         cred.setPublicKeyCose(result.getPublicKeyCose().getBytes());
         cred.setSignatureCount(result.getSignatureCount());
@@ -168,6 +169,31 @@ public class WebAuthnService {
         MongoTemplate mongo = getMongoTemplate(server);
         Query query = new Query(Criteria.where("email").is(email.trim().toLowerCase(Locale.ROOT)));
         return mongo.exists(query, WebAuthnCredential.class);
+    }
+
+    public StartAuthenticationResult startDiscoverableAuthentication(Server server) {
+        MongoTemplate mongo = getMongoTemplate(server);
+        RelyingParty rp = buildRelyingParty(server, mongo);
+
+        AssertionRequest assertionRequest = rp.startAssertion(
+                StartAssertionOptions.builder()
+                        .userVerification(UserVerificationRequirement.PREFERRED)
+                        .build()
+        );
+
+        String challengeId = UUID.randomUUID().toString();
+        try {
+            WebAuthnChallenge challenge = new WebAuthnChallenge();
+            challenge.setId(challengeId);
+            challenge.setChallengeJson(assertionRequest.toJson());
+            challenge.setEmail(null);
+            challenge.setExpiresAt(new Date(System.currentTimeMillis() + 5 * 60 * 1000));
+            mongo.save(challenge);
+
+            return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize assertion request", e);
+        }
     }
 
     public StartAuthenticationResult startAuthentication(Server server, String email) {
@@ -233,7 +259,18 @@ public class WebAuthnService {
                 .set("lastUsedAt", new Date());
         mongo.updateFirst(updateQuery, update, WebAuthnCredential.class);
 
-        return challenge.getEmail();
+        // Resolve email: from challenge (email-based flow) or from credential lookup (discoverable flow)
+        String email = challenge.getEmail();
+        if (email == null || email.isBlank()) {
+            String userHandleBase64 = result.getCredential().getUserHandle().getBase64Url();
+            Query uhQuery = new Query(Criteria.where("userHandle").is(userHandleBase64));
+            WebAuthnCredential cred = mongo.findOne(uhQuery, WebAuthnCredential.class);
+            if (cred == null) {
+                throw new IllegalStateException("Could not determine user identity");
+            }
+            email = cred.getEmail();
+        }
+        return email;
     }
 
     // --- Credential management ---
@@ -310,9 +347,13 @@ public class WebAuthnService {
 
         @Override
         public Optional<String> getUsernameForUserHandle(ByteArray userHandle) {
-            // We'd need to search all credentials, but for authentication we always have the email from the challenge
-            // This is only called during passwordless flows without username; we always pass username
-            return Optional.empty();
+            String userHandleBase64 = userHandle.getBase64Url();
+            Query query = new Query(Criteria.where("userHandle").is(userHandleBase64));
+            WebAuthnCredential cred = mongo.findOne(query, WebAuthnCredential.class);
+            if (cred == null) {
+                return Optional.empty();
+            }
+            return Optional.of(cred.getEmail());
         }
 
         @Override
