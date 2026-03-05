@@ -37,6 +37,25 @@ public class MinecraftStaffController {
 
         List<Staff> allStaff = template.findAll(Staff.class, CollectionName.STAFF);
 
+        // Build a map of minecraftUuid -> totalPlaytimeSeconds from linked Player documents
+        Map<String, Long> playerPlaytimeMap = new HashMap<>();
+        for (Staff staff : allStaff) {
+            if (staff.getAssignedMinecraftUuid() != null && !staff.getAssignedMinecraftUuid().isEmpty()) {
+                Query playerQuery = Query.query(Criteria.where("minecraftUuid").is(staff.getAssignedMinecraftUuid()));
+                playerQuery.fields().include("data.totalPlaytimeSeconds");
+                Document playerDoc = template.findOne(playerQuery, Document.class, CollectionName.PLAYERS);
+                if (playerDoc != null) {
+                    Document data = playerDoc.get("data", Document.class);
+                    if (data != null) {
+                        Object playtimeObj = data.get("totalPlaytimeSeconds");
+                        if (playtimeObj instanceof Number) {
+                            playerPlaytimeMap.put(staff.getAssignedMinecraftUuid(), ((Number) playtimeObj).longValue() * 1000L);
+                        }
+                    }
+                }
+            }
+        }
+
         // Aggregate punishment counts per issuerName
         Map<String, Integer> punishmentCounts = new HashMap<>();
         try {
@@ -81,7 +100,7 @@ public class MinecraftStaffController {
             staffData.put("minecraftUsername", staff.getAssignedMinecraftUsername());
             staffData.put("permissions", permissions);
             staffData.put("lastSeen", staff.getLastSeen());
-            staffData.put("totalPlaytimeMs", staff.getTotalPlaytimeMs());
+            staffData.put("totalPlaytimeMs", playerPlaytimeMap.getOrDefault(staff.getAssignedMinecraftUuid(), 0L));
             staffData.put("punishmentsIssuedCount", punishmentsIssuedCount);
             staffData.put("createdAt", staff.getCreatedAt());
             staffData.put("updatedAt", staff.getUpdatedAt());
@@ -190,8 +209,7 @@ public class MinecraftStaffController {
         }
 
         Update update = new Update()
-                .set("lastSeen", new Date())
-                .inc("totalPlaytimeMs", request.sessionDurationMs());
+                .set("lastSeen", new Date());
 
         template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
 

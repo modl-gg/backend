@@ -5,6 +5,7 @@ public enum TicketType {
     PLAYER("player", "Player Report"),
     CHAT("chat", "Chat Report"),
     APPEAL("appeal", "Ban Appeal"),
+    STAFF("staff", "Staff Application"),
     SUPPORT("support", "General Support");
 
     private final String id;
@@ -38,6 +39,7 @@ public enum TicketType {
             case PLAYER -> "PLAYER";
             case CHAT -> "CHAT";
             case APPEAL -> "APPEAL";
+            case STAFF -> "STAFF";
             case SUPPORT -> "SUPPORT";
         };
     }

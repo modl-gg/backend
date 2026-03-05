@@ -54,12 +54,19 @@ public class MinecraftPunishmentController {
     private final EvidenceUploadTokenService evidenceUploadTokenService;
 
     @PostMapping("/create")
-    public ResponseEntity<Void> createPunishment(
+    public ResponseEntity<?> createPunishment(
             @RequestBody @Valid MinecraftCreatePunishmentRequest request,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        createPunishmentInternal(server, request);
+        try {
+            createPunishmentInternal(server, request);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Player not found"
+            ));
+        }
         return ResponseEntity.ok().build();
     }
 
@@ -69,13 +76,19 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        String punishmentId = createPunishmentInternal(server, request);
-
-        return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "message", "Punishment created",
-                "punishmentId", punishmentId
-        ));
+        try {
+            String punishmentId = createPunishmentInternal(server, request);
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "message", "Punishment created",
+                    "punishmentId", punishmentId
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "status", 404,
+                    "message", "Player not found"
+            ));
+        }
     }
 
     @GetMapping("/{punishmentId}")

@@ -404,6 +404,11 @@ public class MinecraftSyncController {
                     domain = server.getCustomDomain() + ".modl.gg";
                 }
                 data.put("ticketUrl", "https://" + domain + "/ticket/" + ticketId);
+                data.put("ticketType", ticketType != null ? ticketType : "");
+                if ("REPORT".equalsIgnoreCase(ticketType)) {
+                    data.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
+                    data.put("category", ticket.getCategory() != null ? ticket.getCategory() : "");
+                }
 
                 notif.put("data", data);
                 notifications.add(notif);

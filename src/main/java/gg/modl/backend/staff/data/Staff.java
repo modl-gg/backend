@@ -70,9 +70,6 @@ public class Staff {
 
     private Date lastSeen;
 
-    @Builder.Default
-    private Long totalPlaytimeMs = 0L;
-
     private Date createdAt;
 
     private Date updatedAt;
