@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -99,12 +100,11 @@ public class PublicStaffController {
         template.updateFirst(query, update, TOKENS_COLLECTION);
 
         // Store the verification so the sync response can deliver it to the plugin
-        Map<String, Object> verification = Map.of(
-                "minecraftUuid", tokenDoc.get("minecraftUuid"),
-                "ip", tokenDoc.get("ip"),
-                "verifiedAt", Instant.now().toEpochMilli(),
-                "delivered", false
-        );
+        Map<String, Object> verification = new HashMap<>();
+        verification.put("minecraftUuid", tokenDoc.get("minecraftUuid"));
+        verification.put("ip", tokenDoc.get("ip"));
+        verification.put("verifiedAt", Instant.now().toEpochMilli());
+        verification.put("delivered", false);
         template.save(verification, VERIFICATIONS_COLLECTION);
 
         return ResponseEntity.ok(Map.of("status", "verified"));

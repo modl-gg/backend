@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -40,14 +41,13 @@ public class MinecraftStaff2faController {
         String token = UUID.randomUUID().toString();
         long now = Instant.now().toEpochMilli();
 
-        // Store token in DB
-        Map<String, Object> tokenDoc = Map.of(
-                "token", token,
-                "minecraftUuid", request.minecraftUuid(),
-                "ip", request.ip(),
-                "createdAt", now,
-                "verified", false
-        );
+        // Store token in DB (must be mutable for MongoDB to insert _id)
+        Map<String, Object> tokenDoc = new HashMap<>();
+        tokenDoc.put("token", token);
+        tokenDoc.put("minecraftUuid", request.minecraftUuid());
+        tokenDoc.put("ip", request.ip());
+        tokenDoc.put("createdAt", now);
+        tokenDoc.put("verified", false);
         template.save(tokenDoc, COLLECTION);
 
         // Build verify URL using server's panel domain
@@ -86,12 +86,11 @@ public class MinecraftStaff2faController {
         template.updateFirst(query, update, COLLECTION);
 
         // Store the verification so the sync response can deliver it
-        Map<String, Object> verification = Map.of(
-                "minecraftUuid", tokenDoc.get("minecraftUuid"),
-                "ip", tokenDoc.get("ip"),
-                "verifiedAt", Instant.now().toEpochMilli(),
-                "delivered", false
-        );
+        Map<String, Object> verification = new HashMap<>();
+        verification.put("minecraftUuid", tokenDoc.get("minecraftUuid"));
+        verification.put("ip", tokenDoc.get("ip"));
+        verification.put("verifiedAt", Instant.now().toEpochMilli());
+        verification.put("delivered", false);
         template.save(verification, "staff_2fa_verifications");
 
         return ResponseEntity.ok(Map.of("status", "verified"));
