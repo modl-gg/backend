@@ -70,10 +70,12 @@ public class MinecraftPlayerController {
     @GetMapping("/{uuid}")
     public ResponseEntity<Map<String, Object>> getPlayerByUuid(
             @PathVariable String uuid,
+            @RequestParam(required = false) Integer punishmentLimit,
+            @RequestParam(required = false) Integer noteLimit,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerByUuid(server, uuid);
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerByUuid(server, uuid, punishmentLimit, noteLimit);
         return ResponseEntity.status(response.status()).body(response.body());
     }
 
@@ -109,6 +111,18 @@ public class MinecraftPlayerController {
         return ResponseEntity.status(response.status()).body(response.body());
     }
 
+    @PostMapping("/lookup-profile")
+    public ResponseEntity<Map<String, Object>> lookupProfile(
+            @RequestBody @Valid LookupRequest request,
+            @RequestParam(required = false) Integer punishmentLimit,
+            @RequestParam(required = false) Integer noteLimit,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.lookupProfile(server, request.query(), request.shouldQueryMojang(), punishmentLimit, noteLimit);
+        return ResponseEntity.status(response.status()).body(response.body());
+    }
+
     @PostMapping("/{uuid}/notes")
     public ResponseEntity<Map<String, Object>> createPlayerNote(
             @PathVariable String uuid,
@@ -123,10 +137,36 @@ public class MinecraftPlayerController {
     @GetMapping("/{uuid}/linked-accounts")
     public ResponseEntity<Map<String, Object>> getLinkedAccounts(
             @PathVariable String uuid,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer limit,
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getLinkedAccounts(server, uuid);
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getLinkedAccounts(server, uuid, page, limit);
+        return ResponseEntity.status(response.status()).body(response.body());
+    }
+
+    @GetMapping("/{uuid}/punishments")
+    public ResponseEntity<Map<String, Object>> getPlayerPunishments(
+            @PathVariable String uuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "7") int limit,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerPunishments(server, uuid, page, limit);
+        return ResponseEntity.status(response.status()).body(response.body());
+    }
+
+    @GetMapping("/{uuid}/notes")
+    public ResponseEntity<Map<String, Object>> getPlayerNotes(
+            @PathVariable String uuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "7") int limit,
+            HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerNotes(server, uuid, page, limit);
         return ResponseEntity.status(response.status()).body(response.body());
     }
 

@@ -206,14 +206,14 @@ public class MinecraftPlayerService {
         return Map.of("status", 200, "players", players);
     }
 
-    public ServiceResponse getPlayerByUuid(Server server, String uuid) {
+    public ServiceResponse getPlayerByUuid(Server server, String uuid, Integer punishmentLimit, Integer noteLimit) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
             return notFound("Player not found");
         }
 
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        return ok(Map.of("status", 200, "profile", toPlayerProfile(server, player, punishmentTypes)));
+        return ok(Map.of("status", 200, "profile", toPlayerProfile(server, player, punishmentTypes, punishmentLimit, noteLimit)));
     }
 
     public ServiceResponse getPlayerByMinecraftUuid(Server server, String minecraftUuid, boolean queryMojang) {
@@ -318,6 +318,32 @@ public class MinecraftPlayerService {
         ));
     }
 
+    public ServiceResponse lookupProfile(Server server, String query, boolean shouldQueryMojang, Integer punishmentLimit, Integer noteLimit) {
+        boolean isUuid = query.contains("-") && query.length() == 36;
+        Player player = isUuid
+                ? findPlayerByUuid(server, query).orElse(null)
+                : findByUsername(server, query).orElse(null);
+
+        if (player == null && shouldQueryMojang) {
+            Optional<MojangApiService.MojangProfile> mojangProfile = isUuid
+                    ? mojangApiService.lookupByUuid(query)
+                    : mojangApiService.lookupByUsername(query);
+            if (mojangProfile.isPresent()) {
+                Player mojangPlayer = findPlayerByUuid(server, mojangProfile.get().uuid().toString()).orElse(null);
+                if (mojangPlayer != null) {
+                    player = mojangPlayer;
+                }
+            }
+        }
+
+        if (player == null) {
+            return notFound("Player not found");
+        }
+
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        return ok(Map.of("status", 200, "profile", toPlayerProfile(server, player, types, punishmentLimit, noteLimit)));
+    }
+
     public ServiceResponse createNote(Server server, String uuid, String text, String issuerName, String issuerId) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
@@ -370,7 +396,31 @@ public class MinecraftPlayerService {
         ));
     }
 
-    public ServiceResponse getLinkedAccounts(Server server, String uuid) {
+    public ServiceResponse getLinkedAccounts(Server server, String uuid, Integer page, Integer limit) {
+        ServiceResponse fullResponse = getLinkedAccountsFull(server, uuid);
+        if (fullResponse.status() != HttpStatus.OK || page == null || limit == null) {
+            return fullResponse;
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> allAccounts = (List<Map<String, Object>>) fullResponse.body().get("linkedAccounts");
+        int totalCount = allAccounts.size();
+        int skip = (page - 1) * limit;
+        List<Map<String, Object>> paged = skip >= totalCount
+                ? List.of()
+                : allAccounts.subList(skip, Math.min(skip + limit, totalCount));
+        boolean hasMore = skip + limit < totalCount;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", 200);
+        response.put("linkedAccounts", paged);
+        response.put("totalCount", totalCount);
+        response.put("page", page);
+        response.put("hasMore", hasMore);
+        return ok(response);
+    }
+
+    private ServiceResponse getLinkedAccountsFull(Server server, String uuid) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
             return notFound("Player not found");
@@ -414,6 +464,71 @@ public class MinecraftPlayerService {
         }
 
         return ok(Map.of("status", 200, "linkedAccounts", linkedAccounts));
+    }
+
+    public ServiceResponse getPlayerPunishments(Server server, String uuid, int page, int limit) {
+        Player player = findPlayerByUuid(server, uuid).orElse(null);
+        if (player == null) {
+            return notFound("Player not found");
+        }
+
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
+
+        List<Map<String, Object>> allPunishments = player.getPunishments().stream()
+                .sorted((a, b) -> b.getIssued().compareTo(a.getIssued()))
+                .map(p -> PunishmentMapper.toPunishmentMap(p, punishmentTypes, resolvedIssuers))
+                .toList();
+
+        int totalCount = allPunishments.size();
+        int skip = (page - 1) * limit;
+        List<Map<String, Object>> paged = skip >= totalCount
+                ? List.of()
+                : allPunishments.subList(skip, Math.min(skip + limit, totalCount));
+        boolean hasMore = skip + limit < totalCount;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", 200);
+        response.put("punishments", paged);
+        response.put("totalCount", totalCount);
+        response.put("page", page);
+        response.put("hasMore", hasMore);
+        return ok(response);
+    }
+
+    public ServiceResponse getPlayerNotes(Server server, String uuid, int page, int limit) {
+        Player player = findPlayerByUuid(server, uuid).orElse(null);
+        if (player == null) {
+            return notFound("Player not found");
+        }
+
+        List<Map<String, Object>> allNotes = player.getNotes().stream()
+                .sorted((a, b) -> b.getDate().compareTo(a.getDate()))
+                .map(note -> {
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("id", note.getId());
+                    entry.put("text", note.getText());
+                    entry.put("date", note.getDate());
+                    entry.put("issuerName", note.getIssuerName());
+                    entry.put("issuerId", note.getIssuerId());
+                    return entry;
+                })
+                .toList();
+
+        int totalCount = allNotes.size();
+        int skip = (page - 1) * limit;
+        List<Map<String, Object>> paged = skip >= totalCount
+                ? List.of()
+                : allNotes.subList(skip, Math.min(skip + limit, totalCount));
+        boolean hasMore = skip + limit < totalCount;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", 200);
+        response.put("notes", paged);
+        response.put("totalCount", totalCount);
+        response.put("page", page);
+        response.put("hasMore", hasMore);
+        return ok(response);
     }
 
     public Map<String, Object> getPlayerReports(Server server, String uuid) {
@@ -542,6 +657,10 @@ public class MinecraftPlayerService {
     }
 
     private Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes) {
+        return toPlayerProfile(server, player, punishmentTypes, null, null);
+    }
+
+    private Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes, Integer punishmentLimit, Integer noteLimit) {
         List<Map<String, Object>> usernames = player.getUsernames().stream()
                 .map(username -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
@@ -551,7 +670,11 @@ public class MinecraftPlayerService {
                 })
                 .toList();
 
-        List<Map<String, Object>> notes = player.getNotes().stream()
+        int totalNoteCount = player.getNotes().size();
+        var noteStream = player.getNotes().stream()
+                .sorted((a, b) -> b.getDate().compareTo(a.getDate()));
+        if (noteLimit != null) noteStream = noteStream.limit(noteLimit);
+        List<Map<String, Object>> notes = noteStream
                 .map(note -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("id", note.getId());
@@ -578,7 +701,11 @@ public class MinecraftPlayerService {
                 .toList();
 
         Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
-        List<Map<String, Object>> punishments = player.getPunishments().stream()
+        int totalPunishmentCount = player.getPunishments().size();
+        var punishmentStream = player.getPunishments().stream()
+                .sorted((a, b) -> b.getIssued().compareTo(a.getIssued()));
+        if (punishmentLimit != null) punishmentStream = punishmentStream.limit(punishmentLimit);
+        List<Map<String, Object>> punishments = punishmentStream
                 .map(punishment -> PunishmentMapper.toPunishmentMap(punishment, punishmentTypes, resolvedIssuers))
                 .toList();
 
@@ -593,6 +720,8 @@ public class MinecraftPlayerService {
         profile.put("punishments", punishments);
         profile.put("pendingNotifications", pendingNotifications);
         profile.put("data", player.getData());
+        if (punishmentLimit != null) profile.put("punishmentCount", totalPunishmentCount);
+        if (noteLimit != null) profile.put("noteCount", totalNoteCount);
         return profile;
     }
 

@@ -8,6 +8,7 @@ import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
@@ -33,6 +34,7 @@ public class AnalyticsService {
 
     private final DynamicMongoTemplateProvider mongoProvider;
     private final PunishmentTypeService punishmentTypeService;
+    private final IssuerNameResolver issuerNameResolver;
 
     public OverviewResponse getOverview(Server server) {
         MongoTemplate template = getTemplate(server);
@@ -145,9 +147,26 @@ public class AnalyticsService {
                 .sorted((a, b) -> Integer.compare(b.count(), a.count()))
                 .toList();
 
+        // Collect potential staff IDs for batch resolution
+        List<Document> byStaffDocs = toDocumentList(facetResults.get("byStaff"));
+        Set<String> potentialIds = new HashSet<>();
+        for (Document document : byStaffDocs) {
+            Object rawId = document.get("_id");
+            if (rawId instanceof String s && !s.isBlank()) {
+                potentialIds.add(s);
+            }
+        }
+        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, template);
+
         Map<String, Integer> staffCountMap = new HashMap<>();
-        for (Document document : toDocumentList(facetResults.get("byStaff"))) {
-            String staffName = normalizeStaffName(document.get("_id"));
+        for (Document document : byStaffDocs) {
+            Object rawId = document.get("_id");
+            String staffName;
+            if (rawId instanceof String s && resolvedStaff.containsKey(s)) {
+                staffName = resolvedStaff.get(s);
+            } else {
+                staffName = normalizeStaffName(rawId);
+            }
             staffCountMap.merge(staffName, toInt(document.get("count")), Integer::sum);
         }
         List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet().stream()
@@ -318,7 +337,8 @@ public class AnalyticsService {
                 .append("count", new Document("$sum", 1)));
         Document sortByCountDesc = new Document("$sort", new Document("count", -1));
 
-        Document byStaffFacet = new Document("$group", new Document("_id", "$punishments.issuerName")
+        Document byStaffFacet = new Document("$group", new Document("_id",
+                new Document("$ifNull", List.of("$punishments.issuerId", "$punishments.issuerName")))
                 .append("count", new Document("$sum", 1)));
 
         Document byDayFacet = new Document("$group", new Document("_id",
