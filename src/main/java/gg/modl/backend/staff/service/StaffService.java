@@ -252,6 +252,7 @@ public class StaffService {
         List<Staff> allStaff = staffRepository.findAll(server);
 
         Map<String, Long> playerPlaytimeMap = loadPlayerPlaytimeMap(server, allStaff);
+        Map<String, String> playerLastServerMap = loadPlayerLastServerMap(server, allStaff);
         Map<String, Integer> punishmentCounts = loadPunishmentCounts(server);
         Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, allStaff);
 
@@ -274,6 +275,7 @@ public class StaffService {
                             permissionsByRole.getOrDefault(staff.getRole(), List.of()),
                             staff.getLastSeen(),
                             playerPlaytimeMap.getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
+                            playerLastServerMap.get(staff.getAssignedMinecraftUuid()),
                             punishmentsIssuedCount,
                             staff.getCreatedAt(),
                             staff.getUpdatedAt()
@@ -533,6 +535,36 @@ public class StaffService {
             }
         }
         return playerPlaytimeMap;
+    }
+
+    private Map<String, String> loadPlayerLastServerMap(Server server, List<Staff> allStaff) {
+        List<String> assignedUuids = allStaff.stream()
+                .map(Staff::getAssignedMinecraftUuid)
+                .filter(uuid -> uuid != null && !uuid.isBlank())
+                .distinct()
+                .toList();
+
+        if (assignedUuids.isEmpty()) {
+            return Map.of();
+        }
+
+        Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids));
+        playerQuery.fields()
+                .include(PlayerFields.MINECRAFT_UUID.path())
+                .include(PlayerFields.DATA_LAST_SERVER.path());
+
+        Map<String, String> playerLastServerMap = new HashMap<>();
+        for (Player player : playerRepository.find(server, playerQuery)) {
+            if (player.getMinecraftUuid() == null || player.getData() == null) {
+                continue;
+            }
+
+            Object lastServerObj = player.getData().get("lastServer");
+            if (lastServerObj instanceof String lastServer) {
+                playerLastServerMap.put(player.getMinecraftUuid().toString(), lastServer);
+            }
+        }
+        return playerLastServerMap;
     }
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {

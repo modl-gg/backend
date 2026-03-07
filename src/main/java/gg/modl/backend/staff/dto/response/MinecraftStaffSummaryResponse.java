@@ -13,6 +13,7 @@ public record MinecraftStaffSummaryResponse(
         List<String> permissions,
         Date lastSeen,
         long totalPlaytimeMs,
+        String lastServer,
         int punishmentsIssuedCount,
         Date createdAt,
         Date updatedAt

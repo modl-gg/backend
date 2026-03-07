@@ -490,9 +490,6 @@ public class TicketService {
                 : ticketType.getDisplayName();
 
         List<String> tags = request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>();
-        if (tags.isEmpty()) {
-            tags.add(request.type());
-        }
 
         Map<String, Object> data = new HashMap<>();
         if (request.priority() != null) {
