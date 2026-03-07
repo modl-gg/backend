@@ -150,6 +150,7 @@ public class AdminAnalyticsService {
                 "date", s.getDate().toInstant().toString(),
                 "activeServers", s.getActiveServers(),
                 "totalPlayers", s.getTotalPlayers(),
+                "onlinePlayers", s.getOnlinePlayers(),
                 "totalServers", s.getTotalServers()
         )).toList();
 

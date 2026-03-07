@@ -48,18 +48,29 @@ public class MetricSnapshotService {
                     ? ((Number) userCountResult.getOrDefault("totalPlayers", 0L)).longValue()
                     : 0L;
 
+            Date fiveMinutesAgo = Date.from(Instant.now().minus(5, ChronoUnit.MINUTES));
+            Aggregation onlinePlayersAgg = Aggregation.newAggregation(
+                    Aggregation.match(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(fiveMinutesAgo)),
+                    Aggregation.group().sum(ServerFields.ONLINE_PLAYER_COUNT.path()).as("onlinePlayers")
+            );
+            Document onlinePlayersResult = serverRepository.aggregate(onlinePlayersAgg, Document.class).getUniqueMappedResult();
+            long onlinePlayers = onlinePlayersResult != null
+                    ? ((Number) onlinePlayersResult.getOrDefault("onlinePlayers", 0L)).longValue()
+                    : 0L;
+
             tenantMongoAccess.global().upsert(
                     Query.query(Criteria.where("date").is(hourTruncated)),
                     new Update()
                             .set("activeServers", activeServers)
                             .set("totalServers", totalServers)
                             .set("totalPlayers", totalPlayers)
+                            .set("onlinePlayers", onlinePlayers)
                             .setOnInsert("createdAt", now),
                     MetricSnapshot.class
             );
 
-            log.info("Metric snapshot saved: activeServers={}, totalServers={}, totalPlayers={}",
-                    activeServers, totalServers, totalPlayers);
+            log.info("Metric snapshot saved: activeServers={}, totalServers={}, totalPlayers={}, onlinePlayers={}",
+                    activeServers, totalServers, totalPlayers, onlinePlayers);
         } catch (Exception e) {
             log.error("Failed to take metric snapshot", e);
         }

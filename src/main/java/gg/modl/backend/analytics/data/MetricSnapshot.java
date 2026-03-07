@@ -25,6 +25,9 @@ public class MetricSnapshot {
     @Field("totalPlayers")
     private long totalPlayers;
 
+    @Field("onlinePlayers")
+    private long onlinePlayers;
+
     @Field("createdAt")
     private Date createdAt;
 }
