@@ -43,7 +43,7 @@ class SessionAuthenticationFilterTest {
         SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
 
         Server server = new Server("Alpha", "alpha", "server_alpha", "admin@example.com", true, ServerPlan.FREE);
-        AuthSessionData session = new AuthSessionData("token-123", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000));
+        AuthSessionData session = new AuthSessionData("token-123", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);
 
         when(sessionService.findAndRefreshSession(server, "token-123")).thenReturn(Optional.of(session));
 
@@ -77,7 +77,7 @@ class SessionAuthenticationFilterTest {
         SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
 
         Server server = new Server("Custom", "custom", "server_custom", "admin@example.com", true, ServerPlan.FREE);
-        AuthSessionData session = new AuthSessionData("token-456", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000));
+        AuthSessionData session = new AuthSessionData("token-456", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);
 
         when(sessionService.findAndRefreshSession(server, "token-456")).thenReturn(Optional.of(session));
 

@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -25,19 +26,19 @@ public class SessionService {
     private final DynamicMongoTemplateProvider mongoProvider;
     private final AuthConfiguration authConfiguration;
 
-    public AuthSessionData createSession(Server server, String email) {
+    public AuthSessionData createSession(Server server, String email, String ipAddress, String userAgent) {
         MongoTemplate mongo = getMongoTemplateForServer(server);
         invalidateAllSessionsForEmailInternal(mongo, email);
-        return createSessionInternal(mongo, email);
+        return createSessionInternal(mongo, email, ipAddress, userAgent);
     }
 
     public AuthSessionData createAdminSession(String email) {
         MongoTemplate mongo = mongoProvider.getGlobalDatabase();
         invalidateAllSessionsForEmailInternal(mongo, email);
-        return createSessionInternal(mongo, email);
+        return createSessionInternal(mongo, email, null, null);
     }
 
-    private AuthSessionData createSessionInternal(MongoTemplate mongo, String email) {
+    private AuthSessionData createSessionInternal(MongoTemplate mongo, String email, String ipAddress, String userAgent) {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Session email cannot be empty");
         }
@@ -45,6 +46,8 @@ public class SessionService {
         AuthSessionData session = new AuthSessionData();
         session.setId(generateSecureToken());
         session.setEmail(email.trim().toLowerCase(Locale.ROOT));
+        session.setIpAddress(ipAddress);
+        session.setUserAgent(userAgent);
 
         Date now = new Date();
         session.setCreatedAt(now);
@@ -52,6 +55,13 @@ public class SessionService {
 
         mongo.save(session);
         return session;
+    }
+
+    public List<AuthSessionData> findAllSessionsForEmail(Server server, String email) {
+        MongoTemplate mongo = getMongoTemplateForServer(server);
+        Query query = new Query(Criteria.where("email").is(email.trim().toLowerCase(Locale.ROOT))
+                .and("expiresAt").gt(new Date()));
+        return mongo.find(query, AuthSessionData.class);
     }
 
     public Optional<AuthSessionData> findValidSession(Server server, String sessionId) {

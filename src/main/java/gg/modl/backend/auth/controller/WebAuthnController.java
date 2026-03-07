@@ -189,7 +189,7 @@ public class WebAuthnController {
             }
 
             // Create session (same as email code login)
-            AuthSessionData session = sessionService.createSession(server, email);
+            AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
             Cookie sessionCookie = createSessionCookie(session.getId());
             response.addCookie(sessionCookie);
 

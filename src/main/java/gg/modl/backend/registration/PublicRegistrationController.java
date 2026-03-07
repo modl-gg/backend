@@ -245,6 +245,7 @@ public class PublicRegistrationController {
     @PostMapping("/auto-login")
     public ResponseEntity<?> autoLogin(
             @RequestBody @Valid AutoLoginRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response) {
 
         Server server = serverService.getServerByAutoLoginToken(request.token());
@@ -274,7 +275,7 @@ public class PublicRegistrationController {
         }
 
         // Create session for the admin user
-        AuthSessionData session = sessionService.createSession(server, server.getAdminEmail());
+        AuthSessionData session = sessionService.createSession(server, server.getAdminEmail(), RequestUtil.getClientIp(httpRequest), httpRequest.getHeader("User-Agent"));
 
         // Clear the auto-login token (one-time use)
         serverService.clearAutoLoginToken(server);

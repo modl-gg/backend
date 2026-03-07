@@ -31,12 +31,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.UnsupportedEncodingException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TimeZone;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH)
@@ -91,7 +93,9 @@ public class PanelAuthController {
             return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 
-        AuthSessionData session = sessionService.createSession(server, requestData.email());
+        String clientIp = RequestUtil.getClientIp(request);
+        String userAgent = request.getHeader("User-Agent");
+        AuthSessionData session = sessionService.createSession(server, requestData.email(), clientIp, userAgent);
 
         Cookie sessionCookie = createSessionCookie(session.getId());
         response.addCookie(sessionCookie);
@@ -177,7 +181,7 @@ public class PanelAuthController {
             // Invalidate all sessions for the old email, then create a fresh one for the new email
             // so the user stays logged in without disruption.
             sessionService.invalidateAllSessionsForEmail(server, currentEmail);
-            AuthSessionData newSession = sessionService.createSession(server, newEmail);
+            AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
             response.addCookie(createSessionCookie(newSession.getId()));
 
             return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
@@ -214,6 +218,36 @@ public class PanelAuthController {
         }
 
         return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+    }
+
+    @GetMapping("/sessions")
+    public ResponseEntity<?> getSessions(HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+        AuthSessionData currentSession = RequestUtil.getSession(request);
+        String currentSessionId = currentSession != null ? currentSession.getId() : null;
+
+        List<AuthSessionData> sessions = sessionService.findAllSessionsForEmail(server, email);
+
+        SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+
+        List<SessionInfoResponse> result = sessions.stream()
+                .map(s -> new SessionInfoResponse(
+                        s.getId(),
+                        s.getIpAddress(),
+                        s.getUserAgent(),
+                        s.getCreatedAt() != null ? isoFormat.format(s.getCreatedAt()) : null,
+                        s.getExpiresAt() != null ? isoFormat.format(s.getExpiresAt()) : null,
+                        s.getId().equals(currentSessionId)
+                ))
+                .toList();
+
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/permissions")
@@ -337,4 +371,6 @@ public class PanelAuthController {
     public record UpdateEmailRequest(@Email @NotBlank String newEmail) {}
 
     public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
+
+    public record SessionInfoResponse(String id, String ipAddress, String userAgent, String createdAt, String expiresAt, boolean isCurrent) {}
 }

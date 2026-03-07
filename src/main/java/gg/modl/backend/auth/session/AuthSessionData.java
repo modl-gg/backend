@@ -29,4 +29,10 @@ public class AuthSessionData {
     @Field
     @Indexed(name = "idx_sessions_expiresAt_ttl", expireAfter = "0s")
     private Date expiresAt;
+
+    @Field
+    private String ipAddress;
+
+    @Field
+    private String userAgent;
 }
