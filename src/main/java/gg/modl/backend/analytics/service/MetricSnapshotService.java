@@ -1,7 +1,6 @@
 package gg.modl.backend.analytics.service;
 
 import gg.modl.backend.analytics.data.MetricSnapshot;
-import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerFields;
@@ -27,17 +26,20 @@ public class MetricSnapshotService {
     private final TenantMongoAccess tenantMongoAccess;
     private final ServerMongoRepository serverRepository;
 
-    @Scheduled(cron = "0 0 * * * *")
+    @Scheduled(cron = "0 */5 * * * *")
     public void takeSnapshot() {
         try {
-            Date now = new Date();
-            Date hourTruncated = Date.from(Instant.now().truncatedTo(ChronoUnit.HOURS));
-            Date twentyFourHoursAgo = Date.from(Instant.now().minus(24, ChronoUnit.HOURS));
+            Instant nowInstant = Instant.now();
+            Date now = Date.from(nowInstant);
+            // Truncate to 5-minute boundary
+            long epochSeconds = nowInstant.getEpochSecond();
+            Date fiveTruncated = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
+            Date fiveMinutesAgo = Date.from(nowInstant.minus(5, ChronoUnit.MINUTES));
 
             long totalServers = serverRepository.count(new Query());
 
             long activeServers = serverRepository.count(
-                    Query.query(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(twentyFourHoursAgo))
+                    Query.query(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(fiveMinutesAgo))
             );
 
             Aggregation userCountAgg = Aggregation.newAggregation(
@@ -48,7 +50,6 @@ public class MetricSnapshotService {
                     ? ((Number) userCountResult.getOrDefault("totalPlayers", 0L)).longValue()
                     : 0L;
 
-            Date fiveMinutesAgo = Date.from(Instant.now().minus(5, ChronoUnit.MINUTES));
             Aggregation onlinePlayersAgg = Aggregation.newAggregation(
                     Aggregation.match(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(fiveMinutesAgo)),
                     Aggregation.group().sum(ServerFields.ONLINE_PLAYER_COUNT.path()).as("onlinePlayers")
@@ -59,7 +60,7 @@ public class MetricSnapshotService {
                     : 0L;
 
             tenantMongoAccess.global().upsert(
-                    Query.query(Criteria.where("date").is(hourTruncated)),
+                    Query.query(Criteria.where("date").is(fiveTruncated)),
                     new Update()
                             .set("activeServers", activeServers)
                             .set("totalServers", totalServers)
@@ -73,6 +74,20 @@ public class MetricSnapshotService {
                     activeServers, totalServers, totalPlayers, onlinePlayers);
         } catch (Exception e) {
             log.error("Failed to take metric snapshot", e);
+        }
+    }
+
+    @Scheduled(cron = "0 0 3 * * *")
+    public void purgeOldSnapshots() {
+        try {
+            Date sevenDaysAgo = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
+            tenantMongoAccess.global().remove(
+                    Query.query(Criteria.where("date").lt(sevenDaysAgo)),
+                    MetricSnapshot.class
+            );
+            log.info("Purged metric snapshots older than 7 days");
+        } catch (Exception e) {
+            log.error("Failed to purge old metric snapshots", e);
         }
     }
 }
