@@ -80,12 +80,12 @@ public class MetricSnapshotService {
     @Scheduled(cron = "0 0 3 * * *")
     public void purgeOldSnapshots() {
         try {
-            Date sevenDaysAgo = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
+            Date oneDayAgo = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
             tenantMongoAccess.global().remove(
-                    Query.query(Criteria.where("date").lt(sevenDaysAgo)),
+                    Query.query(Criteria.where("date").lt(oneDayAgo)),
                     MetricSnapshot.class
             );
-            log.info("Purged metric snapshots older than 7 days");
+            log.info("Purged metric snapshots older than 24 hours");
         } catch (Exception e) {
             log.error("Failed to purge old metric snapshots", e);
         }
