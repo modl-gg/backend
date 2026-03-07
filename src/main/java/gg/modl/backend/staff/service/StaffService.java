@@ -12,6 +12,7 @@ import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.server.ServerField;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
@@ -497,6 +498,63 @@ public class StaffService {
             Update dateFormatUpdate = new Update().set("dateFormat", newDateFormat).set("updatedAt", new Date());
             template.updateFirst(query, dateFormatUpdate, Staff.class, CollectionName.STAFF);
             staff.setDateFormat(newDateFormat);
+        }
+
+        return Optional.of(staff);
+    }
+
+    public Optional<Staff> updateEmail(Server server, String currentEmail, String newEmail, boolean isSuperAdmin) {
+        MongoTemplate template = getTemplate(server);
+
+        // Check per-server uniqueness (excluding self)
+        Query emailExistsQuery = Query.query(
+                Criteria.where("email").regex("^" + Pattern.quote(newEmail) + "$", "i")
+        );
+        Staff existingWithNewEmail = template.findOne(emailExistsQuery, Staff.class, CollectionName.STAFF);
+        if (existingWithNewEmail != null && !existingWithNewEmail.getEmail().equalsIgnoreCase(currentEmail)) {
+            throw new IllegalStateException("Email address already in use");
+        }
+
+        // If super admin, check global DB uniqueness before making any changes
+        if (isSuperAdmin) {
+            MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+            Query adminEmailCheck = Query.query(
+                    Criteria.where(ServerField.ADMIN_EMAIL).regex("^" + Pattern.quote(newEmail) + "$", "i")
+                            .and("_id").ne(server.getId())
+            );
+            if (globalDb.exists(adminEmailCheck, Server.class, CollectionName.MODL_SERVERS)) {
+                throw new IllegalStateException("Email address already in use");
+            }
+        }
+
+        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(currentEmail) + "$", "i"));
+        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+
+        if (staff == null) {
+            if (!isSuperAdmin) {
+                return Optional.empty();
+            }
+            // Super admin without a staff record yet — create one with new email
+            staff = Staff.builder()
+                    .email(newEmail)
+                    .username("Admin")
+                    .role("Super Admin")
+                    .createdAt(new Date())
+                    .updatedAt(new Date())
+                    .build();
+            template.save(staff, CollectionName.STAFF);
+        } else {
+            Update update = new Update().set("email", newEmail).set("updatedAt", new Date());
+            template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+            staff.setEmail(newEmail);
+        }
+
+        // Update global DB adminEmail for super admin
+        if (isSuperAdmin) {
+            MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
+            Query serverQuery = Query.query(Criteria.where("_id").is(server.getId()));
+            Update serverUpdate = new Update().set(ServerField.ADMIN_EMAIL, newEmail).set("updatedAt", new Date());
+            globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
         }
 
         return Optional.of(staff);

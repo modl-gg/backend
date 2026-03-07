@@ -149,6 +149,45 @@ public class PanelAuthController {
         }
     }
 
+    @PatchMapping("/email")
+    public ResponseEntity<?> updateEmail(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            @RequestBody @Valid UpdateEmailRequest requestData) {
+
+        String currentEmail = RequestUtil.getSessionEmail(request);
+        if (currentEmail == null) {
+            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+        }
+
+        String newEmail = requestData.newEmail().trim();
+        if (currentEmail.equalsIgnoreCase(newEmail)) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "New email must be different from your current email."));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
+
+        try {
+            Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
+            if (result.isEmpty()) {
+                return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+            }
+
+            // Invalidate all sessions for the old email
+            sessionService.invalidateAllSessionsForEmail(server, currentEmail);
+
+            // Expire the session cookie for the current browser
+            for (Cookie cookie : createExpiredSessionCookies()) {
+                response.addCookie(cookie);
+            }
+
+            return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully. Please log in with your new email address."));
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
+        }
+    }
+
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
@@ -296,6 +335,8 @@ public class PanelAuthController {
     public record VerifyCodeRequest(@Email @NotBlank String email, @NotBlank String code) {}
 
     public record UpdateProfileRequest(String username, String language, String dateFormat) {}
+
+    public record UpdateEmailRequest(@Email @NotBlank String newEmail) {}
 
     public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
 }
