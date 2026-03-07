@@ -46,12 +46,25 @@ public class AdminMonitoringService {
     public Map<String, Object> getDashboard() {
         Date oneDayAgo = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
         Date oneWeekAgo = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
+        Date fiveMinutesAgo = Date.from(Instant.now().minus(5, ChronoUnit.MINUTES));
 
         long totalServers = serverRepository.count(new Query());
         long activeServers = serverRepository.count(Query.query(new Criteria().andOperator(
                 MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
                 MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(true)
         )));
+
+        long concurrentServers = serverRepository.count(
+                Query.query(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(fiveMinutesAgo))
+        );
+        Aggregation concurrentPlayersAgg = Aggregation.newAggregation(
+                Aggregation.match(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(fiveMinutesAgo)),
+                Aggregation.group().sum(ServerFields.ONLINE_PLAYER_COUNT.path()).as("total")
+        );
+        Document concurrentPlayersResult = serverRepository.aggregate(concurrentPlayersAgg, Document.class).getUniqueMappedResult();
+        long concurrentPlayers = concurrentPlayersResult != null
+                ? ((Number) concurrentPlayersResult.getOrDefault("total", 0L)).longValue()
+                : 0L;
         long pendingServers = serverRepository.count(
                 Query.query(MongoQueries.where(ServerFields.PROVISIONING_STATUS)
                         .in(ProvisioningStatus.PENDING, ProvisioningStatus.IN_PROGRESS))
@@ -111,7 +124,9 @@ public class AdminMonitoringService {
                                 "active", activeServers,
                                 "pending", pendingServers,
                                 "failed", failedServers,
-                                "recentRegistrations", recentServers
+                                "recentRegistrations", recentServers,
+                                "concurrentServers", concurrentServers,
+                                "concurrentPlayers", concurrentPlayers
                         ),
                         "logs", Map.of(
                                 "last24h", Map.of(

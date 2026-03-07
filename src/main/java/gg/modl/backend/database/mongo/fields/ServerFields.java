@@ -29,6 +29,7 @@ public final class ServerFields {
     public static final MongoField<Server> MAX_STORAGE_LIMIT_BYTES = MongoFieldNames.field(Server.class, Server::getMaxStorageLimitBytes);
     public static final MongoField<Server> MAX_AI_OVERAGE_REQUESTS = MongoFieldNames.field(Server.class, Server::getMaxAiOverageRequests);
     public static final MongoField<Server> MIGRATION_FILE_SIZE_LIMIT = MongoFieldNames.field(Server.class, Server::getMigrationFileSizeLimit);
+    public static final MongoField<Server> ONLINE_PLAYER_COUNT = MongoFieldNames.field(Server.class, Server::getOnlinePlayerCount);
     public static final MongoField<Server> USER_COUNT = MongoFieldNames.field(Server.class, Server::getUserCount);
     public static final MongoField<Server> TICKET_COUNT = MongoFieldNames.field(Server.class, Server::getTicketCount);
     public static final MongoField<Server> LAST_STATS_UPDATED_AT = MongoFieldNames.field(Server.class, Server::getLastStatsUpdatedAt);

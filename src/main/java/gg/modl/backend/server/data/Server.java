@@ -164,6 +164,10 @@ public class Server {
 
     // Analytics/Stats
     @Nullable
+    @Field(name = "onlinePlayerCount", targetType = FieldType.INT64)
+    private Long onlinePlayerCount;
+
+    @Nullable
     @Field(name = "userCount", targetType = FieldType.INT64)
     @Indexed(name = "idx_servers_userCount")
     private Long userCount;

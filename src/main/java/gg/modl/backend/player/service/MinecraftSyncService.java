@@ -67,7 +67,9 @@ public class MinecraftSyncService {
 
         tenantMongoAccess.global().updateFirst(
                 Query.query(Criteria.where("_id").is(server.getId())),
-                new Update().set("lastActivityAt", Date.from(now)),
+                new Update()
+                        .set("lastActivityAt", Date.from(now))
+                        .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L),
                 Server.class
         );
         Instant lastSync = lastSyncTimestamp != null

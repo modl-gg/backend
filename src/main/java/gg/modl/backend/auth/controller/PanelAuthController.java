@@ -174,15 +174,13 @@ public class PanelAuthController {
                 return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
             }
 
-            // Invalidate all sessions for the old email
+            // Invalidate all sessions for the old email, then create a fresh one for the new email
+            // so the user stays logged in without disruption.
             sessionService.invalidateAllSessionsForEmail(server, currentEmail);
+            AuthSessionData newSession = sessionService.createSession(server, newEmail);
+            response.addCookie(createSessionCookie(newSession.getId()));
 
-            // Expire the session cookie for the current browser
-            for (Cookie cookie : createExpiredSessionCookies()) {
-                response.addCookie(cookie);
-            }
-
-            return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully. Please log in with your new email address."));
+            return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
         } catch (IllegalStateException | IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
         }

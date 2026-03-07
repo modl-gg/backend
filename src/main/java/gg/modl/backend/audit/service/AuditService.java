@@ -97,11 +97,15 @@ public class AuditService {
             int totalActions = activity != null ? activity.getInteger("totalActions", 0) : 0;
             int ticketActions = ticketResponsesByStaff.getOrDefault(username.toLowerCase(), 0);
 
-            // Count punishments by both panel username AND Minecraft username (if linked)
+            // Count punishments by panel username, Minecraft username (if linked), and staffId (for issuerId-based punishments)
             int moderationActions = punishmentsByStaff.getOrDefault(username.toLowerCase(), 0);
             String mcUsername = staff.getAssignedMinecraftUsername();
             if (mcUsername != null && !mcUsername.isEmpty() && !mcUsername.equalsIgnoreCase(username)) {
                 moderationActions += punishmentsByStaff.getOrDefault(mcUsername.toLowerCase(), 0);
+            }
+            String staffId = staff.getId();
+            if (staffId != null) {
+                moderationActions += punishmentsByStaff.getOrDefault(staffId.toLowerCase(), 0);
             }
 
             Date lastActive = activity != null ? activity.getDate("lastActive") : staff.getUpdatedAt();
@@ -475,7 +479,7 @@ public class AuditService {
             return resolvedIssuers.get(issuerId);
         }
         if (issuerName != null) return issuerName;
-        return "Console";
+        return issuerId != null ? "Unknown Staff" : "Console";
     }
 
     private Long extractDuration(Document data) {

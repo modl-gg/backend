@@ -198,6 +198,6 @@ public final class PunishmentMapper {
         if (issuerName != null) {
             return issuerName;
         }
-        return "Console";
+        return issuerId != null ? "Unknown Staff" : "Console";
     }
 }
