@@ -28,7 +28,7 @@ public class ServerService {
     public ServerService(
             ServerMongoRepository serverRepository,
             ServerProvisioningService provisioningService,
-            @Value("${modl.cors.app-domains:modl.gg}") String appDomainsConfig
+            @Value("${modl.cors.app-domains:modl.gg,modl.top}") String appDomainsConfig
     ) {
         this.serverRepository = serverRepository;
         this.provisioningService = provisioningService;
