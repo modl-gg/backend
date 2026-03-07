@@ -15,6 +15,8 @@ public final class CollectionName {
     // Tickets
     public static final String TICKETS = "tickets";
     public static final String TICKET_VERIFICATIONS = "ticket_verifications";
+    public static final String CHAT_LOGS = "chat_logs";
+    public static final String COMMAND_LOGS = "command_logs";
 
     // Audit
     public static final String LOGS = "logs";

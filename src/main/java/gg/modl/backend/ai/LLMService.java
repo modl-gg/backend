@@ -25,15 +25,16 @@ public class LLMService {
         }
     }
 
-    public boolean isAvailable() {
-        return llmProvider != null && llmProvider.isConnected();
-    }
-
     @NotNull
     public String generate(@NotNull String prompt) {
-        if (llmProvider == null) {
+        if (!isAvailable()) {
             throw new IllegalStateException("LLM provider not initialized. Check API key configuration.");
         }
+
         return llmProvider.generate(prompt);
+    }
+
+    public boolean isAvailable() {
+        return llmProvider != null && llmProvider.isConnected();
     }
 }

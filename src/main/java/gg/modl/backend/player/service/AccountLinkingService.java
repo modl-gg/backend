@@ -1,7 +1,8 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.PlayerFields;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -10,15 +11,13 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,13 +30,12 @@ import java.util.UUID;
 public class AccountLinkingService {
     private static final long SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
 
     public List<LinkedAccountResponse> getLinkedAccounts(Server server, UUID playerUuid) {
-        MongoTemplate template = getTemplate(server);
-        Player player = findPlayerByUuid(template, playerUuid);
+        Player player = findPlayerByUuid(server, playerUuid);
         if (player == null) {
             return new ArrayList<>();
         }
@@ -58,7 +56,7 @@ public class AccountLinkingService {
                     try {
                         UUID.fromString(uuid);
                         return true;
-                    } catch (IllegalArgumentException e) {
+                    } catch (IllegalArgumentException exception) {
                         log.warn("Invalid UUID in linked accounts: {}", uuid);
                         return false;
                     }
@@ -69,17 +67,16 @@ public class AccountLinkingService {
             return new ArrayList<>();
         }
 
-        Query batchQuery = new Query(Criteria.where("minecraftUuid").in(validUuids));
-        List<Player> linkedPlayers = template.find(batchQuery, Player.class, CollectionName.PLAYERS);
+        Query batchQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(validUuids));
+        List<Player> linkedPlayers = playerRepository.find(server, batchQuery);
 
         return linkedPlayers.stream()
-                .map(p -> buildLinkedAccountResponse(server, p))
+                .map(playerEntry -> buildLinkedAccountResponse(server, playerEntry))
                 .toList();
     }
 
     public LinkingResult findAndLinkAccounts(Server server, UUID playerUuid) {
-        MongoTemplate template = getTemplate(server);
-        Player player = findPlayerByUuid(template, playerUuid);
+        Player player = findPlayerByUuid(server, playerUuid);
         if (player == null) {
             return new LinkingResult(false, "Player not found", 0);
         }
@@ -95,7 +92,7 @@ public class AccountLinkingService {
 
         if (playerIps.isEmpty()) {
             for (IPEntry ipEntry : player.getIpAddresses()) {
-                if (hasRecentLogin(ipEntry, player)) {
+                if (hasRecentLogin(ipEntry)) {
                     playerIps.add(ipEntry.getIpAddress());
                 }
             }
@@ -105,8 +102,8 @@ public class AccountLinkingService {
             return new LinkingResult(true, "No valid IPs to match", 0);
         }
 
-        Query query = new Query(Criteria.where("ipAddresses.ipAddress").in(playerIps));
-        List<Player> potentialMatches = template.find(query, Player.class, CollectionName.PLAYERS);
+        Query query = Query.query(MongoQueries.where(PlayerFields.IP_ADDRESS).in(playerIps));
+        List<Player> potentialMatches = playerRepository.find(server, query);
 
         for (Player match : potentialMatches) {
             if (match.getMinecraftUuid().equals(playerUuid)) {
@@ -119,11 +116,10 @@ public class AccountLinkingService {
                     if (!matchIp.isProxy()) {
                         shouldLink = true;
                         break;
-                    } else {
-                        if (hasRecentMatchingLogin(player, match, matchIp.getIpAddress())) {
-                            shouldLink = true;
-                            break;
-                        }
+                    }
+                    if (hasRecentMatchingLogin(player, match, matchIp.getIpAddress())) {
+                        shouldLink = true;
+                        break;
                     }
                 }
             }
@@ -134,16 +130,13 @@ public class AccountLinkingService {
         }
 
         if (!linkedUuids.isEmpty()) {
-            updateLinkedAccounts(template, player, linkedUuids);
+            updateLinkedAccounts(server, player, linkedUuids);
 
             for (String linkedUuid : linkedUuids) {
                 try {
-                    UUID uuid = UUID.fromString(linkedUuid);
-                    Player linkedPlayer = findPlayerByUuid(template, uuid);
+                    Player linkedPlayer = findPlayerByUuid(server, UUID.fromString(linkedUuid));
                     if (linkedPlayer != null) {
-                        Set<String> reverseLinks = new HashSet<>();
-                        reverseLinks.add(playerUuid.toString());
-                        updateLinkedAccounts(template, linkedPlayer, reverseLinks);
+                        updateLinkedAccounts(server, linkedPlayer, Set.of(playerUuid.toString()));
                     }
                 } catch (IllegalArgumentException ignored) {
                 }
@@ -153,26 +146,22 @@ public class AccountLinkingService {
         return new LinkingResult(true, "Linking complete", linkedUuids.size());
     }
 
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
-    }
-
-    private Player findPlayerByUuid(MongoTemplate template, UUID uuid) {
-        Query query = Query.query(Criteria.where("minecraftUuid").is(uuid.toString()));
-        return template.findOne(query, Player.class, CollectionName.PLAYERS);
+    private Player findPlayerByUuid(Server server, UUID uuid) {
+        return playerRepository.findOne(server,
+                        Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uuid.toString())))
+                .orElse(null);
     }
 
     private LinkedAccountResponse buildLinkedAccountResponse(Server server, Player player) {
-        String username = player.getUsernames().isEmpty() ? "Unknown" :
-                player.getUsernames().get(player.getUsernames().size() - 1).username();
+        String username = player.getUsernames().isEmpty() ? "Unknown"
+                : player.getUsernames().get(player.getUsernames().size() - 1).username();
 
         int activeBans = 0;
         int activeMutes = 0;
-
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                var pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
-                String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());
+                var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
+                String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.getData());
                 if ("BAN".equals(category)) {
                     activeBans++;
                 } else if ("MUTE".equals(category)) {
@@ -184,8 +173,8 @@ public class AccountLinkingService {
         Date lastLinkedUpdate = null;
         if (player.getData() != null) {
             Object lastUpdate = player.getData().get("lastLinkedUpdate");
-            if (lastUpdate instanceof Date) {
-                lastLinkedUpdate = (Date) lastUpdate;
+            if (lastUpdate instanceof Date date) {
+                lastLinkedUpdate = date;
             }
         }
 
@@ -198,7 +187,7 @@ public class AccountLinkingService {
         );
     }
 
-    private boolean hasRecentLogin(IPEntry ipEntry, Player player) {
+    private boolean hasRecentLogin(IPEntry ipEntry) {
         if (ipEntry.getLogins() == null || ipEntry.getLogins().isEmpty()) {
             return false;
         }
@@ -210,7 +199,6 @@ public class AccountLinkingService {
         Optional<IPEntry> ip1 = player1.getIpAddresses().stream()
                 .filter(ip -> ip.getIpAddress().equals(ipAddress))
                 .findFirst();
-
         Optional<IPEntry> ip2 = player2.getIpAddresses().stream()
                 .filter(ip -> ip.getIpAddress().equals(ipAddress))
                 .findFirst();
@@ -221,7 +209,6 @@ public class AccountLinkingService {
 
         List<Date> logins1 = ip1.get().getLogins();
         List<Date> logins2 = ip2.get().getLogins();
-
         if (logins1 == null || logins1.isEmpty() || logins2 == null || logins2.isEmpty()) {
             return false;
         }
@@ -233,16 +220,19 @@ public class AccountLinkingService {
                 }
             }
         }
-
         return false;
     }
 
-    private void updateLinkedAccounts(MongoTemplate template, Player player, Set<String> newLinks) {
-        Query query = Query.query(Criteria.where("_id").is(player.getId()));
+    private void updateLinkedAccounts(Server server, Player player, Set<String> newLinks) {
+        Player original = playerRepository.snapshot(player);
+        Map<String, Object> data = player.getData();
+        if (data == null) {
+            data = new LinkedHashMap<>();
+            player.setData(data);
+        }
 
         @SuppressWarnings("unchecked")
-        List<String> existingLinks = player.getData() != null ?
-                (List<String>) player.getData().get("linkedAccounts") : null;
+        List<String> existingLinks = (List<String>) data.get("linkedAccounts");
 
         Set<String> allLinks = new HashSet<>();
         if (existingLinks != null) {
@@ -250,11 +240,9 @@ public class AccountLinkingService {
         }
         allLinks.addAll(newLinks);
 
-        Update update = new Update()
-                .set("data.linkedAccounts", new ArrayList<>(allLinks))
-                .set("data.lastLinkedUpdate", new Date());
-
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+        data.put("linkedAccounts", new ArrayList<>(allLinks));
+        data.put("lastLinkedUpdate", new Date());
+        playerRepository.saveChanges(server, original, player);
     }
 
     public record LinkingResult(boolean success, String message, int linkedAccountsFound) {

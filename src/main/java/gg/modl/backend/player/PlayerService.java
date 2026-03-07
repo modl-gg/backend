@@ -1,7 +1,8 @@
 package gg.modl.backend.player;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.PlayerFields;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
@@ -17,15 +18,13 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,12 +39,11 @@ public class PlayerService {
     private static final int SEARCH_RESULT_LIMIT = 20;
     private static final int SEARCH_CANDIDATE_LIMIT = 100;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
 
     public List<PlayerSearchResult> searchPlayers(Server server, String searchTerm) {
-        MongoTemplate template = getTemplate(server);
         String normalizedSearch = searchTerm == null ? "" : searchTerm.trim();
         if (normalizedSearch.isEmpty()) {
             return List.of();
@@ -53,15 +51,15 @@ public class PlayerService {
 
         Query query = new Query();
         if (isUuid(normalizedSearch)) {
-            query.addCriteria(Criteria.where("minecraftUuid").is(UUID.fromString(normalizedSearch).toString()));
+            query.addCriteria(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(UUID.fromString(normalizedSearch).toString()));
             query.limit(SEARCH_RESULT_LIMIT);
         } else {
             Pattern pattern = Pattern.compile(Pattern.quote(normalizedSearch), Pattern.CASE_INSENSITIVE);
-            query.addCriteria(Criteria.where("usernames.username").regex(pattern));
+            query.addCriteria(MongoQueries.where(PlayerFields.USERNAME).regex(pattern));
             query.limit(SEARCH_CANDIDATE_LIMIT);
         }
 
-        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
+        List<Player> players = playerRepository.find(server, query);
         if (!isUuid(normalizedSearch)) {
             String normalizedSearchLower = normalizedSearch.toLowerCase(Locale.ROOT);
             players = players.stream()
@@ -79,8 +77,9 @@ public class PlayerService {
     }
 
     private PlayerSearchResult toPlayerSearchResult(Server server, Player player) {
-        String username = player.getUsernames().isEmpty() ? "Unknown" :
-                player.getUsernames().get(player.getUsernames().size() - 1).username();
+        List<UsernameEntry> usernames = player.getUsernames();
+        String username = usernames == null || usernames.isEmpty() ? "Unknown" :
+                usernames.get(usernames.size() - 1).username();
 
         String status = calculatePlayerStatus(server, player);
         Date lastOnline = getLastOnline(player);
@@ -159,18 +158,7 @@ public class PlayerService {
     }
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
-        MongoTemplate template = getTemplate(server);
-
-        Player player = Player.builder()
-                .id(new ObjectId().toHexString())
-                .minecraftUuid(minecraftUuid)
-                .usernames(new ArrayList<>(List.of(new UsernameEntry(username, new Date()))))
-                .notes(new ArrayList<>())
-                .ipAddresses(new ArrayList<>())
-                .punishments(new ArrayList<>())
-                .build();
-
-        return template.save(player, CollectionName.PLAYERS);
+        return playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
     }
 
     public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip) {
@@ -186,35 +174,37 @@ public class PlayerService {
     }
 
     public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
-        MongoTemplate template = getTemplate(server);
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
 
         if (existingPlayer.isPresent()) {
             Player player = existingPlayer.get();
-            updatePlayerOnLogin(template, player, username, ip, ipInfo, skinHash, serverName);
-            return findByMinecraftUuid(server, minecraftUuid).orElse(player);
-        } else {
-            Player player = createPlayer(server, minecraftUuid, username);
-            addIpToPlayer(template, player, ip, ipInfo);
-            updatePlayerDataOnLogin(template, player, skinHash, serverName);
-            return findByMinecraftUuid(server, minecraftUuid).orElse(player);
+            Player original = playerRepository.snapshot(player);
+            updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
+            return playerRepository.saveChanges(server, original, player);
         }
+
+        Player player = newPlayer(minecraftUuid, username);
+        addIpToPlayer(player, ip, ipInfo);
+        updatePlayerDataOnLogin(player, skinHash, serverName);
+        return playerRepository.saveEntity(server, player);
     }
 
     public Player addUsername(Server server, UUID minecraftUuid, String username) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("minecraftUuid").is(minecraftUuid.toString()));
+        Player player = findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        if (player == null) {
+            return null;
+        }
 
-        UsernameEntry entry = new UsernameEntry(username, new Date());
-        Update update = new Update().push("usernames", entry);
-
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-        return findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        Player original = playerRepository.snapshot(player);
+        ensureUsernames(player).add(new UsernameEntry(username, new Date()));
+        return playerRepository.saveChanges(server, original, player);
     }
 
     public Player addNote(Server server, UUID minecraftUuid, String text, String issuerName, String issuerId) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("minecraftUuid").is(minecraftUuid.toString()));
+        Player player = findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        if (player == null) {
+            return null;
+        }
 
         NoteEntry entry = NoteEntry.builder()
                 .id(new ObjectId().toHexString())
@@ -223,132 +213,185 @@ public class PlayerService {
                 .issuerName(issuerName)
                 .issuerId(issuerId)
                 .build();
-        Update update = new Update().push("notes", entry);
 
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-        return findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        Player original = playerRepository.snapshot(player);
+        ensureNotes(player).add(entry);
+        return playerRepository.saveChanges(server, original, player);
     }
 
     public Player addIp(Server server, UUID minecraftUuid, String ipAddress) {
-        MongoTemplate template = getTemplate(server);
         Optional<Player> playerOpt = findByMinecraftUuid(server, minecraftUuid);
         if (playerOpt.isEmpty()) {
             return null;
         }
 
         Player player = playerOpt.get();
-        addIpToPlayer(template, player, ipAddress, null);
-        return findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        Player original = playerRepository.snapshot(player);
+        addIpToPlayer(player, ipAddress, null);
+        return playerRepository.saveChanges(server, original, player);
     }
 
     public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(
-                Criteria.where("minecraftUuid").is(minecraftUuid)
-                        .and("ipAddresses.ipAddress").is(ipAddress)
-        );
-        Update update = new Update()
-                .set("ipAddresses.$.country", (String) ipInfo.get("country"))
-                .set("ipAddresses.$.region", (String) ipInfo.get("region"))
-                .set("ipAddresses.$.asn", (String) ipInfo.get("asn"))
-                .set("ipAddresses.$.proxy", Boolean.TRUE.equals(ipInfo.get("proxy")))
-                .set("ipAddresses.$.hosting", Boolean.TRUE.equals(ipInfo.get("hosting")));
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+        if (minecraftUuid == null || minecraftUuid.isBlank() || ipAddress == null || ipAddress.isBlank()) {
+            return;
+        }
+
+        Player player = playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)))
+                .orElse(null);
+        if (player == null) {
+            return;
+        }
+
+        IPEntry ipEntry = ensureIpAddresses(player).stream()
+                .filter(entry -> ipAddress.equals(entry.getIpAddress()))
+                .findFirst()
+                .orElse(null);
+        if (ipEntry == null) {
+            return;
+        }
+
+        Player original = playerRepository.snapshot(player);
+        applyIpMetadata(ipEntry, ipInfo);
+        playerRepository.saveChanges(server, original, player);
     }
 
     public Optional<Player> findByMinecraftUuid(Server server, UUID minecraftUuid) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("minecraftUuid").is(minecraftUuid.toString()));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-        return Optional.ofNullable(player);
+        return playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid.toString())));
     }
 
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
+    private Player newPlayer(UUID minecraftUuid, String username) {
+        return Player.builder()
+                .id(new ObjectId().toHexString())
+                .minecraftUuid(minecraftUuid)
+                .usernames(new ArrayList<>(List.of(new UsernameEntry(username, new Date()))))
+                .notes(new ArrayList<>())
+                .ipAddresses(new ArrayList<>())
+                .punishments(new ArrayList<>())
+                .data(new HashMap<>())
+                .build();
     }
 
-    private void updatePlayerOnLogin(MongoTemplate template, Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
-        Query query = Query.query(Criteria.where("_id").is(player.getId()));
-
-        String currentUsername = player.getUsernames().isEmpty() ? null :
-                player.getUsernames().get(player.getUsernames().size() - 1).username();
+    private void updatePlayerOnLogin(Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
+        List<UsernameEntry> usernames = ensureUsernames(player);
+        String currentUsername = usernames.isEmpty() ? null :
+                usernames.get(usernames.size() - 1).username();
 
         if (!username.equals(currentUsername)) {
-            UsernameEntry entry = new UsernameEntry(username, new Date());
-            template.updateFirst(query, new Update().push("usernames", entry), Player.class, CollectionName.PLAYERS);
+            usernames.add(new UsernameEntry(username, new Date()));
         }
 
-        addIpToPlayer(template, player, ip, ipInfo);
-        updatePlayerDataOnLogin(template, player, skinHash, serverName);
+        addIpToPlayer(player, ip, ipInfo);
+        updatePlayerDataOnLogin(player, skinHash, serverName);
     }
 
-    private void addIpToPlayer(MongoTemplate template, Player player, String ipAddress, Map<String, Object> ipInfo) {
-        Query query = Query.query(Criteria.where("_id").is(player.getId()));
-        Date now = new Date();
+    private void addIpToPlayer(Player player, String ipAddress, Map<String, Object> ipInfo) {
+        if (ipAddress == null || ipAddress.isBlank()) {
+            return;
+        }
 
-        Optional<IPEntry> existingIp = player.getIpAddresses().stream()
-                .filter(ip -> ip.getIpAddress().equals(ipAddress))
+        Date now = new Date();
+        List<IPEntry> ipAddresses = ensureIpAddresses(player);
+
+        Optional<IPEntry> existingIp = ipAddresses.stream()
+                .filter(ip -> ipAddress.equals(ip.getIpAddress()))
                 .findFirst();
 
         if (existingIp.isPresent()) {
-            Query ipQuery = Query.query(
-                    Criteria.where("_id").is(player.getId())
-                            .and("ipAddresses.ipAddress").is(ipAddress)
-            );
-            Update update = new Update().push("ipAddresses.$.logins", now);
-            template.updateFirst(ipQuery, update, Player.class, CollectionName.PLAYERS);
-        } else {
-            IPEntry.IPEntryBuilder builder = IPEntry.builder()
-                    .ipAddress(ipAddress)
-                    .firstLogin(now)
-                    .logins(new ArrayList<>(List.of(now)));
-
-            // Use provided IP geo data from the plugin if available
-            if (ipInfo != null) {
-                builder.country((String) ipInfo.get("country"))
-                        .region((String) ipInfo.get("region"))
-                        .asn((String) ipInfo.get("asn"))
-                        .proxy(Boolean.TRUE.equals(ipInfo.get("proxy")))
-                        .hosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
+            IPEntry entry = existingIp.get();
+            if (entry.getLogins() == null) {
+                entry.setLogins(new ArrayList<>());
             }
-
-            Update update = new Update().push("ipAddresses", builder.build());
-            template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+            entry.getLogins().add(now);
+            if (ipInfo != null) {
+                applyIpMetadata(entry, ipInfo);
+            }
+            return;
         }
+
+        IPEntry.IPEntryBuilder builder = IPEntry.builder()
+                .ipAddress(ipAddress)
+                .firstLogin(now)
+                .logins(new ArrayList<>(List.of(now)));
+
+        if (ipInfo != null) {
+            builder.country((String) ipInfo.get("country"))
+                    .region((String) ipInfo.get("region"))
+                    .asn((String) ipInfo.get("asn"))
+                    .proxy(Boolean.TRUE.equals(ipInfo.get("proxy")))
+                    .hosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
+        }
+
+        ipAddresses.add(builder.build());
     }
 
-    private void updatePlayerDataOnLogin(MongoTemplate template, Player player, String skinHash, String serverName) {
-        Query query = Query.query(Criteria.where("_id").is(player.getId()));
+    private void updatePlayerDataOnLogin(Player player, String skinHash, String serverName) {
         Date now = new Date();
+        Map<String, Object> data = ensureData(player);
+        data.put("lastLogin", now);
+        data.put("isOnline", true);
 
-        Update update = new Update()
-                .set("data.lastLogin", now)
-                .set("data.isOnline", true);
-
-        if (player.getData() == null || !player.getData().containsKey("firstJoin")) {
-            update.set("data.firstJoin", now);
+        if (!data.containsKey("firstJoin")) {
+            data.put("firstJoin", now);
         }
 
         if (skinHash != null && !skinHash.isBlank()) {
-            update.set("data.lastSkinHash", skinHash);
+            data.put("lastSkinHash", skinHash);
         }
 
         if (serverName != null && !serverName.isBlank()) {
-            update.set("data.lastServer", serverName);
+            data.put("lastServer", serverName);
         }
+    }
 
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
+    private void applyIpMetadata(IPEntry ipEntry, Map<String, Object> ipInfo) {
+        if (ipInfo == null) {
+            return;
+        }
+        ipEntry.setCountry((String) ipInfo.get("country"));
+        ipEntry.setRegion((String) ipInfo.get("region"));
+        ipEntry.setAsn((String) ipInfo.get("asn"));
+        ipEntry.setProxy(Boolean.TRUE.equals(ipInfo.get("proxy")));
+        ipEntry.setHosting(Boolean.TRUE.equals(ipInfo.get("hosting")));
+    }
+
+    private List<UsernameEntry> ensureUsernames(Player player) {
+        if (player.getUsernames() == null) {
+            player.setUsernames(new ArrayList<>());
+        }
+        return player.getUsernames();
+    }
+
+    private List<NoteEntry> ensureNotes(Player player) {
+        if (player.getNotes() == null) {
+            player.setNotes(new ArrayList<>());
+        }
+        return player.getNotes();
+    }
+
+    private List<IPEntry> ensureIpAddresses(Player player) {
+        if (player.getIpAddresses() == null) {
+            player.setIpAddresses(new ArrayList<>());
+        }
+        return player.getIpAddresses();
+    }
+
+    private Map<String, Object> ensureData(Player player) {
+        if (player.getData() == null) {
+            player.setData(new HashMap<>());
+        }
+        return player.getData();
     }
 
     private PlayerDetailResponse buildPlayerDetailResponse(Server server, Player player) {
-        PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, player.getPunishments());
+        List<Punishment> punishments = player.getPunishments() != null ? player.getPunishments() : List.of();
+        PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, punishments);
 
-        List<PunishmentResponse> punishmentResponses = player.getPunishments().stream()
+        List<PunishmentResponse> punishmentResponses = punishments.stream()
                 .map(p -> toPunishmentResponse(server, p))
                 .toList();
 
         // Strip raw IP addresses from response — only keep metadata (country, region, etc.)
-        List<IPEntry> sanitizedIps = player.getIpAddresses().stream()
+        List<IPEntry> sanitizedIps = (player.getIpAddresses() != null ? player.getIpAddresses() : List.<IPEntry>of()).stream()
                 .map(ip -> IPEntry.builder()
                         .ipAddress(null)
                         .country(ip.getCountry())
@@ -427,7 +470,8 @@ public class PlayerService {
     }
 
     private String calculatePlayerStatus(Server server, Player player) {
-        for (Punishment punishment : player.getPunishments()) {
+        List<Punishment> punishments = player.getPunishments() != null ? player.getPunishments() : List.of();
+        for (Punishment punishment : punishments) {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
                 String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());

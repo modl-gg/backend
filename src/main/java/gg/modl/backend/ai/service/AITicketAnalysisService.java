@@ -7,8 +7,11 @@ import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.SystemPromptFields;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.server.data.Server;
@@ -22,10 +25,7 @@ import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -41,7 +41,6 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AITicketAnalysisService {
-    private static final String PROMPTS_COLLECTION = "systemprompts";
     private static final String JSON_FORMAT = """
             {
               "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
@@ -53,11 +52,13 @@ public class AITicketAnalysisService {
 
     private final LLMService llmService;
     private final AIModerationSettingsService aiModerationSettingsService;
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final TicketMongoRepository ticketRepository;
+    private final ServerMongoRepository serverRepository;
     private final PunishmentService punishmentService;
     private final PunishmentTypeService punishmentTypeService;
     private final UsageTrackingService usageTrackingService;
     private final ObjectMapper objectMapper;
+    private final SystemPromptMongoRepository systemPromptRepository;
 
     public record AISuggestionResult(boolean success, String error) {}
 
@@ -76,8 +77,7 @@ public class AITicketAnalysisService {
             return null;
         }
 
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
         if (ticket == null) {
             log.debug("Ticket {} not found for AI analysis", ticketId);
@@ -94,14 +94,12 @@ public class AITicketAnalysisService {
             return null;
         }
 
-        AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
-        String chatLog = ticket.getChatMessages().stream()
-            .map(Ticket.ChatMessage::getContent)
-            .collect(Collectors.joining("\n"));
-        String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
+        final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
+        final String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
+        final String chatLog = ticket.getChatMessages().stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
+        final String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
 
-        String rawResponse;
+        final String rawResponse;
         try {
             rawResponse = llmService.generate(fullPrompt);
             usageTrackingService.incrementAiRequests(server.getId(), 1);
@@ -110,23 +108,24 @@ public class AITicketAnalysisService {
             return null;
         }
 
-        AIAnalysisResult result = parseResponse(rawResponse);
+        final AIAnalysisResult result = parseResponse(rawResponse);
         result.setCreatedAt(new Date());
         result.setRawResponse(rawResponse);
+        final Ticket original = ticketRepository.snapshot(ticket);
 
         if (settings.isEnableAutomatedActions() && result.hasViolation()) {
-            executeAutomatedAction(server, template, ticket, result, settings);
+            executeAutomatedAction(server, ticket, result, settings);
         }
 
-        Update update = new Update().set("aiAnalysis", result).set("updatedAt", new Date());
-        template.updateFirst(Query.query(Criteria.where("_id").is(ticketId)), update, Ticket.class, CollectionName.TICKETS);
+        ticket.setAiAnalysis(result);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveChanges(server, original, ticket);
 
         return result;
     }
 
     public AISuggestionResult applyAISuggestion(Server server, String ticketId, String staffName) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
         if (ticket == null) {
             return new AISuggestionResult(false, "Ticket not found");
@@ -145,13 +144,14 @@ public class AITicketAnalysisService {
             return new AISuggestionResult(false, "No reported player UUID");
         }
 
-        applyPunishmentAndCloseTicket(server, template, ticket, aiAnalysis, staffName);
+        Ticket original = ticketRepository.snapshot(ticket);
+        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
+        ticketRepository.saveChanges(server, original, ticket);
         return new AISuggestionResult(true, null);
     }
 
     public AISuggestionResult dismissAISuggestion(Server server, String ticketId) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
         if (ticket == null) {
             return new AISuggestionResult(false, "Ticket not found");
@@ -161,13 +161,10 @@ public class AITicketAnalysisService {
             return new AISuggestionResult(false, "No AI analysis to dismiss");
         }
 
-        Update update = new Update()
-                .set("aiAnalysis.dismissed", true)
-                .set("updatedAt", new Date());
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(ticketId)),
-                update, Ticket.class, CollectionName.TICKETS
-        );
+        Ticket original = ticketRepository.snapshot(ticket);
+        ticket.getAiAnalysis().setDismissed(true);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveChanges(server, original, ticket);
 
         return new AISuggestionResult(true, null);
     }
@@ -190,11 +187,7 @@ public class AITicketAnalysisService {
         }
 
         // Check AI usage cap, fetch fresh server data for current period counts
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Server freshServer = globalDb.findOne(
-                Query.query(Criteria.where("_id").is(server.getId())),
-                Server.class, CollectionName.MODL_SERVERS
-        );
+        Server freshServer = serverRepository.findById(server.getId()).orElse(null);
         if (freshServer != null) {
             long currentUsage = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
             long limit = usageTrackingService.getAiRequestLimit(freshServer);
@@ -211,14 +204,7 @@ public class AITicketAnalysisService {
         return "chat".equalsIgnoreCase(ticket.getCategory());
     }
 
-    private Ticket findTicket(MongoTemplate template, String ticketId) {
-        return template.findOne(
-                Query.query(Criteria.where("_id").is(ticketId)),
-                Ticket.class, CollectionName.TICKETS
-        );
-    }
-
-    private void applyPunishmentAndCloseTicket(Server server, MongoTemplate template, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
+    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
         UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
         AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
         String reason = aiAnalysis.getAnalysis() != null ? aiAnalysis.getAnalysis() : "AI-detected violation";
@@ -256,20 +242,15 @@ public class AITicketAnalysisService {
                 .date(now)
                 .build();
 
-        Update update = new Update()
-                .set("aiAnalysis.wasAppliedAutomatically", true)
-                .push("replies", systemReply)
-                .push("notes", staffNote)
-                .set("status", "Closed")
-                .set("locked", true)
-                .set("updatedAt", now);
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(ticket.getId())),
-                update, Ticket.class, CollectionName.TICKETS
-        );
+        aiAnalysis.setWasAppliedAutomatically(true);
+        ensureTicketReplies(ticket).add(systemReply);
+        ensureTicketNotes(ticket).add(staffNote);
+        ticket.setStatus("Closed");
+        ticket.setLocked(true);
+        ticket.setUpdatedAt(now);
     }
 
-    private void executeAutomatedAction(Server server, MongoTemplate template, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
+    private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
         AIAnalysisResult.SuggestedAction suggestion = result.getSuggestedAction();
         if (suggestion == null || suggestion.getPunishmentTypeId() == null) {
             return;
@@ -294,20 +275,34 @@ public class AITicketAnalysisService {
         }
 
         try {
-            applyPunishmentAndCloseTicket(server, template, ticket, result, "AI Moderator");
+            applyPunishmentAndCloseTicket(server, ticket, result, "AI Moderator");
             result.setWasAppliedAutomatically(true);
         } catch (Exception e) {
             log.error("Failed to apply automated punishment for ticket {}", ticket.getId(), e);
         }
     }
 
+    private List<TicketReply> ensureTicketReplies(Ticket ticket) {
+        if (ticket.getReplies() == null) {
+            ticket.setReplies(new ArrayList<>());
+        }
+        return ticket.getReplies();
+    }
+
+    private List<TicketNote> ensureTicketNotes(Ticket ticket) {
+        if (ticket.getNotes() == null) {
+            ticket.setNotes(new ArrayList<>());
+        }
+        return ticket.getNotes();
+    }
+
     private String getSystemPrompt(String strictnessLevel) {
         String normalizedStrictnessLevel = strictnessLevel == null
                 ? "STANDARD"
                 : strictnessLevel.trim().toUpperCase(Locale.ROOT);
-        MongoTemplate template = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("strictnessLevel").is(normalizedStrictnessLevel).and("isActive").is(true));
-        SystemPrompt prompt = template.findOne(query, SystemPrompt.class, PROMPTS_COLLECTION);
+        Query query = Query.query(MongoQueries.where(SystemPromptFields.STRICTNESS_LEVEL).is(normalizedStrictnessLevel)
+                .and(SystemPromptFields.IS_ACTIVE.path()).is(true));
+        SystemPrompt prompt = systemPromptRepository.findOne(query).orElse(null);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
             return prompt.getPrompt();

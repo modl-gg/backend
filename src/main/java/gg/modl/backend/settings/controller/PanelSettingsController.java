@@ -20,7 +20,10 @@ import gg.modl.backend.settings.dto.request.PatchQuickResponsesRequest;
 import gg.modl.backend.settings.dto.request.PatchStatusThresholdSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchTicketFormSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchTicketLabelSettingsRequest;
+import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
+import gg.modl.backend.settings.dto.request.UpdateAIModerationSettingsRequest;
 import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
+import gg.modl.backend.settings.dto.request.UpdateWebhookSettingsRequest;
 import gg.modl.backend.settings.dto.request.VerifyDomainRequest;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.ApiKeySettingsService;
@@ -102,10 +105,11 @@ public class PanelSettingsController {
     @PatchMapping("/punishment-types/{ordinal}")
     public ResponseEntity<PunishmentType> updatePunishmentType(
             @PathVariable int ordinal,
-            @RequestBody @Valid PunishmentType updatedType,
+            @RequestBody @Valid PunishmentTypeRequest requestBody,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        PunishmentType updatedType = requestBody.toPunishmentType();
 
         try {
             PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
@@ -117,10 +121,11 @@ public class PanelSettingsController {
 
     @PostMapping("/punishment-types")
     public ResponseEntity<PunishmentType> createPunishmentType(
-            @RequestBody @Valid PunishmentType newType,
+            @RequestBody @Valid PunishmentTypeRequest requestBody,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        PunishmentType newType = requestBody.toPunishmentType();
         PunishmentType created = punishmentTypeService.createPunishmentType(server, newType);
         return ResponseEntity.ok(created);
     }
@@ -285,10 +290,11 @@ public class PanelSettingsController {
 
     @PatchMapping("/ai-moderation")
     public ResponseEntity<AIModerationSettings> updateAIModerationSettings(
-            @RequestBody @Valid AIModerationSettings settings,
+            @RequestBody @Valid UpdateAIModerationSettingsRequest requestBody,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        AIModerationSettings settings = requestBody.toSettings();
         AIModerationSettings updated = aiModerationSettingsService.updateAIModerationSettings(server, settings);
         return ResponseEntity.ok(updated);
     }
@@ -302,10 +308,11 @@ public class PanelSettingsController {
 
     @PatchMapping("/webhooks")
     public ResponseEntity<WebhookSettings> updateWebhookSettings(
-            @RequestBody @Valid WebhookSettings settings,
+            @RequestBody @Valid UpdateWebhookSettingsRequest requestBody,
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        WebhookSettings settings = requestBody.toSettings();
         WebhookSettings updated = webhookSettingsService.updateWebhookSettings(server, settings);
         return ResponseEntity.ok(updated);
     }

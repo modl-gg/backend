@@ -1,14 +1,15 @@
 package gg.modl.backend.settings.service;
 
 import com.mongodb.client.result.UpdateResult;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.MongoUpdates;
+import gg.modl.backend.database.mongo.fields.SettingsFields;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -25,17 +26,15 @@ import java.util.Map;
 public class SettingsDocumentService {
     private static final long INITIAL_VERSION = 0L;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final SettingsMongoRepository settingsRepository;
 
     public RawSettingsState getRawState(Server server, String type) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Settings settings = findLatestSettingsDocument(template, type);
+        Settings settings = findLatestSettingsDocument(server, type);
         return toRawState(settings);
     }
 
     public RawSettingsState saveRawState(Server server, String type, long expectedVersion, Map<String, Object> data) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Settings current = findLatestSettingsDocument(template, type);
+        Settings current = findLatestSettingsDocument(server, type);
         RawSettingsState currentState = toRawState(current);
 
         if (currentState.version() != expectedVersion) {
@@ -53,7 +52,7 @@ public class SettingsDocumentService {
         if (!currentState.exists()) {
             try {
                 Settings inserted = new Settings(null, type, normalizedData, expectedVersion + 1, now);
-                template.save(inserted, CollectionName.SETTINGS);
+                settingsRepository.saveEntity(server, inserted);
                 return new RawSettingsState(normalizedData, expectedVersion + 1, now, true);
             } catch (org.springframework.dao.DuplicateKeyException duplicateKeyException) {
                 RawSettingsState latest = getRawState(server, type);
@@ -68,15 +67,15 @@ public class SettingsDocumentService {
             return currentState;
         }
 
-        Query updateQuery = Query.query(Criteria.where("_id").is(current.getId())
+        Query updateQuery = Query.query(MongoQueries.where(SettingsFields.ID).is(current.getId())
                 .andOperator(versionCriteria(expectedVersion)));
-        Update update = new Update()
-                .set("type", type)
-                .set("data", normalizedData)
-                .set("version", expectedVersion + 1)
-                .set("updatedAt", now);
+        Update update = new Update();
+        MongoUpdates.set(update, SettingsFields.TYPE, type);
+        MongoUpdates.set(update, SettingsFields.DATA, normalizedData);
+        MongoUpdates.set(update, SettingsFields.VERSION, expectedVersion + 1);
+        MongoUpdates.set(update, SettingsFields.UPDATED_AT, now);
 
-        UpdateResult result = template.updateFirst(updateQuery, update, Settings.class, CollectionName.SETTINGS);
+        UpdateResult result = settingsRepository.updateFirst(server, updateQuery, update);
         if (result.getModifiedCount() == 0) {
             RawSettingsState latest = getRawState(server, type);
             throw new SettingsConflictException(
@@ -88,15 +87,15 @@ public class SettingsDocumentService {
         return new RawSettingsState(normalizedData, expectedVersion + 1, now, true);
     }
 
-    private Settings findLatestSettingsDocument(MongoTemplate template, String type) {
-        Query query = Query.query(Criteria.where("type").is(type))
+    private Settings findLatestSettingsDocument(Server server, String type) {
+        Query query = Query.query(MongoQueries.where(SettingsFields.TYPE).is(type))
                 .with(Sort.by(
-                        Sort.Order.desc("version"),
-                        Sort.Order.desc("updatedAt"),
-                        Sort.Order.desc("_id")
+                        Sort.Order.desc(SettingsFields.VERSION.path()),
+                        Sort.Order.desc(SettingsFields.UPDATED_AT.path()),
+                        Sort.Order.desc(SettingsFields.ID.path())
                 ))
                 .limit(2);
-        List<Settings> matches = template.find(query, Settings.class, CollectionName.SETTINGS);
+        List<Settings> matches = settingsRepository.find(server, query);
         if (matches.size() > 1) {
             log.warn(
                     "Detected duplicate settings documents for type '{}'. Using latest id '{}'.",
@@ -110,12 +109,12 @@ public class SettingsDocumentService {
     private Criteria versionCriteria(long expectedVersion) {
         if (expectedVersion == INITIAL_VERSION) {
             return new Criteria().orOperator(
-                    Criteria.where("version").is(INITIAL_VERSION),
-                    Criteria.where("version").exists(false),
-                    Criteria.where("version").is(null)
+                    MongoQueries.where(SettingsFields.VERSION).is(INITIAL_VERSION),
+                    MongoQueries.where(SettingsFields.VERSION).exists(false),
+                    MongoQueries.where(SettingsFields.VERSION).is(null)
             );
         }
-        return Criteria.where("version").is(expectedVersion);
+        return MongoQueries.where(SettingsFields.VERSION).is(expectedVersion);
     }
 
     @SuppressWarnings("unchecked")

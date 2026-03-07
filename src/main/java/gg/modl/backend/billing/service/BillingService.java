@@ -3,36 +3,37 @@ package gg.modl.backend.billing.service;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
-import gg.modl.backend.billing.dto.response.*;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.billing.dto.response.BillingStatusResponse;
+import gg.modl.backend.billing.dto.response.CancelResponse;
+import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
+import gg.modl.backend.billing.dto.response.PortalSessionResponse;
+import gg.modl.backend.billing.dto.response.ResubscribeResponse;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class BillingService {
     private final StripeService stripeService;
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
 
     public CheckoutSessionResponse createCheckoutSession(Server server) throws StripeException {
         String customerId = server.getStripeCustomerId();
 
         if (customerId == null || customerId.isBlank()) {
             customerId = stripeService.createCustomer(server);
-            updateServerField(server.getId(), "stripeCustomerId", customerId);
+            String createdCustomerId = customerId;
+            mutateServer(server, current -> current.setStripeCustomerId(createdCustomerId));
         }
 
         Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
@@ -60,13 +61,13 @@ public class BillingService {
             periodEndDate = stripeService.extractPeriodEnd(canceledSubscription);
         }
 
-        Update update = new Update()
-                .set("subscriptionStatus", SubscriptionStatus.CANCELED);
-        if (periodEndDate != null) {
-            update.set("currentPeriodEnd", periodEndDate);
-        }
-
-        updateServer(server.getId(), update);
+        Date finalPeriodEndDate = periodEndDate;
+        mutateServer(server, current -> {
+            current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
+            if (finalPeriodEndDate != null) {
+                current.setCurrentPeriodEnd(finalPeriodEndDate);
+            }
+        });
 
         return new CancelResponse(
                 true,
@@ -80,44 +81,43 @@ public class BillingService {
         Date currentPeriodEnd = server.getCurrentPeriodEnd();
         Date currentPeriodStart = server.getCurrentPeriodStart();
 
-        if (server.getStripeSubscriptionId() != null &&
-                (currentStatus == null || currentStatus == SubscriptionStatus.ACTIVE || currentStatus == SubscriptionStatus.CANCELED)) {
+        if (server.getStripeSubscriptionId() != null
+                && (currentStatus == null || currentStatus == SubscriptionStatus.ACTIVE || currentStatus == SubscriptionStatus.CANCELED)
+                && stripeService.isConfigured()) {
+            try {
+                Subscription subscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
+                String effectiveStatus = stripeService.getEffectiveStatus(subscription);
+                SubscriptionStatus effectiveSubscriptionStatus = parseSubscriptionStatus(effectiveStatus);
+                Date periodStartDate = stripeService.extractPeriodStart(subscription);
+                Date periodEndDate = stripeService.extractPeriodEnd(subscription);
 
-            if (stripeService.isConfigured()) {
-                try {
-                    Subscription subscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
-                    String effectiveStatus = stripeService.getEffectiveStatus(subscription);
-                    SubscriptionStatus effectiveSubscriptionStatus = parseSubscriptionStatus(effectiveStatus);
-                    Date periodStartDate = stripeService.extractPeriodStart(subscription);
-                    Date periodEndDate = stripeService.extractPeriodEnd(subscription);
+                boolean needsUpdate = effectiveSubscriptionStatus != currentStatus
+                        || (periodEndDate != null && (currentPeriodEnd == null || Math.abs(currentPeriodEnd.getTime() - periodEndDate.getTime()) > 1000))
+                        || (periodStartDate != null && (currentPeriodStart == null || Math.abs(currentPeriodStart.getTime() - periodStartDate.getTime()) > 1000));
 
-                    boolean needsUpdate = effectiveSubscriptionStatus != currentStatus ||
-                            (periodEndDate != null && (currentPeriodEnd == null || Math.abs(currentPeriodEnd.getTime() - periodEndDate.getTime()) > 1000)) ||
-                            (periodStartDate != null && (currentPeriodStart == null || Math.abs(currentPeriodStart.getTime() - periodStartDate.getTime()) > 1000));
-
-                    if (needsUpdate) {
-                        Update update = new Update()
-                                .set("subscriptionStatus", effectiveSubscriptionStatus);
-                        if (periodStartDate != null) {
-                            update.set("currentPeriodStart", periodStartDate);
+                if (needsUpdate) {
+                    Date finalPeriodStartDate = periodStartDate;
+                    Date finalPeriodEndDate = periodEndDate;
+                    mutateServer(server, current -> {
+                        current.setSubscriptionStatus(effectiveSubscriptionStatus);
+                        if (finalPeriodStartDate != null) {
+                            current.setCurrentPeriodStart(finalPeriodStartDate);
                         }
-                        if (periodEndDate != null) {
-                            update.set("currentPeriodEnd", periodEndDate);
+                        if (finalPeriodEndDate != null) {
+                            current.setCurrentPeriodEnd(finalPeriodEndDate);
                         }
+                    });
 
-                        updateServer(server.getId(), update);
-
-                        currentStatus = effectiveSubscriptionStatus;
-                        if (periodStartDate != null) {
-                            currentPeriodStart = periodStartDate;
-                        }
-                        if (periodEndDate != null) {
-                            currentPeriodEnd = periodEndDate;
-                        }
+                    currentStatus = effectiveSubscriptionStatus;
+                    if (periodStartDate != null) {
+                        currentPeriodStart = periodStartDate;
                     }
-                } catch (StripeException e) {
-                    log.error("Error fetching subscription from Stripe", e);
+                    if (periodEndDate != null) {
+                        currentPeriodEnd = periodEndDate;
+                    }
                 }
+            } catch (StripeException exception) {
+                log.error("Error fetching subscription from Stripe", exception);
             }
         }
 
@@ -143,19 +143,18 @@ public class BillingService {
             try {
                 Subscription existingSubscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
 
-                if ("active".equals(existingSubscription.getStatus()) &&
-                        Boolean.TRUE.equals(existingSubscription.getCancelAtPeriodEnd())) {
+                if ("active".equals(existingSubscription.getStatus()) && Boolean.TRUE.equals(existingSubscription.getCancelAtPeriodEnd())) {
                     subscriptionResult = stripeService.reactivateSubscription(server.getStripeSubscriptionId());
                 } else if ("canceled".equals(existingSubscription.getStatus())) {
                     subscriptionResult = createNewSubscription(server);
                 } else {
                     throw new IllegalStateException("Subscription is not in a cancelled state that can be reactivated.");
                 }
-            } catch (StripeException e) {
-                if ("resource_missing".equals(e.getCode())) {
+            } catch (StripeException exception) {
+                if ("resource_missing".equals(exception.getCode())) {
                     subscriptionResult = createNewSubscription(server);
                 } else {
-                    throw e;
+                    throw exception;
                 }
             }
         } else {
@@ -164,20 +163,20 @@ public class BillingService {
 
         Date periodStartDate = stripeService.extractPeriodStart(subscriptionResult);
         Date periodEndDate = stripeService.extractPeriodEnd(subscriptionResult);
+        String subscriptionId = subscriptionResult.getId();
+        SubscriptionStatus subscriptionStatus = parseSubscriptionStatus(subscriptionResult.getStatus());
 
-        Update update = new Update()
-                .set("stripeSubscriptionId", subscriptionResult.getId())
-                .set("subscriptionStatus", parseSubscriptionStatus(subscriptionResult.getStatus()))
-                .set("plan", ServerPlan.PREMIUM);
-
-        if (periodStartDate != null) {
-            update.set("currentPeriodStart", periodStartDate);
-        }
-        if (periodEndDate != null) {
-            update.set("currentPeriodEnd", periodEndDate);
-        }
-
-        updateServer(server.getId(), update);
+        mutateServer(server, current -> {
+            current.setStripeSubscriptionId(subscriptionId);
+            current.setSubscriptionStatus(subscriptionStatus);
+            current.setPlan(ServerPlan.PREMIUM);
+            if (periodStartDate != null) {
+                current.setCurrentPeriodStart(periodStartDate);
+            }
+            if (periodEndDate != null) {
+                current.setCurrentPeriodEnd(periodEndDate);
+            }
+        });
 
         return new ResubscribeResponse(
                 true,
@@ -197,21 +196,16 @@ public class BillingService {
         return stripeService.createSubscription(server.getStripeCustomerId());
     }
 
-    private void updateServerField(String serverId, String field, Object value) {
-        Update update = new Update().set(field, value);
-        updateServer(serverId, update);
-    }
-
-    private void updateServer(String serverId, Update update) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(serverId));
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+    private void mutateServer(Server server, Consumer<Server> mutator) {
+        Server original = serverRepository.snapshot(server);
+        mutator.accept(server);
+        serverRepository.saveChanges(original, server);
     }
 
     private SubscriptionStatus parseSubscriptionStatus(String status) {
         try {
             return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException exception) {
             log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
             return SubscriptionStatus.INACTIVE;
         }

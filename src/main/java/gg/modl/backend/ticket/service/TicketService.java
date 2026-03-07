@@ -1,7 +1,8 @@
 package gg.modl.backend.ticket.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.TicketFields;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
@@ -19,10 +20,8 @@ import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -33,11 +32,205 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class TicketService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private static final int MAX_MINECRAFT_CHAT_MESSAGE_LENGTH = 256;
+
+    private final TicketMongoRepository ticketRepository;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final TicketNotificationService notificationService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    public Ticket createMinecraftTicket(Server server, MinecraftCreateTicketRequest request) {
+        return createMinecraftTicket(server, request, false);
+    }
+
+    public Ticket createUnfinishedMinecraftTicket(Server server, MinecraftCreateTicketRequest request) {
+        return createMinecraftTicket(server, request, true);
+    }
+
+    public List<Ticket> getMinecraftTickets(Server server, String status, String type, int limit) {
+        List<Criteria> conditions = new ArrayList<>();
+
+        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
+            conditions.add(MongoQueries.where(TicketFields.STATUS).is(status));
+        }
+
+        if (type != null && !type.isBlank()) {
+            conditions.add(MongoQueries.where(TicketFields.TYPE).is(type));
+        } else {
+            conditions.add(MongoQueries.where(TicketFields.TYPE).in("SUPPORT", "BUG", "APPEAL"));
+        }
+
+        Query query = conditions.isEmpty()
+                ? new Query()
+                : Query.query(new Criteria().andOperator(conditions.toArray(new Criteria[0])));
+        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 100));
+        return ticketRepository.find(server, query);
+    }
+
+    public Optional<Ticket> getMinecraftTicket(Server server, String ticketId) {
+        return ticketRepository.findById(server, ticketId);
+    }
+
+    public List<Ticket> getMinecraftTicketsByCreator(Server server, String creatorUuid, int limit) {
+        Query query = Query.query(MongoQueries.where(TicketFields.CREATOR_UUID).is(creatorUuid));
+        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 50));
+        return ticketRepository.find(server, query);
+    }
+
+    public MinecraftTicketClaimResult claimMinecraftTicket(Server server, String ticketId, MinecraftClaimTicketRequest request) {
+        Optional<Ticket> existingTicket = ticketRepository.findById(server, ticketId);
+        if (existingTicket.isEmpty()) {
+            return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.NOT_FOUND, null);
+        }
+
+        Ticket ticket = existingTicket.get();
+        if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
+            return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
+        }
+
+        Ticket original = ticketRepository.snapshot(ticket);
+        String oldCreatorName = ticket.getCreatorName();
+        ticket.setCreatorUuid(request.playerUuid());
+        ticket.setCreatorName(request.playerName());
+        ticket.setUpdatedAt(new Date());
+
+        if (ticket.getReplies() != null && oldCreatorName != null) {
+            List<TicketReply> updatedReplies = new ArrayList<>();
+            for (TicketReply reply : ticket.getReplies()) {
+                if (!reply.isStaff() && oldCreatorName.equals(reply.getName())) {
+                    reply.setName(request.playerName());
+                }
+                updatedReplies.add(reply);
+            }
+            ticket.setReplies(updatedReplies);
+        }
+
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.SUCCESS, saved);
+    }
+
+    public List<Ticket> getMinecraftTicketsByIds(Server server, List<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+
+        Query query = Query.query(MongoQueries.where(TicketFields.ID).in(ids));
+        return ticketRepository.find(server, query);
+    }
+
+    public List<Map<String, Object>> getMinecraftReports(Server server, String status, int limit) {
+        Query query = Query.query(buildReportCriteria(status, null));
+        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 100));
+        return ticketRepository.find(server, query).stream()
+                .map(this::toMinecraftReport)
+                .toList();
+    }
+
+    public List<Map<String, Object>> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
+        Query query = Query.query(buildReportCriteria(status, playerUuid));
+        query.limit(Math.min(limit, 100));
+        return ticketRepository.find(server, query).stream()
+                .map(this::toMinecraftReport)
+                .toList();
+    }
+
+    public ReportOperationResult dismissMinecraftReport(Server server, String ticketId, DismissReportRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+        if (ticket == null) {
+            return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
+        }
+
+        Ticket original = ticketRepository.snapshot(ticket);
+        Date now = new Date();
+        String staffName = request.dismissedBy() != null ? request.dismissedBy() : "Staff";
+        TicketReply reply = TicketReply.builder()
+                .id(UUID.randomUUID().toString())
+                .name(staffName)
+                .content("Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.")
+                .type("reply")
+                .created(now)
+                .staff(true)
+                .action("close")
+                .build();
+
+        ensureTicketReplies(ticket).add(reply);
+        ticket.setStatus("Closed");
+        ticket.setLocked(true);
+        ticket.setUpdatedAt(now);
+
+        if (request.reason() != null && !request.reason().isBlank()) {
+            ensureTicketData(ticket).put("dismissReason", request.reason());
+        }
+        if (request.dismissedBy() != null) {
+            Map<String, Object> data = ensureTicketData(ticket);
+            data.put("dismissedBy", request.dismissedBy());
+            data.put("dismissedAt", now);
+        }
+
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        notificationService.notifyTicketReply(server, saved, reply);
+        return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
+    }
+
+    public ReportOperationResult resolveMinecraftReport(Server server, String ticketId, ResolveReportRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+        if (ticket == null) {
+            return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
+        }
+
+        Ticket original = ticketRepository.snapshot(ticket);
+        Date now = new Date();
+        String staffName = request.resolvedBy() != null ? request.resolvedBy() : "Staff";
+        TicketReply reply = TicketReply.builder()
+                .id(UUID.randomUUID().toString())
+                .name(staffName)
+                .content("Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.")
+                .type("reply")
+                .created(now)
+                .staff(true)
+                .action("close")
+                .build();
+
+        ensureTicketReplies(ticket).add(reply);
+        ticket.setStatus("Closed");
+        ticket.setLocked(true);
+        ticket.setUpdatedAt(now);
+
+        if (request.resolution() != null && !request.resolution().isBlank()) {
+            ensureTicketData(ticket).put("resolution", request.resolution());
+        }
+        if (request.resolvedBy() != null) {
+            Map<String, Object> data = ensureTicketData(ticket);
+            data.put("resolvedBy", request.resolvedBy());
+            data.put("resolvedAt", now);
+        }
+        if (request.punishmentId() != null) {
+            ensureTicketData(ticket).put("linkedPunishmentId", request.punishmentId());
+        }
+
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        notificationService.notifyTicketReply(server, saved, reply);
+        return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
+    }
+
+    public ReportOperationResult assignMinecraftReport(Server server, String ticketId, AssignReportRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+        if (ticket == null) {
+            return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
+        }
+
+        Ticket original = ticketRepository.snapshot(ticket);
+        ticket.setAssignedTo("none".equalsIgnoreCase(request.assignee())
+                ? List.of()
+                : TicketAssigneeUtil.normalizeCsv(request.assignee()));
+        ticket.setUpdatedAt(new Date());
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
+    }
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type) {
         List<String> types = type != null && !type.isBlank() ? List.of(type) : null;
@@ -46,28 +239,26 @@ public class TicketService {
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, List<String> types,
                                                    String author, List<String> labels, List<String> assignees, String sort) {
-        MongoTemplate template = getTemplate(server);
-
         Query query = new Query();
-        query.addCriteria(Criteria.where("status").ne("Unfinished"));
+        query.addCriteria(MongoQueries.where(TicketFields.STATUS).ne("Unfinished"));
 
         if (search != null && !search.isBlank()) {
             String escapedSearch = java.util.regex.Pattern.quote(search);
             Criteria searchCriteria = new Criteria().orOperator(
-                    Criteria.where("_id").regex(escapedSearch, "i"),
-                    Criteria.where("subject").regex(escapedSearch, "i"),
-                    Criteria.where("creatorName").regex(escapedSearch, "i"),
-                    Criteria.where("replies.name").regex(escapedSearch, "i"),
-                    Criteria.where("replies.content").regex(escapedSearch, "i")
+                    MongoQueries.where(TicketFields.ID).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.SUBJECT).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.REPLY_NAME).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.REPLY_CONTENT).regex(escapedSearch, "i")
             );
             query.addCriteria(searchCriteria);
         }
 
         if (status != null && !status.isBlank() && !status.equals("all")) {
             if (status.equals("open")) {
-                query.addCriteria(Criteria.where("locked").ne(true));
+                query.addCriteria(MongoQueries.where(TicketFields.LOCKED).ne(true));
             } else if (status.equals("closed")) {
-                query.addCriteria(Criteria.where("locked").is(true));
+                query.addCriteria(MongoQueries.where(TicketFields.LOCKED).is(true));
             }
         }
 
@@ -81,8 +272,8 @@ public class TicketService {
                         .flatMap(type -> {
                             String escapedType = java.util.regex.Pattern.quote(type);
                             return java.util.stream.Stream.of(
-                                Criteria.where("type").regex("^" + escapedType + "$", "i"),
-                                Criteria.where("category").regex("^" + escapedType + "$", "i")
+                                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i"),
+                                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i")
                             );
                         })
                         .toList();
@@ -93,12 +284,12 @@ public class TicketService {
         // Filter by author (creator name)
         if (author != null && !author.isBlank()) {
             String escapedAuthor = java.util.regex.Pattern.quote(author);
-            query.addCriteria(Criteria.where("creatorName").regex(escapedAuthor, "i"));
+            query.addCriteria(MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedAuthor, "i"));
         }
 
         // Filter by labels (tags)
         if (labels != null && !labels.isEmpty()) {
-            query.addCriteria(Criteria.where("tags").all(labels));
+            query.addCriteria(MongoQueries.where(TicketFields.TAGS).all(labels));
         }
 
         Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
@@ -106,21 +297,21 @@ public class TicketService {
             query.addCriteria(assigneeCriteria);
         }
 
-        long totalTickets = template.count(query, Ticket.class, CollectionName.TICKETS);
+        long totalTickets = ticketRepository.count(server, query);
 
         int skip = (page - 1) * limit;
 
         // Apply sorting
         Sort sorting = switch (sort != null ? sort : "newest") {
-            case "oldest" -> Sort.by(Sort.Direction.ASC, "created");
-            case "recently-updated" -> Sort.by(Sort.Direction.DESC, "updatedAt");
-            case "least-recently-updated" -> Sort.by(Sort.Direction.ASC, "updatedAt");
-            default -> Sort.by(Sort.Direction.DESC, "created"); // "newest"
+            case "oldest" -> MongoQueries.sort(Sort.Direction.ASC, TicketFields.CREATED);
+            case "recently-updated" -> MongoQueries.sort(Sort.Direction.DESC, TicketFields.UPDATED_AT);
+            case "least-recently-updated" -> MongoQueries.sort(Sort.Direction.ASC, TicketFields.UPDATED_AT);
+            default -> MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED);
         };
         query.with(sorting);
         query.skip(skip).limit(limit);
 
-        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
+        List<Ticket> tickets = ticketRepository.find(server, query);
 
         List<TicketListItemResponse> ticketItems = tickets.stream()
                 .map(this::toListItemResponse)
@@ -143,18 +334,16 @@ public class TicketService {
     }
 
     public Map<String, Long> getTicketCounts(Server server, String search, List<String> types, String author, List<String> labels, List<String> assignees) {
-        MongoTemplate template = getTemplate(server);
-
         // Build base query without status filter
         Query baseQuery = new Query();
-        baseQuery.addCriteria(Criteria.where("status").ne("Unfinished"));
+        baseQuery.addCriteria(MongoQueries.where(TicketFields.STATUS).ne("Unfinished"));
 
         if (search != null && !search.isBlank()) {
             String escapedSearch = java.util.regex.Pattern.quote(search);
             Criteria searchCriteria = new Criteria().orOperator(
-                    Criteria.where("_id").regex(escapedSearch, "i"),
-                    Criteria.where("subject").regex(escapedSearch, "i"),
-                    Criteria.where("creatorName").regex(escapedSearch, "i")
+                    MongoQueries.where(TicketFields.ID).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.SUBJECT).regex(escapedSearch, "i"),
+                    MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedSearch, "i")
             );
             baseQuery.addCriteria(searchCriteria);
         }
@@ -169,8 +358,8 @@ public class TicketService {
                         .flatMap(type -> {
                             String escapedType = java.util.regex.Pattern.quote(type);
                             return java.util.stream.Stream.of(
-                                Criteria.where("type").regex("^" + escapedType + "$", "i"),
-                                Criteria.where("category").regex("^" + escapedType + "$", "i")
+                                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i"),
+                                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i")
                             );
                         })
                         .toList();
@@ -180,11 +369,11 @@ public class TicketService {
 
         if (author != null && !author.isBlank()) {
             String escapedAuthor = java.util.regex.Pattern.quote(author);
-            baseQuery.addCriteria(Criteria.where("creatorName").regex(escapedAuthor, "i"));
+            baseQuery.addCriteria(MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedAuthor, "i"));
         }
 
         if (labels != null && !labels.isEmpty()) {
-            baseQuery.addCriteria(Criteria.where("tags").all(labels));
+            baseQuery.addCriteria(MongoQueries.where(TicketFields.TAGS).all(labels));
         }
 
         Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
@@ -194,13 +383,13 @@ public class TicketService {
 
         // Count open tickets
         Query openQuery = Query.of(baseQuery);
-        openQuery.addCriteria(Criteria.where("locked").ne(true));
-        long openCount = template.count(openQuery, Ticket.class, CollectionName.TICKETS);
+        openQuery.addCriteria(MongoQueries.where(TicketFields.LOCKED).ne(true));
+        long openCount = ticketRepository.count(server, openQuery);
 
         // Count closed tickets
         Query closedQuery = Query.of(baseQuery);
-        closedQuery.addCriteria(Criteria.where("locked").is(true));
-        long closedCount = template.count(closedQuery, Ticket.class, CollectionName.TICKETS);
+        closedQuery.addCriteria(MongoQueries.where(TicketFields.LOCKED).is(true));
+        long closedCount = ticketRepository.count(server, closedQuery);
 
         Map<String, Long> counts = new HashMap<>();
         counts.put("open", openCount);
@@ -209,34 +398,33 @@ public class TicketService {
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
-        MongoTemplate template = getTemplate(server);
         int updatedCount = 0;
 
         for (String ticketId : request.ticketIds()) {
-            Query query = Query.query(Criteria.where("_id").is(ticketId));
-            Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+            Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
             if (ticket == null) {
                 continue;
             }
 
-            Update update = new Update().set("updatedAt", new Date());
+            Ticket original = ticketRepository.snapshot(ticket);
+            Date now = new Date();
+            ticket.setUpdatedAt(now);
             boolean hasChanges = false;
 
             // Update locked status
             if (request.locked() != null) {
-                update.set("locked", request.locked());
+                ticket.setLocked(request.locked());
                 if (request.locked()) {
-                    update.set("status", "Closed");
+                    ticket.setStatus("Closed");
                 } else {
-                    update.set("status", "Open");
+                    ticket.setStatus("Open");
                 }
                 hasChanges = true;
             }
 
             // Update hidden status
             if (request.hidden() != null) {
-                update.set("hidden", request.hidden());
+                ticket.setHidden(request.hidden());
                 hasChanges = true;
             }
 
@@ -248,7 +436,7 @@ public class TicketService {
                         currentTags.add(label);
                     }
                 }
-                update.set("tags", currentTags);
+                ticket.setTags(currentTags);
                 hasChanges = true;
             }
 
@@ -256,7 +444,7 @@ public class TicketService {
             if (request.removeLabels() != null && !request.removeLabels().isEmpty()) {
                 List<String> currentTags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
                 currentTags.removeAll(request.removeLabels());
-                update.set("tags", currentTags);
+                ticket.setTags(currentTags);
                 hasChanges = true;
             }
 
@@ -265,17 +453,17 @@ public class TicketService {
                 List<String> assignees = "none".equalsIgnoreCase(request.assignTo())
                         ? List.of()
                         : TicketAssigneeUtil.normalizeCsv(request.assignTo());
-                update.set("assignedTo", assignees);
+                ticket.setAssignedTo(assignees);
                 hasChanges = true;
             }
 
             if (hasChanges) {
-                template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+                Ticket saved = ticketRepository.saveChanges(server, original, ticket);
                 updatedCount++;
 
                 // Send transcript email when ticket is closed via bulk operation
                 if (Boolean.TRUE.equals(request.locked())) {
-                    notificationService.notifyTicketClosed(server, ticket);
+                    notificationService.notifyTicketClosed(server, saved);
                 }
             }
         }
@@ -284,23 +472,16 @@ public class TicketService {
     }
 
     public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-        return Optional.ofNullable(ticket).map(this::toTicketResponse);
+        return ticketRepository.findById(server, ticketId).map(this::toTicketResponse);
     }
 
     public Optional<Ticket> getTicketRaw(Server server, String ticketId) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        return Optional.ofNullable(template.findOne(query, Ticket.class, CollectionName.TICKETS));
+        return ticketRepository.findById(server, ticketId);
     }
 
     public TicketResponse createTicket(Server server, CreateTicketRequest request) {
-        MongoTemplate template = getTemplate(server);
-
         TicketType ticketType = TicketType.fromId(request.type());
-        String ticketId = generateTicketId(template, ticketType);
+        String ticketId = generateTicketId(server, ticketType);
 
         boolean isReport = "player".equalsIgnoreCase(request.type()) || "chat".equalsIgnoreCase(request.type());
         String ticketStatus = isReport || (request.subject() != null && !request.subject().isBlank()) ? "Open" : "Unfinished";
@@ -374,22 +555,19 @@ public class TicketService {
                 .updatedAt(new Date())
                 .build();
 
-        template.save(ticket, CollectionName.TICKETS);
+        ticketRepository.saveEntity(server, ticket);
 
         return toTicketResponse(ticket);
     }
 
     public Optional<TicketResponse> updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return Optional.empty();
         }
 
-        Update update = new Update().set("updatedAt", new Date());
+        Ticket original = ticketRepository.snapshot(ticket);
+        ticket.setUpdatedAt(new Date());
 
         if (request.status() != null) {
             // Validate status is one of the allowed values
@@ -399,29 +577,24 @@ public class TicketService {
                 case "unfinished" -> "Unfinished";
                 default -> "Open";
             };
-            update.set("status", validatedStatus);
             ticket.setStatus(validatedStatus);
         }
 
         if (request.locked() != null) {
-            update.set("locked", request.locked());
             ticket.setLocked(request.locked());
         }
 
         if (request.tags() != null) {
-            update.set("tags", request.tags());
             ticket.setTags(request.tags());
         }
 
         if (request.hidden() != null) {
-            update.set("hidden", request.hidden());
             ticket.setHidden(request.hidden());
         }
 
         if (request.data() != null && !request.data().isEmpty()) {
             Map<String, Object> existingData = ticket.getData() != null ? new HashMap<>(ticket.getData()) : new HashMap<>();
             existingData.putAll(request.data());
-            update.set("data", existingData);
             ticket.setData(existingData);
         }
 
@@ -439,8 +612,7 @@ public class TicketService {
                     .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
                     .build();
 
-            update.push("replies", newReply);
-            ticket.getReplies().add(newReply);
+            ensureTicketReplies(ticket).add(newReply);
         }
 
         if (request.newNote() != null) {
@@ -451,31 +623,26 @@ public class TicketService {
                     .date(new Date())
                     .build();
 
-            update.push("notes", newNote);
-            ticket.getNotes().add(newNote);
+            ensureTicketNotes(ticket).add(newNote);
         }
 
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
 
         // Send notifications for staff replies
         if (newReply != null && newReply.isStaff()) {
-            notificationService.notifyTicketReply(server, ticket, newReply);
+            notificationService.notifyTicketReply(server, saved, newReply);
         }
 
         // Send transcript email when ticket is closed (locked)
         if (Boolean.TRUE.equals(request.locked())) {
-            notificationService.notifyTicketClosed(server, ticket);
+            notificationService.notifyTicketClosed(server, saved);
         }
 
-        return Optional.of(toTicketResponse(ticket));
+        return Optional.of(toTicketResponse(saved));
     }
 
     public Optional<TicketReply> addReply(Server server, String ticketId, AddReplyRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return Optional.empty();
         }
@@ -497,25 +664,22 @@ public class TicketService {
                 .creatorIdentifier(request.creatorIdentifier())
                 .build();
 
-        Update update = new Update()
-                .push("replies", newReply)
-                .set("updatedAt", new Date());
-
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        Ticket original = ticketRepository.snapshot(ticket);
+        ensureTicketReplies(ticket).add(newReply);
+        ticket.setUpdatedAt(new Date());
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
 
         // Send notifications for staff replies
         if (request.staff()) {
-            notificationService.notifyTicketReply(server, ticket, newReply);
+            notificationService.notifyTicketReply(server, saved, newReply);
         }
 
         return Optional.of(newReply);
     }
 
     public Optional<TicketNote> addNote(Server server, String ticketId, AddNoteRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        if (!template.exists(query, Ticket.class, CollectionName.TICKETS)) {
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+        if (ticket == null) {
             return Optional.empty();
         }
 
@@ -526,85 +690,69 @@ public class TicketService {
                 .date(new Date())
                 .build();
 
-        Update update = new Update()
-                .push("notes", newNote)
-                .set("updatedAt", new Date());
-
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        Ticket original = ticketRepository.snapshot(ticket);
+        ensureTicketNotes(ticket).add(newNote);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveChanges(server, original, ticket);
 
         return Optional.of(newNote);
     }
 
     public Optional<List<String>> addTag(Server server, String ticketId, String tag) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return Optional.empty();
         }
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (!tags.contains(tag)) {
+            Ticket original = ticketRepository.snapshot(ticket);
             tags.add(tag);
-            Update update = new Update()
-                    .set("tags", tags)
-                    .set("updatedAt", new Date());
-            template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+            ticket.setTags(tags);
+            ticket.setUpdatedAt(new Date());
+            ticketRepository.saveChanges(server, original, ticket);
         }
 
         return Optional.of(tags);
     }
 
     public Optional<List<String>> removeTag(Server server, String ticketId, String tag) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return Optional.empty();
         }
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (tags.remove(tag)) {
-            Update update = new Update()
-                    .set("tags", tags)
-                    .set("updatedAt", new Date());
-            template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+            Ticket original = ticketRepository.snapshot(ticket);
+            ticket.setTags(tags);
+            ticket.setUpdatedAt(new Date());
+            ticketRepository.saveChanges(server, original, ticket);
         }
 
         return Optional.of(tags);
     }
 
     public List<Ticket> getTicketsByPlayer(Server server, String playerUuid) {
-        MongoTemplate template = getTemplate(server);
-
         Criteria criteria = new Criteria().andOperator(
                 new Criteria().orOperator(
-                        Criteria.where("creatorUuid").is(playerUuid),
-                        Criteria.where("reportedPlayerUuid").is(playerUuid)
+                        MongoQueries.where(TicketFields.CREATOR_UUID).is(playerUuid),
+                        MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid)
                 ),
-                Criteria.where("status").ne("Unfinished")
+                MongoQueries.where(TicketFields.STATUS).ne("Unfinished")
         );
 
-        Query query = Query.query(criteria).with(Sort.by(Sort.Direction.DESC, "created"));
-        return template.find(query, Ticket.class, CollectionName.TICKETS);
+        Query query = Query.query(criteria).with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
+        return ticketRepository.find(server, query);
     }
 
     public List<Ticket> getTicketsByTag(Server server, String tag) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("tags").is(tag));
-        return template.find(query, Ticket.class, CollectionName.TICKETS);
+        Query query = Query.query(MongoQueries.where(TicketFields.TAGS).is(tag));
+        return ticketRepository.find(server, query);
     }
 
     public QuickResponseResult processQuickResponse(Server server, String ticketId, QuickResponseRequest request, String staffUsername) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return new QuickResponseResult(false, "Ticket not found", null, null, false, false, null);
         }
@@ -628,25 +776,24 @@ public class TicketService {
                 .staff(true)
                 .build();
 
-        Update update = new Update()
-                .push("replies", responseReply)
-                .set("updatedAt", new Date());
-
+        Ticket original = ticketRepository.snapshot(ticket);
+        ensureTicketReplies(ticket).add(responseReply);
+        ticket.setUpdatedAt(new Date());
         boolean ticketClosed = false;
         if (Boolean.TRUE.equals(action.getCloseTicket())) {
-            update.set("locked", true);
-            update.set("status", "Closed");
+            ticket.setLocked(true);
+            ticket.setStatus("Closed");
             ticketClosed = true;
         }
 
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
 
         // Send notifications for the quick response (which is a staff reply)
-        notificationService.notifyTicketReply(server, ticket, responseReply);
+        notificationService.notifyTicketReply(server, saved, responseReply);
 
         // Send transcript email if ticket was closed
         if (ticketClosed) {
-            notificationService.notifyTicketClosed(server, ticket);
+            notificationService.notifyTicketClosed(server, saved);
         }
 
         return new QuickResponseResult(
@@ -661,18 +808,14 @@ public class TicketService {
     }
 
     public Optional<TicketResponse> submitTicketForm(Server server, String ticketId, SubmitTicketFormRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(ticketId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return Optional.empty();
         }
 
-        Update update = new Update()
-                .set("status", "Open")
-                .set("updatedAt", new Date());
+        Ticket original = ticketRepository.snapshot(ticket);
+        ticket.setStatus("Open");
+        ticket.setUpdatedAt(new Date());
 
         Map<String, Object> requestFormData = request.formData() != null ? request.formData() : Collections.emptyMap();
         FormDataProcessingResult formDataProcessing = processFormDataForContent(requestFormData);
@@ -682,7 +825,6 @@ public class TicketService {
         );
 
         if (request.subject() != null) {
-            update.set("subject", request.subject());
             ticket.setSubject(request.subject());
         }
 
@@ -697,12 +839,10 @@ public class TicketService {
             Object emailAuthValue = request.formData().get("emailAuthEnabled");
             if (emailAuthValue != null) {
                 boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
-                update.set("emailAuthEnabled", emailAuth);
                 ticket.setEmailAuthEnabled(emailAuth);
                 existingData.put("emailAuthEnabled", emailAuth);
             }
 
-            update.set("formData", request.formData());
             ticket.setFormData(request.formData());
         }
 
@@ -718,7 +858,6 @@ public class TicketService {
         }
 
         if (hasDataUpdates) {
-            update.set("data", existingData);
             ticket.setData(existingData);
         }
 
@@ -736,18 +875,13 @@ public class TicketService {
                         .attachments(initialAttachments)
                         .creatorIdentifier(request.creatorIdentifier())
                         .build();
-                update.push("replies", initialReply);
-                if (ticket.getReplies() == null) {
-                    ticket.setReplies(new ArrayList<>());
-                }
-                ticket.getReplies().add(initialReply);
+                ensureTicketReplies(ticket).add(initialReply);
             }
         }
 
-        ticket.setStatus("Open");
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
 
-        return Optional.of(toTicketResponse(ticket));
+        return Optional.of(toTicketResponse(saved));
     }
 
     private String resolveCreatorEmail(SubmitTicketFormRequest request) {
@@ -985,7 +1119,79 @@ public class TicketService {
         };
     }
 
-    private String generateTicketId(MongoTemplate template, TicketType type) {
+    private Ticket createMinecraftTicket(Server server, MinecraftCreateTicketRequest request, boolean unfinished) {
+        TicketType ticketType = TicketType.fromId(request.type());
+        String ticketId = generateTicketId(server, ticketType);
+        Date now = new Date();
+
+        List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
+        if (!unfinished && request.chatMessages() != null && !request.chatMessages().isEmpty()) {
+            for (String message : request.chatMessages()) {
+                if (message == null || message.isBlank()) {
+                    continue;
+                }
+                chatMessages.add(new Ticket.ChatMessage(
+                        message.substring(0, Math.min(message.length(), MAX_MINECRAFT_CHAT_MESSAGE_LENGTH)),
+                        now
+                ));
+            }
+        }
+
+        Map<String, Object> ticketData = new HashMap<>();
+        if (request.createdServer() != null && !request.createdServer().isBlank()) {
+            ticketData.put("createdServer", request.createdServer());
+        }
+
+        Ticket ticket = Ticket.builder()
+                .id(ticketId)
+                .type(mapMinecraftTicketType(request.type()))
+                .category(request.type())
+                .subject(request.subject())
+                .status(unfinished ? "Unfinished" : "Open")
+                .creatorUuid(request.creatorUuid())
+                .creatorName(request.creatorName())
+                .reportedPlayer(request.reportedPlayerName())
+                .reportedPlayerUuid(request.reportedPlayerUuid())
+                .tags(request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>())
+                .replies(new ArrayList<>())
+                .notes(new ArrayList<>())
+                .chatMessages(unfinished ? null : chatMessages)
+                .data(ticketData.isEmpty() ? null : ticketData)
+                .priority(request.priority() != null ? request.priority() : "normal")
+                .created(now)
+                .updatedAt(now)
+                .build();
+
+        if (!unfinished && request.description() != null && !request.description().isBlank()) {
+            TicketReply initialReply = TicketReply.builder()
+                    .id(UUID.randomUUID().toString())
+                    .content(request.description())
+                    .name(request.creatorName() != null ? request.creatorName() : "Player")
+                    .creatorIdentifier(request.creatorUuid())
+                    .staff(false)
+                    .type("user")
+                    .created(now)
+                    .build();
+            ticket.getReplies().add(initialReply);
+        }
+
+        return ticketRepository.saveEntity(server, ticket);
+    }
+
+    private String mapMinecraftTicketType(String type) {
+        if (type == null) {
+            return "SUPPORT";
+        }
+
+        return switch (type.toLowerCase(Locale.ROOT)) {
+            case "player", "chat" -> "REPORT";
+            case "bug" -> "BUG";
+            case "appeal" -> "APPEAL";
+            default -> "SUPPORT";
+        };
+    }
+
+    private String generateTicketId(Server server, TicketType type) {
         String prefix = TicketType.getPrefix(type);
         String ticketId;
         int attempts = 0;
@@ -994,9 +1200,26 @@ public class TicketService {
             int randomId = 100000 + RANDOM.nextInt(900000);
             ticketId = prefix + "-" + randomId;
             attempts++;
-        } while (template.exists(Query.query(Criteria.where("_id").is(ticketId)), Ticket.class, CollectionName.TICKETS) && attempts < 10);
+        } while (ticketRepository.exists(server, Query.query(MongoQueries.where(TicketFields.ID).is(ticketId))) && attempts < 10);
 
         return ticketId;
+    }
+
+    public record MinecraftTicketClaimResult(MinecraftTicketClaimStatus status, Ticket ticket) {
+    }
+
+    public record ReportOperationResult(ReportOperationStatus status, Ticket ticket) {
+    }
+
+    public enum MinecraftTicketClaimStatus {
+        SUCCESS,
+        NOT_FOUND,
+        ALREADY_LINKED
+    }
+
+    public enum ReportOperationStatus {
+        SUCCESS,
+        NOT_FOUND
     }
 
     private Criteria buildAssigneeCriteria(List<String> assignees) {
@@ -1018,7 +1241,7 @@ public class TicketService {
             String normalizedAssignee = TicketAssigneeUtil.normalizeSingle(assignee);
             if (normalizedAssignee != null) {
                 // Equality on array fields matches documents where the array contains the value.
-                assigneeCriteriaList.add(Criteria.where("assignedTo").is(normalizedAssignee));
+                assigneeCriteriaList.add(MongoQueries.where(TicketFields.ASSIGNED_TO).is(normalizedAssignee));
             }
         }
 
@@ -1031,9 +1254,9 @@ public class TicketService {
 
     private Criteria buildUnassignedCriteria() {
         return new Criteria().orOperator(
-                Criteria.where("assignedTo").exists(false),
-                Criteria.where("assignedTo").is(null),
-                Criteria.where("assignedTo").size(0)
+                Criteria.where(TicketFields.ASSIGNED_TO.path()).exists(false),
+                Criteria.where(TicketFields.ASSIGNED_TO.path()).is(null),
+                Criteria.where(TicketFields.ASSIGNED_TO.path()).size(0)
         );
     }
 
@@ -1217,7 +1440,66 @@ public class TicketService {
         return new Date();
     }
 
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
+    private Criteria buildReportCriteria(String status, String playerUuid) {
+        List<Criteria> conditions = new ArrayList<>();
+        conditions.add(MongoQueries.where(TicketFields.TYPE).is("REPORT"));
+
+        if (playerUuid != null && !playerUuid.isBlank()) {
+            conditions.add(MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid));
+        }
+
+        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
+            conditions.add(MongoQueries.where(TicketFields.STATUS).in(status, normalizeTicketStatus(status)));
+        }
+
+        return conditions.size() == 1
+                ? conditions.get(0)
+                : new Criteria().andOperator(conditions.toArray(new Criteria[0]));
+    }
+
+    private String normalizeTicketStatus(String status) {
+        return status.substring(0, 1).toUpperCase(Locale.ROOT) + status.substring(1).toLowerCase(Locale.ROOT);
+    }
+
+    private Map<String, Object> toMinecraftReport(Ticket ticket) {
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("id", ticket.getId());
+        report.put("type", ticket.getCategory() != null ? ticket.getCategory() : ticket.getType());
+        report.put("category", ticket.getCategory());
+        report.put("reporterName", ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown");
+        report.put("reporterUuid", ticket.getCreatorUuid());
+        report.put("reportedPlayerUuid", ticket.getReportedPlayerUuid());
+        report.put("reportedPlayerName", ticket.getReportedPlayer());
+        report.put("subject", ticket.getSubject());
+        report.put("content", ticket.getReplies() != null && !ticket.getReplies().isEmpty()
+                ? ticket.getReplies().get(0).getContent()
+                : null);
+        report.put("status", ticket.getStatus());
+        report.put("priority", ticket.getPriority());
+        report.put("createdAt", ticket.getCreated());
+        report.put("assignedTo", ticket.getAssignedTo());
+        report.put("chatMessages", ticket.getChatMessages());
+        return report;
+    }
+
+    private List<TicketReply> ensureTicketReplies(Ticket ticket) {
+        if (ticket.getReplies() == null) {
+            ticket.setReplies(new ArrayList<>());
+        }
+        return ticket.getReplies();
+    }
+
+    private List<TicketNote> ensureTicketNotes(Ticket ticket) {
+        if (ticket.getNotes() == null) {
+            ticket.setNotes(new ArrayList<>());
+        }
+        return ticket.getNotes();
+    }
+
+    private Map<String, Object> ensureTicketData(Ticket ticket) {
+        if (ticket.getData() == null) {
+            ticket.setData(new HashMap<>());
+        }
+        return ticket.getData();
     }
 }

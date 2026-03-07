@@ -1,53 +1,33 @@
 package gg.modl.backend.role.controller;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
-import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.role.dto.response.RoleResponse;
+import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_ROLES)
 @RequiredArgsConstructor
 public class MinecraftRolesController {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final RoleService roleService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllRoles(HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = new Query();
-        query.with(Sort.by(Sort.Direction.ASC, "order"));
-
-        List<StaffRole> roles = template.find(query, StaffRole.class, CollectionName.STAFF_ROLES);
-
-        List<Map<String, Object>> roleList = roles.stream().map(role -> {
-            Map<String, Object> r = new LinkedHashMap<>();
-            r.put("id", role.getId());
-            r.put("name", role.getName());
-            r.put("description", role.getDescription());
-            r.put("permissions", role.getPermissions());
-            r.put("isDefault", role.isDefault());
-            r.put("order", role.getOrder());
-            r.put("createdAt", role.getCreatedAt());
-            r.put("updatedAt", role.getUpdatedAt());
-            return r;
-        }).toList();
+        List<Map<String, Object>> roleList = roleService.getAllRoles(server).stream()
+                .map(this::toRoleMap)
+                .toList();
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -61,10 +41,7 @@ public class MinecraftRolesController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("_id").is(id));
-        StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
+        RoleResponse role = roleService.getRoleById(server, id).orElse(null);
 
         if (role == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
@@ -73,19 +50,9 @@ public class MinecraftRolesController {
             ));
         }
 
-        Map<String, Object> roleData = new LinkedHashMap<>();
-        roleData.put("id", role.getId());
-        roleData.put("name", role.getName());
-        roleData.put("description", role.getDescription());
-        roleData.put("permissions", role.getPermissions());
-        roleData.put("isDefault", role.isDefault());
-        roleData.put("order", role.getOrder());
-        roleData.put("createdAt", role.getCreatedAt());
-        roleData.put("updatedAt", role.getUpdatedAt());
-
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "role", roleData
+                "role", toRoleMap(role)
         ));
     }
 
@@ -96,29 +63,31 @@ public class MinecraftRolesController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("_id").is(id));
-        StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
-
-        if (role == null) {
+        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Role not found"
             ));
         }
 
-        Update update = new Update()
-                .set("permissions", request.permissions())
-                .set("updatedAt", new Date());
-
-        template.updateFirst(query, update, StaffRole.class, CollectionName.STAFF_ROLES);
-
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
                 "message", "Role permissions updated"
         ));
+    }
+
+    private Map<String, Object> toRoleMap(RoleResponse role) {
+        Map<String, Object> roleData = new LinkedHashMap<>();
+        roleData.put("id", role.id());
+        roleData.put("name", role.name());
+        roleData.put("description", role.description());
+        roleData.put("permissions", role.permissions());
+        roleData.put("isDefault", role.isDefault());
+        roleData.put("order", role.order());
+        roleData.put("createdAt", role.createdAt());
+        roleData.put("updatedAt", role.updatedAt());
+        return roleData;
     }
 
     public record UpdatePermissionsRequest(

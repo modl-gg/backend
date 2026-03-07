@@ -11,7 +11,6 @@ import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,11 +36,7 @@ public class PublicServerController {
     private final ServerService serverService;
 
     @PostMapping("/register")
-    public ResponseEntity<RegisterResponse> register(@RequestBody @Valid RegisterRequest request, BindingResult bindingResult) {
-        if (bindingResult.hasErrors()) {
-            // Invalid schema
-            return ResponseEntity.badRequest().body(new RegisterResponse(false, ServerResponseMessage.REGISTER_INVALID_SCHEMA));
-        }
+    public ResponseEntity<RegisterResponse> register(@RequestBody @Valid RegisterRequest request) {
         if (RESERVED_SUBDOMAINS.contains(request.customDomain)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_RESERVED_SUBDOMAIN));
         }

@@ -1,22 +1,15 @@
 package gg.modl.backend.staff.controller;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.InvitationService;
+import gg.modl.backend.staff.service.StaffTwoFactorService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.Map;
 
 @RestController
@@ -24,7 +17,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PublicStaffController {
     private final InvitationService invitationService;
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final StaffTwoFactorService staffTwoFactorService;
 
     @GetMapping("/invitations/accept")
     public ResponseEntity<?> acceptInvitationGet(
@@ -81,28 +74,9 @@ public class PublicStaffController {
             @PathVariable String token,
             HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        // Find the staff member with this pending token
-        Query query = Query.query(Criteria.where("twoFactorToken").is(token));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
-
-        if (staff == null) {
+        if (!staffTwoFactorService.verifyToken(server, token)) {
             return ResponseEntity.notFound().build();
         }
-
-        // Set 7-day session bound to the IP, clear the token fields, and flag for sync delivery
-        long now = Instant.now().toEpochMilli();
-        long sessionExpiresAt = now + (7L * 24 * 60 * 60 * 1000); // 7 days
-
-        Update update = new Update()
-                .unset("twoFactorToken")
-                .unset("twoFactorTokenCreatedAt")
-                .set("twoFactorPendingDelivery", true)
-                .set("twoFactorSessionIp", staff.getTwoFactorTokenIp())
-                .unset("twoFactorTokenIp")
-                .set("twoFactorSessionExpiresAt", sessionExpiresAt);
-        template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
 
         return ResponseEntity.ok(Map.of("status", "verified"));
     }

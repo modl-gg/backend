@@ -1,7 +1,6 @@
 package gg.modl.backend.player;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
@@ -14,7 +13,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 
 import java.time.Instant;
@@ -36,7 +34,7 @@ import static org.mockito.Mockito.when;
 class PlayerServiceSearchRankingTest {
 
     @Mock
-    private DynamicMongoTemplateProvider mongoProvider;
+    private PlayerMongoRepository playerRepository;
 
     @Mock
     private PlayerStatusCalculator statusCalculator;
@@ -45,18 +43,13 @@ class PlayerServiceSearchRankingTest {
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
-    private MongoTemplate template;
-
-    @Mock
     private Server server;
 
     private PlayerService playerService;
 
     @BeforeEach
     void setUp() {
-        playerService = new PlayerService(mongoProvider, statusCalculator, punishmentTypeService);
-        when(server.getDatabaseName()).thenReturn("test_db");
-        when(mongoProvider.getFromDatabaseName("test_db")).thenReturn(template);
+        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService);
     }
 
     @Test
@@ -67,7 +60,7 @@ class PlayerServiceSearchRankingTest {
         Player javaPlayer = player(javaUuid, List.of("UrgedRook8642"), null);
         Player bedrockPlayer = player(bedrockUuid, List.of(".UrgedRook8642"), null);
 
-        when(template.find(any(Query.class), eq(Player.class), eq(CollectionName.PLAYERS)))
+        when(playerRepository.find(any(Server.class), any(Query.class)))
                 .thenReturn(List.of(bedrockPlayer, javaPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "UrgedRook8642");
@@ -85,7 +78,7 @@ class PlayerServiceSearchRankingTest {
         Player renamedPlayer = player(renamedUuid, List.of("Name123", "RenamedPlayer"), null);
         Player prefixedPlayer = player(prefixedUuid, List.of(".Name123"), null);
 
-        when(template.find(any(Query.class), eq(Player.class), eq(CollectionName.PLAYERS)))
+        when(playerRepository.find(any(Server.class), any(Query.class)))
                 .thenReturn(List.of(prefixedPlayer, renamedPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "Name123");
@@ -103,7 +96,7 @@ class PlayerServiceSearchRankingTest {
         Player exactPlayer = player(exactUuid, List.of("NAME123"), null);
         Player partialPlayer = player(partialUuid, List.of(".name123"), null);
 
-        when(template.find(any(Query.class), eq(Player.class), eq(CollectionName.PLAYERS)))
+        when(playerRepository.find(any(Server.class), any(Query.class)))
                 .thenReturn(List.of(partialPlayer, exactPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "name123");
@@ -119,13 +112,13 @@ class PlayerServiceSearchRankingTest {
         String uppercaseUuid = playerUuid.toString().toUpperCase(Locale.ROOT);
 
         Player player = player(playerUuid, List.of("SomePlayer"), Date.from(Instant.now()));
-        when(template.find(any(Query.class), eq(Player.class), eq(CollectionName.PLAYERS)))
+        when(playerRepository.find(any(Server.class), any(Query.class)))
                 .thenReturn(List.of(player));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, uppercaseUuid);
 
         ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
-        verify(template).find(queryCaptor.capture(), eq(Player.class), eq(CollectionName.PLAYERS));
+        verify(playerRepository).find(eq(server), queryCaptor.capture());
 
         assertFalse(results.isEmpty());
         assertEquals(playerUuid.toString(), results.get(0).uuid());

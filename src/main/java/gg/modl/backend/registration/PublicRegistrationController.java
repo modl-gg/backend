@@ -24,7 +24,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -67,12 +66,7 @@ public class PublicRegistrationController {
     @PostMapping
     public ResponseEntity<?> register(
             HttpServletRequest request,
-            @RequestBody @Valid RegisterRequest requestData,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new RegisterResponse(false, "Validation failed", null));
-        }
+            @RequestBody @Valid RegisterRequest requestData) {
 
         String clientIp = RequestUtil.getClientIp(request);
 
@@ -250,12 +244,8 @@ public class PublicRegistrationController {
 
     @PostMapping("/auto-login")
     public ResponseEntity<?> autoLogin(
-            @RequestBody AutoLoginRequest request,
+            @RequestBody @Valid AutoLoginRequest request,
             HttpServletResponse response) {
-
-        if (request.token() == null || request.token().isBlank()) {
-            return ResponseEntity.badRequest().body(new AutoLoginResponse(false, "Token is required.", null));
-        }
 
         Server server = serverService.getServerByAutoLoginToken(request.token());
         if (server == null) {

@@ -1,0 +1,147 @@
+package gg.modl.backend.player.service;
+
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.player.PlayerService;
+import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.settings.service.PunishmentTypeService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Optional;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class MinecraftPlayerServiceTest {
+
+    @Mock
+    private PlayerService playerService;
+
+    @Mock
+    private PlayerMongoRepository playerRepository;
+
+    @Mock
+    private TicketMongoRepository ticketRepository;
+
+    @Mock
+    private PlayerStatusCalculator statusCalculator;
+
+    @Mock
+    private PunishmentTypeService punishmentTypeService;
+
+    @Mock
+    private PunishmentService punishmentService;
+
+    @Mock
+    private AccountLinkingService accountLinkingService;
+
+    @Mock
+    private MojangApiService mojangApiService;
+
+    private MinecraftPlayerService minecraftPlayerService;
+
+    @BeforeEach
+    void setUp() {
+        minecraftPlayerService = new MinecraftPlayerService(
+                playerService,
+                playerRepository,
+                ticketRepository,
+                statusCalculator,
+                punishmentTypeService,
+                punishmentService,
+                accountLinkingService,
+                mojangApiService
+        );
+    }
+
+    @Test
+    void getPlayerByMinecraftUuidFallsBackToMojang() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        UUID playerUuid = UUID.randomUUID();
+
+        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.empty());
+        when(mojangApiService.lookupByUuid(playerUuid.toString()))
+                .thenReturn(Optional.of(new MojangApiService.MojangProfile("LookupName", playerUuid)));
+
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerByMinecraftUuid(
+                server,
+                playerUuid.toString(),
+                true
+        );
+
+        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
+        assertEquals("Player found via Mojang", response.body().get("message"));
+    }
+
+    @Test
+    void createNotePersistsThroughRepositorySaveChanges() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Player player = Player.builder()
+                .minecraftUuid(UUID.randomUUID())
+                .build();
+
+        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.of(player));
+        when(playerRepository.snapshot(any(Player.class))).thenReturn(Player.builder().minecraftUuid(player.getMinecraftUuid()).build());
+
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(
+                server,
+                player.getMinecraftUuid().toString(),
+                "Test note",
+                "Moderator"
+        );
+
+        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
+
+        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
+        verify(playerRepository).saveChanges(any(Server.class), any(Player.class), updatedPlayerCaptor.capture());
+        assertEquals("Test note", updatedPlayerCaptor.getValue().getNotes().get(0).getText());
+    }
+
+    @Test
+    void acknowledgeNotificationsRemovesOnlyRequestedNotificationIds() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        UUID playerUuid = UUID.randomUUID();
+        Player player = Player.builder()
+                .minecraftUuid(playerUuid)
+                .data(new LinkedHashMap<>(Map.of(
+                        "pendingNotifications", new ArrayList<>(List.of(
+                                new LinkedHashMap<>(Map.of("id", "notif-1", "message", "one")),
+                                new LinkedHashMap<>(Map.of("id", "notif-2", "message", "two"))
+                        ))
+                )))
+                .build();
+
+        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.of(player));
+        when(playerRepository.snapshot(any(Player.class))).thenReturn(Player.builder().minecraftUuid(playerUuid).build());
+
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(
+                server,
+                new AcknowledgeNotificationsRequest(playerUuid.toString(), List.of("notif-1"), null)
+        );
+
+        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
+
+        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
+        verify(playerRepository).saveChanges(any(Server.class), any(Player.class), updatedPlayerCaptor.capture());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> remaining = (List<Map<String, Object>>) updatedPlayerCaptor.getValue().getData().get("pendingNotifications");
+        assertEquals(1, remaining.size());
+        assertEquals("notif-2", remaining.get(0).get("id"));
+    }
+}

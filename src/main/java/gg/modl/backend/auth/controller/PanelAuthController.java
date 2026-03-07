@@ -23,7 +23,6 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,12 +52,7 @@ public class PanelAuthController {
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
             HttpServletRequest request,
-            @RequestBody @Valid SendEmailCodeRequest requestData,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.MISSING_EMAIL));
-        }
+            @RequestBody @Valid SendEmailCodeRequest requestData) {
 
         Server server = RequestUtil.getRequestServer(request);
 
@@ -82,12 +76,7 @@ public class PanelAuthController {
     public ResponseEntity<AuthResponse> verifyEmailCode(
             HttpServletRequest request,
             HttpServletResponse response,
-            @RequestBody @Valid VerifyCodeRequest requestData,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.MISSING_CODE));
-        }
+            @RequestBody @Valid VerifyCodeRequest requestData) {
 
         Server server = RequestUtil.getRequestServer(request);
 
@@ -134,12 +123,7 @@ public class PanelAuthController {
     @PatchMapping("/profile")
     public ResponseEntity<?> updateProfile(
             HttpServletRequest request,
-            @RequestBody @Valid UpdateProfileRequest requestData,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "Invalid request data"));
-        }
+            @RequestBody @Valid UpdateProfileRequest requestData) {
 
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {

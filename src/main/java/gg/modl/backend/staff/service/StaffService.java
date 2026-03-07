@@ -3,6 +3,13 @@ package gg.modl.backend.staff.service;
 import com.mongodb.client.result.DeleteResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.PlayerFields;
+import gg.modl.backend.database.mongo.fields.StaffFields;
+import gg.modl.backend.database.mongo.fields.StaffRoleFields;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
@@ -13,26 +20,39 @@ import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
 import gg.modl.backend.staff.dto.request.CreateStaffRequest;
 import gg.modl.backend.staff.dto.request.UpdateStaffRequest;
 import gg.modl.backend.staff.dto.response.AvailablePlayerResponse;
+import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
+import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.regex.Pattern;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class StaffService {
     private final DynamicMongoTemplateProvider mongoProvider;
+    private final StaffMongoRepository staffRepository;
+    private final StaffRoleMongoRepository staffRoleRepository;
+    private final PlayerMongoRepository playerRepository;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
 
@@ -228,6 +248,91 @@ public class StaffService {
         return Optional.of(toStaffResponse(staff, "Active"));
     }
 
+    public List<MinecraftStaffSummaryResponse> getMinecraftStaffSummary(Server server) {
+        List<Staff> allStaff = staffRepository.findAll(server);
+
+        Map<String, Long> playerPlaytimeMap = loadPlayerPlaytimeMap(server, allStaff);
+        Map<String, Integer> punishmentCounts = loadPunishmentCounts(server);
+        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, allStaff);
+
+        return allStaff.stream()
+                .map(staff -> {
+                    int punishmentsIssuedCount = 0;
+                    if (staff.getAssignedMinecraftUsername() != null && punishmentCounts.containsKey(staff.getAssignedMinecraftUsername())) {
+                        punishmentsIssuedCount = punishmentCounts.get(staff.getAssignedMinecraftUsername());
+                    } else if (staff.getUsername() != null && punishmentCounts.containsKey(staff.getUsername())) {
+                        punishmentsIssuedCount = punishmentCounts.get(staff.getUsername());
+                    }
+
+                    return new MinecraftStaffSummaryResponse(
+                            staff.getId(),
+                            staff.getUsername(),
+                            staff.getEmail(),
+                            staff.getRole(),
+                            staff.getAssignedMinecraftUuid(),
+                            staff.getAssignedMinecraftUsername(),
+                            permissionsByRole.getOrDefault(staff.getRole(), List.of()),
+                            staff.getLastSeen(),
+                            playerPlaytimeMap.getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
+                            punishmentsIssuedCount,
+                            staff.getCreatedAt(),
+                            staff.getUpdatedAt()
+                    );
+                })
+                .toList();
+    }
+
+    public List<MinecraftStaffPermissionsResponse> getMinecraftStaffPermissions(Server server) {
+        Query staffQuery = Query.query(
+                MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+        );
+        List<Staff> staffWithMinecraft = staffRepository.find(server, staffQuery);
+        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
+
+        return staffWithMinecraft.stream()
+                .map(staff -> new MinecraftStaffPermissionsResponse(
+                        staff.getAssignedMinecraftUuid(),
+                        staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
+                        staff.getUsername() != null ? staff.getUsername() : "",
+                        staff.getRole() != null ? staff.getRole() : "",
+                        permissionsByRole.getOrDefault(staff.getRole(), List.of()),
+                        staff.getEmail() != null ? staff.getEmail() : ""
+                ))
+                .toList();
+    }
+
+    public boolean updateMinecraftStaffRole(Server server, String id, String roleName) {
+        Staff staff = staffRepository.findById(server, id).orElse(null);
+        if (staff == null) {
+            return false;
+        }
+
+        Query roleQuery = Query.query(MongoQueries.where(StaffRoleFields.NAME).is(roleName));
+        if (!staffRoleRepository.exists(server, roleQuery)) {
+            throw new IllegalArgumentException("Role not found");
+        }
+
+        Staff original = staffRepository.snapshot(staff);
+        staff.setRole(roleName);
+        staff.setUpdatedAt(new Date());
+        staffRepository.saveChanges(server, original, staff);
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
+        return true;
+    }
+
+    public boolean markStaffDisconnected(Server server, String minecraftUuid) {
+        Query query = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid));
+        Staff staff = staffRepository.findOne(server, query).orElse(null);
+        if (staff == null) {
+            return false;
+        }
+
+        Staff original = staffRepository.snapshot(staff);
+        staff.setLastSeen(new Date());
+        staffRepository.saveChanges(server, original, staff);
+        return true;
+    }
+
     public Optional<StaffResponse> assignMinecraftPlayer(Server server, String username, AssignMinecraftPlayerRequest request) {
         MongoTemplate template = getTemplate(server);
 
@@ -398,6 +503,75 @@ public class StaffService {
         MongoTemplate template = getTemplate(server);
         Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
         return Optional.ofNullable(template.findOne(query, Staff.class, CollectionName.STAFF));
+    }
+
+    private Map<String, Long> loadPlayerPlaytimeMap(Server server, List<Staff> allStaff) {
+        List<String> assignedUuids = allStaff.stream()
+                .map(Staff::getAssignedMinecraftUuid)
+                .filter(uuid -> uuid != null && !uuid.isBlank())
+                .distinct()
+                .toList();
+
+        if (assignedUuids.isEmpty()) {
+            return Map.of();
+        }
+
+        Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids));
+        playerQuery.fields()
+                .include(PlayerFields.MINECRAFT_UUID.path())
+                .include(PlayerFields.DATA_TOTAL_PLAYTIME_SECONDS.path());
+
+        Map<String, Long> playerPlaytimeMap = new HashMap<>();
+        for (Player player : playerRepository.find(server, playerQuery)) {
+            if (player.getMinecraftUuid() == null || player.getData() == null) {
+                continue;
+            }
+
+            Object playtimeObj = player.getData().get("totalPlaytimeSeconds");
+            if (playtimeObj instanceof Number playtimeSeconds) {
+                playerPlaytimeMap.put(player.getMinecraftUuid().toString(), playtimeSeconds.longValue() * 1000L);
+            }
+        }
+        return playerPlaytimeMap;
+    }
+
+    private Map<String, Integer> loadPunishmentCounts(Server server) {
+        try {
+            Aggregation aggregation = Aggregation.newAggregation(
+                    Aggregation.unwind(PlayerFields.PUNISHMENTS.path()),
+                    Aggregation.group(PlayerFields.PUNISHMENTS.path() + ".issuerName").count().as("count")
+            );
+            AggregationResults<Document> results = playerRepository.aggregate(server, aggregation, Document.class);
+            Map<String, Integer> punishmentCounts = new HashMap<>();
+            for (Document doc : results.getMappedResults()) {
+                String issuerName = doc.getString("_id");
+                if (issuerName != null) {
+                    punishmentCounts.put(issuerName, doc.getInteger("count", 0));
+                }
+            }
+            return punishmentCounts;
+        } catch (Exception ignored) {
+            return Map.of();
+        }
+    }
+
+    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
+        Set<String> roleNames = staffMembers.stream()
+                .map(Staff::getRole)
+                .filter(role -> role != null && !role.isBlank())
+                .collect(Collectors.toSet());
+        if (roleNames.isEmpty()) {
+            return Map.of();
+        }
+
+        Query roleQuery = Query.query(MongoQueries.where(StaffRoleFields.NAME).in(roleNames));
+        return staffRoleRepository.find(server, roleQuery).stream()
+                .collect(Collectors.toMap(
+                        gg.modl.backend.role.data.StaffRole::getName,
+                        role -> role.getPermissions() != null ? role.getPermissions() : List.of(),
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
     }
 
     private StaffResponse toStaffResponse(Staff staff, String status) {

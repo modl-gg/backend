@@ -2,31 +2,31 @@ package gg.modl.backend.billing.service;
 
 import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
 import gg.modl.backend.billing.dto.response.UsageResponse;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.fields.ServerFields;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UsageTrackingService {
-    private static final double FREE_CDN_LIMIT_GB = 1.0; // 1 GB
+    private static final double FREE_CDN_LIMIT_GB = 1.0;
     private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
     private static final long AI_BASE_LIMIT_REQUESTS = 1000L;
     private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.02;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
 
     public UsageResponse getUsage(Server server) {
         Server freshServer = getFreshServer(server.getId());
@@ -87,13 +87,10 @@ public class UsageTrackingService {
             throw new IllegalStateException("No Stripe customer ID found. Please ensure you have an active subscription.");
         }
 
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update()
-                .set("usageBillingEnabled", enabled)
-                .set("usageBillingUpdatedAt", new Date());
-
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+        mutateServer(server, current -> {
+            current.setUsageBillingEnabled(enabled);
+            current.setUsageBillingUpdatedAt(new Date());
+        });
 
         String message = enabled
                 ? "Usage billing has been enabled. You will be charged for overages at the end of each billing period."
@@ -103,32 +100,28 @@ public class UsageTrackingService {
     }
 
     public void incrementCdnUsage(String serverId, double additionalGB) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(serverId));
-        Update update = new Update().inc("cdnUsageCurrentPeriod", additionalGB);
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
+        Update update = new Update().inc(ServerFields.CDN_USAGE_CURRENT_PERIOD.path(), additionalGB);
+        serverRepository.updateFirst(query, update);
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(serverId));
-        Update update = new Update().inc("aiRequestsCurrentPeriod", additionalRequests);
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
+        Update update = new Update().inc(ServerFields.AI_REQUESTS_CURRENT_PERIOD.path(), additionalRequests);
+        serverRepository.updateFirst(query, update);
     }
 
     public void resetUsageCounters(String serverId) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(serverId));
+        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
         Update update = new Update()
-                .set("cdnUsageCurrentPeriod", 0.0)
-                .set("aiRequestsCurrentPeriod", 0L);
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD.path(), 0.0)
+                .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD.path(), 0L);
+        serverRepository.updateFirst(query, update);
     }
 
     public double getCdnLimitGB(Server server) {
         if (server.getPlan() == ServerPlan.PREMIUM) {
             if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                // Trust the database value directly; support can set values above the self-service cap.
                 return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
             }
             return DEFAULT_PREMIUM_CDN_LIMIT_GB;
@@ -137,19 +130,14 @@ public class UsageTrackingService {
     }
 
     public void updateStorageLimit(Server server, long bytes) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update().set("maxStorageLimitBytes", bytes);
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+        mutateServer(server, current -> current.setMaxStorageLimitBytes(bytes));
     }
 
     public void updateOverageLimits(Server server, long maxStorageLimitBytes, long maxAiOverageRequests) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update()
-                .set("maxStorageLimitBytes", maxStorageLimitBytes)
-                .set("maxAiOverageRequests", maxAiOverageRequests);
-        globalDb.updateFirst(query, update, CollectionName.MODL_SERVERS);
+        mutateServer(server, current -> {
+            current.setMaxStorageLimitBytes(maxStorageLimitBytes);
+            current.setMaxAiOverageRequests(maxAiOverageRequests);
+        });
     }
 
     public long getAiRequestLimit(Server server) {
@@ -164,8 +152,12 @@ public class UsageTrackingService {
     }
 
     private Server getFreshServer(String serverId) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("_id").is(serverId));
-        return globalDb.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findById(serverId).orElse(null);
+    }
+
+    private void mutateServer(Server server, Consumer<Server> mutator) {
+        Server original = serverRepository.snapshot(server);
+        mutator.accept(server);
+        serverRepository.saveChanges(original, server);
     }
 }

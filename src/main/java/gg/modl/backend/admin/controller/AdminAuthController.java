@@ -17,7 +17,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -50,13 +49,7 @@ public class AdminAuthController {
     private boolean developmentMode;
 
     @PostMapping("/request-code")
-    public ResponseEntity<?> requestCode(
-            @RequestBody @Valid RequestCodeRequest request,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new ApiResponse(false, "Invalid email format"));
-        }
+    public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) {
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
         if (adminOpt.isPresent()) {
@@ -74,12 +67,7 @@ public class AdminAuthController {
     public ResponseEntity<?> login(
             HttpServletRequest request,
             HttpServletResponse response,
-            @RequestBody @Valid LoginRequest loginRequest,
-            BindingResult bindingResult) {
-
-        if (bindingResult.hasErrors()) {
-            return ResponseEntity.badRequest().body(new ApiResponse(false, "Email and code are required"));
-        }
+            @RequestBody @Valid LoginRequest loginRequest) {
 
         // Always verify code regardless of user existence to prevent timing-based enumeration
         boolean codeValid = authService.verifyAdminCode(loginRequest.email(), loginRequest.code());

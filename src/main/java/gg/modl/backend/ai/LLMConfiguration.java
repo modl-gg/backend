@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 @Getter
 @Setter
 public class LLMConfiguration {
+    private String geminiModelId;
     private String geminiApiKey;
     private float geminiTemperature;
     private int geminiMaxOutputTokens;
