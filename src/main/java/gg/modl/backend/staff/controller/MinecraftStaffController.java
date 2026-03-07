@@ -89,7 +89,6 @@ public class MinecraftStaffController {
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "success", true,
                 "success", true
         ));
     }

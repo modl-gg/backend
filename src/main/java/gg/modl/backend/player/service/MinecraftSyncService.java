@@ -443,6 +443,16 @@ public class MinecraftSyncService {
             punishmentQuery.limit(50);
             List<Player> playersWithNewPunishments = template.find(punishmentQuery, Player.class, CollectionName.PLAYERS);
 
+            Set<String> issuerIds = new HashSet<>();
+            for (Player player : playersWithNewPunishments) {
+                for (Punishment punishment : player.getPunishments()) {
+                    if (punishment.getIssuerId() != null) issuerIds.add(punishment.getIssuerId());
+                }
+            }
+            Map<String, String> resolvedIssuers = issuerIds.isEmpty()
+                    ? Map.of()
+                    : issuerNameResolver.batchResolve(issuerIds, template);
+
             for (Player player : playersWithNewPunishments) {
                 String playerName = player.getUsernames().isEmpty()
                         ? "Unknown"
@@ -460,10 +470,11 @@ public class MinecraftSyncService {
                                 : punishmentType != null && punishmentType.isKick() ? "kicked"
                                 : "punished";
 
+                        String issuerName = issuerNameResolver.resolve(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
                         notifications.add(Map.of(
                                 "id", "punishment_" + punishment.getId(),
                                 "type", "PUNISHMENT_ISSUED",
-                                "message", punishment.getIssuerName() + ": " + action + " " + playerName + " (" + typeName + ")",
+                                "message", issuerName + ": " + action + " " + playerName + " (" + typeName + ")",
                                 "timestamp", punishment.getIssued().getTime()
                         ));
                     }

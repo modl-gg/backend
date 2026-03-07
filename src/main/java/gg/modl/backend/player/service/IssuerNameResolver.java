@@ -29,6 +29,16 @@ public class IssuerNameResolver {
         return "Console";
     }
 
+    public String resolve(@Nullable String issuerId, @Nullable String issuerName, Map<String, String> resolvedMap) {
+        if (issuerId != null && resolvedMap.containsKey(issuerId)) {
+            return resolvedMap.get(issuerId);
+        }
+        if (issuerName != null) {
+            return issuerName;
+        }
+        return issuerId != null ? "Unknown Staff" : "Console";
+    }
+
     public Map<String, String> batchResolve(Set<String> issuerIds, MongoTemplate template) {
         Map<String, String> result = new HashMap<>();
         if (issuerIds == null || issuerIds.isEmpty()) {
