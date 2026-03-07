@@ -209,7 +209,8 @@ public class PanelPlayerController {
                 UUID.fromString(uuid),
                 punishmentId,
                 noteRequest.text(),
-                noteRequest.issuerName()
+                noteRequest.issuerName(),
+                noteRequest.issuerId()
         );
         if (player == null) {
             return ResponseEntity.notFound().build();

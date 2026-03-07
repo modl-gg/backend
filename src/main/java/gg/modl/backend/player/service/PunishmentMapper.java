@@ -2,7 +2,9 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.settings.data.PunishmentType;
+import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,9 +15,13 @@ public final class PunishmentMapper {
     private PunishmentMapper() {}
 
     public static Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
+        return toPunishmentMap(punishment, punishmentTypes, Collections.emptyMap());
+    }
+
+    public static Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes, Map<String, String> resolvedIssuers) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", punishment.getId());
-        map.put("issuerName", punishment.getIssuerName());
+        map.put("issuerName", resolveIssuer(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers));
         map.put("issued", punishment.getIssued());
         map.put("started", punishment.getStarted());
 
@@ -46,7 +52,7 @@ public final class PunishmentMapper {
                     mod.put("id", m.id());
                     mod.put("type", m.type());
                     mod.put("date", m.date());
-                    mod.put("issuerName", m.issuerName());
+                    mod.put("issuerName", resolveIssuer(m.issuerId(), m.issuerName(), resolvedIssuers));
                     mod.put("effectiveDuration", m.effectiveDuration());
                     mod.put("data", m.data());
                     return mod;
@@ -59,7 +65,7 @@ public final class PunishmentMapper {
                     Map<String, Object> note = new LinkedHashMap<>();
                     note.put("id", n.id());
                     note.put("text", n.text());
-                    note.put("issuerName", n.issuerName());
+                    note.put("issuerName", resolveIssuer(n.issuerId(), n.issuerName(), resolvedIssuers));
                     note.put("date", n.date());
                     return note;
                 }).toList();
@@ -72,7 +78,7 @@ public final class PunishmentMapper {
                     ev.put("text", e.text());
                     ev.put("url", e.url());
                     ev.put("type", e.type());
-                    ev.put("uploadedBy", e.uploadedBy());
+                    ev.put("uploadedBy", resolveIssuer(e.uploadedById(), e.uploadedBy(), resolvedIssuers));
                     ev.put("uploadedAt", e.uploadedAt());
                     ev.put("fileName", e.fileName());
                     ev.put("fileType", e.fileType());
@@ -88,6 +94,10 @@ public final class PunishmentMapper {
     }
 
     public static Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types, PlayerStatusCalculator statusCalculator) {
+        return toSimplePunishment(punishment, types, statusCalculator, Collections.emptyMap());
+    }
+
+    public static Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types, PlayerStatusCalculator statusCalculator, Map<String, String> resolvedIssuers) {
         Map<String, Object> data = punishment.getData();
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
 
@@ -124,7 +134,7 @@ public final class PunishmentMapper {
         result.put("started", punishment.getStarted() != null);
         result.put("expiration", expires != null ? expires.getTime() : null);
         result.put("description", reason != null ? reason : "No reason specified");
-        result.put("issuerName", punishment.getIssuerName());
+        result.put("issuerName", resolveIssuer(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers));
         result.put("issuedAt", punishment.getIssued().getTime());
         result.put("playerDescription", playerDescription);
         result.put("modifications", punishment.getModifications().stream().map(m -> {
@@ -132,7 +142,7 @@ public final class PunishmentMapper {
                 modMap.put("type", m.type());
                 modMap.put("timestamp", m.date() != null ? m.date().getTime() : null);
                 modMap.put("effectiveDuration", m.effectiveDuration() != null ? m.effectiveDuration() : 0L);
-                modMap.put("issuerName", m.issuerName());
+                modMap.put("issuerName", resolveIssuer(m.issuerId(), m.issuerName(), resolvedIssuers));
                 return modMap;
         }).toList());
 
@@ -179,5 +189,15 @@ public final class PunishmentMapper {
         } else {
             return seconds + (seconds == 1 ? " second" : " seconds");
         }
+    }
+
+    static String resolveIssuer(@Nullable String issuerId, @Nullable String issuerName, Map<String, String> resolvedIssuers) {
+        if (issuerId != null && resolvedIssuers.containsKey(issuerId)) {
+            return resolvedIssuers.get(issuerId);
+        }
+        if (issuerName != null) {
+            return issuerName;
+        }
+        return "Console";
     }
 }

@@ -8,7 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 public record CreatePunishmentRequest(
-        @NotBlank String issuerName,
+        @Nullable String issuerName,
+        @Nullable String issuerId,
         @NotNull Integer typeOrdinal,
         @Nullable List<CreateNoteRequest> notes,
         @Nullable List<CreateEvidenceRequest> evidence,

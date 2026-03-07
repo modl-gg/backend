@@ -36,19 +36,22 @@ public class MinecraftSyncService {
     private final PunishmentTypeService punishmentTypeService;
     private final PunishmentService punishmentService;
     private final MinecraftChatLogService minecraftChatLogService;
+    private final IssuerNameResolver issuerNameResolver;
 
     public MinecraftSyncService(
             TenantMongoAccess tenantMongoAccess,
             PlayerStatusCalculator statusCalculator,
             PunishmentTypeService punishmentTypeService,
             PunishmentService punishmentService,
-            MinecraftChatLogService minecraftChatLogService
+            MinecraftChatLogService minecraftChatLogService,
+            IssuerNameResolver issuerNameResolver
     ) {
         this.tenantMongoAccess = tenantMongoAccess;
         this.statusCalculator = statusCalculator;
         this.punishmentTypeService = punishmentTypeService;
         this.punishmentService = punishmentService;
         this.minecraftChatLogService = minecraftChatLogService;
+        this.issuerNameResolver = issuerNameResolver;
     }
 
     public Map<String, Object> sync(
@@ -61,6 +64,12 @@ public class MinecraftSyncService {
     ) {
         MongoTemplate template = tenantMongoAccess.forServer(server);
         Instant now = Instant.now();
+
+        tenantMongoAccess.global().updateFirst(
+                Query.query(Criteria.where("_id").is(server.getId())),
+                new Update().set("lastActivityAt", Date.from(now)),
+                Server.class
+        );
         Instant lastSync = lastSyncTimestamp != null
                 ? Instant.parse(lastSyncTimestamp)
                 : now.minusSeconds(30);
@@ -94,6 +103,20 @@ public class MinecraftSyncService {
         if (!onlineUuids.isEmpty()) {
             Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(onlineUuids));
             List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
+
+            // Batch resolve issuer IDs for all punishments across all players
+            Set<String> allIssuerIds = new HashSet<>();
+            for (Player p : players) {
+                for (Punishment pun : p.getPunishments()) {
+                    if (pun.getIssuerId() != null) allIssuerIds.add(pun.getIssuerId());
+                    for (var m : pun.getModifications()) {
+                        if (m.issuerId() != null) allIssuerIds.add(m.issuerId());
+                    }
+                }
+            }
+            Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
+                    ? Map.of()
+                    : issuerNameResolver.batchResolve(allIssuerIds, template);
 
             for (Player player : players) {
                 List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
@@ -139,7 +162,7 @@ public class MinecraftSyncService {
                         recentlyModifiedPunishments.add(Map.of(
                                 "minecraftUuid", uuid,
                                 "username", username,
-                                "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator)
+                                "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
                         ));
                     }
 
@@ -160,7 +183,7 @@ public class MinecraftSyncService {
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
-                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator)
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
                     ));
                 }
 
@@ -180,7 +203,7 @@ public class MinecraftSyncService {
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
-                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator)
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
                     ));
                 }
 
@@ -192,7 +215,7 @@ public class MinecraftSyncService {
                     pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
-                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator)
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
                     ));
                 }
 
@@ -223,7 +246,7 @@ public class MinecraftSyncService {
                             pendingPunishments.add(Map.of(
                                     "minecraftUuid", uuid,
                                     "username", username,
-                                    "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator)
+                                    "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
                             ));
                             pardonedCategories.remove(category);
                         }
@@ -542,6 +565,7 @@ public class MinecraftSyncService {
             entry.put("minecraftUuid", staff.getAssignedMinecraftUuid());
             entry.put("minecraftUsername", staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "");
             entry.put("staffUsername", staff.getUsername() != null ? staff.getUsername() : "");
+            entry.put("staffId", staff.getId());
             entry.put("staffRole", staff.getRole() != null ? staff.getRole() : "");
             entry.put("permissions", permissions);
             entry.put("email", staff.getEmail() != null ? staff.getEmail() : "");

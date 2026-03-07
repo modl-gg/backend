@@ -170,6 +170,7 @@ public class MinecraftPunishmentController {
                 server,
                 punishmentId,
                 request.issuerName(),
+                request.issuerId(),
                 request.reason()
         );
 
@@ -208,7 +209,8 @@ public class MinecraftPunishmentController {
                 server,
                 punishmentId,
                 request.note(),
-                request.issuerName()
+                request.issuerName(),
+                request.issuerId()
         );
 
         if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
@@ -236,7 +238,8 @@ public class MinecraftPunishmentController {
                 server,
                 punishmentId,
                 request.evidenceUrl(),
-                request.issuerName()
+                request.issuerName(),
+                request.issuerId()
         );
 
         if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
@@ -264,7 +267,8 @@ public class MinecraftPunishmentController {
                 server,
                 punishmentId,
                 request.newDuration(),
-                request.issuerName()
+                request.issuerName(),
+                request.issuerId()
         );
 
         if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
@@ -293,7 +297,8 @@ public class MinecraftPunishmentController {
                 punishmentId,
                 request.option(),
                 request.enabled(),
-                request.issuerName()
+                request.issuerName(),
+                request.issuerId()
         );
 
         return switch (result.status()) {
@@ -357,7 +362,8 @@ public class MinecraftPunishmentController {
                         request.addTicketIds(),
                         request.removeTicketIds(),
                         request.modifyAssociatedTickets(),
-                        request.issuerName()
+                        request.issuerName(),
+                        request.issuerId()
                 )
         );
 
@@ -381,7 +387,7 @@ public class MinecraftPunishmentController {
         List<gg.modl.backend.player.dto.request.CreateNoteRequest> noteRequests = null;
         if (request.notes() != null) {
             noteRequests = request.notes().stream()
-                    .map(text -> new gg.modl.backend.player.dto.request.CreateNoteRequest(text, request.issuerName(), null))
+                    .map(text -> new gg.modl.backend.player.dto.request.CreateNoteRequest(text, request.issuerName(), request.issuerId(), null))
                     .toList();
         }
 
@@ -390,6 +396,7 @@ public class MinecraftPunishmentController {
 
         CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
                 request.issuerName(),
+                request.issuerId(),
                 request.typeOrdinal(),
                 noteRequests,
                 null,
@@ -406,7 +413,8 @@ public class MinecraftPunishmentController {
 
     public record MinecraftCreatePunishmentRequest(
             @NotBlank String targetUuid,
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             @JsonProperty("type_ordinal") int typeOrdinal,
             String reason,
             Long duration,
@@ -428,32 +436,37 @@ public class MinecraftPunishmentController {
     }
 
     public record PardonRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             String reason,
             String expectedType
     ) {
     }
 
     public record AddNoteRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             @NotBlank String note
     ) {
     }
 
     public record AddEvidenceRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             @NotBlank String evidenceUrl
     ) {
     }
 
     public record ChangeDurationRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             Long newDuration
     ) {
     }
 
     public record ToggleOptionRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             @NotBlank String option,
             boolean enabled
     ) {
@@ -467,7 +480,8 @@ public class MinecraftPunishmentController {
     }
 
     public record ModifyTicketsRequest(
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             List<String> addTicketIds,
             List<String> removeTicketIds,
             boolean modifyAssociatedTickets

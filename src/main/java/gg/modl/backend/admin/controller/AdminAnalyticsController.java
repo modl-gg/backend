@@ -29,6 +29,16 @@ public class AdminAnalyticsController {
         }
     }
 
+    @GetMapping("/activity")
+    public ResponseEntity<?> getActivity(@RequestParam(defaultValue = "30d") String range) {
+        try {
+            return ResponseEntity.ok(adminAnalyticsService.getActivity(range));
+        } catch (Exception e) {
+            log.error("Activity snapshots error", e);
+            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch activity data"));
+        }
+    }
+
     @GetMapping("/usage")
     public ResponseEntity<?> getUsage() {
         try {

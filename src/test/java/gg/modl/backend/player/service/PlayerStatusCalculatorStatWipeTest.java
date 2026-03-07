@@ -29,7 +29,7 @@ class PlayerStatusCalculatorStatWipeTest {
         Map<String, Object> data = new HashMap<>();
         data.put("duration", durationMs);
         return new Punishment(
-                "test-id", typeOrdinal, "TestIssuer",
+                "test-id", typeOrdinal, "TestIssuer", null,
                 new Date(), started, modifications,
                 List.of(), List.of(), List.of(), data
         );
@@ -85,7 +85,7 @@ class PlayerStatusCalculatorStatWipeTest {
     void pardonedPunishmentReturnsFalse() {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         PunishmentModification pardon = new PunishmentModification(
-                "mod-1", "MANUAL_PARDON", new Date(), "Staff", "", null, null, null
+                "mod-1", "MANUAL_PARDON", new Date(), "Staff", null, "", null, null, null
         );
         Punishment p = createPunishment(2, started, 3600_000L, List.of(pardon));
         assertFalse(calculator.isPunishmentNaturallyExpired(p));
@@ -95,7 +95,7 @@ class PlayerStatusCalculatorStatWipeTest {
     void appealAcceptedReturnsFalse() {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         PunishmentModification appealAccept = new PunishmentModification(
-                "mod-1", "APPEAL_ACCEPT", new Date(), "Staff", "", null, null, null
+                "mod-1", "APPEAL_ACCEPT", new Date(), "Staff", null, "", null, null, null
         );
         Punishment p = createPunishment(2, started, 3600_000L, List.of(appealAccept));
         assertFalse(calculator.isPunishmentNaturallyExpired(p));
@@ -105,7 +105,7 @@ class PlayerStatusCalculatorStatWipeTest {
     void systemPardonedReturnsFalse() {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         PunishmentModification systemPardon = new PunishmentModification(
-                "mod-1", "SYSTEM_PARDON", new Date(), "System", "", null, null, null
+                "mod-1", "SYSTEM_PARDON", new Date(), "System", null, "", null, null, null
         );
         Punishment p = createPunishment(2, started, 3600_000L, List.of(systemPardon));
         assertFalse(calculator.isPunishmentNaturallyExpired(p));
@@ -117,7 +117,7 @@ class PlayerStatusCalculatorStatWipeTest {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         Date modDate = new Date(System.currentTimeMillis() - 3600_000L);
         PunishmentModification durationChange = new PunishmentModification(
-                "mod-1", "MANUAL_DURATION_CHANGE", modDate, "Staff", "Extended",
+                "mod-1", "MANUAL_DURATION_CHANGE", modDate, "Staff", null, "Extended",
                 10800_000L, // 3 hours from modification date -> expires 2 hours from now
                 null, null
         );
@@ -132,7 +132,7 @@ class PlayerStatusCalculatorStatWipeTest {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         Date modDate = new Date(System.currentTimeMillis() - 3600_000L);
         PunishmentModification durationChange = new PunishmentModification(
-                "mod-1", "MANUAL_DURATION_CHANGE", modDate, "Staff", "Shortened",
+                "mod-1", "MANUAL_DURATION_CHANGE", modDate, "Staff", null, "Shortened",
                 1800_000L, // 30 min from modification date -> expired 30 min ago
                 null, null
         );
@@ -168,7 +168,7 @@ class PlayerStatusCalculatorStatWipeTest {
     void nullDataReturnsFalse() {
         // Punishment with null data -> getEffectiveExpiry returns null -> permanent -> false
         Punishment p = new Punishment(
-                "test-id", 2, "TestIssuer",
+                "test-id", 2, "TestIssuer", null,
                 new Date(), new Date(System.currentTimeMillis() - 7200_000L),
                 List.of(), List.of(), List.of(), List.of(),
                 null

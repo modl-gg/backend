@@ -23,10 +23,11 @@ public class Punishment {
     @Field("typeOrdinal")
     private int typeOrdinal;
 
-    @NotNull
+    @Nullable
     private String issuerName;
 
-    // TODO: migrate or add issuerId to be able to track exactly who the issuer was because names can change
+    @Nullable
+    private String issuerId;
 
     @NotNull
     private Date issued;

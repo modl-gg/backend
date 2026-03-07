@@ -266,7 +266,8 @@ public class AppealService {
                 new ObjectId().toHexString(),
                 "rejected appeal (#" + appeal.getId() + ")",
                 now,
-                staffName
+                staffName,
+                null
         );
 
         Update update = new Update()
@@ -305,6 +306,7 @@ public class AppealService {
                 "APPEAL_ACCEPT",
                 now,
                 staffName,
+                null,
                 "Appeal approved",
                 null,
                 appeal.getId(),
@@ -316,7 +318,8 @@ public class AppealService {
                 new ObjectId().toHexString(),
                 "accepted appeal (#" + appeal.getId() + ")",
                 now,
-                staffName
+                staffName,
+                null
         );
 
         Update update = new Update()
@@ -386,7 +389,8 @@ public class AppealService {
                 new ObjectId().toHexString(),
                 "opened appeal (#" + appealId + ")",
                 new Date(),
-                "System"
+                "System",
+                null
         );
 
         Update update = new Update()

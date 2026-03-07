@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record AddPunishmentNoteRequest(
         @NotBlank String text,
-        @NotBlank String issuerName
+        String issuerName,
+        String issuerId
 ) {
 }

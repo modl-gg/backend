@@ -1,6 +1,7 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
@@ -40,11 +41,13 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -58,6 +61,8 @@ public class PunishmentService {
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final EvidenceUploadTokenService evidenceUploadTokenService;
+    private final IssuerNameResolver issuerNameResolver;
+    private final TenantMongoAccess tenantMongoAccess;
 
     public String createPunishment(Server server, UUID playerUuid, CreatePunishmentRequest request) {
         Player player = findPlayerByUuid(server, playerUuid).orElse(null);
@@ -179,6 +184,9 @@ public class PunishmentService {
         }
 
         // Build notes
+        String reqIssuerName = request.issuerId() != null ? null : request.issuerName();
+        String reqIssuerId = request.issuerId();
+
         List<PunishmentNote> notes = new ArrayList<>();
         String enforcementType = newPunishmentType != null && newPunishmentType.isKick() ? "kick"
                 : "BAN".equals(newCategory) ? "ban"
@@ -194,20 +202,23 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 issuedNote,
                 now,
-                request.issuerName()
+                reqIssuerName,
+                reqIssuerId
         ));
         if (request.reason() != null && !request.reason().isBlank()) {
             notes.add(new PunishmentNote(
                     new ObjectId().toHexString(),
                     request.reason(),
                     now,
-                    request.issuerName()
+                    reqIssuerName,
+                    reqIssuerId
             ));
         }
         if (request.notes() != null) {
             for (CreateNoteRequest noteRequest : request.notes()) {
-                String issuer = noteRequest.issuerName() != null ? noteRequest.issuerName() : request.issuerName();
-                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteRequest.text(), now, issuer));
+                String noteIssuerId = noteRequest.issuerId() != null ? noteRequest.issuerId() : reqIssuerId;
+                String noteIssuerName = noteIssuerId != null ? null : (noteRequest.issuerName() != null ? noteRequest.issuerName() : request.issuerName());
+                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteRequest.text(), now, noteIssuerName, noteIssuerId));
             }
         }
 
@@ -215,13 +226,15 @@ public class PunishmentService {
         List<PunishmentEvidence> evidence = new ArrayList<>();
         if (request.evidence() != null) {
             for (CreateEvidenceRequest evidenceRequest : request.evidence()) {
-                String issuer = evidenceRequest.issuerName() != null ? evidenceRequest.issuerName() : request.issuerName();
+                String evIssuerId = evidenceRequest.issuerId() != null ? evidenceRequest.issuerId() : reqIssuerId;
+                String evIssuerName = evIssuerId != null ? null : (evidenceRequest.issuerName() != null ? evidenceRequest.issuerName() : request.issuerName());
                 String type = evidenceRequest.type() != null ? evidenceRequest.type() : "text";
                 evidence.add(new PunishmentEvidence(
                         evidenceRequest.text(),
                         evidenceRequest.fileUrl(),
                         type,
-                        issuer,
+                        evIssuerName,
+                        evIssuerId,
                         now,
                         evidenceRequest.fileName(),
                         evidenceRequest.fileType(),
@@ -241,7 +254,8 @@ public class PunishmentService {
         Punishment punishment = new Punishment(
                 punishmentId,
                 request.typeOrdinal(),
-                request.issuerName(),
+                reqIssuerName,
+                reqIssuerId,
                 now,
                 startedDate,
                 new ArrayList<>(),
@@ -256,7 +270,8 @@ public class PunishmentService {
 
         // Close attached tickets with a system reply
         if (request.attachedTicketIds() != null && !request.attachedTicketIds().isEmpty()) {
-            closeAttachedTickets(server, request.attachedTicketIds(), request.issuerName());
+            String ticketIssuerName = resolveIssuerNameForDisplay(server, request.issuerId(), request.issuerName());
+            closeAttachedTickets(server, request.attachedTicketIds(), ticketIssuerName);
         }
 
         return punishmentId;
@@ -269,12 +284,15 @@ public class PunishmentService {
         }
 
         Date now = new Date();
+        String modIssuerName = request.issuerId() != null ? null : request.issuerName();
+        String modIssuerId = request.issuerId();
 
         PunishmentModification modification = new PunishmentModification(
                 new ObjectId().toHexString(),
                 request.type(),
                 now,
-                request.issuerName(),
+                modIssuerName,
+                modIssuerId,
                 request.reason() != null ? request.reason() : "",
                 request.effectiveDuration(),
                 request.appealTicketId(),
@@ -318,7 +336,8 @@ public class PunishmentService {
     public Optional<Map<String, Object>> getMinecraftPunishmentById(Server server, String punishmentId) {
         return findPunishmentContext(server, punishmentId).map(context -> {
             List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-            Map<String, Object> result = PunishmentMapper.toPunishmentMap(context.punishment(), types);
+            Map<String, String> resolvedIssuers = resolveIssuersForPunishment(server, context.punishment());
+            Map<String, Object> result = PunishmentMapper.toPunishmentMap(context.punishment(), types, resolvedIssuers);
             result.put("playerUuid", context.player().getMinecraftUuid().toString());
             result.put("playerName", getLatestUsername(context.player()));
             return result;
@@ -341,6 +360,17 @@ public class PunishmentService {
         List<Player> players = playerRepository.find(server, query);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
+        // Collect all recent punishments and batch resolve issuer IDs
+        List<Punishment> recentPunishments = new ArrayList<>();
+        for (Player player : players) {
+            for (Punishment punishment : player.getPunishments()) {
+                if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
+                    recentPunishments.add(punishment);
+                }
+            }
+        }
+        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, recentPunishments);
+
         List<Map<String, Object>> punishments = new ArrayList<>();
         for (Player player : players) {
             String username = getLatestUsername(player);
@@ -349,7 +379,7 @@ public class PunishmentService {
                     continue;
                 }
 
-                Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(punishment, types);
+                Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(punishment, types, resolvedIssuers);
                 punishmentMap.put("playerName", username);
                 punishmentMap.put("playerUuid", player.getMinecraftUuid().toString());
                 punishments.add(punishmentMap);
@@ -439,7 +469,7 @@ public class PunishmentService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment acknowledged", true, 1);
     }
 
-    public PunishmentOperationResult pardonPunishment(Server server, String punishmentId, String issuerName, String reason) {
+    public PunishmentOperationResult pardonPunishment(Server server, String punishmentId, String issuerName, String issuerId, String reason) {
         PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
@@ -451,6 +481,8 @@ public class PunishmentService {
                     "Punishment has already been pardoned", false, 0);
         }
 
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
+
         Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(punishment);
@@ -459,7 +491,8 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "MANUAL_PARDON",
                 now,
-                issuerName,
+                resolvedIssuerName,
+                issuerId,
                 reason != null ? reason : "",
                 null,
                 null,
@@ -470,14 +503,16 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "pardoned punishment",
                 now,
-                issuerName
+                resolvedIssuerName,
+                issuerId
         ));
         if (reason != null && !reason.isBlank()) {
             punishment.getNotes().add(new PunishmentNote(
                     new ObjectId().toHexString(),
                     reason,
                     now,
-                    issuerName
+                    resolvedIssuerName,
+                    issuerId
             ));
         }
 
@@ -491,26 +526,28 @@ public class PunishmentService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment pardoned", true, 1);
     }
 
-    public PunishmentOperationResult addPunishmentNote(Server server, String punishmentId, String text, String issuerName) {
+    public PunishmentOperationResult addPunishmentNote(Server server, String punishmentId, String text, String issuerName, String issuerId) {
         PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
         Player original = playerRepository.snapshot(context.player());
         ensurePunishmentCollections(context.punishment());
-        context.punishment().getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), issuerName));
+        context.punishment().getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
         playerRepository.saveChanges(server, original, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
     }
 
-    public PunishmentOperationResult addEvidence(Server server, String punishmentId, String evidenceUrl, String issuerName) {
+    public PunishmentOperationResult addEvidence(Server server, String punishmentId, String evidenceUrl, String issuerName, String issuerId) {
         PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
         Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(context.punishment());
@@ -518,7 +555,8 @@ public class PunishmentService {
                 null,
                 evidenceUrl,
                 "url",
-                issuerName,
+                resolvedIssuerName,
+                issuerId,
                 now,
                 null,
                 null,
@@ -528,19 +566,21 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "added evidence",
                 now,
-                issuerName
+                resolvedIssuerName,
+                issuerId
         ));
         playerRepository.saveChanges(server, original, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
     }
 
-    public PunishmentOperationResult addUploadedEvidence(Server server, String punishmentId, String issuerName, List<UploadedEvidenceItem> evidenceItems) {
+    public PunishmentOperationResult addUploadedEvidence(Server server, String punishmentId, String issuerName, String issuerId, List<UploadedEvidenceItem> evidenceItems) {
         PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
         Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(context.punishment());
@@ -549,7 +589,8 @@ public class PunishmentService {
                     null,
                     evidenceItem.url(),
                     "file",
-                    issuerName,
+                    resolvedIssuerName,
+                    issuerId,
                     now,
                     evidenceItem.fileName(),
                     evidenceItem.fileType(),
@@ -560,18 +601,21 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "uploaded " + evidenceItems.size() + " evidence file(s)",
                 now,
-                issuerName
+                resolvedIssuerName,
+                issuerId
         ));
         playerRepository.saveChanges(server, original, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence uploaded successfully", true, evidenceItems.size());
     }
 
-    public PunishmentOperationResult changeDuration(Server server, String punishmentId, Long newDuration, String issuerName) {
+    public PunishmentOperationResult changeDuration(Server server, String punishmentId, Long newDuration, String issuerName, String issuerId) {
         PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
+
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
 
         Player original = playerRepository.snapshot(context.player());
         Punishment punishment = context.punishment();
@@ -582,7 +626,8 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "MANUAL_DURATION_CHANGE",
                 now,
-                issuerName,
+                resolvedIssuerName,
+                issuerId,
                 "Duration changed",
                 newDuration,
                 null,
@@ -596,7 +641,8 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 "changed duration to " + durationText,
                 now,
-                issuerName
+                resolvedIssuerName,
+                issuerId
         ));
         ensurePunishmentData(punishment).put("duration", newDuration);
         if (punishment.getStarted() == null) {
@@ -620,7 +666,7 @@ public class PunishmentService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Duration changed", true, 1);
     }
 
-    public PunishmentOperationResult toggleOption(Server server, String punishmentId, String option, boolean enabled, String issuerName) {
+    public PunishmentOperationResult toggleOption(Server server, String punishmentId, String option, boolean enabled, String issuerName, String issuerId) {
         PunishmentToggleOption toggleOption = PunishmentToggleOption.from(option);
         if (toggleOption == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.INVALID_REQUEST, "Invalid option", false, 0);
@@ -635,12 +681,14 @@ public class PunishmentService {
         Punishment punishment = context.punishment();
         Date now = new Date();
         ensurePunishmentCollections(punishment);
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
         ensurePunishmentData(punishment).put(toggleOption.dataKey, enabled);
         punishment.getNotes().add(new PunishmentNote(
                 new ObjectId().toHexString(),
                 (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
                 now,
-                issuerName
+                resolvedIssuerName,
+                issuerId
         ));
         playerRepository.saveChanges(server, original, context.player());
 
@@ -703,6 +751,17 @@ public class PunishmentService {
 
         List<Player> players = playerRepository.find(server, query);
 
+        // Collect all issuerIds for batch resolve so we can match by resolved name
+        Set<String> allIssuerIds = new HashSet<>();
+        for (Player player : players) {
+            for (Punishment punishment : player.getPunishments()) {
+                if (punishment.getIssuerId() != null) allIssuerIds.add(punishment.getIssuerId());
+            }
+        }
+        Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
+                ? Map.of()
+                : issuerNameResolver.batchResolve(allIssuerIds, tenantMongoAccess.forServer(server));
+
         for (Player player : players) {
             String username = player.getUsernames().isEmpty() ? "Unknown" :
                     player.getUsernames().get(player.getUsernames().size() - 1).username();
@@ -712,8 +771,11 @@ public class PunishmentService {
                     continue;
                 }
 
+                String resolvedIssuerName = PunishmentMapper.resolveIssuer(
+                        punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
+
                 boolean matches = punishment.getId().contains(searchQuery) ||
-                        (punishment.getIssuerName() != null && pattern.matcher(punishment.getIssuerName()).find());
+                        pattern.matcher(resolvedIssuerName).find();
 
                 Map<String, Object> pData = punishment.getData();
                 if (pData != null) {
@@ -742,7 +804,7 @@ public class PunishmentService {
         return results;
     }
 
-    public Player addPunishmentNote(Server server, UUID playerUuid, String punishmentId, String text, String issuerName) {
+    public Player addPunishmentNote(Server server, UUID playerUuid, String punishmentId, String text, String issuerName, String issuerId) {
         Player player = findPlayerByUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return null;
@@ -753,9 +815,10 @@ public class PunishmentService {
             return null;
         }
 
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
         Player original = playerRepository.snapshot(player);
         ensurePunishmentCollections(punishment);
-        punishment.getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), issuerName));
+        punishment.getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
         return playerRepository.saveChanges(server, original, player);
     }
 
@@ -770,13 +833,17 @@ public class PunishmentService {
             return null;
         }
 
+        String evIssuerId = request.issuerId();
+        String evIssuerName = evIssuerId != null ? null : (request.issuerName() != null ? request.issuerName() : "System");
+
         Player original = playerRepository.snapshot(player);
         ensurePunishmentCollections(punishment);
         punishment.getEvidence().add(new PunishmentEvidence(
                 request.text(),
                 request.url(),
                 request.type(),
-                request.issuerName() != null ? request.issuerName() : "System",
+                evIssuerName,
+                evIssuerId,
                 new Date(),
                 request.fileName(),
                 request.fileType(),
@@ -1039,19 +1106,22 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 linkedBanNote,
                 now,
-                "System"
+                "System",
+                null
         ));
         notes.add(new PunishmentNote(
                 new ObjectId().toHexString(),
                 "Automatically issued linked ban due to alt-blocking ban on linked account",
                 now,
-                "System"
+                "System",
+                null
         ));
 
         Punishment punishment = new Punishment(
                 punishmentId,
                 4, // LinkedBan ordinal
                 "System",
+                null,
                 now,
                 now, // started immediately
                 new ArrayList<>(),
@@ -1120,11 +1190,12 @@ public class PunishmentService {
 
         // Optionally close/reopen the actual tickets
         if (request.modifyAssociatedTickets()) {
+            String ticketIssuerName = resolveIssuerNameForDisplay(server, request.issuerId(), request.issuerName());
             if (request.addTicketIds() != null && !request.addTicketIds().isEmpty()) {
-                closeAttachedTickets(server, request.addTicketIds(), request.issuerName());
+                closeAttachedTickets(server, request.addTicketIds(), ticketIssuerName);
             }
             if (request.removeTicketIds() != null && !request.removeTicketIds().isEmpty()) {
-                reopenAttachedTickets(server, request.removeTicketIds(), request.issuerName());
+                reopenAttachedTickets(server, request.removeTicketIds(), ticketIssuerName);
             }
         }
 
@@ -1331,6 +1402,7 @@ public class PunishmentService {
                 "SYSTEM_PARDON",
                 now,
                 "System",
+                null,
                 reason,
                 null,
                 null,
@@ -1340,7 +1412,8 @@ public class PunishmentService {
                 new ObjectId().toHexString(),
                 reason,
                 now,
-                "System"
+                "System",
+                null
         ));
     }
 
@@ -1424,6 +1497,7 @@ public class PunishmentService {
                     "MANUAL_DURATION_CHANGE",
                     now,
                     "System",
+                    null,
                     "Cascaded from parent ban duration change",
                     newDuration,
                     null,
@@ -1433,7 +1507,8 @@ public class PunishmentService {
                     new ObjectId().toHexString(),
                     "Duration changed (cascaded from parent ban)",
                     now,
-                    "System"
+                    "System",
+                    null
             ));
             if (punishment.getStarted() == null) {
                 punishment.setStarted(now);
@@ -1475,6 +1550,7 @@ public class PunishmentService {
     }
 
     private PunishmentResponse toPunishmentResponseWithPlayer(Server server, Punishment punishment, Player player) {
+        Map<String, String> resolvedIssuers = resolveIssuersForPunishment(server, punishment);
         Map<String, Object> data = punishment.getData();
         boolean active = statusCalculator.isPunishmentActive(punishment);
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
@@ -1493,7 +1569,7 @@ public class PunishmentService {
                 punishment.getId(),
                 punishmentTypeService.getPunishmentTypeName(server, ordinal),
                 ordinal,
-                punishment.getIssuerName(),
+                PunishmentMapper.resolveIssuer(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers),
                 punishment.getIssued(),
                 punishment.getStarted(),
                 punishmentTypeService.isAppealable(server, ordinal),
@@ -1508,11 +1584,69 @@ public class PunishmentService {
                 data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
                 data != null ? (String) data.get("offenseLevel") : null,
                 effectiveCategory,
-                punishment.getModifications(),
-                punishment.getNotes(),
-                punishment.getEvidence(),
+                resolveModifications(punishment.getModifications(), resolvedIssuers),
+                resolveNotes(punishment.getNotes(), resolvedIssuers),
+                resolveEvidence(punishment.getEvidence(), resolvedIssuers),
                 punishment.getAttachedTicketIds()
         );
+    }
+
+    private Map<String, String> resolveIssuersForPunishment(Server server, Punishment punishment) {
+        Set<String> ids = collectIssuerIds(punishment);
+        if (ids.isEmpty()) return Map.of();
+        return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+    }
+
+    private String resolveIssuerNameForDisplay(Server server, String issuerId, String issuerName) {
+        return issuerNameResolver.resolve(issuerId, issuerName, tenantMongoAccess.forServer(server));
+    }
+
+    private Map<String, String> resolveIssuersForPunishments(Server server, List<Punishment> punishments) {
+        Set<String> ids = new HashSet<>();
+        for (Punishment p : punishments) {
+            ids.addAll(collectIssuerIds(p));
+        }
+        if (ids.isEmpty()) return Map.of();
+        return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+    }
+
+    private static Set<String> collectIssuerIds(Punishment punishment) {
+        Set<String> ids = new HashSet<>();
+        if (punishment.getIssuerId() != null) ids.add(punishment.getIssuerId());
+        for (var m : punishment.getModifications()) {
+            if (m.issuerId() != null) ids.add(m.issuerId());
+        }
+        for (var n : punishment.getNotes()) {
+            if (n.issuerId() != null) ids.add(n.issuerId());
+        }
+        for (var e : punishment.getEvidence()) {
+            if (e.uploadedById() != null) ids.add(e.uploadedById());
+        }
+        return ids;
+    }
+
+    private static List<PunishmentModification> resolveModifications(List<PunishmentModification> modifications, Map<String, String> resolvedIssuers) {
+        return modifications.stream().map(m -> new PunishmentModification(
+                m.id(), m.type(), m.date(),
+                PunishmentMapper.resolveIssuer(m.issuerId(), m.issuerName(), resolvedIssuers),
+                m.issuerId(), m.reason(), m.effectiveDuration(), m.appealTicketId(), m.data()
+        )).toList();
+    }
+
+    private static List<PunishmentNote> resolveNotes(List<PunishmentNote> notes, Map<String, String> resolvedIssuers) {
+        return notes.stream().map(n -> new PunishmentNote(
+                n.id(), n.text(), n.date(),
+                PunishmentMapper.resolveIssuer(n.issuerId(), n.issuerName(), resolvedIssuers),
+                n.issuerId()
+        )).toList();
+    }
+
+    private static List<PunishmentEvidence> resolveEvidence(List<PunishmentEvidence> evidence, Map<String, String> resolvedIssuers) {
+        return evidence.stream().map(e -> new PunishmentEvidence(
+                e.text(), e.url(), e.type(),
+                PunishmentMapper.resolveIssuer(e.uploadedById(), e.uploadedBy(), resolvedIssuers),
+                e.uploadedById(), e.uploadedAt(), e.fileName(), e.fileType(), e.fileSize()
+        )).toList();
     }
 
     public record PunishmentContext(Player player, Punishment punishment) {

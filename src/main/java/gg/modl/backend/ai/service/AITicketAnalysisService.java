@@ -211,6 +211,7 @@ public class AITicketAnalysisService {
 
         CreatePunishmentRequest request = new CreatePunishmentRequest(
                 staffName,
+                null,
                 suggestion.getPunishmentTypeId(),
                 null, null,
                 List.of(ticket.getId()),

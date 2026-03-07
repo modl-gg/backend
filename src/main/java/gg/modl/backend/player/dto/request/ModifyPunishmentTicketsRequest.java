@@ -9,6 +9,7 @@ public record ModifyPunishmentTicketsRequest(
         @Nullable List<String> addTicketIds,
         @Nullable List<String> removeTicketIds,
         boolean modifyAssociatedTickets,
-        @NotBlank String issuerName
+        @Nullable String issuerName,
+        @Nullable String issuerId
 ) {
 }

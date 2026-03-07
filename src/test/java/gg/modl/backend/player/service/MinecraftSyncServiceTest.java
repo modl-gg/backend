@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.player.service.IssuerNameResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +41,9 @@ class MinecraftSyncServiceTest {
     private MinecraftChatLogService minecraftChatLogService;
 
     @Mock
+    private IssuerNameResolver issuerNameResolver;
+
+    @Mock
     private MongoTemplate mongoTemplate;
 
     private MinecraftSyncService minecraftSyncService;
@@ -51,7 +55,8 @@ class MinecraftSyncServiceTest {
                 statusCalculator,
                 punishmentTypeService,
                 punishmentService,
-                minecraftChatLogService
+                minecraftChatLogService,
+                issuerNameResolver
         );
     }
 
@@ -61,6 +66,7 @@ class MinecraftSyncServiceTest {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
         when(tenantMongoAccess.forServer(server)).thenReturn(mongoTemplate);
+        when(tenantMongoAccess.global()).thenReturn(mongoTemplate);
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
         when(mongoTemplate.find(any(Query.class), any(Class.class), anyString())).thenReturn((List) List.of());
         when(mongoTemplate.findOne(any(Query.class), any(Class.class), anyString())).thenReturn(null);

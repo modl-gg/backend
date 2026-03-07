@@ -76,7 +76,7 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getCdnDomain()).thenReturn("cdn.example.com");
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(punishmentService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any()))
+        when(punishmentService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any()))
                 .thenReturn(new PunishmentService.PunishmentOperationResult(
                         PunishmentService.PunishmentOperationStatus.SUCCESS,
                         "ok",
@@ -97,7 +97,7 @@ class EvidenceUploadServiceTest {
         );
 
         assertEquals(EvidenceUploadService.SubmitEvidenceStatus.SUCCESS, result.status());
-        verify(punishmentService).addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any());
+        verify(punishmentService).addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any());
         verify(tokenService).invalidateToken("token-1");
     }
 }

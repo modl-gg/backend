@@ -9,6 +9,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -39,6 +40,7 @@ public class AuditService {
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
     private final PlayerStatusCalculator statusCalculator;
+    private final IssuerNameResolver issuerNameResolver;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
         MongoTemplate template = getTemplate(server);
@@ -171,16 +173,33 @@ public class AuditService {
                 stages.add(Aggregation.match(Criteria.where("punishments.issued").gte(startDate)));
             }
 
-            stages.add(Aggregation.group("punishments.issuerName").count().as("count"));
+            // Compute effective issuer key: prefer issuerId, fallback to issuerName
+            stages.add(context -> new Document("$addFields", new Document("effectiveIssuer",
+                    new Document("$ifNull", List.of("$punishments.issuerId", "$punishments.issuerName")))));
+            stages.add(Aggregation.group("effectiveIssuer").count().as("count"));
 
             Aggregation aggregation = Aggregation.newAggregation(stages);
 
             List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
+
+            // Collect issuerId values to resolve to usernames
+            Set<String> issuerIdsToResolve = new HashSet<>();
             for (Document doc : results) {
-                String issuerName = doc.getString("_id");
-                if (issuerName != null) {
-                    counts.put(issuerName.toLowerCase(), doc.getInteger("count", 0));
+                String key = doc.getString("_id");
+                if (key != null && org.bson.types.ObjectId.isValid(key)) {
+                    issuerIdsToResolve.add(key);
                 }
+            }
+            Map<String, String> resolvedIds = issuerNameResolver.batchResolve(issuerIdsToResolve, template);
+
+            for (Document doc : results) {
+                String key = doc.getString("_id");
+                if (key == null) continue;
+
+                // Resolve issuerId to username, or use issuerName directly
+                String displayName = resolvedIds.getOrDefault(key, key);
+                String normalizedKey = displayName.toLowerCase();
+                counts.merge(normalizedKey, doc.getInteger("count", 0), Integer::sum);
             }
         } catch (Exception e) {
             log.debug("Error counting punishments: {}", e.getMessage());
@@ -193,23 +212,27 @@ public class AuditService {
         MongoTemplate template = getTemplate(server);
         Date startDate = getStartDate(period);
 
-        // Get the staff member's Minecraft username if they have one linked
+        // Get the staff member's Minecraft username and ID if they have one linked
         List<String> usernamesToSearch = new ArrayList<>();
         usernamesToSearch.add(username);
+        String staffId = null;
 
-        staffService.getStaffByUsername(server, username).ifPresent(staff -> {
+        var staffOpt = staffService.getStaffByUsername(server, username);
+        if (staffOpt.isPresent()) {
+            var staff = staffOpt.get();
+            staffId = staff.id();
             if (staff.assignedMinecraftUsername() != null && !staff.assignedMinecraftUsername().isEmpty()) {
                 // Add the Minecraft username if it's different from the panel username
                 if (!staff.assignedMinecraftUsername().equalsIgnoreCase(username)) {
                     usernamesToSearch.add(staff.assignedMinecraftUsername());
                 }
             }
-        });
+        }
 
-        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, usernamesToSearch, startDate);
+        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, usernamesToSearch, staffId, startDate);
         List<StaffDetailsResponse.TicketDetail> tickets = getTicketDetails(template, username, startDate);
-        List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, usernamesToSearch, startDate);
-        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, usernamesToSearch, startDate);
+        List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, usernamesToSearch, staffId, startDate);
+        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, usernamesToSearch, staffId, startDate);
 
         long evidenceUploads = countEvidenceUploads(template, username, startDate);
 
@@ -299,6 +322,7 @@ public class AuditService {
                             .and("minecraftUuid").as("playerId")
                             .and("punishments.typeOrdinal").as("typeOrdinal")
                             .and("punishments.issuerName").as("issuerName")
+                            .and("punishments.issuerId").as("issuerId")
                             .and("punishments.issued").as("issued")
                             .and("punishments.started").as("started")
                             .and("punishments.data").as("data")
@@ -309,6 +333,14 @@ public class AuditService {
             );
 
             List<Document> docs = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
+
+            // Batch resolve issuerIds
+            Set<String> issuerIds = new HashSet<>();
+            for (Document doc : docs) {
+                String issuerId = doc.getString("issuerId");
+                if (issuerId != null) issuerIds.add(issuerId);
+            }
+            Map<String, String> resolvedIssuers = issuerNameResolver.batchResolve(issuerIds, template);
 
             for (Document doc : docs) {
                 // Reconstruct a minimal Punishment to check active status
@@ -330,7 +362,9 @@ public class AuditService {
 
                 String playerId = doc.getString("playerId");
                 String playerName = extractPlayerNameFromDoc(doc);
-                String issuerName = doc.getString("issuerName");
+                String issuerId = doc.getString("issuerId");
+                String rawIssuerName = doc.getString("issuerName");
+                String issuerName = resolveIssuerFromDoc(issuerId, rawIssuerName, resolvedIssuers);
 
                 Document data = doc.get("data", Document.class);
                 String reason = data != null ? data.getString("reason") : null;
@@ -388,6 +422,7 @@ public class AuditService {
         p.setId(doc.getString("punishmentId"));
         p.setTypeOrdinal(doc.getInteger("typeOrdinal", 0));
         p.setIssuerName(doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
+        p.setIssuerId(doc.getString("issuerId"));
         p.setIssued(doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
         p.setStarted(doc.getDate("started"));
 
@@ -410,6 +445,7 @@ public class AuditService {
                         modDoc.getString("type"),
                         modDoc.getDate("date"),
                         modDoc.getString("issuerName"),
+                        modDoc.getString("issuerId"),
                         modDoc.getString("reason"),
                         effectiveDuration,
                         modDoc.getString("appealTicketId"),
@@ -434,6 +470,14 @@ public class AuditService {
         return "Unknown";
     }
 
+    private static String resolveIssuerFromDoc(String issuerId, String issuerName, Map<String, String> resolvedIssuers) {
+        if (issuerId != null && resolvedIssuers.containsKey(issuerId)) {
+            return resolvedIssuers.get(issuerId);
+        }
+        if (issuerName != null) return issuerName;
+        return "Console";
+    }
+
     private Long extractDuration(Document data) {
         if (data == null) return null;
         Object durationObj = data.get("duration");
@@ -442,6 +486,20 @@ public class AuditService {
         if (durationObj instanceof Double d) return d.longValue();
         if (durationObj instanceof Number n) return n.longValue();
         return null;
+    }
+
+    /**
+     * Build criteria matching punishments by either issuerName (legacy) or issuerId (new).
+     */
+    private static Criteria buildIssuerCriteria(List<String> usernames, String staffId) {
+        List<Criteria> parts = new ArrayList<>();
+        for (String name : usernames) {
+            parts.add(Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"));
+        }
+        if (staffId != null) {
+            parts.add(Criteria.where("punishments.issuerId").is(staffId));
+        }
+        return new Criteria().orOperator(parts.toArray(new Criteria[0]));
     }
 
     public boolean rollbackPunishment(Server server, String punishmentId, String reason, String performerUsername) {
@@ -520,7 +578,8 @@ public class AuditService {
      */
     public int rollbackAllPunishmentsByStaff(Server server, String staffUsername, String reason, String performerUsername) {
         MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(server, template, staffUsername, null, null, reason, performerUsername);
+        String staffId = staffService.getStaffByUsername(server, staffUsername).map(s -> s.id()).orElse(null);
+        return rollbackPunishmentsInternal(server, template, staffUsername, staffId, null, null, reason, performerUsername);
     }
 
     /**
@@ -528,23 +587,24 @@ public class AuditService {
      */
     public int rollbackPunishmentsByDateRange(Server server, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
         MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(server, template, staffUsername, startDate, endDate, reason, performerUsername);
+        String staffId = staffService.getStaffByUsername(server, staffUsername).map(s -> s.id()).orElse(null);
+        return rollbackPunishmentsInternal(server, template, staffUsername, staffId, startDate, endDate, reason, performerUsername);
     }
 
-    private int rollbackPunishmentsInternal(Server server, MongoTemplate template, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
+    private int rollbackPunishmentsInternal(Server server, MongoTemplate template, String staffUsername, String staffId, Date startDate, Date endDate, String reason, String performerUsername) {
         int rollbackCount = 0;
 
         try {
-            // Build criteria for finding punishments
-            Criteria criteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i");
-
-            if (startDate != null && endDate != null) {
-                criteria = criteria.and("punishments.issued").gte(startDate).lte(endDate);
+            // Build criteria for finding punishments (match by issuerName or issuerId)
+            List<Criteria> issuerMatch = new ArrayList<>();
+            issuerMatch.add(Criteria.where("issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i"));
+            if (staffId != null) {
+                issuerMatch.add(Criteria.where("issuerId").is(staffId));
             }
 
             // Find all players with matching punishments
             Query findQuery = Query.query(Criteria.where("punishments").elemMatch(
-                    Criteria.where("issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i")
+                    new Criteria().orOperator(issuerMatch.toArray(new Criteria[0]))
             ));
 
             List<Document> players = template.find(findQuery, Document.class, CollectionName.PLAYERS);
@@ -572,11 +632,14 @@ public class AuditService {
 
                 for (Document punishment : punishments) {
                     String issuerName = punishment.getString("issuerName");
+                    String issuerId = punishment.getString("issuerId");
                     Date issued = punishment.getDate("issued");
                     String punishmentId = punishment.getString("_id");
 
-                    // Check if this punishment matches our criteria
-                    if (issuerName == null || !issuerName.equalsIgnoreCase(staffUsername)) {
+                    // Check if this punishment matches our criteria (by issuerName or issuerId)
+                    boolean matchesIssuer = (issuerName != null && issuerName.equalsIgnoreCase(staffUsername))
+                            || (staffId != null && staffId.equals(issuerId));
+                    if (!matchesIssuer) {
                         continue;
                     }
 
@@ -642,16 +705,12 @@ public class AuditService {
         return rollbackCount;
     }
 
-    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, List<String> usernames, String staffId, Date startDate) {
         List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
 
         try {
-            // Build criteria to match any of the usernames (panel username OR minecraft username)
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
+            // Build criteria to match by issuerName (panel/minecraft username) OR issuerId
+            Criteria matchCriteria = buildIssuerCriteria(usernames, staffId);
             if (startDate != null) {
                 matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
             }
@@ -780,16 +839,12 @@ public class AuditService {
         return details;
     }
 
-    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(MongoTemplate template, List<String> usernames, Date startDate) {
+    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(MongoTemplate template, List<String> usernames, String staffId, Date startDate) {
         Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
 
         try {
-            // Build punishment criteria to match any of the usernames
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria punishmentCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
+            // Build punishment criteria to match by issuerName or issuerId
+            Criteria punishmentCriteria = buildIssuerCriteria(usernames, staffId);
             if (startDate != null) {
                 punishmentCriteria = punishmentCriteria.and("punishments.issued").gte(startDate);
             }
@@ -847,16 +902,12 @@ public class AuditService {
                 .toList();
     }
 
-    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
+    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, List<String> usernames, String staffId, Date startDate) {
         List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
 
         try {
-            // Build criteria to match any of the usernames
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
+            // Build criteria to match by issuerName or issuerId
+            Criteria matchCriteria = buildIssuerCriteria(usernames, staffId);
             if (startDate != null) {
                 matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
             }

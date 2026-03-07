@@ -296,6 +296,7 @@ public class StaffService {
                         staff.getAssignedMinecraftUuid(),
                         staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
                         staff.getUsername() != null ? staff.getUsername() : "",
+                        staff.getId(),
                         staff.getRole() != null ? staff.getRole() : "",
                         permissionsByRole.getOrDefault(staff.getRole(), List.of()),
                         staff.getEmail() != null ? staff.getEmail() : ""

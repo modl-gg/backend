@@ -26,6 +26,12 @@ public class MongoIndexBootstrapService {
                         doc("punishments.issuerName", 1).append("punishments.issued", -1),
                         false,
                         false
+                ),
+                IndexSpec.standard(
+                        "idx_players_punishments_issuerId_issued_desc",
+                        doc("punishments.issuerId", 1).append("punishments.issued", -1),
+                        false,
+                        true
                 )
         ));
 

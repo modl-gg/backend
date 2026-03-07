@@ -1,5 +1,6 @@
 package gg.modl.backend.player.service;
 
+import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -58,6 +59,12 @@ class PunishmentServiceTest {
     @Mock
     private EvidenceUploadTokenService evidenceUploadTokenService;
 
+    @Mock
+    private IssuerNameResolver issuerNameResolver;
+
+    @Mock
+    private TenantMongoAccess tenantMongoAccess;
+
     private PunishmentService punishmentService;
 
     @BeforeEach
@@ -68,7 +75,9 @@ class PunishmentServiceTest {
                 statusCalculator,
                 punishmentTypeService,
                 thresholdSettingsService,
-                evidenceUploadTokenService
+                evidenceUploadTokenService,
+                issuerNameResolver,
+                tenantMongoAccess
         );
     }
 
@@ -80,6 +89,7 @@ class PunishmentServiceTest {
                 "punish-1",
                 1,
                 "Mod",
+                null,
                 new Date(),
                 null,
                 List.of(),
@@ -121,7 +131,8 @@ class PunishmentServiceTest {
                 "punish-1",
                 "UNKNOWN_OPTION",
                 true,
-                "Mod"
+                "Mod",
+                null
         );
 
         assertEquals(PunishmentService.PunishmentOperationStatus.INVALID_REQUEST, result.status());
@@ -141,6 +152,7 @@ class PunishmentServiceTest {
 
         CreatePunishmentRequest request = new CreatePunishmentRequest(
                 "Mod",
+                null,
                 4,
                 null,
                 null,
@@ -177,6 +189,7 @@ class PunishmentServiceTest {
                 "punish-1",
                 1,
                 "Mod",
+                null,
                 new Date(),
                 new Date(),
                 new ArrayList<>(),
@@ -212,6 +225,7 @@ class PunishmentServiceTest {
                 "linked-1",
                 4,
                 "System",
+                null,
                 new Date(),
                 new Date(),
                 new ArrayList<>(),
@@ -246,6 +260,7 @@ class PunishmentServiceTest {
                 "linked-1",
                 4,
                 "System",
+                null,
                 new Date(),
                 new Date(),
                 new ArrayList<>(),

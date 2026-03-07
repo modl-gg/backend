@@ -25,6 +25,9 @@ public final class CollectionName {
     public static final String WEBAUTHN_CREDENTIALS = "webauthn_credentials";
     public static final String WEBAUTHN_CHALLENGES = "webauthn_challenges";
 
+    // Analytics
+    public static final String METRIC_SNAPSHOTS = "metric_snapshots";
+
     // Knowledgebase & Homepage
     public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebasecategories";
     public static final String KNOWLEDGEBASE_ARTICLES = "knowledgebasearticles";

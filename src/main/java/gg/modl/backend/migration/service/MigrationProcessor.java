@@ -415,7 +415,7 @@ public class MigrationProcessor {
                         String noteIssuer = validator.sanitizeString((String) noteMap.get("issuerName"), 100);
 
                         if (text != null && date != null) {
-                            notes.add(new PunishmentNote(new ObjectId().toHexString(), text, date, noteIssuer != null ? noteIssuer : "Unknown"));
+                            notes.add(new PunishmentNote(new ObjectId().toHexString(), text, date, noteIssuer != null ? noteIssuer : "Unknown", null));
                         }
                     }
                 }
@@ -461,6 +461,7 @@ public class MigrationProcessor {
                     id,
                     typeOrdinal,
                     issuerName,
+                    null,
                     issued,
                     started,
                     modifications,

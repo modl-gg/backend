@@ -5,7 +5,8 @@ import org.jetbrains.annotations.Nullable;
 
 public record AddModificationRequest(
         @NotBlank String type,
-        @NotBlank String issuerName,
+        @Nullable String issuerName,
+        @Nullable String issuerId,
         @Nullable Long effectiveDuration,
         @Nullable String reason,
         @Nullable String appealTicketId

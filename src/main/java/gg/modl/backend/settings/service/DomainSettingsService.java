@@ -86,6 +86,10 @@ public class DomainSettingsService {
     }
 
     public DomainSettings configureDomain(Server server, String customDomain) {
+        if (customDomain.toLowerCase().endsWith("modl.gg")) {
+            throw new IllegalArgumentException("modl.gg domains cannot be used as custom domains.");
+        }
+
         MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
         Query settingsQuery = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
 

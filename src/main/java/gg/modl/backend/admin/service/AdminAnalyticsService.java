@@ -1,5 +1,7 @@
 package gg.modl.backend.admin.service;
 
+import gg.modl.backend.analytics.data.MetricSnapshot;
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerFields;
@@ -134,6 +136,26 @@ public class AdminAnalyticsService {
         return response;
     }
 
+    public Map<String, Object> getActivity(String range) {
+        int days = resolveRangeDays(range);
+        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
+
+        List<MetricSnapshot> snapshots = tenantMongoAccess.global().find(
+                Query.query(Criteria.where("date").gte(startDate)).with(Sort.by(Sort.Direction.ASC, "date")),
+                MetricSnapshot.class,
+                CollectionName.METRIC_SNAPSHOTS
+        );
+
+        List<Map<String, Object>> data = snapshots.stream().map(s -> Map.<String, Object>of(
+                "date", s.getDate().toInstant().toString(),
+                "activeServers", s.getActiveServers(),
+                "totalPlayers", s.getTotalPlayers(),
+                "totalServers", s.getTotalServers()
+        )).toList();
+
+        return Map.of("success", true, "data", data);
+    }
+
     public Map<String, Object> getUsage() {
         Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
 
@@ -206,7 +228,7 @@ public class AdminAnalyticsService {
         return switch (normalizeRange(range)) {
             case "7d" -> 7;
             case "90d" -> 90;
-            case "365d" -> 365;
+            case "365d", "1y" -> 365;
             default -> 30;
         };
     }

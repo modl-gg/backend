@@ -148,6 +148,7 @@ public class EvidenceUploadService {
                 server,
                 uploadToken.punishmentId(),
                 uploadToken.issuerName(),
+                null,
                 evidenceItems
         );
         if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {

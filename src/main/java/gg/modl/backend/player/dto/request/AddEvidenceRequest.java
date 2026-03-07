@@ -7,6 +7,7 @@ public record AddEvidenceRequest(
         @Nullable String text,
         @NotBlank String type,
         @Nullable String issuerName,
+        @Nullable String issuerId,
         @Nullable String url,
         @Nullable String fileName,
         @Nullable String fileType,

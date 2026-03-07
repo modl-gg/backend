@@ -6,6 +6,7 @@ import org.jetbrains.annotations.Nullable;
 public record CreateNoteRequest(
         @NotBlank String text,
         @Nullable String issuerName,
+        @Nullable String issuerId,
         @Nullable String date
 ) {
 }

@@ -114,6 +114,7 @@ class DashboardServiceTest {
                 id,
                 ordinal,
                 "Moderator",
+                null,
                 new Date(),
                 null,
                 new ArrayList<>(),

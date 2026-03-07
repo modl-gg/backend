@@ -1,5 +1,6 @@
 package gg.modl.backend.player.service;
 
+import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
@@ -54,6 +55,12 @@ class MinecraftPlayerServiceTest {
     @Mock
     private MojangApiService mojangApiService;
 
+    @Mock
+    private IssuerNameResolver issuerNameResolver;
+
+    @Mock
+    private TenantMongoAccess tenantMongoAccess;
+
     private MinecraftPlayerService minecraftPlayerService;
 
     @BeforeEach
@@ -66,7 +73,9 @@ class MinecraftPlayerServiceTest {
                 punishmentTypeService,
                 punishmentService,
                 accountLinkingService,
-                mojangApiService
+                mojangApiService,
+                issuerNameResolver,
+                tenantMongoAccess
         );
     }
 
@@ -103,7 +112,8 @@ class MinecraftPlayerServiceTest {
                 server,
                 player.getMinecraftUuid().toString(),
                 "Test note",
-                "Moderator"
+                "Moderator",
+                null
         );
 
         assertEquals(org.springframework.http.HttpStatus.OK, response.status());

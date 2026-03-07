@@ -116,7 +116,7 @@ public class MinecraftPlayerController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(server, uuid, request.text(), request.issuerName());
+        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(server, uuid, request.text(), request.issuerName(), request.issuerId());
         return ResponseEntity.status(response.status()).body(response.body());
     }
 
@@ -168,6 +168,7 @@ public class MinecraftPlayerController {
                 request.playerName(),
                 request.punishmentType(),
                 request.issuerName(),
+                request.issuerId(),
                 request.reason()
         );
 
@@ -218,13 +219,15 @@ public class MinecraftPlayerController {
 
     public record CreateNoteRequest(
             @NotBlank String text,
-            @NotBlank String issuerName
+            String issuerName,
+            String issuerId
     ) {
     }
 
     public record PardonPlayerRequest(
             @NotBlank String playerName,
-            @NotBlank String issuerName,
+            String issuerName,
+            String issuerId,
             String punishmentType,
             String reason
     ) {
