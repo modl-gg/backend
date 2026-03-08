@@ -6,6 +6,8 @@ WORKDIR /app
 # Copy gradle files first for dependency caching
 COPY gradle gradle
 COPY gradlew build.gradle settings.gradle ./
+COPY mongo-fields-annotations/build.gradle mongo-fields-annotations/build.gradle
+COPY mongo-fields-processor/build.gradle mongo-fields-processor/build.gradle
 
 RUN chmod +x gradlew
 
@@ -15,6 +17,8 @@ RUN --mount=type=cache,target=/root/.gradle \
 
 # Copy source and build
 COPY src src
+COPY mongo-fields-annotations/src mongo-fields-annotations/src
+COPY mongo-fields-processor/src mongo-fields-processor/src
 
 RUN --mount=type=cache,target=/root/.gradle \
     ./gradlew bootJar --no-daemon -x test
