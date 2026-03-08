@@ -5,6 +5,7 @@ import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
+import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
@@ -30,6 +31,7 @@ public class AnalyticsService {
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final IssuerNameResolver issuerNameResolver;
+    private final TenantMongoAccess tenantMongoAccess;
 
     public OverviewResponse getOverview(Server server) {
         long now = System.currentTimeMillis();
@@ -107,7 +109,7 @@ public class AnalyticsService {
                 potentialIds.add(s);
             }
         }
-        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, template);
+        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, tenantMongoAccess.forServer(server));
 
         Map<String, Integer> staffCountMap = new HashMap<>();
         for (Document document : byStaffDocs) {
