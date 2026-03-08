@@ -1,5 +1,7 @@
 package gg.modl.backend.settings.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +16,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class OffenderThresholdSettings {
     /**
      * Thresholds for social category punishments.
@@ -31,6 +34,7 @@ public class OffenderThresholdSettings {
 
     @Data
     @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CategoryThresholds {
         /**
          * Points threshold for Medium offender level.
@@ -65,6 +69,7 @@ public class OffenderThresholdSettings {
         /**
          * Convert pointExpiryMonths to milliseconds for date comparison.
          */
+        @JsonIgnore
         public long getPointExpiryMs() {
             return (long) pointExpiryMonths * 30L * 24L * 60L * 60L * 1000L;
         }
