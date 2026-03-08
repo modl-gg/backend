@@ -8,25 +8,17 @@ public final class MongoQueries {
     private MongoQueries() {
     }
 
-    public static Criteria where(MongoField<?> field) {
-        return Criteria.where(field.path());
+    public static Criteria where(String field) {
+        return Criteria.where(field);
     }
 
-    public static Sort sort(Sort.Direction direction, MongoField<?>... fields) {
-        if (fields == null || fields.length == 0) {
-            throw new IllegalArgumentException("At least one field is required for sorting");
-        }
-
-        Sort.Order[] orders = new Sort.Order[fields.length];
-        for (int index = 0; index < fields.length; index++) {
-            orders[index] = new Sort.Order(direction, fields[index].path());
-        }
-        return Sort.by(orders);
+    public static Sort sort(Sort.Direction direction, String... fields) {
+        return Sort.by(direction, fields);
     }
 
-    public static Query include(Query query, MongoField<?>... fields) {
-        for (MongoField<?> field : fields) {
-            query.fields().include(field.path());
+    public static Query include(Query query, String... fields) {
+        for (String field : fields) {
+            query.fields().include(field);
         }
         return query;
     }

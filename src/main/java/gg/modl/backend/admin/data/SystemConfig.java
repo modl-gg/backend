@@ -1,6 +1,7 @@
 package gg.modl.backend.admin.data;
 
 import gg.modl.backend.Constants;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -11,6 +12,7 @@ import java.util.List;
 
 @Data
 @Document(collection = "system_config")
+@GenerateMongoFields
 public class SystemConfig {
     @Id
     private String id;

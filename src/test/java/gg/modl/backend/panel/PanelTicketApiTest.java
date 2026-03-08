@@ -24,7 +24,7 @@ class PanelTicketApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
 
         testUuid = TestDataProvider.getPlayers().get(0).uuid();
@@ -265,3 +265,4 @@ class PanelTicketApiTest {
         api.panelPatch("/v1/panel/tickets/" + id2, Map.of("status", "closed"));
     }
 }
+

@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +17,7 @@ import java.util.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = CollectionName.TICKET_VERIFICATIONS)
+@GenerateMongoFields
 public class TicketVerification {
     @Id
     private String id;

@@ -10,10 +10,8 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -26,7 +24,6 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -66,10 +63,7 @@ class PlayerServicePersistenceTest {
                 .data(new HashMap<>())
                 .build();
 
-        when(playerRepository.findOne(eq(server), any(Query.class))).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().id("player-1").minecraftUuid(playerUuid).build());
-        when(playerRepository.saveChanges(eq(server), any(Player.class), any(Player.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
 
         Player updated = playerService.loginPlayer(
                 server,
@@ -82,10 +76,8 @@ class PlayerServicePersistenceTest {
         );
 
         assertNotNull(updated);
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(eq(server), any(Player.class), updatedPlayerCaptor.capture());
-        Player savedPlayer = updatedPlayerCaptor.getValue();
+        verify(playerRepository).updateLoginState(eq(server), eq(updated));
+        Player savedPlayer = updated;
         assertEquals(2, savedPlayer.getUsernames().size());
         assertEquals("NewName", savedPlayer.getUsernames().get(1).username());
         assertEquals(1, savedPlayer.getIpAddresses().size());
@@ -118,8 +110,7 @@ class PlayerServicePersistenceTest {
                 .data(new HashMap<>())
                 .build();
 
-        when(playerRepository.findOne(eq(server), any(Query.class))).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().id("player-1").minecraftUuid(player.getMinecraftUuid()).build());
+        when(playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString())).thenReturn(Optional.of(player));
 
         playerService.updateIpGeoData(
                 server,
@@ -128,9 +119,8 @@ class PlayerServicePersistenceTest {
                 Map.of("country", "CA", "region", "Ontario", "asn", "AS456", "proxy", false, "hosting", true)
         );
 
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(eq(server), any(Player.class), updatedPlayerCaptor.capture());
-        IPEntry updatedIp = updatedPlayerCaptor.getValue().getIpAddresses().get(0);
+        verify(playerRepository).replaceIpAddresses(eq(server), eq(player));
+        IPEntry updatedIp = player.getIpAddresses().get(0);
         assertEquals("CA", updatedIp.getCountry());
         assertEquals("Ontario", updatedIp.getRegion());
         assertEquals("AS456", updatedIp.getAsn());

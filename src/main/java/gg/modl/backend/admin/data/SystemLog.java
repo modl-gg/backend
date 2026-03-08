@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -9,6 +10,7 @@ import java.util.Map;
 
 @Data
 @Document(collection = "system_logs")
+@GenerateMongoFields
 public class SystemLog {
     @Id
     private String id;

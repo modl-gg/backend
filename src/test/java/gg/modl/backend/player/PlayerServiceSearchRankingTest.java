@@ -10,10 +10,8 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,7 +23,6 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,7 +57,7 @@ class PlayerServiceSearchRankingTest {
         Player javaPlayer = player(javaUuid, List.of("UrgedRook8642"), null);
         Player bedrockPlayer = player(bedrockUuid, List.of(".UrgedRook8642"), null);
 
-        when(playerRepository.find(any(Server.class), any(Query.class)))
+        when(playerRepository.searchByUsernamePattern(server, "UrgedRook8642", 100))
                 .thenReturn(List.of(bedrockPlayer, javaPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "UrgedRook8642");
@@ -78,7 +75,7 @@ class PlayerServiceSearchRankingTest {
         Player renamedPlayer = player(renamedUuid, List.of("Name123", "RenamedPlayer"), null);
         Player prefixedPlayer = player(prefixedUuid, List.of(".Name123"), null);
 
-        when(playerRepository.find(any(Server.class), any(Query.class)))
+        when(playerRepository.searchByUsernamePattern(server, "Name123", 100))
                 .thenReturn(List.of(prefixedPlayer, renamedPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "Name123");
@@ -96,7 +93,7 @@ class PlayerServiceSearchRankingTest {
         Player exactPlayer = player(exactUuid, List.of("NAME123"), null);
         Player partialPlayer = player(partialUuid, List.of(".name123"), null);
 
-        when(playerRepository.find(any(Server.class), any(Query.class)))
+        when(playerRepository.searchByUsernamePattern(server, "name123", 100))
                 .thenReturn(List.of(partialPlayer, exactPlayer));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, "name123");
@@ -112,20 +109,15 @@ class PlayerServiceSearchRankingTest {
         String uppercaseUuid = playerUuid.toString().toUpperCase(Locale.ROOT);
 
         Player player = player(playerUuid, List.of("SomePlayer"), Date.from(Instant.now()));
-        when(playerRepository.find(any(Server.class), any(Query.class)))
-                .thenReturn(List.of(player));
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString()))
+                .thenReturn(java.util.Optional.of(player));
 
         List<PlayerSearchResult> results = playerService.searchPlayers(server, uppercaseUuid);
 
-        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
-        verify(playerRepository).find(eq(server), queryCaptor.capture());
+        verify(playerRepository).findByMinecraftUuid(eq(server), eq(playerUuid.toString()));
 
         assertFalse(results.isEmpty());
         assertEquals(playerUuid.toString(), results.get(0).uuid());
-        assertEquals(
-                playerUuid.toString(),
-                queryCaptor.getValue().getQueryObject().getString("minecraftUuid")
-        );
     }
 
     private static Player player(UUID uuid, List<String> usernames, Date lastLogin) {

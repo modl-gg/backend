@@ -17,7 +17,7 @@ class PanelTicketSubscriptionApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -51,3 +51,4 @@ class PanelTicketSubscriptionApiTest {
         assertEquals(404, response.statusCode(), "Expected 404 for nonexistent ticket");
     }
 }
+

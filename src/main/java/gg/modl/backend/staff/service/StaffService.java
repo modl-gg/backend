@@ -1,18 +1,13 @@
 package gg.modl.backend.staff.service;
 
 import com.mongodb.client.result.DeleteResult;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
-import gg.modl.backend.database.mongo.fields.StaffFields;
-import gg.modl.backend.database.mongo.fields.StaffRoleFields;
+import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.role.service.PermissionService;
-import gg.modl.backend.server.ServerField;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
@@ -27,12 +22,6 @@ import gg.modl.backend.staff.dto.response.StaffResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -50,19 +39,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class StaffService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final InvitationMongoRepository invitationRepository;
     private final StaffMongoRepository staffRepository;
     private final StaffRoleMongoRepository staffRoleRepository;
     private final PlayerMongoRepository playerRepository;
+    private final ServerMongoRepository serverRepository;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
 
     public List<StaffResponse> getAllStaff(Server server) {
-        MongoTemplate template = getTemplate(server);
-
-        List<Staff> staffMembers = template.findAll(Staff.class, CollectionName.STAFF);
-        Query pendingQuery = Query.query(Criteria.where("expiresAt").gt(new Date()));
-        List<Invitation> pendingInvitations = template.find(pendingQuery, Invitation.class, CollectionName.INVITATIONS);
+        List<Staff> staffMembers = staffRepository.findAll(server);
+        List<Invitation> pendingInvitations = invitationRepository.findActiveInvitations(server, new Date());
 
         List<StaffResponse> result = new ArrayList<>();
 
@@ -86,7 +73,7 @@ public class StaffService {
                     .createdAt(server.getCreatedAt())
                     .updatedAt(new Date())
                     .build();
-            template.save(superAdmin, CollectionName.STAFF);
+            staffRepository.saveEntity(server, superAdmin);
             result.add(0, toStaffResponse(superAdmin, "Active"));
         }
 
@@ -107,29 +94,15 @@ public class StaffService {
     }
 
     public Optional<StaffResponse> getStaffByUsername(Server server, String username) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("username").is(username));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
-
-        return Optional.ofNullable(staff).map(s -> toStaffResponse(s, "Active"));
+        return staffRepository.findByUsername(server, username).map(s -> toStaffResponse(s, "Active"));
     }
 
     public boolean checkUsernameExists(Server server, String username) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("username").is(username));
-        return template.exists(query, Staff.class, CollectionName.STAFF);
+        return staffRepository.existsByUsername(server, username);
     }
 
     public StaffResponse createStaff(Server server, CreateStaffRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        // Check for existing staff with same email or username
-        Query existsQuery = new Query(new Criteria().orOperator(
-                Criteria.where("email").is(request.email()),
-                Criteria.where("username").is(request.username())
-        ));
-
-        if (template.exists(existsQuery, Staff.class, CollectionName.STAFF)) {
+        if (staffRepository.existsByEmailOrUsername(server, request.email(), request.username())) {
             throw new IllegalStateException("Staff member with this email or username already exists");
         }
 
@@ -143,110 +116,88 @@ public class StaffService {
                 .updatedAt(new Date())
                 .build();
 
-        template.save(staff, CollectionName.STAFF);
+        staffRepository.saveEntity(server, staff);
 
         return toStaffResponse(staff, "Active");
     }
 
     public Optional<StaffResponse> updateStaff(Server server, String username, UpdateStaffRequest request, String currentUserEmail) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("username").is(username));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+        Staff staff = staffRepository.findByUsername(server, username).orElse(null);
 
         if (staff == null) {
             return Optional.empty();
         }
 
-        Update update = new Update().set("updatedAt", new Date());
         boolean hasChanges = false;
 
         if (request.email() != null && !request.email().equals(staff.getEmail())) {
-            // Only allow email change if it's your own account
             if (!staff.getEmail().equalsIgnoreCase(currentUserEmail)) {
                 throw new IllegalArgumentException("You can only change your own email address");
             }
 
-            // Check if email is already in use
-            Query emailQuery = Query.query(Criteria.where("email").is(request.email()));
-            if (template.exists(emailQuery, Staff.class, CollectionName.STAFF)) {
+            if (staffRepository.existsByEmailExact(server, request.email())) {
                 throw new IllegalStateException("Email address already in use");
             }
 
-            update.set("email", request.email());
+            staff.setEmail(request.email());
             hasChanges = true;
         }
 
         if (hasChanges) {
-            template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
-            staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+            staff.setUpdatedAt(new Date());
+            staff = staffRepository.saveEntity(server, staff);
         }
 
         return Optional.ofNullable(staff).map(s -> toStaffResponse(s, "Active"));
     }
 
     public boolean deleteStaff(Server server, String id, String removerEmail, String removerRole) {
-        MongoTemplate template = getTemplate(server);
-
-        // First check if it's an invitation
-        Query invQuery = Query.query(Criteria.where("_id").is(id));
-        DeleteResult deleteResult = template.remove(invQuery, Invitation.class, CollectionName.INVITATIONS);
-        if (deleteResult.getDeletedCount() > 0) {
+        if (invitationRepository.deleteById(server, id)) {
             return true;
         }
 
-        // Check staff
-        Query staffQuery = Query.query(Criteria.where("_id").is(id));
-        Staff staffToRemove = template.findOne(staffQuery, Staff.class, CollectionName.STAFF);
+        Staff staffToRemove = staffRepository.findById(server, id).orElse(null);
 
         if (staffToRemove == null) {
             return false;
         }
 
-        // Prevent removing yourself
         if (staffToRemove.getEmail().equalsIgnoreCase(removerEmail)) {
             throw new IllegalArgumentException("You cannot remove yourself");
         }
 
-        // Prevent removing server admin
         if (server.getAdminEmail() != null &&
                 staffToRemove.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
             throw new IllegalArgumentException("Cannot remove the server administrator");
         }
 
-        template.remove(staffQuery, Staff.class, CollectionName.STAFF);
+        staffRepository.deleteById(server, id);
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
 
     public Optional<StaffResponse> updateStaffRole(Server server, String id, String newRole, String performerEmail, String performerRole) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(Criteria.where("_id").is(id));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+        Staff staff = staffRepository.findById(server, id).orElse(null);
 
         if (staff == null) {
             return Optional.empty();
         }
 
-        // Prevent changing role of server admin
         if (server.getAdminEmail() != null &&
                 staff.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
             throw new IllegalArgumentException("Cannot change the role of the server administrator");
         }
 
-        // Prevent changing your own role
         if (staff.getEmail().equalsIgnoreCase(performerEmail)) {
             throw new IllegalArgumentException("You cannot change your own role");
         }
 
-        Update update = new Update()
-                .set("role", newRole)
-                .set("updatedAt", new Date());
-
-        template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
+        staff.setRole(newRole);
+        staff.setUpdatedAt(new Date());
+        Staff saved = staffRepository.saveEntity(server, staff);
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
-        return Optional.of(toStaffResponse(staff, "Active"));
+        return Optional.of(toStaffResponse(saved, "Active"));
     }
 
     public List<MinecraftStaffSummaryResponse> getMinecraftStaffSummary(Server server) {
@@ -286,10 +237,7 @@ public class StaffService {
     }
 
     public List<MinecraftStaffPermissionsResponse> getMinecraftStaffPermissions(Server server) {
-        Query staffQuery = Query.query(
-                MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
-        );
-        List<Staff> staffWithMinecraft = staffRepository.find(server, staffQuery);
+        List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
         Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
 
         return staffWithMinecraft.stream()
@@ -311,77 +259,48 @@ public class StaffService {
             return false;
         }
 
-        Query roleQuery = Query.query(MongoQueries.where(StaffRoleFields.NAME).is(roleName));
-        if (!staffRoleRepository.exists(server, roleQuery)) {
+        if (!staffRoleRepository.existsByName(server, roleName)) {
             throw new IllegalArgumentException("Role not found");
         }
 
-        Staff original = staffRepository.snapshot(staff);
         staff.setRole(roleName);
         staff.setUpdatedAt(new Date());
-        staffRepository.saveChanges(server, original, staff);
+        staffRepository.saveEntity(server, staff);
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
 
     public boolean markStaffDisconnected(Server server, String minecraftUuid) {
-        Query query = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid));
-        Staff staff = staffRepository.findOne(server, query).orElse(null);
-        if (staff == null) {
-            return false;
-        }
-
-        Staff original = staffRepository.snapshot(staff);
-        staff.setLastSeen(new Date());
-        staffRepository.saveChanges(server, original, staff);
-        return true;
+        return staffRepository.updateLastSeenByAssignedMinecraftUuid(server, minecraftUuid);
     }
 
     public Optional<StaffResponse> assignMinecraftPlayer(Server server, String username, AssignMinecraftPlayerRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        Query staffQuery = Query.query(Criteria.where("username").is(username));
-        Staff staff = template.findOne(staffQuery, Staff.class, CollectionName.STAFF);
+        Staff staff = staffRepository.findByUsername(server, username).orElse(null);
 
         if (staff == null) {
             return Optional.empty();
         }
 
-        // Clearing assignment
         if ((request.minecraftUuid() == null || request.minecraftUuid().isEmpty()) &&
                 (request.minecraftUsername() == null || request.minecraftUsername().isEmpty())) {
-            Update update = new Update()
-                    .unset("assignedMinecraftUuid")
-                    .unset("assignedMinecraftUsername")
-                    .set("updatedAt", new Date());
-            template.updateFirst(staffQuery, update, Staff.class, CollectionName.STAFF);
-            serverTimestampService.updateStaffPermissionsTimestamp(server);
-
             staff.setAssignedMinecraftUuid(null);
             staff.setAssignedMinecraftUsername(null);
+            staff.setUpdatedAt(new Date());
+            staffRepository.saveEntity(server, staff);
+            serverTimestampService.updateStaffPermissionsTimestamp(server);
             return Optional.of(toStaffResponse(staff, "Active"));
         }
 
-        // Find player
-        Query playerQuery;
-        if (request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()) {
-            playerQuery = Query.query(Criteria.where("minecraftUuid").is(request.minecraftUuid()));
-        } else {
-            String escapedUsername = Pattern.quote(request.minecraftUsername().trim());
-            playerQuery = Query.query(Criteria.where("usernames.username").regex("^" + escapedUsername + "$", "i"));
-        }
-
-        Player player = template.findOne(playerQuery, Player.class, CollectionName.PLAYERS);
+        Player player = request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()
+                ? playerRepository.findByMinecraftUuid(server, request.minecraftUuid()).orElse(null)
+                : playerRepository.findByUsernameIgnoreCase(server, request.minecraftUsername()).orElse(null);
         if (player == null) {
             throw new IllegalArgumentException("Minecraft player not found");
         }
 
-        // Check if already assigned to another staff
-        Query existingQuery = Query.query(
-                Criteria.where("assignedMinecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("_id").ne(staff.getId())
-        );
-        Staff existingAssignment = template.findOne(existingQuery, Staff.class, CollectionName.STAFF);
+        Staff existingAssignment = staffRepository
+                .findByAssignedMinecraftUuidExcludingId(server, player.getMinecraftUuid().toString(), staff.getId())
+                .orElse(null);
         if (existingAssignment != null) {
             throw new IllegalStateException("This Minecraft player is already assigned to " + existingAssignment.getUsername());
         }
@@ -389,42 +308,23 @@ public class StaffService {
         String currentUsername = player.getUsernames().isEmpty() ? "Unknown" :
                 player.getUsernames().get(player.getUsernames().size() - 1).username();
 
-        Update update = new Update()
-                .set("assignedMinecraftUuid", player.getMinecraftUuid().toString())
-                .set("assignedMinecraftUsername", currentUsername)
-                .set("updatedAt", new Date());
-
-        template.updateFirst(staffQuery, update, Staff.class, CollectionName.STAFF);
-        serverTimestampService.updateStaffPermissionsTimestamp(server);
-
         staff.setAssignedMinecraftUuid(player.getMinecraftUuid().toString());
         staff.setAssignedMinecraftUsername(currentUsername);
+        staff.setUpdatedAt(new Date());
+        staffRepository.saveEntity(server, staff);
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
         return Optional.of(toStaffResponse(staff, "Active"));
     }
 
     public List<AvailablePlayerResponse> getAvailablePlayers(Server server) {
-        MongoTemplate template = getTemplate(server);
-
-        // Get all assigned UUIDs
-        List<Staff> staffWithPlayers = template.find(
-                Query.query(Criteria.where("assignedMinecraftUuid").exists(true).ne(null).ne("")),
-                Staff.class,
-                CollectionName.STAFF
-        );
+        List<Staff> staffWithPlayers = staffRepository.findAssignedMinecraftStaff(server);
 
         List<String> assignedUuids = staffWithPlayers.stream()
                 .map(Staff::getAssignedMinecraftUuid)
                 .filter(uuid -> uuid != null && !uuid.isEmpty())
                 .toList();
 
-        // Get unassigned players
-        Query playerQuery = new Query();
-        if (!assignedUuids.isEmpty()) {
-            playerQuery.addCriteria(Criteria.where("minecraftUuid").nin(assignedUuids));
-        }
-        playerQuery.limit(100);
-
-        List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
+        List<Player> players = playerRepository.findAvailablePlayers(server, assignedUuids, 100);
 
         return players.stream()
                 .map(player -> new AvailablePlayerResponse(
@@ -433,10 +333,6 @@ public class StaffService {
                                 player.getUsernames().get(player.getUsernames().size() - 1).username()
                 ))
                 .toList();
-    }
-
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 
     public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
@@ -452,15 +348,12 @@ public class StaffService {
     }
 
     public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage, String newDateFormat) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+        Staff staff = staffRepository.findByEmailIgnoreCase(server, email).orElse(null);
 
         if (staff == null) {
             if (!createIfNotExists) {
                 return Optional.empty();
             }
-            // Create a new Staff record for Super Admin
             staff = Staff.builder()
                     .email(email)
                     .username(newUsername != null ? newUsername : "Admin")
@@ -468,73 +361,51 @@ public class StaffService {
                     .createdAt(new Date())
                     .updatedAt(new Date())
                     .build();
-            template.save(staff, CollectionName.STAFF);
-            return Optional.of(staff);
+            return Optional.of(staffRepository.saveEntity(server, staff));
         }
 
+        boolean hasChanges = false;
         if (newUsername != null && !newUsername.equals(staff.getUsername())) {
-            Query usernameQuery = Query.query(
-                    Criteria.where("username").is(newUsername)
-                            .and("_id").ne(staff.getId())
-            );
-            if (template.exists(usernameQuery, Staff.class, CollectionName.STAFF)) {
+            if (staffRepository.existsByUsernameExcludingId(server, newUsername, staff.getId())) {
                 throw new IllegalStateException("Username already in use");
             }
-
-            Update update = new Update()
-                    .set("username", newUsername)
-                    .set("updatedAt", new Date());
-            template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
             staff.setUsername(newUsername);
+            hasChanges = true;
         }
 
         if (newLanguage != null && List.of("en", "de", "es").contains(newLanguage)) {
-            Update langUpdate = new Update().set("language", newLanguage).set("updatedAt", new Date());
-            template.updateFirst(query, langUpdate, Staff.class, CollectionName.STAFF);
             staff.setLanguage(newLanguage);
+            hasChanges = true;
         }
 
         if (newDateFormat != null && List.of("MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD").contains(newDateFormat)) {
-            Update dateFormatUpdate = new Update().set("dateFormat", newDateFormat).set("updatedAt", new Date());
-            template.updateFirst(query, dateFormatUpdate, Staff.class, CollectionName.STAFF);
             staff.setDateFormat(newDateFormat);
+            hasChanges = true;
+        }
+
+        if (hasChanges) {
+            staff.setUpdatedAt(new Date());
+            staff = staffRepository.saveEntity(server, staff);
         }
 
         return Optional.of(staff);
     }
 
     public Optional<Staff> updateEmail(Server server, String currentEmail, String newEmail, boolean isSuperAdmin) {
-        MongoTemplate template = getTemplate(server);
-
-        // Check per-server uniqueness (excluding self)
-        Query emailExistsQuery = Query.query(
-                Criteria.where("email").regex("^" + Pattern.quote(newEmail) + "$", "i")
-        );
-        Staff existingWithNewEmail = template.findOne(emailExistsQuery, Staff.class, CollectionName.STAFF);
-        if (existingWithNewEmail != null && !existingWithNewEmail.getEmail().equalsIgnoreCase(currentEmail)) {
+        if (staffRepository.existsByEmailIgnoreCaseExcluding(server, newEmail, currentEmail)) {
             throw new IllegalStateException("Email address already in use");
         }
 
-        // If super admin, check global DB uniqueness before making any changes
-        if (isSuperAdmin) {
-            MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-            Query adminEmailCheck = Query.query(
-                    Criteria.where(ServerField.ADMIN_EMAIL).regex("^" + Pattern.quote(newEmail) + "$", "i")
-                            .and("_id").ne(server.getId())
-            );
-            if (globalDb.exists(adminEmailCheck, Server.class, CollectionName.MODL_SERVERS)) {
-                throw new IllegalStateException("Email address already in use");
-            }
+        if (isSuperAdmin && serverRepository.existsByAdminEmailExcludingId(newEmail, server.getId())) {
+            throw new IllegalStateException("Email address already in use");
         }
 
-        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(currentEmail) + "$", "i"));
-        Staff staff = template.findOne(query, Staff.class, CollectionName.STAFF);
+        Staff staff = staffRepository.findByEmailIgnoreCase(server, currentEmail).orElse(null);
 
         if (staff == null) {
             if (!isSuperAdmin) {
                 return Optional.empty();
             }
-            // Super admin without a staff record yet — create one with new email
             staff = Staff.builder()
                     .email(newEmail)
                     .username("Admin")
@@ -542,28 +413,22 @@ public class StaffService {
                     .createdAt(new Date())
                     .updatedAt(new Date())
                     .build();
-            template.save(staff, CollectionName.STAFF);
+            staff = staffRepository.saveEntity(server, staff);
         } else {
-            Update update = new Update().set("email", newEmail).set("updatedAt", new Date());
-            template.updateFirst(query, update, Staff.class, CollectionName.STAFF);
             staff.setEmail(newEmail);
+            staff.setUpdatedAt(new Date());
+            staff = staffRepository.saveEntity(server, staff);
         }
 
-        // Update global DB adminEmail for super admin
         if (isSuperAdmin) {
-            MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-            Query serverQuery = Query.query(Criteria.where("_id").is(server.getId()));
-            Update serverUpdate = new Update().set(ServerField.ADMIN_EMAIL, newEmail).set("updatedAt", new Date());
-            globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
+            serverRepository.updateAdminEmail(server.getId(), newEmail);
         }
 
         return Optional.of(staff);
     }
 
     public Optional<Staff> getStaffByEmail(Server server, String email) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("email").regex("^" + Pattern.quote(email) + "$", "i"));
-        return Optional.ofNullable(template.findOne(query, Staff.class, CollectionName.STAFF));
+        return staffRepository.findByEmailIgnoreCase(server, email);
     }
 
     private Map<String, Long> loadPlayerPlaytimeMap(Server server, List<Staff> allStaff) {
@@ -577,13 +442,8 @@ public class StaffService {
             return Map.of();
         }
 
-        Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids));
-        playerQuery.fields()
-                .include(PlayerFields.MINECRAFT_UUID.path())
-                .include(PlayerFields.DATA_TOTAL_PLAYTIME_SECONDS.path());
-
         Map<String, Long> playerPlaytimeMap = new HashMap<>();
-        for (Player player : playerRepository.find(server, playerQuery)) {
+        for (Player player : playerRepository.findByMinecraftUuids(server, assignedUuids)) {
             if (player.getMinecraftUuid() == null || player.getData() == null) {
                 continue;
             }
@@ -607,13 +467,8 @@ public class StaffService {
             return Map.of();
         }
 
-        Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids));
-        playerQuery.fields()
-                .include(PlayerFields.MINECRAFT_UUID.path())
-                .include(PlayerFields.DATA_LAST_SERVER.path());
-
         Map<String, String> playerLastServerMap = new HashMap<>();
-        for (Player player : playerRepository.find(server, playerQuery)) {
+        for (Player player : playerRepository.findByMinecraftUuids(server, assignedUuids)) {
             if (player.getMinecraftUuid() == null || player.getData() == null) {
                 continue;
             }
@@ -628,19 +483,7 @@ public class StaffService {
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {
         try {
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind(PlayerFields.PUNISHMENTS.path()),
-                    Aggregation.group(PlayerFields.PUNISHMENTS.path() + ".issuerName").count().as("count")
-            );
-            AggregationResults<Document> results = playerRepository.aggregate(server, aggregation, Document.class);
-            Map<String, Integer> punishmentCounts = new HashMap<>();
-            for (Document doc : results.getMappedResults()) {
-                String issuerName = doc.getString("_id");
-                if (issuerName != null) {
-                    punishmentCounts.put(issuerName, doc.getInteger("count", 0));
-                }
-            }
-            return punishmentCounts;
+            return playerRepository.countPunishmentsByIssuerName(server);
         } catch (Exception ignored) {
             return Map.of();
         }
@@ -655,8 +498,7 @@ public class StaffService {
             return Map.of();
         }
 
-        Query roleQuery = Query.query(MongoQueries.where(StaffRoleFields.NAME).in(roleNames));
-        return staffRoleRepository.find(server, roleQuery).stream()
+        return staffRoleRepository.findByNames(server, roleNames).stream()
                 .collect(Collectors.toMap(
                         gg.modl.backend.role.data.StaffRole::getName,
                         role -> role.getPermissions() != null ? role.getPermissions() : List.of(),

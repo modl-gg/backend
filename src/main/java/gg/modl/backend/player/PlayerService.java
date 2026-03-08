@@ -1,7 +1,5 @@
 package gg.modl.backend.player;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
@@ -18,7 +16,6 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -30,7 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -49,18 +45,13 @@ public class PlayerService {
             return List.of();
         }
 
-        Query query = new Query();
+        List<Player> players;
         if (isUuid(normalizedSearch)) {
-            query.addCriteria(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(UUID.fromString(normalizedSearch).toString()));
-            query.limit(SEARCH_RESULT_LIMIT);
+            players = playerRepository.findByMinecraftUuid(server, normalizedSearch)
+                    .map(List::of)
+                    .orElseGet(List::of);
         } else {
-            Pattern pattern = Pattern.compile(Pattern.quote(normalizedSearch), Pattern.CASE_INSENSITIVE);
-            query.addCriteria(MongoQueries.where(PlayerFields.USERNAME).regex(pattern));
-            query.limit(SEARCH_CANDIDATE_LIMIT);
-        }
-
-        List<Player> players = playerRepository.find(server, query);
-        if (!isUuid(normalizedSearch)) {
+            players = playerRepository.searchByUsernamePattern(server, normalizedSearch, SEARCH_CANDIDATE_LIMIT);
             String normalizedSearchLower = normalizedSearch.toLowerCase(Locale.ROOT);
             players = players.stream()
                     .sorted(Comparator
@@ -178,9 +169,9 @@ public class PlayerService {
 
         if (existingPlayer.isPresent()) {
             Player player = existingPlayer.get();
-            Player original = playerRepository.snapshot(player);
             updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
-            return playerRepository.saveChanges(server, original, player);
+            playerRepository.updateLoginState(server, player);
+            return player;
         }
 
         Player player = newPlayer(minecraftUuid, username);
@@ -195,9 +186,9 @@ public class PlayerService {
             return null;
         }
 
-        Player original = playerRepository.snapshot(player);
         ensureUsernames(player).add(new UsernameEntry(username, new Date()));
-        return playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceUsernames(server, player);
+        return player;
     }
 
     public Player addNote(Server server, UUID minecraftUuid, String text, String issuerName, String issuerId) {
@@ -214,9 +205,9 @@ public class PlayerService {
                 .issuerId(issuerId)
                 .build();
 
-        Player original = playerRepository.snapshot(player);
         ensureNotes(player).add(entry);
-        return playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceNotes(server, player);
+        return player;
     }
 
     public Player addIp(Server server, UUID minecraftUuid, String ipAddress) {
@@ -226,9 +217,9 @@ public class PlayerService {
         }
 
         Player player = playerOpt.get();
-        Player original = playerRepository.snapshot(player);
         addIpToPlayer(player, ipAddress, null);
-        return playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceIpAddresses(server, player);
+        return player;
     }
 
     public void updateIpGeoData(Server server, String minecraftUuid, String ipAddress, Map<String, Object> ipInfo) {
@@ -236,8 +227,7 @@ public class PlayerService {
             return;
         }
 
-        Player player = playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)))
-                .orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, minecraftUuid).orElse(null);
         if (player == null) {
             return;
         }
@@ -250,13 +240,12 @@ public class PlayerService {
             return;
         }
 
-        Player original = playerRepository.snapshot(player);
         applyIpMetadata(ipEntry, ipInfo);
-        playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceIpAddresses(server, player);
     }
 
     public Optional<Player> findByMinecraftUuid(Server server, UUID minecraftUuid) {
-        return playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid.toString())));
+        return playerRepository.findByMinecraftUuid(server, minecraftUuid);
     }
 
     private Player newPlayer(UUID minecraftUuid, String username) {
@@ -508,3 +497,4 @@ public class PlayerService {
         }
     }
 }
+

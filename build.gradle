@@ -24,6 +24,18 @@ repositories {
 	mavenCentral()
 }
 
+subprojects {
+	repositories {
+		mavenCentral()
+	}
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(21)
+		}
+	}
+}
+
 dependencies {
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
@@ -55,7 +67,9 @@ dependencies {
     // Compile-only
     compileOnly 'org.jetbrains:annotations:26.0.2'
     compileOnly 'org.projectlombok:lombok'
+    compileOnly project(':mongo-fields-annotations')
     annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor project(':mongo-fields-processor')
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -67,4 +81,10 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	binaryResultsDirectory = file("$buildDir/test-results/test/binary-${System.currentTimeMillis()}")
+	testLogging {
+		events 'failed', 'skipped'
+		exceptionFormat 'full'
+		showStandardStreams = false
+	}
 }

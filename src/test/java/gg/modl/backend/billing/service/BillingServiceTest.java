@@ -41,14 +41,13 @@ class BillingServiceTest {
         Session session = mock(Session.class);
         when(stripeService.createCustomer(server)).thenReturn("cus_123");
         when(stripeService.createCheckoutSession("cus_123", server.getCustomDomain())).thenReturn(session);
-        when(serverRepository.snapshot(server)).thenReturn(new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE));
         when(session.getId()).thenReturn("sess_123");
         when(session.getUrl()).thenReturn("https://checkout.example.com");
 
         billingService.createCheckoutSession(server);
 
         ArgumentCaptor<Server> updatedServerCaptor = ArgumentCaptor.forClass(Server.class);
-        verify(serverRepository).saveChanges(any(Server.class), updatedServerCaptor.capture());
+        verify(serverRepository).saveEntity(updatedServerCaptor.capture());
         assertEquals("cus_123", updatedServerCaptor.getValue().getStripeCustomerId());
     }
 }

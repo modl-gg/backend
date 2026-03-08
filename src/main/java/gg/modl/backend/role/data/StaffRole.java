@@ -1,5 +1,6 @@
 package gg.modl.backend.role.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -16,6 +17,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@GenerateMongoFields
 public class StaffRole {
     @Id
     private String id;

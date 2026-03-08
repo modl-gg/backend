@@ -16,10 +16,8 @@ import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -103,8 +101,7 @@ class PunishmentServiceTest {
                 .punishments(new ArrayList<>(List.of(punishment)))
                 .build();
 
-        when(playerRepository.findOne(any(Server.class), any(Query.class))).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(any(Player.class))).thenReturn(Player.builder().minecraftUuid(playerUuid).build());
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
         PunishmentService.PunishmentOperationResult result = punishmentService.acknowledgePunishment(
                 server,
@@ -114,10 +111,8 @@ class PunishmentServiceTest {
 
         assertEquals(PunishmentService.PunishmentOperationStatus.SUCCESS, result.status());
         assertEquals("Punishment acknowledged", result.message());
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(any(Server.class), any(Player.class), updatedPlayerCaptor.capture());
-        Punishment updatedPunishment = updatedPlayerCaptor.getValue().getPunishments().get(0);
+        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        Punishment updatedPunishment = player.getPunishments().get(0);
         assertNotNull(updatedPunishment.getStarted());
         assertNull(updatedPunishment.getData().get("status"));
     }
@@ -164,18 +159,14 @@ class PunishmentServiceTest {
                 null
         );
 
-        when(playerRepository.findOne(eq(server), any(Query.class))).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().minecraftUuid(playerUuid).punishments(new ArrayList<>()).build());
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
         String punishmentId = punishmentService.createPunishment(server, playerUuid, request);
 
         assertNotNull(punishmentId);
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(eq(server), any(Player.class), updatedPlayerCaptor.capture());
-        Player updatedPlayer = updatedPlayerCaptor.getValue();
-        assertEquals(1, updatedPlayer.getPunishments().size());
-        Punishment createdPunishment = updatedPlayer.getPunishments().get(0);
+        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        assertEquals(1, player.getPunishments().size());
+        Punishment createdPunishment = player.getPunishments().get(0);
         assertEquals(punishmentId, createdPunishment.getId());
         assertEquals("Reason text", createdPunishment.getData().get("reason"));
         assertEquals("Queued", createdPunishment.getData().get("status"));
@@ -203,14 +194,12 @@ class PunishmentServiceTest {
                 .punishments(new ArrayList<>(List.of(punishment)))
                 .build();
 
-        when(playerRepository.findOne(eq(server), any(Query.class))).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().minecraftUuid(playerUuid).punishments(new ArrayList<>()).build());
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
         punishmentService.systemPardonPunishment(server, playerUuid, "punish-1", "Auto-pardoned");
 
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(eq(server), any(Player.class), updatedPlayerCaptor.capture());
-        Punishment updatedPunishment = updatedPlayerCaptor.getValue().getPunishments().get(0);
+        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals(1, updatedPunishment.getModifications().size());
         PunishmentModification modification = updatedPunishment.getModifications().get(0);
         assertEquals("SYSTEM_PARDON", modification.type());
@@ -239,17 +228,14 @@ class PunishmentServiceTest {
                 .punishments(new ArrayList<>(List.of(linkedBan)))
                 .build();
 
-        when(playerRepository.find(eq("db"), any(Query.class))).thenReturn(List.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().minecraftUuid(playerUuid).punishments(new ArrayList<>()).build());
+        when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(true);
 
         int updatedCount = punishmentService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(1, updatedCount);
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(eq("db"), any(Player.class), updatedPlayerCaptor.capture());
-        Punishment updatedPunishment = updatedPlayerCaptor.getValue().getPunishments().get(0);
+        verify(playerRepository).replacePunishments(eq("db"), eq(player));
+        Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals("SYSTEM_PARDON", updatedPunishment.getModifications().get(0).type());
     }
 
@@ -274,13 +260,12 @@ class PunishmentServiceTest {
                 .punishments(new ArrayList<>(List.of(linkedBan)))
                 .build();
 
-        when(playerRepository.find(eq("db"), any(Query.class))).thenReturn(List.of(player));
-        when(playerRepository.snapshot(player)).thenReturn(Player.builder().minecraftUuid(playerUuid).punishments(new ArrayList<>()).build());
+        when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(false);
 
         int updatedCount = punishmentService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(0, updatedCount);
-        verify(playerRepository, never()).saveChanges(eq("db"), any(Player.class), any(Player.class));
+        verify(playerRepository, never()).replacePunishments(eq("db"), any(Player.class));
     }
 }

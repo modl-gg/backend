@@ -1,5 +1,6 @@
 package gg.modl.backend.analytics.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -9,6 +10,7 @@ import java.util.Date;
 
 @Document(collection = "metric_snapshots")
 @Data
+@GenerateMongoFields
 public class MetricSnapshot {
     @Id
     private String id;

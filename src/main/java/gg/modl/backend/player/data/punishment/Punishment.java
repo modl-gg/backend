@@ -1,5 +1,8 @@
 package gg.modl.backend.player.data.punishment;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,6 +18,13 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@GenerateMongoFields
+@MongoFieldAliases({
+        @MongoFieldAlias(name = "DATA_LINKED_BAN_ID", path = "data.linkedBanId"),
+        @MongoFieldAlias(name = "DATA_STATUS", path = "data.status"),
+        @MongoFieldAlias(name = "DATA_REASON", path = "data.reason"),
+        @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
+})
 public class Punishment {
     @NotNull
     @Field(value = "id", targetType = FieldType.STRING)

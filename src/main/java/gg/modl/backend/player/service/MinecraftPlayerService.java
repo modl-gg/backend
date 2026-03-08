@@ -1,9 +1,6 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
-import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
@@ -16,9 +13,6 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -165,30 +159,17 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
-        Update update = new Update()
-                .set(PlayerFields.DATA_IS_ONLINE.path(), false)
-                .set(PlayerFields.DATA_LAST_LOGOUT.path(), new Date());
-
-        if (sessionDurationMs > 0) {
-            update.inc(PlayerFields.DATA_TOTAL_PLAYTIME_SECONDS.path(), sessionDurationMs / 1000);
-        }
-
-        playerRepository.updateFirst(server, query, update);
+        playerRepository.markDisconnected(server, minecraftUuid, sessionDurationMs);
         return Map.of("status", 200, "success", true);
     }
 
     public Map<String, Object> updateServer(Server server, String minecraftUuid, String serverName) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
-        playerRepository.updateFirst(server, query, new Update().set(PlayerFields.DATA_LAST_SERVER.path(), serverName));
+        playerRepository.updateLastServer(server, minecraftUuid, serverName);
         return Map.of("status", 200, "success", true);
     }
 
     public Map<String, Object> getOnlinePlayers(Server server) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true));
-        query.limit(500);
-
-        List<Map<String, Object>> players = playerRepository.find(server, query).stream()
+        List<Map<String, Object>> players = playerRepository.findOnlinePlayers(server, 500).stream()
                 .map(player -> {
                     Date joinedAt = player.getData() != null ? (Date) player.getData().get("lastLogin") : null;
                     Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
@@ -324,15 +305,14 @@ public class MinecraftPlayerService {
             return notFound("Player not found");
         }
 
-        Player original = playerRepository.snapshot(player);
-        player.getNotes().add(NoteEntry.builder()
+        ensurePlayerNotes(player).add(NoteEntry.builder()
                 .id(new ObjectId().toHexString())
                 .text(text)
                 .date(new Date())
                 .issuerName(issuerId != null ? null : issuerName)
                 .issuerId(issuerId)
                 .build());
-        playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceNotes(server, player);
 
         return ok(Map.of(
                 "status", 200,
@@ -359,9 +339,8 @@ public class MinecraftPlayerService {
                 })
                 .toList();
 
-        Player original = playerRepository.snapshot(player);
         ensurePlayerData(player).put("pendingNotifications", remainingNotifications);
-        playerRepository.saveChanges(server, original, player);
+        playerRepository.replacePendingNotifications(server, player, remainingNotifications);
 
         return ok(Map.of(
                 "status", 200,
@@ -376,7 +355,7 @@ public class MinecraftPlayerService {
             return notFound("Player not found");
         }
 
-        List<String> ips = player.getIpAddresses().stream()
+        List<String> ips = safeIpAddresses(player).stream()
                 .map(ip -> ip.getIpAddress())
                 .toList();
 
@@ -385,10 +364,7 @@ public class MinecraftPlayerService {
         List<Map<String, Object>> linkedAccounts = new ArrayList<>();
 
         if (!ips.isEmpty()) {
-            Query ipQuery = Query.query(Criteria.where(PlayerFields.IP_ADDRESS.path()).in(ips)
-                    .and(PlayerFields.MINECRAFT_UUID.path()).ne(uuid));
-            ipQuery.limit(20);
-            List<Player> relatedPlayers = playerRepository.find(server, ipQuery);
+            List<Player> relatedPlayers = playerRepository.findByIpAddressesExcludingUuid(server, ips, uuid, 20);
             for (Player related : relatedPlayers) {
                 linkedAccounts.add(toPlayerProfile(server, related, types));
                 addedUuids.add(related.getMinecraftUuid().toString());
@@ -405,8 +381,7 @@ public class MinecraftPlayerService {
                     .filter(linkedUuid -> !addedUuids.contains(linkedUuid))
                     .toList();
             if (!missingUuids.isEmpty()) {
-                Query linkedQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(missingUuids));
-                List<Player> linkedPlayers = playerRepository.find(server, linkedQuery);
+                List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, missingUuids);
                 for (Player linkedPlayer : linkedPlayers) {
                     linkedAccounts.add(toPlayerProfile(server, linkedPlayer, types));
                 }
@@ -417,10 +392,7 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> getPlayerReports(Server server, String uuid) {
-        Query query = Query.query(MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(uuid));
-        query.limit(50);
-
-        List<Map<String, Object>> reports = ticketRepository.find(server, query).stream()
+        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, uuid, 50).stream()
                 .map(ticket -> {
                     Map<String, Object> report = new LinkedHashMap<>();
                     report.put("id", ticket.getId());
@@ -513,13 +485,11 @@ public class MinecraftPlayerService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uuid)));
+        return playerRepository.findByMinecraftUuid(server, uuid);
     }
 
     private Optional<Player> findByUsername(Server server, String username) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.USERNAME)
-                .regex("^" + java.util.regex.Pattern.quote(username) + "$", "i"));
-        return playerRepository.findOne(server, query);
+        return playerRepository.findByUsernameIgnoreCase(server, username);
     }
 
     private Map<String, Object> toMojangProfile(MojangApiService.MojangProfile profile) {
@@ -535,14 +505,15 @@ public class MinecraftPlayerService {
     }
 
     private String getLatestUsername(Player player) {
-        if (player.getUsernames() == null || player.getUsernames().isEmpty()) {
+        if (safeUsernames(player).isEmpty()) {
             return "Unknown";
         }
-        return player.getUsernames().get(player.getUsernames().size() - 1).username();
+        List<gg.modl.backend.player.data.UsernameEntry> usernames = safeUsernames(player);
+        return usernames.get(usernames.size() - 1).username();
     }
 
     private Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes) {
-        List<Map<String, Object>> usernames = player.getUsernames().stream()
+        List<Map<String, Object>> usernames = safeUsernames(player).stream()
                 .map(username -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("username", username.username());
@@ -551,7 +522,7 @@ public class MinecraftPlayerService {
                 })
                 .toList();
 
-        List<Map<String, Object>> notes = player.getNotes().stream()
+        List<Map<String, Object>> notes = safeNotes(player).stream()
                 .map(note -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("id", note.getId());
@@ -563,7 +534,7 @@ public class MinecraftPlayerService {
                 })
                 .toList();
 
-        List<Map<String, Object>> ipAddresses = player.getIpAddresses().stream()
+        List<Map<String, Object>> ipAddresses = safeIpAddresses(player).stream()
                 .map(ip -> {
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("country", ip.getCountry());
@@ -578,7 +549,7 @@ public class MinecraftPlayerService {
                 .toList();
 
         Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
-        List<Map<String, Object>> punishments = player.getPunishments().stream()
+        List<Map<String, Object>> punishments = safePunishments(player).stream()
                 .map(punishment -> PunishmentMapper.toPunishmentMap(punishment, punishmentTypes, resolvedIssuers))
                 .toList();
 
@@ -732,6 +703,13 @@ public class MinecraftPlayerService {
         return player.getData();
     }
 
+    private List<NoteEntry> ensurePlayerNotes(Player player) {
+        if (player.getNotes() == null) {
+            player.setNotes(new ArrayList<>());
+        }
+        return player.getNotes();
+    }
+
     private List<Map<String, Object>> extractPendingNotifications(Player player) {
         if (player.getData() == null) {
             return List.of();
@@ -754,19 +732,35 @@ public class MinecraftPlayerService {
 
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
         Set<String> ids = new HashSet<>();
-        for (Punishment p : player.getPunishments()) {
+        for (Punishment p : safePunishments(player)) {
             if (p.getIssuerId() != null) ids.add(p.getIssuerId());
-            for (var m : p.getModifications()) {
+            for (var m : p.getModifications() != null ? p.getModifications() : List.<gg.modl.backend.player.data.punishment.PunishmentModification>of()) {
                 if (m.issuerId() != null) ids.add(m.issuerId());
             }
-            for (var n : p.getNotes()) {
+            for (var n : p.getNotes() != null ? p.getNotes() : List.<gg.modl.backend.player.data.punishment.PunishmentNote>of()) {
                 if (n.issuerId() != null) ids.add(n.issuerId());
             }
-            for (var e : p.getEvidence()) {
+            for (var e : p.getEvidence() != null ? p.getEvidence() : List.<gg.modl.backend.player.data.punishment.PunishmentEvidence>of()) {
                 if (e.uploadedById() != null) ids.add(e.uploadedById());
             }
         }
         if (ids.isEmpty()) return Map.of();
         return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+    }
+
+    private List<gg.modl.backend.player.data.UsernameEntry> safeUsernames(Player player) {
+        return player.getUsernames() != null ? player.getUsernames() : List.of();
+    }
+
+    private List<gg.modl.backend.player.data.NoteEntry> safeNotes(Player player) {
+        return player.getNotes() != null ? player.getNotes() : List.of();
+    }
+
+    private List<gg.modl.backend.player.data.IPEntry> safeIpAddresses(Player player) {
+        return player.getIpAddresses() != null ? player.getIpAddresses() : List.of();
+    }
+
+    private List<Punishment> safePunishments(Player player) {
+        return player.getPunishments() != null ? player.getPunishments() : List.of();
     }
 }

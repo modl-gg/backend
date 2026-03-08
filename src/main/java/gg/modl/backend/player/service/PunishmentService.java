@@ -1,9 +1,6 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
-import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -34,8 +31,6 @@ import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -70,8 +65,6 @@ public class PunishmentService {
         if (player == null) {
             throw new IllegalArgumentException("Player not found");
         }
-
-        Player original = playerRepository.snapshot(player);
         Date now = new Date();
         Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
 
@@ -266,7 +259,7 @@ public class PunishmentService {
         );
 
         ensurePlayerPunishments(player).add(punishment);
-        playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
 
         // Close attached tickets with a system reply
         if (request.attachedTicketIds() != null && !request.attachedTicketIds().isEmpty()) {
@@ -304,7 +297,6 @@ public class PunishmentService {
             return null;
         }
 
-        Player original = playerRepository.snapshot(player);
         ensurePunishmentCollections(punishment);
         punishment.getModifications().add(modification);
         if (request.effectiveDuration() != null) {
@@ -313,7 +305,8 @@ public class PunishmentService {
             }
         }
 
-        return playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
+        return player;
     }
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
@@ -356,8 +349,7 @@ public class PunishmentService {
 
     public List<Map<String, Object>> getRecentPunishments(Server server, int hours) {
         Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff));
-        List<Player> players = playerRepository.find(server, query);
+        List<Player> players = playerRepository.findWithPunishmentsIssuedAfter(server, cutoff);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
         // Collect all recent punishments and batch resolve issuer IDs
@@ -391,8 +383,7 @@ public class PunishmentService {
     }
 
     public PunishmentPreviewResponse previewPunishment(Server server, String playerUuid, int typeOrdinal) {
-        Player player = playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)))
-                .orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return PunishmentPreviewResponse.error("Player not found");
         }
@@ -459,12 +450,11 @@ public class PunishmentService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NO_OP, "Punishment already acknowledged", true, 0);
         }
 
-        Player original = playerRepository.snapshot(player);
         punishment.setStarted(new Date());
         if (punishment.getData() != null) {
             punishment.getData().remove("status");
         }
-        playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment acknowledged", true, 1);
     }
@@ -483,7 +473,6 @@ public class PunishmentService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
 
-        Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(punishment);
 
@@ -517,7 +506,7 @@ public class PunishmentService {
         }
 
         ensurePunishmentData(punishment).put("status", "Pardoned");
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         if (Boolean.TRUE.equals(punishment.getData().get("altBlocking"))) {
             cascadePardonLinkedBans(server, punishmentId);
@@ -533,10 +522,9 @@ public class PunishmentService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        Player original = playerRepository.snapshot(context.player());
         ensurePunishmentCollections(context.punishment());
         context.punishment().getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
     }
@@ -548,7 +536,6 @@ public class PunishmentService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(context.punishment());
         context.punishment().getEvidence().add(new PunishmentEvidence(
@@ -569,7 +556,7 @@ public class PunishmentService {
                 resolvedIssuerName,
                 issuerId
         ));
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
     }
@@ -581,7 +568,6 @@ public class PunishmentService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        Player original = playerRepository.snapshot(context.player());
         Date now = new Date();
         ensurePunishmentCollections(context.punishment());
         for (UploadedEvidenceItem evidenceItem : evidenceItems) {
@@ -604,7 +590,7 @@ public class PunishmentService {
                 resolvedIssuerName,
                 issuerId
         ));
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence uploaded successfully", true, evidenceItems.size());
     }
@@ -617,7 +603,6 @@ public class PunishmentService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
 
-        Player original = playerRepository.snapshot(context.player());
         Punishment punishment = context.punishment();
         Date now = new Date();
         ensurePunishmentCollections(punishment);
@@ -649,7 +634,7 @@ public class PunishmentService {
             punishment.setStarted(now);
         }
 
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         if (Boolean.TRUE.equals(punishment.getData().get("altBlocking"))) {
             int cascaded = cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
@@ -677,7 +662,6 @@ public class PunishmentService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        Player original = playerRepository.snapshot(context.player());
         Punishment punishment = context.punishment();
         Date now = new Date();
         ensurePunishmentCollections(punishment);
@@ -690,7 +674,7 @@ public class PunishmentService {
                 resolvedIssuerName,
                 issuerId
         ));
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Option toggled", true, 1);
     }
@@ -711,11 +695,10 @@ public class PunishmentService {
             );
         }
 
-        Player original = playerRepository.snapshot(context.player());
         Map<String, Object> updatedData = ensurePunishmentData(context.punishment());
         updatedData.put("statWipeCompleted", true);
         updatedData.put("statWipeCompletedAt", new Date());
-        playerRepository.saveChanges(server, original, context.player());
+        persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Stat wipe acknowledged", true, 1);
     }
@@ -735,7 +718,7 @@ public class PunishmentService {
     }
 
     public Optional<PunishmentContext> findPunishmentContext(Server server, String punishmentId) {
-        return playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.PUNISHMENT_ID).is(punishmentId)))
+        return playerRepository.findByPunishmentId(server, punishmentId)
                 .flatMap(player -> player.getPunishments().stream()
                         .filter(punishment -> punishmentId.equals(punishment.getId()))
                         .findFirst()
@@ -746,10 +729,7 @@ public class PunishmentService {
         List<PunishmentSearchResult> results = new ArrayList<>();
 
         Pattern pattern = Pattern.compile(Pattern.quote(searchQuery), Pattern.CASE_INSENSITIVE);
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true));
-        query.limit(50);
-
-        List<Player> players = playerRepository.find(server, query);
+        List<Player> players = playerRepository.findPlayersWithPunishments(server, 50);
 
         // Collect all issuerIds for batch resolve so we can match by resolved name
         Set<String> allIssuerIds = new HashSet<>();
@@ -816,10 +796,10 @@ public class PunishmentService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        Player original = playerRepository.snapshot(player);
         ensurePunishmentCollections(punishment);
         punishment.getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
-        return playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
+        return player;
     }
 
     public Player addEvidence(Server server, UUID playerUuid, String punishmentId, AddEvidenceRequest request) {
@@ -836,7 +816,6 @@ public class PunishmentService {
         String evIssuerId = request.issuerId();
         String evIssuerName = evIssuerId != null ? null : (request.issuerName() != null ? request.issuerName() : "System");
 
-        Player original = playerRepository.snapshot(player);
         ensurePunishmentCollections(punishment);
         punishment.getEvidence().add(new PunishmentEvidence(
                 request.text(),
@@ -850,7 +829,8 @@ public class PunishmentService {
                 request.fileSize()
         ));
 
-        return playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
+        return player;
     }
 
     /**
@@ -883,7 +863,6 @@ public class PunishmentService {
                 Punishment toPromote = oldest.get();
                 Player freshPlayer = findPlayerByUuid(server, player.getMinecraftUuid()).orElse(null);
                 if (freshPlayer != null) {
-                    Player original = playerRepository.snapshot(freshPlayer);
                     for (Punishment p : freshPlayer.getPunishments()) {
                         if (p.getId().equals(toPromote.getId())) {
                             if (p.getData() != null) {
@@ -892,7 +871,7 @@ public class PunishmentService {
                             break;
                         }
                     }
-                    playerRepository.saveChanges(server, original, freshPlayer);
+                    persistPlayerPunishments(server, freshPlayer);
                     promotedIds.add(toPromote.getId());
                 }
             }
@@ -923,8 +902,7 @@ public class PunishmentService {
         if (alreadyBanned) return createdIds;
 
         // Fetch linked players and check for alt-blocking bans
-        Query batchQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(linkedUuids));
-        List<Player> linkedPlayers = playerRepository.find(server, batchQuery);
+        List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, linkedUuids);
 
         for (Player linkedPlayer : linkedPlayers) {
             for (Punishment punishment : linkedPlayer.getPunishments()) {
@@ -1027,9 +1005,8 @@ public class PunishmentService {
             return;
         }
 
-        Player original = playerRepository.snapshot(player);
         addSystemPardon(punishment, reason, new Date());
-        playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
     }
 
     /**
@@ -1058,7 +1035,7 @@ public class PunishmentService {
      */
     public List<Map<String, Object>> getLinkedBansForParent(Server server, String parentPunishmentId) {
         List<Map<String, Object>> results = new ArrayList<>();
-        List<Player> players = playerRepository.find(server, linkedBanQuery(parentPunishmentId));
+        List<Player> players = playerRepository.findByLinkedBanId(server, parentPunishmentId);
 
         for (Player player : players) {
             String username = player.getUsernames().isEmpty() ? "Unknown" :
@@ -1131,9 +1108,8 @@ public class PunishmentService {
                 data
         );
 
-        Player original = playerRepository.snapshot(player);
         ensurePlayerPunishments(player).add(punishment);
-        playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
 
         return punishmentId;
     }
@@ -1165,8 +1141,6 @@ public class PunishmentService {
             return null;
         }
 
-        Player original = playerRepository.snapshot(player);
-
         List<String> currentIds = punishment.getAttachedTicketIds() != null
                 ? new ArrayList<>(punishment.getAttachedTicketIds())
                 : new ArrayList<>();
@@ -1186,7 +1160,7 @@ public class PunishmentService {
         }
 
         punishment.setAttachedTicketIds(currentIds);
-        playerRepository.saveChanges(server, original, player);
+        persistPlayerPunishments(server, player);
 
         // Optionally close/reopen the actual tickets
         if (request.modifyAssociatedTickets()) {
@@ -1210,7 +1184,6 @@ public class PunishmentService {
                     continue;
                 }
 
-                Ticket original = ticketRepository.snapshot(ticket);
                 if (ticket.getReplies() == null) {
                     ticket.setReplies(new ArrayList<>());
                 }
@@ -1230,7 +1203,7 @@ public class PunishmentService {
                 ticket.setLocked(false);
                 ticket.setStatus("Open");
                 ticket.setUpdatedAt(new Date());
-                ticketRepository.saveChanges(server, original, ticket);
+                persistTicketState(server, ticket);
             } catch (Exception e) {
                 log.error("[TICKET_REOPEN] Failed to reopen ticket {}: {}", ticketId, e.getMessage());
             }
@@ -1245,7 +1218,6 @@ public class PunishmentService {
                     continue;
                 }
 
-                Ticket original = ticketRepository.snapshot(ticket);
                 if (ticket.getReplies() == null) {
                     ticket.setReplies(new ArrayList<>());
                 }
@@ -1265,7 +1237,7 @@ public class PunishmentService {
                 ticket.setLocked(true);
                 ticket.setStatus("Closed");
                 ticket.setUpdatedAt(new Date());
-                ticketRepository.saveChanges(server, original, ticket);
+                persistTicketState(server, ticket);
             } catch (Exception e) {
                 log.error("[TICKET_CLOSE] Failed to close ticket {}: {}", ticketId, e.getMessage());
             }
@@ -1392,7 +1364,21 @@ public class PunishmentService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, UUID uuid) {
-        return playerRepository.findOne(server, Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uuid.toString())));
+        return playerRepository.findByMinecraftUuid(server, uuid.toString());
+    }
+
+    private void persistPlayerPunishments(Server server, Player player) {
+        ensurePlayerPunishments(player);
+        playerRepository.replacePunishments(server, player);
+    }
+
+    private void persistPlayerPunishments(String databaseName, Player player) {
+        ensurePlayerPunishments(player);
+        playerRepository.replacePunishments(databaseName, player);
+    }
+
+    private void persistTicketState(Server server, Ticket ticket) {
+        ticketRepository.updateState(server, ticket);
     }
 
     private void addSystemPardon(Punishment punishment, String reason, Date now) {
@@ -1417,24 +1403,16 @@ public class PunishmentService {
         ));
     }
 
-    private Query linkedBanQuery(String parentPunishmentId) {
-        return Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
-                Criteria.where(PunishmentFields.TYPE_ORDINAL.path()).is(4)
-                        .and(PunishmentFields.DATA_LINKED_BAN_ID.path()).is(parentPunishmentId)
-        ));
-    }
-
     private int cascadeDurationChangeInternal(Server server, String parentPunishmentId, Long newDuration, String issuerName) {
         int count = 0;
 
-        for (Player player : playerRepository.find(server, linkedBanQuery(parentPunishmentId))) {
-            Player original = playerRepository.snapshot(player);
+        for (Player player : playerRepository.findByLinkedBanId(server, parentPunishmentId)) {
             int updatedPunishments = applyLinkedBanDurationChange(player, parentPunishmentId, newDuration);
             if (updatedPunishments <= 0) {
                 continue;
             }
 
-            playerRepository.saveChanges(server, original, player);
+            persistPlayerPunishments(server, player);
             count += updatedPunishments;
         }
 
@@ -1443,17 +1421,17 @@ public class PunishmentService {
 
     private int cascadePardonLinkedBansInternal(Server server, String parentPunishmentId) {
         return cascadePardonLinkedBansInternal(
-                playerRepository.find(server, linkedBanQuery(parentPunishmentId)),
+                playerRepository.findByLinkedBanId(server, parentPunishmentId),
                 parentPunishmentId,
-                player -> playerRepository.saveChanges(server, player.original(), player.updated())
+                player -> persistPlayerPunishments(server, player)
         );
     }
 
     private int cascadePardonLinkedBansInternal(String databaseName, String parentPunishmentId) {
         return cascadePardonLinkedBansInternal(
-                playerRepository.find(databaseName, linkedBanQuery(parentPunishmentId)),
+                playerRepository.findByLinkedBanId(databaseName, parentPunishmentId),
                 parentPunishmentId,
-                player -> playerRepository.saveChanges(databaseName, player.original(), player.updated())
+                player -> persistPlayerPunishments(databaseName, player)
         );
     }
 
@@ -1465,13 +1443,12 @@ public class PunishmentService {
         int count = 0;
 
         for (Player player : players) {
-            Player original = playerRepository.snapshot(player);
             int pardonedPunishments = applyLinkedBanSystemPardon(player, parentPunishmentId);
             if (pardonedPunishments <= 0) {
                 continue;
             }
 
-            saveAction.save(new PlayerSavePair(original, player));
+            saveAction.save(player);
             count += pardonedPunishments;
         }
 
@@ -1537,12 +1514,9 @@ public class PunishmentService {
         return count;
     }
 
-    private record PlayerSavePair(Player original, Player updated) {
-    }
-
     @FunctionalInterface
     private interface LinkedBanSaveAction {
-        void save(PlayerSavePair player);
+        void save(Player player);
     }
 
     private PunishmentResponse toPunishmentResponse(Server server, Punishment punishment) {

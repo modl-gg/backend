@@ -1,7 +1,5 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
@@ -11,7 +9,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -67,8 +64,7 @@ public class AccountLinkingService {
             return new ArrayList<>();
         }
 
-        Query batchQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(validUuids));
-        List<Player> linkedPlayers = playerRepository.find(server, batchQuery);
+        List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, validUuids);
 
         return linkedPlayers.stream()
                 .map(playerEntry -> buildLinkedAccountResponse(server, playerEntry))
@@ -102,8 +98,7 @@ public class AccountLinkingService {
             return new LinkingResult(true, "No valid IPs to match", 0);
         }
 
-        Query query = Query.query(MongoQueries.where(PlayerFields.IP_ADDRESS).in(playerIps));
-        List<Player> potentialMatches = playerRepository.find(server, query);
+        List<Player> potentialMatches = playerRepository.findByIpAddresses(server, playerIps);
 
         for (Player match : potentialMatches) {
             if (match.getMinecraftUuid().equals(playerUuid)) {
@@ -147,9 +142,7 @@ public class AccountLinkingService {
     }
 
     private Player findPlayerByUuid(Server server, UUID uuid) {
-        return playerRepository.findOne(server,
-                        Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uuid.toString())))
-                .orElse(null);
+        return playerRepository.findByMinecraftUuid(server, uuid).orElse(null);
     }
 
     private LinkedAccountResponse buildLinkedAccountResponse(Server server, Player player) {
@@ -224,7 +217,6 @@ public class AccountLinkingService {
     }
 
     private void updateLinkedAccounts(Server server, Player player, Set<String> newLinks) {
-        Player original = playerRepository.snapshot(player);
         Map<String, Object> data = player.getData();
         if (data == null) {
             data = new LinkedHashMap<>();
@@ -242,7 +234,7 @@ public class AccountLinkingService {
 
         data.put("linkedAccounts", new ArrayList<>(allLinks));
         data.put("lastLinkedUpdate", new Date());
-        playerRepository.saveChanges(server, original, player);
+        playerRepository.replaceLinkedAccounts(server, player);
     }
 
     public record LinkingResult(boolean success, String message, int linkedAccountsFound) {

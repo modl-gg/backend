@@ -2,15 +2,11 @@ package gg.modl.backend.billing.service;
 
 import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
 import gg.modl.backend.billing.dto.response.UsageResponse;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -100,23 +96,15 @@ public class UsageTrackingService {
     }
 
     public void incrementCdnUsage(String serverId, double additionalGB) {
-        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
-        Update update = new Update().inc(ServerFields.CDN_USAGE_CURRENT_PERIOD.path(), additionalGB);
-        serverRepository.updateFirst(query, update);
+        serverRepository.incrementCdnUsage(serverId, additionalGB);
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
-        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
-        Update update = new Update().inc(ServerFields.AI_REQUESTS_CURRENT_PERIOD.path(), additionalRequests);
-        serverRepository.updateFirst(query, update);
+        serverRepository.incrementAiRequests(serverId, additionalRequests);
     }
 
     public void resetUsageCounters(String serverId) {
-        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
-        Update update = new Update()
-                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD.path(), 0.0)
-                .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD.path(), 0L);
-        serverRepository.updateFirst(query, update);
+        serverRepository.resetUsageCounters(serverId);
     }
 
     public double getCdnLimitGB(Server server) {
@@ -156,8 +144,7 @@ public class UsageTrackingService {
     }
 
     private void mutateServer(Server server, Consumer<Server> mutator) {
-        Server original = serverRepository.snapshot(server);
         mutator.accept(server);
-        serverRepository.saveChanges(original, server);
+        serverRepository.saveEntity(server);
     }
 }

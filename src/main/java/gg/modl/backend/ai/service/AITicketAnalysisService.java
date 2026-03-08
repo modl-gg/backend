@@ -7,8 +7,6 @@ import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.SystemPromptFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -25,7 +23,6 @@ import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -111,7 +108,6 @@ public class AITicketAnalysisService {
         final AIAnalysisResult result = parseResponse(rawResponse);
         result.setCreatedAt(new Date());
         result.setRawResponse(rawResponse);
-        final Ticket original = ticketRepository.snapshot(ticket);
 
         if (settings.isEnableAutomatedActions() && result.hasViolation()) {
             executeAutomatedAction(server, ticket, result, settings);
@@ -119,7 +115,7 @@ public class AITicketAnalysisService {
 
         ticket.setAiAnalysis(result);
         ticket.setUpdatedAt(new Date());
-        ticketRepository.saveChanges(server, original, ticket);
+        ticketRepository.saveEntity(server, ticket);
 
         return result;
     }
@@ -143,10 +139,8 @@ public class AITicketAnalysisService {
         if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
             return new AISuggestionResult(false, "No reported player UUID");
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
-        ticketRepository.saveChanges(server, original, ticket);
+        ticketRepository.saveEntity(server, ticket);
         return new AISuggestionResult(true, null);
     }
 
@@ -160,11 +154,9 @@ public class AITicketAnalysisService {
         if (ticket.getAiAnalysis() == null) {
             return new AISuggestionResult(false, "No AI analysis to dismiss");
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ticket.getAiAnalysis().setDismissed(true);
         ticket.setUpdatedAt(new Date());
-        ticketRepository.saveChanges(server, original, ticket);
+        ticketRepository.saveEntity(server, ticket);
 
         return new AISuggestionResult(true, null);
     }
@@ -301,9 +293,7 @@ public class AITicketAnalysisService {
         String normalizedStrictnessLevel = strictnessLevel == null
                 ? "STANDARD"
                 : strictnessLevel.trim().toUpperCase(Locale.ROOT);
-        Query query = Query.query(MongoQueries.where(SystemPromptFields.STRICTNESS_LEVEL).is(normalizedStrictnessLevel)
-                .and(SystemPromptFields.IS_ACTIVE.path()).is(true));
-        SystemPrompt prompt = systemPromptRepository.findOne(query).orElse(null);
+        SystemPrompt prompt = systemPromptRepository.findActiveByStrictnessLevel(normalizedStrictnessLevel).orElse(null);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
             return prompt.getPrompt();

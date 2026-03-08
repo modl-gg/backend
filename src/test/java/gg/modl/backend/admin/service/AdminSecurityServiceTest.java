@@ -1,21 +1,18 @@
 package gg.modl.backend.admin.service;
 
+import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
-import org.bson.Document;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,8 +31,15 @@ class AdminSecurityServiceTest {
 
     @Test
     void getSecurityEventsBuildsFilteredPagedQuery() {
-        when(securityEventRepository.find(any(Query.class))).thenReturn(List.of(new Document("type", "login_attempt")));
-        when(securityEventRepository.count(any(Query.class))).thenReturn(1L);
+        SecurityEvent event = new SecurityEvent();
+        event.setType("login_attempt");
+        event.setTimestamp(new Date());
+        when(securityEventRepository.findSecurityEvents(
+                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
+        )).thenReturn(List.of(event));
+        when(securityEventRepository.countSecurityEvents(
+                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
+        )).thenReturn(1L);
 
         Map<String, Object> response = adminSecurityService.getSecurityEvents(
                 2,
@@ -48,14 +52,12 @@ class AdminSecurityServiceTest {
                 "2000"
         );
 
-        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
-        verify(securityEventRepository).find(queryCaptor.capture());
-        Query query = queryCaptor.getValue();
-
-        assertEquals(25L, query.getSkip());
-        assertEquals(25, query.getLimit());
-        assertEquals(-1, query.getSortObject().get("timestamp"));
-        assertNotNull(query.getQueryObject().get("$and"));
+        verify(securityEventRepository).findSecurityEvents(
+                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
+        );
+        verify(securityEventRepository).countSecurityEvents(
+                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
+        );
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) response.get("data");

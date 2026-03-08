@@ -183,7 +183,7 @@ public class DashboardService {
                 TicketFields.TYPE,
                 TicketFields.REPLIES
         );
-        query.fields().slice(TicketFields.REPLIES.path(), 1);
+        query.fields().slice(TicketFields.REPLIES, 1);
 
         List<Ticket> tickets = ticketRepository.find(server, query);
 
@@ -237,7 +237,7 @@ public class DashboardService {
             }
 
             String typeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
-            String playerName = extractLatestUsername(row.get(PlayerFields.USERNAMES.path()));
+            String playerName = extractLatestUsername(row.get(PlayerFields.USERNAMES));
             String playerUuid = extractMinecraftUuid(row);
 
             results.add(new RecentPunishmentResponse(
@@ -347,7 +347,7 @@ public class DashboardService {
         try {
             Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
             Criteria punishmentCriteria = MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_NAME).is(staffUsername)
-                    .and(PlayerFields.PUNISHMENT_ISSUED.path()).gte(cutoffDate);
+                    .and(PlayerFields.PUNISHMENT_ISSUED).gte(cutoffDate);
             List<Document> punishmentRows = fetchRecentPunishmentRows(server, punishmentCriteria, MAX_QUERY_RESULTS);
 
             for (Document row : punishmentRows) {
@@ -358,7 +358,7 @@ public class DashboardService {
 
                 normalizePunishmentCollections(punishment);
 
-                String username = extractLatestUsername(row.get(PlayerFields.USERNAMES.path()));
+                String username = extractLatestUsername(row.get(PlayerFields.USERNAMES));
                 String punishmentTypeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
                 String playerUuid = extractMinecraftUuid(row);
 
@@ -388,12 +388,12 @@ public class DashboardService {
     private List<Document> fetchRecentPunishmentRows(Server server, Criteria punishmentCriteria, int limit) {
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(punishmentCriteria),
-                Aggregation.unwind(PlayerFields.PUNISHMENTS.path()),
+                Aggregation.unwind(PlayerFields.PUNISHMENTS),
                 Aggregation.match(punishmentCriteria),
                 Aggregation.sort(MongoQueries.sort(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED)),
                 Aggregation.limit(limit),
-                Aggregation.project(PlayerFields.MINECRAFT_UUID.path(), PlayerFields.USERNAMES.path())
-                        .and(PlayerFields.PUNISHMENTS.path()).as("punishment")
+                Aggregation.project(PlayerFields.MINECRAFT_UUID, PlayerFields.USERNAMES)
+                        .and(PlayerFields.PUNISHMENTS).as("punishment")
         );
 
         return playerRepository.aggregate(server, aggregation, Document.class).getMappedResults();
@@ -474,7 +474,7 @@ public class DashboardService {
     }
 
     private String extractMinecraftUuid(Document row) {
-        Object value = row.get(PlayerFields.MINECRAFT_UUID.path());
+        Object value = row.get(PlayerFields.MINECRAFT_UUID);
         return value != null ? String.valueOf(value) : "";
     }
 

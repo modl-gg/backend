@@ -1,13 +1,8 @@
 package gg.modl.backend.admin.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.SecurityEventFields;
+import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
 import lombok.RequiredArgsConstructor;
-import org.bson.Document;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -16,7 +11,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -36,13 +30,11 @@ public class AdminSecurityService {
         int pageNum = Math.max(1, page);
         int limitNum = Math.min(100, Math.max(1, limit));
         int skip = (pageNum - 1) * limitNum;
+        Date start = parseEpochMillis(startDate);
+        Date end = parseEpochMillis(endDate);
 
-        Query query = buildSecurityEventsQuery(type, severity, source, search, startDate, endDate);
-        query.with(MongoQueries.sort(Sort.Direction.DESC, SecurityEventFields.TIMESTAMP));
-        query.skip(skip).limit(limitNum);
-
-        List<Document> events = securityEventRepository.find(query);
-        long total = securityEventRepository.count(Query.of(query).skip(0).limit(0));
+        List<SecurityEvent> events = securityEventRepository.findSecurityEvents(type, severity, source, search, start, end, skip, limitNum);
+        long total = securityEventRepository.countSecurityEvents(type, severity, source, search, start, end);
 
         return Map.of(
                 "success", true,
@@ -62,21 +54,10 @@ public class AdminSecurityService {
         Date last24h = Date.from(Instant.now().minus(24, ChronoUnit.HOURS));
         Date last7d = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
 
-        long criticalEvents24h = securityEventRepository.count(
-                Query.query(MongoQueries.where(SecurityEventFields.SEVERITY).is("critical")
-                        .and(SecurityEventFields.TIMESTAMP.path()).gte(last24h))
-        );
-        long highEvents24h = securityEventRepository.count(
-                Query.query(MongoQueries.where(SecurityEventFields.SEVERITY).is("high")
-                        .and(SecurityEventFields.TIMESTAMP.path()).gte(last24h))
-        );
-        long mediumEvents24h = securityEventRepository.count(
-                Query.query(MongoQueries.where(SecurityEventFields.SEVERITY).is("medium")
-                        .and(SecurityEventFields.TIMESTAMP.path()).gte(last24h))
-        );
-        long totalEvents7d = securityEventRepository.count(
-                Query.query(MongoQueries.where(SecurityEventFields.TIMESTAMP).gte(last7d))
-        );
+        long criticalEvents24h = securityEventRepository.countBySeveritySince("critical", last24h);
+        long highEvents24h = securityEventRepository.countBySeveritySince("high", last24h);
+        long mediumEvents24h = securityEventRepository.countBySeveritySince("medium", last24h);
+        long totalEvents7d = securityEventRepository.countSince(last7d);
 
         return Map.of(
                 "success", true,
@@ -128,49 +109,7 @@ public class AdminSecurityService {
         );
     }
 
-    private Query buildSecurityEventsQuery(
-            String type,
-            String severity,
-            String source,
-            String search,
-            String startDate,
-            String endDate
-    ) {
-        Query query = new Query();
-        List<Criteria> criteriaList = new ArrayList<>();
-
-        if (hasText(type)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.TYPE).is(type));
-        }
-        if (hasText(severity)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.SEVERITY).is(severity));
-        }
-        if (hasText(source)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.SOURCE).is(source));
-        }
-        if (hasText(search)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.DESCRIPTION).regex(Pattern.quote(search), "i"));
-        }
-
-        if (startDate != null || endDate != null) {
-            Criteria dateCriteria = MongoQueries.where(SecurityEventFields.TIMESTAMP);
-            if (startDate != null) {
-                dateCriteria = dateCriteria.gte(new Date(Long.parseLong(startDate)));
-            }
-            if (endDate != null) {
-                dateCriteria = dateCriteria.lte(new Date(Long.parseLong(endDate)));
-            }
-            criteriaList.add(dateCriteria);
-        }
-
-        if (!criteriaList.isEmpty()) {
-            query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
-        }
-
-        return query;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
+    private Date parseEpochMillis(String value) {
+        return value == null ? null : new Date(Long.parseLong(value));
     }
 }

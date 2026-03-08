@@ -23,7 +23,7 @@ class PublicAppealApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
 
         testUuid = TestDataProvider.getPlayers().get(0).uuid();
@@ -99,3 +99,4 @@ class PublicAppealApiTest {
         assertEquals(404, response.statusCode());
     }
 }
+

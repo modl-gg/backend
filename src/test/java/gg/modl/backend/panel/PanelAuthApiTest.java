@@ -18,7 +18,7 @@ class PanelAuthApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -65,3 +65,4 @@ class PanelAuthApiTest {
         JsonHelper.assertStatus(response, 200);
     }
 }
+

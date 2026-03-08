@@ -15,7 +15,7 @@ class PublicKnowledgebaseApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -54,3 +54,4 @@ class PublicKnowledgebaseApiTest {
         JsonHelper.assertStatus(response, 200);
     }
 }
+

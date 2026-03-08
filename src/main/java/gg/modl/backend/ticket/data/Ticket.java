@@ -1,6 +1,9 @@
 package gg.modl.backend.ticket.data;
 
 import gg.modl.backend.ai.data.AIAnalysisResult;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -18,6 +21,13 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document
+@GenerateMongoFields
+@MongoFieldAliases({
+        @MongoFieldAlias(name = "REPLY_NAME", path = "replies.name"),
+        @MongoFieldAlias(name = "REPLY_CONTENT", path = "replies.content"),
+        @MongoFieldAlias(name = "REPLY_CREATED", path = "replies.created"),
+        @MongoFieldAlias(name = "REPLY_STAFF", path = "replies.staff")
+})
 public class Ticket {
     @Id
     private String id;

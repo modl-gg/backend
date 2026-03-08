@@ -1,7 +1,5 @@
 package gg.modl.backend.ticket.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
@@ -12,7 +10,6 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -192,13 +189,10 @@ public class TicketNotificationService {
     }
 
     private Player findPlayer(Server server, String playerUuid) {
-        return playerRepository.findOne(server,
-                        Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)))
-                .orElse(null);
+        return playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
     }
 
     private void appendNotification(Server server, Player player, Map<String, Object> notification) {
-        Player original = playerRepository.snapshot(player);
         Map<String, Object> data = player.getData();
         if (data == null) {
             data = new LinkedHashMap<>();
@@ -211,7 +205,7 @@ public class TicketNotificationService {
                 : new ArrayList<>();
         pendingNotifications.add(notification);
         data.put("pendingNotifications", pendingNotifications);
-        playerRepository.saveChanges(server, original, player);
+        playerRepository.saveEntity(server, player);
     }
 
     private String getCreatorEmail(Ticket ticket) {

@@ -3,6 +3,8 @@ package gg.modl.backend.database.mongo;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.server.data.Server;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,10 +19,9 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
     protected AbstractServerMongoRepository(
             Class<T> entityType,
             String collectionName,
-            MongoEntityDiffService diffService,
             TenantMongoAccess tenantMongoAccess
     ) {
-        super(entityType, collectionName, diffService);
+        super(entityType, collectionName);
         this.tenantMongoAccess = tenantMongoAccess;
     }
 
@@ -68,14 +69,6 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
         return save(tenantMongoAccess.forDatabase(databaseName), entity);
     }
 
-    public T saveChanges(Server server, T original, T updated) {
-        return saveChanges(tenantMongoAccess.forServer(server), original, updated);
-    }
-
-    public T saveChanges(String databaseName, T original, T updated) {
-        return saveChanges(tenantMongoAccess.forDatabase(databaseName), original, updated);
-    }
-
     public UpdateResult updateFirst(Server server, Query query, Update update) {
         return updateFirst(tenantMongoAccess.forServer(server), query, update);
     }
@@ -96,7 +89,31 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
         return remove(tenantMongoAccess.forServer(server), query);
     }
 
+    public T findAndModify(Server server, Query query, Update update, FindAndModifyOptions options) {
+        return findAndModify(tenantMongoAccess.forServer(server), query, update, options);
+    }
+
+    public T findAndModify(String databaseName, Query query, Update update, FindAndModifyOptions options) {
+        return findAndModify(tenantMongoAccess.forDatabase(databaseName), query, update, options);
+    }
+
+    public T findAndRemove(Server server, Query query) {
+        return findAndRemove(tenantMongoAccess.forServer(server), query);
+    }
+
+    public T findAndRemove(String databaseName, Query query) {
+        return findAndRemove(tenantMongoAccess.forDatabase(databaseName), query);
+    }
+
     public <O> AggregationResults<O> aggregate(Server server, Aggregation aggregation, Class<O> outputType) {
         return aggregate(tenantMongoAccess.forServer(server), aggregation, outputType);
+    }
+
+    protected MongoTemplate serverTemplate(Server server) {
+        return tenantMongoAccess.forServer(server);
+    }
+
+    protected MongoTemplate serverTemplate(String databaseName) {
+        return tenantMongoAccess.forDatabase(databaseName);
     }
 }

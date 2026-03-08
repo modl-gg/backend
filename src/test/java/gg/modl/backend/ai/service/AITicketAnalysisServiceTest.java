@@ -87,14 +87,13 @@ class AITicketAnalysisServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "REPORT-1")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
 
         var result = aiTicketAnalysisService.dismissAISuggestion(server, "REPORT-1");
 
         assertTrue(result.success());
 
         ArgumentCaptor<Ticket> updatedCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedCaptor.capture());
         assertTrue(updatedCaptor.getValue().getAiAnalysis().isDismissed());
     }
 
@@ -114,9 +113,8 @@ class AITicketAnalysisServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "REPORT-2")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
-        when(ticketRepository.saveChanges(any(Server.class), any(Ticket.class), any(Ticket.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
         when(punishmentTypeService.getPunishmentTypeName(server, 4)).thenReturn("Ban");
 
         var result = aiTicketAnalysisService.applyAISuggestion(server, "REPORT-2", "Moderator");
@@ -124,7 +122,7 @@ class AITicketAnalysisServiceTest {
         assertTrue(result.success());
 
         ArgumentCaptor<Ticket> updatedCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedCaptor.capture());
         Ticket updatedTicket = updatedCaptor.getValue();
         assertEquals("Closed", updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());

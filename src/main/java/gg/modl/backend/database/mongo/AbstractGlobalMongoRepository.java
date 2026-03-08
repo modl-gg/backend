@@ -2,6 +2,8 @@ package gg.modl.backend.database.mongo;
 
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Query;
@@ -16,10 +18,9 @@ public abstract class AbstractGlobalMongoRepository<T> extends AbstractTenantMon
     protected AbstractGlobalMongoRepository(
             Class<T> entityType,
             String collectionName,
-            MongoEntityDiffService diffService,
             TenantMongoAccess tenantMongoAccess
     ) {
-        super(entityType, collectionName, diffService);
+        super(entityType, collectionName);
         this.tenantMongoAccess = tenantMongoAccess;
     }
 
@@ -51,10 +52,6 @@ public abstract class AbstractGlobalMongoRepository<T> extends AbstractTenantMon
         return save(tenantMongoAccess.global(), entity);
     }
 
-    public T saveChanges(T original, T updated) {
-        return saveChanges(tenantMongoAccess.global(), original, updated);
-    }
-
     public UpdateResult updateFirst(Query query, Update update) {
         return updateFirst(tenantMongoAccess.global(), query, update);
     }
@@ -71,7 +68,19 @@ public abstract class AbstractGlobalMongoRepository<T> extends AbstractTenantMon
         return remove(tenantMongoAccess.global(), query);
     }
 
+    public T findAndModify(Query query, Update update, FindAndModifyOptions options) {
+        return findAndModify(tenantMongoAccess.global(), query, update, options);
+    }
+
+    public T findAndRemove(Query query) {
+        return findAndRemove(tenantMongoAccess.global(), query);
+    }
+
     public <O> AggregationResults<O> aggregate(Aggregation aggregation, Class<O> outputType) {
         return aggregate(tenantMongoAccess.global(), aggregation, outputType);
+    }
+
+    protected MongoTemplate globalTemplate() {
+        return tenantMongoAccess.global();
     }
 }

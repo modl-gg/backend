@@ -54,7 +54,7 @@ class TicketServiceTest {
     @Test
     void createMinecraftTicketMapsPluginTypeAndPersistsReply() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketRepository.exists(any(Server.class), any())).thenReturn(false);
+        when(ticketRepository.existsByTicketId(any(Server.class), any())).thenReturn(false);
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
@@ -93,9 +93,8 @@ class TicketServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "SUPPORT-123456")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
-        when(ticketRepository.saveChanges(any(Server.class), any(Ticket.class), any(Ticket.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         TicketService.MinecraftTicketClaimResult result = ticketService.claimMinecraftTicket(
                 server,
@@ -111,7 +110,7 @@ class TicketServiceTest {
         assertNotNull(result.ticket().getUpdatedAt());
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedTicketCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         assertTrue(updatedTicketCaptor.getValue().getUpdatedAt() != null);
     }
 
@@ -125,9 +124,8 @@ class TicketServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "REPORT-1")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
-        when(ticketRepository.saveChanges(any(Server.class), any(Ticket.class), any(Ticket.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         TicketService.ReportOperationResult result = ticketService.dismissMinecraftReport(
                 server,
@@ -138,7 +136,7 @@ class TicketServiceTest {
         assertEquals(TicketService.ReportOperationStatus.SUCCESS, result.status());
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedTicketCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
         assertEquals("Closed", updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());
@@ -167,9 +165,8 @@ class TicketServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "SUPPORT-1")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
-        when(ticketRepository.saveChanges(any(Server.class), any(Ticket.class), any(Ticket.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
         when(quickResponseSettingsService.getQuickResponseSettings(server)).thenReturn(settings);
         when(quickResponseSettingsService.findAction(settings, "general", "close")).thenReturn(action);
 
@@ -183,7 +180,7 @@ class TicketServiceTest {
         assertTrue(result.success());
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedTicketCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
         assertEquals("Closed", updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());
@@ -206,9 +203,8 @@ class TicketServiceTest {
                 .build();
 
         when(ticketRepository.findById(server, "SUPPORT-2")).thenReturn(Optional.of(ticket));
-        when(ticketRepository.snapshot(any(Ticket.class))).thenReturn(new Ticket());
-        when(ticketRepository.saveChanges(any(Server.class), any(Ticket.class), any(Ticket.class)))
-                .thenAnswer(invocation -> invocation.getArgument(2));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
 
         var response = ticketService.submitTicketForm(
                 server,
@@ -225,7 +221,7 @@ class TicketServiceTest {
         assertTrue(response.isPresent());
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveChanges(any(Server.class), any(Ticket.class), updatedTicketCaptor.capture());
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
         assertEquals("Open", updatedTicket.getStatus());
         assertEquals("Updated subject", updatedTicket.getSubject());

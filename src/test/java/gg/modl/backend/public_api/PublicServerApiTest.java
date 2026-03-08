@@ -10,10 +10,11 @@ class PublicServerApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
     }
 
     @Disabled("Skipped: would create a new server registration on staging")
     @Test
     void registerServer() throws Exception {}
 }
+

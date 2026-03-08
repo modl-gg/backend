@@ -9,21 +9,19 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,22 +72,17 @@ class AccountLinkingServiceTest {
                         .build())))
                 .build();
 
-        when(playerRepository.findOne(any(Server.class), any()))
-                .thenReturn(Optional.of(player), Optional.of(linkedPlayer));
-        when(playerRepository.find(any(Server.class), any())).thenReturn(List.of(player, linkedPlayer));
-        when(playerRepository.snapshot(any(Player.class))).thenAnswer(invocation -> {
-            Player value = invocation.getArgument(0);
-            return Player.builder().id(value.getId()).minecraftUuid(value.getMinecraftUuid()).build();
-        });
+        when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
+        when(playerRepository.findByMinecraftUuid(server, linkedUuid)).thenReturn(Optional.of(linkedPlayer));
+        when(playerRepository.findByIpAddresses(server, Set.of("1.1.1.1"))).thenReturn(List.of(player, linkedPlayer));
 
         AccountLinkingService.LinkingResult result = accountLinkingService.findAndLinkAccounts(server, playerUuid);
 
         assertTrue(result.success());
         assertEquals(1, result.linkedAccountsFound());
-
-        ArgumentCaptor<Player> updatedPlayers = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository, times(2)).saveChanges(any(Server.class), any(Player.class), updatedPlayers.capture());
-        List<Player> savedPlayers = updatedPlayers.getAllValues();
+        verify(playerRepository).replaceLinkedAccounts(eq(server), eq(player));
+        verify(playerRepository).replaceLinkedAccounts(eq(server), eq(linkedPlayer));
+        List<Player> savedPlayers = List.of(player, linkedPlayer);
         assertTrue(savedPlayers.stream().anyMatch(saved -> containsLink(saved, linkedUuid.toString())));
         assertTrue(savedPlayers.stream().anyMatch(saved -> containsLink(saved, playerUuid.toString())));
     }

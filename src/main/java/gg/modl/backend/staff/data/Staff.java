@@ -1,6 +1,9 @@
 package gg.modl.backend.staff.data;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,6 +22,13 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 @JsonIgnoreProperties(ignoreUnknown = true)
+@GenerateMongoFields
+@MongoFieldAliases({
+        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_TICKET_ID", path = "subscribedTickets.ticketId"),
+        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_ACTIVE", path = "subscribedTickets.active"),
+        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_ACTIVE", path = "subscribedTickets.$.active"),
+        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_LAST_READ_AT", path = "subscribedTickets.$.lastReadAt")
+})
 public class Staff {
     @Id
     private String id;

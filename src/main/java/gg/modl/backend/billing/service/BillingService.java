@@ -197,9 +197,8 @@ public class BillingService {
     }
 
     private void mutateServer(Server server, Consumer<Server> mutator) {
-        Server original = serverRepository.snapshot(server);
         mutator.accept(server);
-        serverRepository.saveChanges(original, server);
+        serverRepository.saveEntity(server);
     }
 
     private SubscriptionStatus parseSubscriptionStatus(String status) {

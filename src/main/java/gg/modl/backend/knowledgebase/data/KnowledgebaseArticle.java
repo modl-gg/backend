@@ -1,5 +1,7 @@
 package gg.modl.backend.knowledgebase.data;
 
+import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,7 +11,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.Date;
 
-@Document
+@Document(collection = CollectionName.KNOWLEDGEBASE_ARTICLES)
+@GenerateMongoFields
 @Data
 @Builder
 @NoArgsConstructor

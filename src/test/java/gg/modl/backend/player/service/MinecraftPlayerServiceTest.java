@@ -12,19 +12,17 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Optional;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -84,7 +82,7 @@ class MinecraftPlayerServiceTest {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         UUID playerUuid = UUID.randomUUID();
 
-        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.empty());
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.empty());
         when(mojangApiService.lookupByUuid(playerUuid.toString()))
                 .thenReturn(Optional.of(new MojangApiService.MojangProfile("LookupName", playerUuid)));
 
@@ -105,8 +103,7 @@ class MinecraftPlayerServiceTest {
                 .minecraftUuid(UUID.randomUUID())
                 .build();
 
-        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(any(Player.class))).thenReturn(Player.builder().minecraftUuid(player.getMinecraftUuid()).build());
+        when(playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString())).thenReturn(Optional.of(player));
 
         MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(
                 server,
@@ -117,10 +114,8 @@ class MinecraftPlayerServiceTest {
         );
 
         assertEquals(org.springframework.http.HttpStatus.OK, response.status());
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(any(Server.class), any(Player.class), updatedPlayerCaptor.capture());
-        assertEquals("Test note", updatedPlayerCaptor.getValue().getNotes().get(0).getText());
+        verify(playerRepository).replaceNotes(server, player);
+        assertEquals("Test note", player.getNotes().get(0).getText());
     }
 
     @Test
@@ -137,8 +132,7 @@ class MinecraftPlayerServiceTest {
                 )))
                 .build();
 
-        when(playerRepository.findOne(any(Server.class), any())).thenReturn(Optional.of(player));
-        when(playerRepository.snapshot(any(Player.class))).thenReturn(Player.builder().minecraftUuid(playerUuid).build());
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
         MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(
                 server,
@@ -146,12 +140,17 @@ class MinecraftPlayerServiceTest {
         );
 
         assertEquals(org.springframework.http.HttpStatus.OK, response.status());
-
-        ArgumentCaptor<Player> updatedPlayerCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(playerRepository).saveChanges(any(Server.class), any(Player.class), updatedPlayerCaptor.capture());
+        verify(playerRepository).replacePendingNotifications(server, player, remainingNotifications(player));
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> remaining = (List<Map<String, Object>>) updatedPlayerCaptor.getValue().getData().get("pendingNotifications");
+        List<Map<String, Object>> remaining = (List<Map<String, Object>>) player.getData().get("pendingNotifications");
         assertEquals(1, remaining.size());
         assertEquals("notif-2", remaining.get(0).get("id"));
     }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> remainingNotifications(Player player) {
+        return (List<Map<String, Object>>) player.getData().get("pendingNotifications");
+    }
 }
+
+

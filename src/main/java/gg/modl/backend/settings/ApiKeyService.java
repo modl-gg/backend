@@ -1,8 +1,7 @@
 package gg.modl.backend.settings;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.server.ServerField;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import java.util.List;
@@ -10,10 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -23,14 +18,12 @@ public class ApiKeyService {
     private static final String SETTINGS_TYPE_API_KEYS = "apiKeys";
     private static final String API_KEY_FIELD = "api_key";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final SettingsMongoRepository settingsRepository;
+    private final ServerMongoRepository serverRepository;
 
     @Nullable
     public String getApiKeyFromSettings(@NotNull Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
-
+        Settings settings = settingsRepository.findByType(server, SETTINGS_TYPE_API_KEYS).orElse(null);
         if (settings == null || settings.getData() == null) {
             return null;
         }
@@ -42,18 +35,12 @@ public class ApiKeyService {
     }
 
     public void syncApiKeyToServer(@NotNull Server server, @NotNull String apiKey) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update().set(ServerField.API_KEY, apiKey);
-        globalDb.updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
+        serverRepository.updateApiKey(server.getId(), apiKey);
     }
 
     @Nullable
     public Server findServerByApiKey(@NotNull String apiKey) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where(ServerField.API_KEY).is(apiKey));
-        Server server = globalDb.findOne(query, Server.class, CollectionName.MODL_SERVERS);
-
+        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
         if (server != null) {
             return server;
         }
@@ -63,10 +50,7 @@ public class ApiKeyService {
 
     @Nullable
     private Server findServerByApiKeyInSettings(@NotNull String apiKey) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query allServersQuery = new Query();
-        List<Server> servers = globalDb.find(allServersQuery, Server.class, CollectionName.MODL_SERVERS);
-
+        List<Server> servers = serverRepository.findAll();
         for (Server server : servers) {
             if (server.getDatabaseName() == null) {
                 continue;
@@ -76,7 +60,6 @@ public class ApiKeyService {
             if (apiKey.equals(settingsApiKey)) {
                 syncApiKeyToServer(server, settingsApiKey);
                 server.setApiKey(apiKey);
-
                 return server;
             }
         }

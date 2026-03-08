@@ -1,5 +1,6 @@
 package gg.modl.backend.log.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +15,7 @@ import java.util.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@GenerateMongoFields(className = "ServerLogFields")
 public class SystemLog {
     @Id
     private String id;

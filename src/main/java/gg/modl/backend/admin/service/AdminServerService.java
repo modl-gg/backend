@@ -1,26 +1,21 @@
 package gg.modl.backend.admin.service;
 
-import com.mongodb.client.result.DeleteResult;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
-import java.util.regex.Pattern;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -29,42 +24,16 @@ public class AdminServerService {
     private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
     private static final int MAX_USAGE_BATCH_SIZE = 50;
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
+    private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerProvisioningService provisioningService;
 
-    private MongoTemplate getTemplate() {
-        return mongoProvider.getGlobalDatabase();
-    }
-
     public List<Server> findServers(String search, String plan, String status, String sortField, String sortOrder, int skip, int limit) {
-        Query query = buildFilterQuery(search, plan, status);
-
-        // Validate and set sort
-        List<String> allowedSortFields = Arrays.asList("serverName", "customDomain", "adminEmail", "plan", "createdAt", "updatedAt", "userCount", "provisioningStatus", "lastActivityAt");
-        String field = allowedSortFields.contains(sortField) ? sortField : "createdAt";
-        Sort.Direction direction = "asc".equalsIgnoreCase(sortOrder) ? Sort.Direction.ASC : Sort.Direction.DESC;
-
-        query.with(Sort.by(direction, field));
-        query.skip(skip).limit(limit);
-        query.fields()
-                .include("serverName")
-                .include("customDomain")
-                .include("adminEmail")
-                .include("plan")
-                .include("emailVerified")
-                .include("provisioningStatus")
-                .include("createdAt")
-                .include("updatedAt")
-                .include("userCount")
-                .include("ticketCount")
-                .include("lastActivityAt");
-
-        return getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findAdminServers(search, plan, status, sortField, sortOrder, skip, limit);
     }
 
     public long countServers(String search, String plan, String status) {
-        Query query = buildFilterQuery(search, plan, status);
-        return getTemplate().count(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.countAdminServers(search, plan, status);
     }
 
     public void refreshUsageStatsForActiveServers(int maxServers) {
@@ -72,33 +41,7 @@ public class AdminServerService {
         Date now = new Date();
         Date staleCutoff = new Date(now.getTime() - USAGE_STATS_TTL_MILLIS);
 
-        Criteria staleCriteria = new Criteria().orOperator(
-                Criteria.where("lastStatsUpdatedAt").exists(false),
-                Criteria.where("lastStatsUpdatedAt").lt(staleCutoff)
-        );
-
-        Query query = Query.query(new Criteria().andOperator(
-                Criteria.where("databaseName").ne(null),
-                Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED),
-                Criteria.where("emailVerified").is(true),
-                staleCriteria
-        ));
-        query.with(Sort.by(Sort.Direction.ASC, "lastStatsUpdatedAt"));
-        query.limit(boundedLimit);
-        query.fields()
-                .include("serverName")
-                .include("customDomain")
-                .include("databaseName")
-                .include("adminEmail")
-                .include("emailVerified")
-                .include("plan")
-                .include("userCount")
-                .include("ticketCount")
-                .include("lastStatsUpdatedAt")
-                .include("lastActivityAt")
-                .include("updatedAt");
-
-        List<Server> servers = getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
+        List<Server> servers = serverRepository.findUsageRefreshCandidates(staleCutoff, boundedLimit);
         for (Server server : servers) {
             getOrComputeUsageStats(server, now, false);
         }
@@ -121,22 +64,8 @@ public class AdminServerService {
             return Map.of();
         }
 
-        Query query = Query.query(Criteria.where("_id").in(filteredIds));
-        query.fields()
-                .include("serverName")
-                .include("customDomain")
-                .include("databaseName")
-                .include("adminEmail")
-                .include("emailVerified")
-                .include("plan")
-                .include("userCount")
-                .include("ticketCount")
-                .include("lastStatsUpdatedAt")
-                .include("lastActivityAt")
-                .include("updatedAt");
-
         Date now = new Date();
-        List<Server> servers = getTemplate().find(query, Server.class, CollectionName.MODL_SERVERS);
+        List<Server> servers = serverRepository.findUsageTargetsByIds(filteredIds);
         Map<String, UsageSummary> usageByServerId = new HashMap<>();
 
         for (Server server : servers) {
@@ -152,114 +81,36 @@ public class AdminServerService {
         return usageByServerId;
     }
 
-    private Query buildFilterQuery(String search, String plan, String status) {
-        Query query = new Query();
-        List<Criteria> criteriaList = new ArrayList<>();
-
-        if (search != null && !search.trim().isEmpty()) {
-            String sanitizedSearch = Pattern.quote(search.trim());
-            Criteria searchCriteria = new Criteria().orOperator(
-                    Criteria.where("serverName").regex(sanitizedSearch, "i"),
-                    Criteria.where("customDomain").regex(sanitizedSearch, "i"),
-                    Criteria.where("adminEmail").regex(sanitizedSearch, "i")
-            );
-            criteriaList.add(searchCriteria);
-        }
-
-        if (plan != null && !"all".equals(plan)) {
-            try {
-                criteriaList.add(Criteria.where("plan").is(ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT))));
-            } catch (IllegalArgumentException ignored) {
-                criteriaList.add(Criteria.where("plan").is("__invalid_plan__"));
-            }
-        }
-
-        if (status != null && !"all".equals(status)) {
-            switch (status) {
-                case "active" -> {
-                    criteriaList.add(Criteria.where("provisioningStatus").is(ProvisioningStatus.COMPLETED));
-                    criteriaList.add(Criteria.where("emailVerified").is(true));
-                }
-                case "pending" -> criteriaList.add(Criteria.where("provisioningStatus").in(
-                        ProvisioningStatus.PENDING,
-                        ProvisioningStatus.IN_PROGRESS
-                ));
-                case "failed" -> criteriaList.add(Criteria.where("provisioningStatus").is(ProvisioningStatus.FAILED));
-                case "unverified" -> criteriaList.add(Criteria.where("emailVerified").is(false));
-            }
-        }
-
-        if (!criteriaList.isEmpty()) {
-            query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
-        }
-
-        return query;
-    }
-
     public Optional<Server> findById(String id) {
-        return Optional.ofNullable(getTemplate().findById(id, Server.class, CollectionName.MODL_SERVERS));
+        return serverRepository.findById(id);
     }
 
     public Server save(Server server) {
-        return getTemplate().save(server, CollectionName.MODL_SERVERS);
+        return serverRepository.saveEntity(server);
     }
 
-    private static final Set<String> ALLOWED_UPDATE_FIELDS = Set.of(
-            "adminEmail", "emailVerified", "provisioningStatus", "provisioningNotes",
-            "plan", "subscriptionStatus", "lastActivityAt", "updatedAt"
-    );
-
     public Server updateById(String id, Map<String, Object> updateData) {
-        Query query = Query.query(Criteria.where("_id").is(id));
-        Update update = new Update();
-        updateData.forEach((key, value) -> {
-            if (ALLOWED_UPDATE_FIELDS.contains(key)) {
-                if ("plan".equals(key) && value instanceof String planValue) {
-                    update.set(key, ServerPlan.valueOf(planValue.trim().toUpperCase(Locale.ROOT)));
-                } else if ("provisioningStatus".equals(key) && value instanceof String provisioningStatusValue) {
-                    update.set(key, ProvisioningStatus.valueOf(provisioningStatusValue.trim().toUpperCase(Locale.ROOT)));
-                } else if ("subscriptionStatus".equals(key) && value instanceof String subscriptionStatusValue) {
-                    update.set(key, SubscriptionStatus.valueOf(subscriptionStatusValue.trim().toUpperCase(Locale.ROOT)));
-                } else {
-                    update.set(key, value);
-                }
-            }
-        });
-        getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
-        return getTemplate().findById(id, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.updateAllowedFields(id, updateData).orElse(null);
     }
 
     public boolean deleteById(String id) {
-        Query query = Query.query(Criteria.where("_id").is(id));
-        DeleteResult result = getTemplate().remove(query, Server.class, CollectionName.MODL_SERVERS);
-        return result.getDeletedCount() > 0;
+        return serverRepository.deleteByServerId(id);
     }
 
     public long bulkDelete(List<String> serverIds) {
-        Query query = Query.query(Criteria.where("_id").in(serverIds));
-        return getTemplate().remove(query, Server.class, CollectionName.MODL_SERVERS).getDeletedCount();
+        return serverRepository.deleteByServerIds(serverIds);
     }
 
     public long bulkSuspend(List<String> serverIds) {
-        Query query = Query.query(Criteria.where("_id").in(serverIds));
-        Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.FAILED)
-                .set("updatedAt", new Date());
-        return getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
+        return serverRepository.bulkSuspend(serverIds, new Date());
     }
 
     public long bulkActivate(List<String> serverIds) {
-        Query query = Query.query(Criteria.where("_id").in(serverIds));
-        Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.COMPLETED)
-                .set("emailVerified", true)
-                .set("updatedAt", new Date());
-        long modified = getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
+        long modified = serverRepository.bulkActivate(serverIds, new Date());
 
-        // Seed default data for each activated server
         for (String id : serverIds) {
             try {
-                Server server = getTemplate().findById(id, Server.class, CollectionName.MODL_SERVERS);
+                Server server = serverRepository.findById(id).orElse(null);
                 if (server != null && server.getDatabaseName() != null) {
                     provisioningService.provision(server);
                 }
@@ -272,19 +123,15 @@ public class AdminServerService {
     }
 
     public long bulkUpdatePlan(List<String> serverIds, String plan) {
-        Query query = Query.query(Criteria.where("_id").in(serverIds));
         ServerPlan parsedPlan = ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT));
-        Update update = new Update()
-                .set("plan", parsedPlan)
-                .set("updatedAt", new Date());
-        return getTemplate().updateMulti(query, update, Server.class, CollectionName.MODL_SERVERS).getModifiedCount();
+        return serverRepository.bulkUpdatePlan(serverIds, parsedPlan, new Date());
     }
 
     public Map<String, Object> getServerStats(Server server) {
         Map<String, Object> stats = new HashMap<>();
         Date now = new Date();
 
-        if (server.getDatabaseName() == null) {
+        if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
             long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
             long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
             stats.put("totalPlayers", cachedUsers);
@@ -295,60 +142,40 @@ public class AdminServerService {
             return stats;
         }
 
-        try {
-            MongoTemplate serverDb = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        Optional<ServerDatabaseMongoRepository.ServerDatabaseStats> databaseStats = serverDatabaseRepository.readStats(server);
+        if (databaseStats.isPresent()) {
+            ServerDatabaseMongoRepository.ServerDatabaseStats loadedStats = databaseStats.get();
+            persistUsageStats(server.getId(), loadedStats.players(), loadedStats.tickets(), now);
 
-            long players = serverDb.count(new Query(), "players");
-            long tickets = serverDb.count(new Query(), "tickets");
-            long logs = serverDb.count(new Query(), "logs");
-
-            persistUsageStats(server.getId(), players, tickets, now);
-
-            stats.put("totalPlayers", players);
-            stats.put("totalTickets", tickets);
-            stats.put("totalLogs", logs);
+            stats.put("totalPlayers", loadedStats.players());
+            stats.put("totalTickets", loadedStats.tickets());
+            stats.put("totalLogs", loadedStats.logs());
             stats.put("lastActivity", server.getLastActivityAt() != null ? server.getLastActivityAt() : server.getUpdatedAt());
-
-            // Get database size
-            Document dbStats = serverDb.getDb().runCommand(new Document("dbStats", 1));
-            stats.put("databaseSize", dbStats.get("storageSize", 0L));
-
-        } catch (Exception e) {
-            log.warn("Failed to get stats for server {}: {}", server.getServerName(), e.getMessage());
-            long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
-            long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
-            stats.put("totalPlayers", cachedUsers);
-            stats.put("totalTickets", cachedTickets);
-            stats.put("totalLogs", 0);
-            stats.put("lastActivity", server.getUpdatedAt());
-            stats.put("databaseSize", 0);
+            stats.put("databaseSize", loadedStats.storageSize());
+            return stats;
         }
 
+        log.warn("Failed to get stats for server {}", server.getServerName());
+        long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
+        long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
+        stats.put("totalPlayers", cachedUsers);
+        stats.put("totalTickets", cachedTickets);
+        stats.put("totalLogs", 0);
+        stats.put("lastActivity", server.getUpdatedAt());
+        stats.put("databaseSize", 0);
         return stats;
     }
 
     public void resetServerDatabase(Server server) {
         if (server.getDatabaseName() != null) {
-            try {
-                MongoTemplate serverDb = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-                serverDb.getDb().drop();
+            if (serverDatabaseRepository.dropDatabase(server)) {
                 log.info("Dropped database {} for server {}", server.getDatabaseName(), server.getServerName());
-            } catch (Exception e) {
-                log.warn("Failed to drop database {}: {}", server.getDatabaseName(), e.getMessage());
+            } else {
+                log.warn("Failed to drop database {}", server.getDatabaseName());
             }
         }
 
-        // Reset server to pending state
-        Query query = Query.query(Criteria.where("_id").is(server.getId()));
-        Update update = new Update()
-                .set("provisioningStatus", ProvisioningStatus.PENDING)
-                .set("provisioningNotes", "Database reset - awaiting reprovisioning")
-                .unset("lastActivityAt")
-                .unset("customDomainStatus")
-                .unset("customDomainLastChecked")
-                .unset("customDomainError")
-                .set("updatedAt", new Date());
-        getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
+        serverRepository.resetAfterDatabaseDrop(server.getId(), new Date());
     }
 
     private ComputedUsage getOrComputeUsageStats(Server server, Date now, boolean forceRefresh) {
@@ -364,17 +191,15 @@ public class AdminServerService {
             return new ComputedUsage(cachedUsers, cachedTickets, now, false);
         }
 
-        try {
-            MongoTemplate serverDb = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-            long players = serverDb.count(new Query(), "players");
-            long tickets = serverDb.count(new Query(), "tickets");
-            persistUsageStats(server.getId(), players, tickets, now);
-            return new ComputedUsage(players, tickets, now, false);
-        } catch (Exception e) {
-            log.warn("Failed to refresh usage stats for server {}: {}", server.getServerName(), e.getMessage());
-            Date updatedAt = server.getLastStatsUpdatedAt() != null ? server.getLastStatsUpdatedAt() : now;
-            return new ComputedUsage(cachedUsers, cachedTickets, updatedAt, true);
+        Optional<ServerDatabaseMongoRepository.UsageCounts> usageCounts = serverDatabaseRepository.readUsageCounts(server);
+        if (usageCounts.isPresent()) {
+            persistUsageStats(server.getId(), usageCounts.get().players(), usageCounts.get().tickets(), now);
+            return new ComputedUsage(usageCounts.get().players(), usageCounts.get().tickets(), now, false);
         }
+
+        log.warn("Failed to refresh usage stats for server {}", server.getServerName());
+        Date updatedAt = server.getLastStatsUpdatedAt() != null ? server.getLastStatsUpdatedAt() : now;
+        return new ComputedUsage(cachedUsers, cachedTickets, updatedAt, true);
     }
 
     private boolean isUsageStatsCacheFresh(Server server, Date now) {
@@ -387,12 +212,7 @@ public class AdminServerService {
     }
 
     private void persistUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
-        Query query = Query.query(Criteria.where("_id").is(serverId));
-        Update update = new Update()
-                .set("userCount", userCount)
-                .set("ticketCount", ticketCount)
-                .set("lastStatsUpdatedAt", updatedAt);
-        getTemplate().updateFirst(query, update, Server.class, CollectionName.MODL_SERVERS);
+        serverRepository.updateUsageStats(serverId, userCount, ticketCount, updatedAt);
     }
 
     private record ComputedUsage(long userCount, long ticketCount, Date updatedAt, boolean fromCache) {}

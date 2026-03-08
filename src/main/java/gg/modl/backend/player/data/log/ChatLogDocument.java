@@ -1,6 +1,7 @@
 package gg.modl.backend.player.data.log;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +15,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@GenerateMongoFields(className = "ChatLogFields")
 public class ChatLogDocument {
     @Id
     private String id;

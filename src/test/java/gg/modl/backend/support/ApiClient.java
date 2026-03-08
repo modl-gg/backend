@@ -37,26 +37,23 @@ public final class ApiClient {
     // ── Minecraft auth: X-API-Key + X-Server-Domain ──
 
     public HttpResponse<String> minecraftGet(String path) throws Exception {
-        return send(newBuilder(path)
+        return send(serverBuilder(path)
                 .header("X-API-Key", apiKey)
-                .header("X-Server-Domain", serverDomain)
                 .GET()
                 .build());
     }
 
     public HttpResponse<String> minecraftPost(String path, Object body) throws Exception {
-        return send(newBuilder(path)
+        return send(serverBuilder(path)
                 .header("X-API-Key", apiKey)
-                .header("X-Server-Domain", serverDomain)
                 .header("Content-Type", "application/json")
                 .POST(jsonBody(body))
                 .build());
     }
 
     public HttpResponse<String> minecraftPatch(String path, Object body) throws Exception {
-        return send(newBuilder(path)
+        return send(serverBuilder(path)
                 .header("X-API-Key", apiKey)
-                .header("X-Server-Domain", serverDomain)
                 .header("Content-Type", "application/json")
                 .method("PATCH", jsonBody(body))
                 .build());
@@ -96,15 +93,13 @@ public final class ApiClient {
     // ── Public: X-Server-Domain only ──
 
     public HttpResponse<String> publicGet(String path) throws Exception {
-        return send(newBuilder(path)
-                .header("X-Server-Domain", serverDomain)
+        return send(serverBuilder(path)
                 .GET()
                 .build());
     }
 
     public HttpResponse<String> publicPost(String path, Object body) throws Exception {
-        return send(newBuilder(path)
-                .header("X-Server-Domain", serverDomain)
+        return send(serverBuilder(path)
                 .header("Content-Type", "application/json")
                 .POST(jsonBody(body))
                 .build());
@@ -119,8 +114,7 @@ public final class ApiClient {
     // ── Helpers ──
 
     private HttpRequest.Builder panelBuilder(String path) {
-        return newBuilder(path)
-                .header("X-Server-Domain", serverDomain)
+        return serverBuilder(path)
                 .header("Origin", panelOrigin)
                 .header("Referer", panelOrigin + "/panel")
                 .header("Cookie", "MODL_SESSION=" + sessionToken);
@@ -129,7 +123,15 @@ public final class ApiClient {
     private HttpRequest.Builder newBuilder(String path) {
         return HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(30));
+                .timeout(Duration.ofSeconds(30))
+                .header("Accept", "application/json")
+                .header("User-Agent", "modl-backend-test-suite");
+    }
+
+    private HttpRequest.Builder serverBuilder(String path) {
+        return newBuilder(path)
+                .header("X-Server-Domain", serverDomain)
+                .header("X-Forwarded-Host", serverDomain);
     }
 
     private HttpRequest.BodyPublisher jsonBody(Object body) {

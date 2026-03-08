@@ -15,7 +15,7 @@ class PublicSettingsApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -27,3 +27,4 @@ class PublicSettingsApiTest {
         assertTrue(json.has("serverExists"));
     }
 }
+

@@ -4,15 +4,12 @@ import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -175,19 +172,16 @@ public class StripeWebhookService {
     }
 
     private Server findServerByCustomerId(String customerId) {
-        return serverRepository.findOne(Query.query(MongoQueries.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)))
-                .orElse(null);
+        return serverRepository.findByStripeCustomerId(customerId).orElse(null);
     }
 
     private Server findServerBySubscriptionId(String subscriptionId) {
-        return serverRepository.findOne(Query.query(MongoQueries.where(ServerFields.STRIPE_SUBSCRIPTION_ID).is(subscriptionId)))
-                .orElse(null);
+        return serverRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
     }
 
     private void mutateServer(Server server, Consumer<Server> mutator) {
-        Server original = serverRepository.snapshot(server);
         mutator.accept(server);
-        serverRepository.saveChanges(original, server);
+        serverRepository.saveEntity(server);
     }
 
     private ServerPlan planForSubscriptionStatus(String status) {

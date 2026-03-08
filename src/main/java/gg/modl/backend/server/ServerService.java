@@ -1,15 +1,11 @@
 package gg.modl.backend.server;
 
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.server.data.*;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -74,16 +70,10 @@ public class ServerService {
         String subdomain = extractSubdomain(domain);
 
         if (subdomain != null) {
-            Query query = Query.query(MongoQueries.where(ServerFields.CUSTOM_DOMAIN).is(subdomain));
-            return serverRepository.findOne(query).orElse(null);
+            return serverRepository.findByCustomDomain(subdomain).orElse(null);
         }
 
-        // Strictly require active custom domain status after schema cutover.
-        Criteria customDomainCriteria = new Criteria().andOperator(
-                MongoQueries.where(ServerFields.CUSTOM_DOMAIN_OVERRIDE).is(domain),
-                MongoQueries.where(ServerFields.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.ACTIVE.name())
-        );
-        return serverRepository.findOne(new Query(customDomainCriteria)).orElse(null);
+        return serverRepository.findByActiveCustomDomainOverride(domain).orElse(null);
     }
 
     /**
@@ -119,11 +109,7 @@ public class ServerService {
     }
 
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
-        Criteria emailCriteria = MongoQueries.where(ServerFields.ADMIN_EMAIL).is(email);
-        Criteria nameCriteria = MongoQueries.where(ServerFields.SERVER_NAME).is(serverName);
-        Criteria domainCriteria = MongoQueries.where(ServerFields.CUSTOM_DOMAIN).is(subdomain);
-
-        Server found = serverRepository.findOne(new Query(new Criteria().orOperator(emailCriteria, nameCriteria, domainCriteria))).orElse(null);
+        Server found = serverRepository.findMatchingIdentity(email, serverName, subdomain).orElse(null);
         if (found == null) {
             return new ServerExistResult(false, false, false);
         }
@@ -147,37 +133,32 @@ public class ServerService {
 
     @Nullable
     public Server getServerByDatabaseName(@NotNull String databaseName) {
-        Query query = Query.query(MongoQueries.where(ServerFields.DATABASE_NAME).is(databaseName));
-        return serverRepository.findOne(query).orElse(null);
+        return serverRepository.findByDatabaseName(databaseName).orElse(null);
     }
 
     @Nullable
     public Server getServerByApiKey(@NotNull String apiKey) {
-        Query query = Query.query(MongoQueries.where(ServerFields.API_KEY).is(apiKey));
-        return serverRepository.findOne(query).orElse(null);
+        return serverRepository.findByApiKey(apiKey).orElse(null);
     }
 
     @Nullable
     public Server getServerByEmailVerificationToken(@NotNull String token) {
-        Query query = Query.query(MongoQueries.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token));
-        return serverRepository.findOne(query).orElse(null);
+        return serverRepository.findByEmailVerificationToken(token).orElse(null);
     }
 
     @Nullable
     public Server verifyEmailToken(@NotNull String token) {
-        Query query = Query.query(MongoQueries.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token));
-        Server server = serverRepository.findOne(query).orElse(null);
+        Server server = serverRepository.findByEmailVerificationToken(token).orElse(null);
 
         if (server == null) {
             return null;
         }
 
-        Server original = serverRepository.snapshot(server);
         server.setEmailVerified(true);
         server.setEmailVerificationToken(null);
         server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
         server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveChanges(original, server);
+        Server saved = serverRepository.saveEntity(server);
 
         // Seed default data for the new server
         provisioningService.provision(saved);
@@ -187,24 +168,21 @@ public class ServerService {
 
     @Nullable
     public Server getServerByAutoLoginToken(@NotNull String token) {
-        Query query = Query.query(MongoQueries.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token));
-        return serverRepository.findOne(query).orElse(null);
+        return serverRepository.findByProvisioningSignInToken(token).orElse(null);
     }
 
     public Server setAutoLoginToken(@NotNull Server server, @NotNull String token, @NotNull Date expiresAt) {
-        Server original = serverRepository.snapshot(server);
         server.setProvisioningSignInToken(token);
         server.setProvisioningSignInTokenExpiresAt(expiresAt);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveChanges(original, server);
+        return serverRepository.saveEntity(server);
     }
 
     public Server clearAutoLoginToken(@NotNull Server server) {
-        Server original = serverRepository.snapshot(server);
         server.setProvisioningSignInToken(null);
         server.setProvisioningSignInTokenExpiresAt(null);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveChanges(original, server);
+        return serverRepository.saveEntity(server);
     }
 
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}

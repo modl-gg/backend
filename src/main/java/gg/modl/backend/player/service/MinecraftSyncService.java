@@ -91,15 +91,15 @@ public class MinecraftSyncService {
         }
 
         Criteria staleOnlineCriteria = MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-                .and(PlayerFields.MINECRAFT_UUID.path()).nin(onlineUuids);
+                .and(PlayerFields.MINECRAFT_UUID).nin(onlineUuids);
         if (serverName != null && !serverName.isBlank()) {
-            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER.path()).is(serverName);
+            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER).is(serverName);
         }
 
         Query staleOnlineQuery = Query.query(staleOnlineCriteria);
         Update markOffline = new Update()
-                .set(PlayerFields.DATA_IS_ONLINE.path(), false)
-                .set(PlayerFields.DATA_LAST_LOGOUT.path(), Date.from(now));
+                .set(PlayerFields.DATA_IS_ONLINE, false)
+                .set(PlayerFields.DATA_LAST_LOGOUT, Date.from(now));
         template.updateMulti(staleOnlineQuery, markOffline, Player.class, CollectionName.PLAYERS);
 
         if (!onlineUuids.isEmpty()) {

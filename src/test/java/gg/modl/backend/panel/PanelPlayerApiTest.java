@@ -27,7 +27,7 @@ class PanelPlayerApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
 
         PlayerInfo player = TestDataProvider.getPlayers().get(0);
@@ -292,3 +292,4 @@ class PanelPlayerApiTest {
         ));
     }
 }
+

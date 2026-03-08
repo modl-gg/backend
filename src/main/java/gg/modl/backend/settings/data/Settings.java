@@ -1,6 +1,7 @@
 package gg.modl.backend.settings.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -15,6 +16,7 @@ import java.util.Date;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@GenerateMongoFields
 public class Settings {
     @Id
     @Field(targetType = FieldType.OBJECT_ID)

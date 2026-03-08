@@ -1,6 +1,7 @@
 package gg.modl.backend.auth.session;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.util.Date;
 
 @Document(collection = CollectionName.SESSIONS)
+@GenerateMongoFields
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

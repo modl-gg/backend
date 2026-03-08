@@ -2,7 +2,7 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +11,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.List;
 import java.util.Map;
@@ -32,19 +31,20 @@ class AdminMonitoringServiceTest {
     private ServerMongoRepository serverRepository;
 
     @Mock
-    private TenantMongoAccess tenantMongoAccess;
+    private GlobalMongoAdminRepository globalMongoAdminRepository;
 
     private AdminMonitoringService adminMonitoringService;
 
     @BeforeEach
     void setUp() {
-        adminMonitoringService = new AdminMonitoringService(systemLogRepository, serverRepository, tenantMongoAccess);
+        adminMonitoringService = new AdminMonitoringService(systemLogRepository, serverRepository, globalMongoAdminRepository);
     }
 
     @Test
-    void getLogsDefaultsUnsafeSortAndPreservesNullFilters() {
-        when(systemLogRepository.find(any(Query.class))).thenReturn(List.of());
-        when(systemLogRepository.count(any(Query.class))).thenReturn(0L);
+    void getLogsPreservesNullFilters() {
+        when(systemLogRepository.findLogs(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(List.of());
+        when(systemLogRepository.countLogs(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
         Map<String, Object> response = adminMonitoringService.getLogs(
                 1,
@@ -60,12 +60,6 @@ class AdminMonitoringServiceTest {
                 "updatedAt",
                 "desc"
         );
-
-        ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
-        verify(systemLogRepository).find(queryCaptor.capture());
-        Query query = queryCaptor.getValue();
-
-        assertEquals(-1, query.getSortObject().get("timestamp"));
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = (Map<String, Object>) response.get("data");

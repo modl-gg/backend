@@ -1,6 +1,7 @@
 package gg.modl.backend.server.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.server.ServerField;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ import java.util.Date;
 @Document(collection = CollectionName.MODL_SERVERS)
 @Data
 @RequiredArgsConstructor
+@GenerateMongoFields
 public class Server {
     // Core Identifiers
     @Id

@@ -1,16 +1,13 @@
 package gg.modl.backend.auth;
 
 import gg.modl.backend.auth.data.AuthCode;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.AuthCodeMongoRepository;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
 import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.io.UnsupportedEncodingException;
@@ -20,33 +17,26 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Date;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AuthService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int MAX_FAILED_ATTEMPTS = 5;
 
     private final EmailService emailService;
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final AuthCodeMongoRepository authCodeRepository;
     private final AuthConfiguration authConfiguration;
 
     public void sendUserLoginCode(Server server, String email) throws MessagingException, UnsupportedEncodingException {
         String code = generateNumericCode(authConfiguration.getEmailCodeLength());
         String codeHash = hashCode(code);
         String normalizedEmail = email.toLowerCase();
+        Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
 
-        MongoTemplate mongo = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query existingQuery = new Query(Criteria.where("email").is(normalizedEmail));
-        mongo.remove(existingQuery, AuthCode.class);
-
-        AuthCode authCode = new AuthCode();
-        authCode.setEmail(normalizedEmail);
-        authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
-
-        mongo.save(authCode);
+        authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt);
 
         if (authConfiguration.isDevelopmentMode()) {
             log.info("DEV MODE: Login code for {} is: {}", email, code);
@@ -61,50 +51,49 @@ public class AuthService {
         String code = generateNumericCode(authConfiguration.getEmailCodeLength());
         String codeHash = hashCode(code);
         String normalizedEmail = email.toLowerCase();
+        Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
 
-        MongoTemplate mongo = mongoProvider.getGlobalDatabase();
-
-        Query existingQuery = new Query(Criteria.where("email").is(normalizedEmail));
-        mongo.remove(existingQuery, AuthCode.class);
-
-        AuthCode authCode = new AuthCode();
-        authCode.setEmail(normalizedEmail);
-        authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L)));
-
-        mongo.save(authCode);
+        authCodeRepository.replaceForGlobal(normalizedEmail, codeHash, expiresAt);
 
         EmailHTMLTemplate.HTMLEmail emailContent = EmailHTMLTemplate.ADMIN_CODE.build(code, null);
         emailService.send(email, emailContent);
     }
 
     public boolean verifyCode(Server server, String email, String code) {
-        MongoTemplate mongo = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        return verifyCodeInternal(mongo, email, code);
+        String normalizedEmail = email.toLowerCase();
+        Date now = new Date();
+        return verifyCodeInternal(
+                code,
+                authCodeRepository.findActiveForServer(server, normalizedEmail, now),
+                () -> authCodeRepository.deleteForServer(server, normalizedEmail),
+                () -> authCodeRepository.incrementFailedAttemptsForServer(server, normalizedEmail, now)
+        );
     }
 
     public boolean verifyAdminCode(String email, String code) {
-        MongoTemplate mongo = mongoProvider.getGlobalDatabase();
-        return verifyCodeInternal(mongo, email, code);
+        String normalizedEmail = email.toLowerCase();
+        Date now = new Date();
+        return verifyCodeInternal(
+                code,
+                authCodeRepository.findActiveForGlobal(normalizedEmail, now),
+                () -> authCodeRepository.deleteForGlobal(normalizedEmail),
+                () -> authCodeRepository.incrementFailedAttemptsForGlobal(normalizedEmail, now)
+        );
     }
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-
-    private boolean verifyCodeInternal(MongoTemplate mongo, String email, String code) {
-        String normalizedEmail = email.toLowerCase();
-
-        Query query = new Query(Criteria.where("email").is(normalizedEmail)
-                .and("expiresAt").gt(new Date()));
-
-        AuthCode authCode = mongo.findOne(query, AuthCode.class);
-
-        if (authCode == null) {
+    private boolean verifyCodeInternal(
+            String code,
+            Optional<AuthCode> authCodeOpt,
+            Runnable onDelete,
+            Runnable onFailedAttempt
+    ) {
+        if (authCodeOpt.isEmpty()) {
             return false;
         }
 
-        // Invalidate code after too many failed attempts
+        AuthCode authCode = authCodeOpt.get();
         if (authCode.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
-            mongo.remove(authCode);
+            onDelete.run();
             return false;
         }
 
@@ -115,12 +104,9 @@ public class AuthService {
         );
 
         if (valid) {
-            mongo.remove(authCode);
+            onDelete.run();
         } else {
-            // Increment failed attempts counter
-            org.springframework.data.mongodb.core.query.Update update = new org.springframework.data.mongodb.core.query.Update()
-                    .inc("failedAttempts", 1);
-            mongo.updateFirst(query, update, AuthCode.class);
+            onFailedAttempt.run();
         }
 
         return valid;

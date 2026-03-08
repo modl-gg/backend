@@ -1,42 +1,245 @@
 package gg.modl.backend.auth;
 
-import com.yubico.webauthn.*;
-import com.yubico.webauthn.data.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.yubico.webauthn.AssertionResult;
+import com.yubico.webauthn.AssertionRequest;
+import com.yubico.webauthn.CredentialRepository;
+import com.yubico.webauthn.FinishAssertionOptions;
+import com.yubico.webauthn.FinishRegistrationOptions;
+import com.yubico.webauthn.RegistrationResult;
+import com.yubico.webauthn.RelyingParty;
+import com.yubico.webauthn.StartAssertionOptions;
+import com.yubico.webauthn.StartRegistrationOptions;
+import com.yubico.webauthn.data.AttestationConveyancePreference;
+import com.yubico.webauthn.data.AuthenticatorAssertionResponse;
+import com.yubico.webauthn.data.AuthenticatorAttestationResponse;
+import com.yubico.webauthn.data.AuthenticatorSelectionCriteria;
+import com.yubico.webauthn.data.ByteArray;
+import com.yubico.webauthn.data.ClientAssertionExtensionOutputs;
+import com.yubico.webauthn.data.ClientRegistrationExtensionOutputs;
+import com.yubico.webauthn.data.PublicKeyCredential;
+import com.yubico.webauthn.data.PublicKeyCredentialCreationOptions;
+import com.yubico.webauthn.data.PublicKeyCredentialDescriptor;
+import com.yubico.webauthn.data.PublicKeyCredentialType;
+import com.yubico.webauthn.RegisteredCredential;
+import com.yubico.webauthn.data.RelyingPartyIdentity;
+import com.yubico.webauthn.data.ResidentKeyRequirement;
+import com.yubico.webauthn.data.UserIdentity;
+import com.yubico.webauthn.data.UserVerificationRequirement;
+import com.yubico.webauthn.data.exception.Base64UrlException;
 import com.yubico.webauthn.exception.AssertionFailedException;
 import com.yubico.webauthn.exception.RegistrationFailedException;
 import gg.modl.backend.auth.data.WebAuthnChallenge;
 import gg.modl.backend.auth.data.WebAuthnCredential;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.WebAuthnChallengeMongoRepository;
+import gg.modl.backend.database.mongo.repository.WebAuthnCredentialMongoRepository;
 import gg.modl.backend.server.data.Server;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Service;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.yubico.webauthn.data.exception.Base64UrlException;
-
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class WebAuthnService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final WebAuthnChallengeMongoRepository challengeRepository;
+    private final WebAuthnCredentialMongoRepository credentialRepository;
     private final AuthConfiguration authConfiguration;
 
-    private RelyingParty buildRelyingParty(Server server, String requestDomain, MongoTemplate mongo) {
+    public StartRegistrationResult startRegistration(Server server, String requestDomain, String email) {
+        RelyingParty rp = buildRelyingParty(server, requestDomain);
+
+        UserIdentity userIdentity = UserIdentity.builder()
+                .name(email)
+                .displayName(email)
+                .id(userHandle(email))
+                .build();
+
+        PublicKeyCredentialCreationOptions options = rp.startRegistration(
+                StartRegistrationOptions.builder()
+                        .user(userIdentity)
+                        .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
+                                .residentKey(ResidentKeyRequirement.PREFERRED)
+                                .userVerification(UserVerificationRequirement.PREFERRED)
+                                .build())
+                        .build()
+        );
+
+        String challengeId = UUID.randomUUID().toString();
+        try {
+            WebAuthnChallenge challenge = new WebAuthnChallenge();
+            challenge.setId(challengeId);
+            challenge.setChallengeJson(options.toJson());
+            challenge.setEmail(normalizeEmail(email));
+            challenge.setExpiresAt(challengeExpiry());
+            challengeRepository.saveEntity(server, challenge);
+            return new StartRegistrationResult(challengeId, options.toCredentialsCreateJson());
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize registration options", e);
+        }
+    }
+
+    public void finishRegistration(Server server, String requestDomain, String email, String challengeId, String responseJson, String credentialName) throws Exception {
+        RelyingParty rp = buildRelyingParty(server, requestDomain);
+        WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
+        if (challenge == null) {
+            throw new IllegalStateException("Challenge not found or expired");
+        }
+
+        String normalizedEmail = normalizeEmail(email);
+        if (!normalizedEmail.equals(challenge.getEmail())) {
+            throw new IllegalStateException("Email mismatch");
+        }
+
+        PublicKeyCredentialCreationOptions options = PublicKeyCredentialCreationOptions.fromJson(challenge.getChallengeJson());
+        PublicKeyCredential<AuthenticatorAttestationResponse, ClientRegistrationExtensionOutputs> pkc =
+                PublicKeyCredential.parseRegistrationResponseJson(responseJson);
+
+        RegistrationResult result;
+        try {
+            result = rp.finishRegistration(
+                    FinishRegistrationOptions.builder()
+                            .request(options)
+                            .response(pkc)
+                            .build()
+            );
+        } catch (RegistrationFailedException e) {
+            throw new IllegalStateException("Registration verification failed: " + e.getMessage(), e);
+        }
+
+        WebAuthnCredential cred = new WebAuthnCredential();
+        cred.setEmail(normalizedEmail);
+        cred.setUserHandle(userHandle(normalizedEmail).getBase64Url());
+        cred.setCredentialId(result.getKeyId().getId().getBase64Url());
+        cred.setPublicKeyCose(result.getPublicKeyCose().getBytes());
+        cred.setSignatureCount(result.getSignatureCount());
+        cred.setName(credentialName != null && !credentialName.isBlank() ? credentialName.trim() : "Passkey");
+        cred.setCreatedAt(new Date());
+        cred.setLastUsedAt(new Date());
+        credentialRepository.saveEntity(server, cred);
+    }
+
+    public boolean checkHasPasskeys(Server server, String email) {
+        return credentialRepository.existsByEmail(server, email);
+    }
+
+    public StartAuthenticationResult startDiscoverableAuthentication(Server server, String requestDomain) {
+        RelyingParty rp = buildRelyingParty(server, requestDomain);
+        AssertionRequest assertionRequest = rp.startAssertion(
+                StartAssertionOptions.builder()
+                        .userVerification(UserVerificationRequirement.PREFERRED)
+                        .build()
+        );
+
+        String challengeId = UUID.randomUUID().toString();
+        try {
+            WebAuthnChallenge challenge = new WebAuthnChallenge();
+            challenge.setId(challengeId);
+            challenge.setChallengeJson(assertionRequest.toJson());
+            challenge.setEmail(null);
+            challenge.setExpiresAt(challengeExpiry());
+            challengeRepository.saveEntity(server, challenge);
+            return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize assertion request", e);
+        }
+    }
+
+    public StartAuthenticationResult startAuthentication(Server server, String requestDomain, String email) {
+        RelyingParty rp = buildRelyingParty(server, requestDomain);
+        AssertionRequest assertionRequest = rp.startAssertion(
+                StartAssertionOptions.builder()
+                        .username(normalizeEmail(email))
+                        .userVerification(UserVerificationRequirement.PREFERRED)
+                        .build()
+        );
+
+        String challengeId = UUID.randomUUID().toString();
+        try {
+            WebAuthnChallenge challenge = new WebAuthnChallenge();
+            challenge.setId(challengeId);
+            challenge.setChallengeJson(assertionRequest.toJson());
+            challenge.setEmail(normalizeEmail(email));
+            challenge.setExpiresAt(challengeExpiry());
+            challengeRepository.saveEntity(server, challenge);
+            return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize assertion request", e);
+        }
+    }
+
+    public String finishAuthentication(Server server, String requestDomain, String challengeId, String responseJson) throws Exception {
+        RelyingParty rp = buildRelyingParty(server, requestDomain);
+        WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
+        if (challenge == null) {
+            throw new IllegalStateException("Challenge not found or expired");
+        }
+
+        AssertionRequest assertionRequest = AssertionRequest.fromJson(challenge.getChallengeJson());
+        PublicKeyCredential<AuthenticatorAssertionResponse, ClientAssertionExtensionOutputs> pkc =
+                PublicKeyCredential.parseAssertionResponseJson(responseJson);
+
+        AssertionResult result;
+        try {
+            result = rp.finishAssertion(
+                    FinishAssertionOptions.builder()
+                            .request(assertionRequest)
+                            .response(pkc)
+                            .build()
+            );
+        } catch (AssertionFailedException e) {
+            throw new IllegalStateException("Authentication verification failed: " + e.getMessage(), e);
+        }
+
+        if (!result.isSuccess()) {
+            throw new IllegalStateException("Authentication failed");
+        }
+
+        String credentialId = result.getCredential().getCredentialId().getBase64Url();
+        credentialRepository.updateUsage(server, credentialId, result.getSignatureCount(), new Date());
+
+        String email = challenge.getEmail();
+        if (email == null || email.isBlank()) {
+            String userHandleBase64 = result.getCredential().getUserHandle().getBase64Url();
+            WebAuthnCredential cred = credentialRepository.findByUserHandle(server, userHandleBase64).orElse(null);
+            if (cred == null) {
+                throw new IllegalStateException("Could not determine user identity");
+            }
+            email = cred.getEmail();
+        }
+        return email;
+    }
+
+    public List<CredentialInfo> listCredentials(Server server, String email) {
+        return credentialRepository.findByEmail(server, email).stream()
+                .map(c -> new CredentialInfo(c.getId(), c.getName(), c.getCreatedAt(), c.getLastUsedAt()))
+                .collect(Collectors.toList());
+    }
+
+    public boolean renameCredential(Server server, String email, String credentialMongoId, String newName) {
+        return credentialRepository.renameByIdAndEmail(server, credentialMongoId, email, newName);
+    }
+
+    public boolean deleteCredential(Server server, String email, String credentialMongoId) {
+        return credentialRepository.deleteByIdAndEmail(server, credentialMongoId, email);
+    }
+
+    private RelyingParty buildRelyingParty(Server server, String requestDomain) {
         String rpId = resolveRpId(requestDomain);
         Set<String> origins = resolveOrigins(requestDomain, rpId);
-        CredentialRepositoryAdapter credRepo = new CredentialRepositoryAdapter(mongo);
+        CredentialRepositoryAdapter credRepo = new CredentialRepositoryAdapter(server);
 
         return RelyingParty.builder()
                 .identity(RelyingPartyIdentity.builder()
@@ -77,252 +280,31 @@ public class WebAuthnService {
     private ByteArray userHandle(String email) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(email.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8));
+            byte[] hash = digest.digest(normalizeEmail(email).getBytes(StandardCharsets.UTF_8));
             return new ByteArray(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("SHA-256 not available", e);
         }
     }
 
-    // --- Registration ---
-
-    public StartRegistrationResult startRegistration(Server server, String requestDomain, String email) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
-
-        UserIdentity userIdentity = UserIdentity.builder()
-                .name(email)
-                .displayName(email)
-                .id(userHandle(email))
-                .build();
-
-        PublicKeyCredentialCreationOptions options = rp.startRegistration(
-                StartRegistrationOptions.builder()
-                        .user(userIdentity)
-                        .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
-                                .residentKey(ResidentKeyRequirement.PREFERRED)
-                                .userVerification(UserVerificationRequirement.PREFERRED)
-                                .build())
-                        .build()
-        );
-
-        String challengeId = UUID.randomUUID().toString();
-        try {
-            WebAuthnChallenge challenge = new WebAuthnChallenge();
-            challenge.setId(challengeId);
-            challenge.setChallengeJson(options.toJson());
-            challenge.setEmail(email.trim().toLowerCase(Locale.ROOT));
-            challenge.setExpiresAt(new Date(System.currentTimeMillis() + 5 * 60 * 1000));
-            mongo.save(challenge);
-
-            return new StartRegistrationResult(challengeId, options.toCredentialsCreateJson());
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize registration options", e);
-        }
+    private Date challengeExpiry() {
+        return new Date(System.currentTimeMillis() + 5 * 60 * 1000);
     }
 
-    public void finishRegistration(Server server, String requestDomain, String email, String challengeId, String responseJson, String credentialName) throws Exception {
-        MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
-
-        WebAuthnChallenge challenge = findAndDeleteChallenge(mongo, challengeId);
-        if (challenge == null) {
-            throw new IllegalStateException("Challenge not found or expired");
-        }
-        if (!email.trim().toLowerCase(Locale.ROOT).equals(challenge.getEmail())) {
-            throw new IllegalStateException("Email mismatch");
-        }
-
-        PublicKeyCredentialCreationOptions options = PublicKeyCredentialCreationOptions.fromJson(challenge.getChallengeJson());
-        PublicKeyCredential<AuthenticatorAttestationResponse, ClientRegistrationExtensionOutputs> pkc =
-                PublicKeyCredential.parseRegistrationResponseJson(responseJson);
-
-        RegistrationResult result;
-        try {
-            result = rp.finishRegistration(
-                    FinishRegistrationOptions.builder()
-                            .request(options)
-                            .response(pkc)
-                            .build()
-            );
-        } catch (RegistrationFailedException e) {
-            throw new IllegalStateException("Registration verification failed: " + e.getMessage(), e);
-        }
-
-        WebAuthnCredential cred = new WebAuthnCredential();
-        cred.setEmail(email.trim().toLowerCase(Locale.ROOT));
-        cred.setUserHandle(userHandle(email).getBase64Url());
-        cred.setCredentialId(result.getKeyId().getId().getBase64Url());
-        cred.setPublicKeyCose(result.getPublicKeyCose().getBytes());
-        cred.setSignatureCount(result.getSignatureCount());
-        cred.setName(credentialName != null && !credentialName.isBlank() ? credentialName.trim() : "Passkey");
-        cred.setCreatedAt(new Date());
-        cred.setLastUsedAt(new Date());
-        mongo.save(cred);
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
     }
-
-    // --- Authentication ---
-
-    public boolean checkHasPasskeys(Server server, String email) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        Query query = new Query(Criteria.where("email").is(email.trim().toLowerCase(Locale.ROOT)));
-        return mongo.exists(query, WebAuthnCredential.class);
-    }
-
-    public StartAuthenticationResult startDiscoverableAuthentication(Server server, String requestDomain) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
-
-        AssertionRequest assertionRequest = rp.startAssertion(
-                StartAssertionOptions.builder()
-                        .userVerification(UserVerificationRequirement.PREFERRED)
-                        .build()
-        );
-
-        String challengeId = UUID.randomUUID().toString();
-        try {
-            WebAuthnChallenge challenge = new WebAuthnChallenge();
-            challenge.setId(challengeId);
-            challenge.setChallengeJson(assertionRequest.toJson());
-            challenge.setEmail(null);
-            challenge.setExpiresAt(new Date(System.currentTimeMillis() + 5 * 60 * 1000));
-            mongo.save(challenge);
-
-            return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize assertion request", e);
-        }
-    }
-
-    public StartAuthenticationResult startAuthentication(Server server, String requestDomain, String email) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
-
-        AssertionRequest assertionRequest = rp.startAssertion(
-                StartAssertionOptions.builder()
-                        .username(email.trim().toLowerCase(Locale.ROOT))
-                        .userVerification(UserVerificationRequirement.PREFERRED)
-                        .build()
-        );
-
-        String challengeId = UUID.randomUUID().toString();
-        try {
-            WebAuthnChallenge challenge = new WebAuthnChallenge();
-            challenge.setId(challengeId);
-            challenge.setChallengeJson(assertionRequest.toJson());
-            challenge.setEmail(email.trim().toLowerCase(Locale.ROOT));
-            challenge.setExpiresAt(new Date(System.currentTimeMillis() + 5 * 60 * 1000));
-            mongo.save(challenge);
-
-            return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize assertion request", e);
-        }
-    }
-
-    public String finishAuthentication(Server server, String requestDomain, String challengeId, String responseJson) throws Exception {
-        MongoTemplate mongo = getMongoTemplate(server);
-        RelyingParty rp = buildRelyingParty(server, requestDomain, mongo);
-
-        WebAuthnChallenge challenge = findAndDeleteChallenge(mongo, challengeId);
-        if (challenge == null) {
-            throw new IllegalStateException("Challenge not found or expired");
-        }
-
-        AssertionRequest assertionRequest = AssertionRequest.fromJson(challenge.getChallengeJson());
-        PublicKeyCredential<AuthenticatorAssertionResponse, ClientAssertionExtensionOutputs> pkc =
-                PublicKeyCredential.parseAssertionResponseJson(responseJson);
-
-        AssertionResult result;
-        try {
-            result = rp.finishAssertion(
-                    FinishAssertionOptions.builder()
-                            .request(assertionRequest)
-                            .response(pkc)
-                            .build()
-            );
-        } catch (AssertionFailedException e) {
-            throw new IllegalStateException("Authentication verification failed: " + e.getMessage(), e);
-        }
-
-        if (!result.isSuccess()) {
-            throw new IllegalStateException("Authentication failed");
-        }
-
-        // Update signature count and last used
-        String credentialId = result.getCredential().getCredentialId().getBase64Url();
-        Query updateQuery = new Query(Criteria.where("credentialId").is(credentialId));
-        Update update = new Update()
-                .set("signatureCount", result.getSignatureCount())
-                .set("lastUsedAt", new Date());
-        mongo.updateFirst(updateQuery, update, WebAuthnCredential.class);
-
-        // Resolve email: from challenge (email-based flow) or from credential lookup (discoverable flow)
-        String email = challenge.getEmail();
-        if (email == null || email.isBlank()) {
-            String userHandleBase64 = result.getCredential().getUserHandle().getBase64Url();
-            Query uhQuery = new Query(Criteria.where("userHandle").is(userHandleBase64));
-            WebAuthnCredential cred = mongo.findOne(uhQuery, WebAuthnCredential.class);
-            if (cred == null) {
-                throw new IllegalStateException("Could not determine user identity");
-            }
-            email = cred.getEmail();
-        }
-        return email;
-    }
-
-    // --- Credential management ---
-
-    public List<CredentialInfo> listCredentials(Server server, String email) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        Query query = new Query(Criteria.where("email").is(email.trim().toLowerCase(Locale.ROOT)));
-        List<WebAuthnCredential> credentials = mongo.find(query, WebAuthnCredential.class);
-        return credentials.stream()
-                .map(c -> new CredentialInfo(c.getId(), c.getName(), c.getCreatedAt(), c.getLastUsedAt()))
-                .collect(Collectors.toList());
-    }
-
-    public boolean renameCredential(Server server, String email, String credentialMongoId, String newName) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        Query query = new Query(Criteria.where("_id").is(credentialMongoId)
-                .and("email").is(email.trim().toLowerCase(Locale.ROOT)));
-        Update update = new Update().set("name", newName.trim());
-        return mongo.updateFirst(query, update, WebAuthnCredential.class).getModifiedCount() > 0;
-    }
-
-    public boolean deleteCredential(Server server, String email, String credentialMongoId) {
-        MongoTemplate mongo = getMongoTemplate(server);
-        Query query = new Query(Criteria.where("_id").is(credentialMongoId)
-                .and("email").is(email.trim().toLowerCase(Locale.ROOT)));
-        return mongo.remove(query, WebAuthnCredential.class).getDeletedCount() > 0;
-    }
-
-    // --- Helpers ---
-
-    private MongoTemplate getMongoTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
-    }
-
-    private WebAuthnChallenge findAndDeleteChallenge(MongoTemplate mongo, String challengeId) {
-        Query query = new Query(Criteria.where("_id").is(challengeId)
-                .and("expiresAt").gt(new Date()));
-        return mongo.findAndRemove(query, WebAuthnChallenge.class);
-    }
-
-    // --- CredentialRepository adapter ---
 
     private class CredentialRepositoryAdapter implements CredentialRepository {
-        private final MongoTemplate mongo;
+        private final Server server;
 
-        CredentialRepositoryAdapter(MongoTemplate mongo) {
-            this.mongo = mongo;
+        CredentialRepositoryAdapter(Server server) {
+            this.server = server;
         }
 
         @Override
         public Set<PublicKeyCredentialDescriptor> getCredentialIdsForUsername(String username) {
-            Query query = new Query(Criteria.where("email").is(username.trim().toLowerCase(Locale.ROOT)));
-            List<WebAuthnCredential> creds = mongo.find(query, WebAuthnCredential.class);
-            return creds.stream()
+            return credentialRepository.findByEmail(server, username).stream()
                     .map(c -> {
                         try {
                             return PublicKeyCredentialDescriptor.builder()
@@ -345,37 +327,23 @@ public class WebAuthnService {
 
         @Override
         public Optional<String> getUsernameForUserHandle(ByteArray userHandle) {
-            String userHandleBase64 = userHandle.getBase64Url();
-            Query query = new Query(Criteria.where("userHandle").is(userHandleBase64));
-            WebAuthnCredential cred = mongo.findOne(query, WebAuthnCredential.class);
-            if (cred == null) {
-                return Optional.empty();
-            }
-            return Optional.of(cred.getEmail());
+            return credentialRepository.findByUserHandle(server, userHandle.getBase64Url()).map(WebAuthnCredential::getEmail);
         }
 
         @Override
         public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) {
-            String credIdBase64 = credentialId.getBase64Url();
-            Query query = new Query(Criteria.where("credentialId").is(credIdBase64));
-            WebAuthnCredential cred = mongo.findOne(query, WebAuthnCredential.class);
-            if (cred == null) {
-                return Optional.empty();
-            }
-            return Optional.of(RegisteredCredential.builder()
-                    .credentialId(credentialId)
-                    .userHandle(userHandle(cred.getEmail()))
-                    .publicKeyCose(new ByteArray(cred.getPublicKeyCose()))
-                    .signatureCount(cred.getSignatureCount())
-                    .build());
+            return credentialRepository.findByCredentialId(server, credentialId.getBase64Url())
+                    .map(cred -> RegisteredCredential.builder()
+                            .credentialId(credentialId)
+                            .userHandle(userHandle(cred.getEmail()))
+                            .publicKeyCose(new ByteArray(cred.getPublicKeyCose()))
+                            .signatureCount(cred.getSignatureCount())
+                            .build());
         }
 
         @Override
         public Set<RegisteredCredential> lookupAll(ByteArray credentialId) {
-            String credIdBase64 = credentialId.getBase64Url();
-            Query query = new Query(Criteria.where("credentialId").is(credIdBase64));
-            List<WebAuthnCredential> creds = mongo.find(query, WebAuthnCredential.class);
-            return creds.stream()
+            return credentialRepository.findAllByCredentialId(server, credentialId.getBase64Url()).stream()
                     .map(c -> RegisteredCredential.builder()
                             .credentialId(credentialId)
                             .userHandle(userHandle(c.getEmail()))
@@ -386,9 +354,12 @@ public class WebAuthnService {
         }
     }
 
-    // --- Result records ---
+    public record StartRegistrationResult(String challengeId, String optionsJson) {
+    }
 
-    public record StartRegistrationResult(String challengeId, String optionsJson) {}
-    public record StartAuthenticationResult(String challengeId, String optionsJson, boolean hasPasskeys) {}
-    public record CredentialInfo(String id, String name, Date createdAt, Date lastUsedAt) {}
+    public record StartAuthenticationResult(String challengeId, String optionsJson, boolean hasPasskeys) {
+    }
+
+    public record CredentialInfo(String id, String name, Date createdAt, Date lastUsedAt) {
+    }
 }

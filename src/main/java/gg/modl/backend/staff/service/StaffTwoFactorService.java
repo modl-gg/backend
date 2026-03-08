@@ -1,15 +1,10 @@
 package gg.modl.backend.staff.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -30,14 +25,7 @@ public class StaffTwoFactorService {
         String token = UUID.randomUUID().toString();
         long now = Instant.now().toEpochMilli();
 
-        Query staffQuery = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid));
-        Update update = new Update();
-        MongoUpdates.set(update, StaffFields.TWO_FACTOR_TOKEN, token);
-        MongoUpdates.set(update, StaffFields.TWO_FACTOR_TOKEN_IP, ip);
-        MongoUpdates.set(update, StaffFields.TWO_FACTOR_TOKEN_CREATED_AT, now);
-
-        var result = staffRepository.updateFirst(server, staffQuery, update);
-        if (result.getMatchedCount() == 0) {
+        if (!staffRepository.createTwoFactorToken(server, minecraftUuid, token, ip, now)) {
             return Optional.empty();
         }
 
@@ -50,22 +38,20 @@ public class StaffTwoFactorService {
     }
 
     public boolean verifyToken(Server server, String token) {
-        Query query = Query.query(MongoQueries.where(StaffFields.TWO_FACTOR_TOKEN).is(token));
-        Staff staff = staffRepository.findOne(server, query).orElse(null);
+        Staff staff = staffRepository.findByTwoFactorToken(server, token).orElse(null);
         if (staff == null) {
             return false;
         }
 
-        Staff original = staffRepository.snapshot(staff);
         long now = Instant.now().toEpochMilli();
-        staff.setTwoFactorToken(null);
-        staff.setTwoFactorTokenCreatedAt(null);
-        staff.setTwoFactorPendingDelivery(true);
-        staff.setTwoFactorSessionIp(staff.getTwoFactorTokenIp());
-        staff.setTwoFactorTokenIp(null);
-        staff.setTwoFactorSessionExpiresAt(now + SESSION_DURATION_MILLIS);
-        staffRepository.saveChanges(server, original, staff);
-        return true;
+        String sessionIp = staff.getTwoFactorTokenIp();
+        return staffRepository.activateTwoFactorSession(
+                server,
+                staff.getId(),
+                token,
+                sessionIp,
+                now + SESSION_DURATION_MILLIS
+        );
     }
 
     public record TwoFactorTokenResult(String token, String verifyUrl) {

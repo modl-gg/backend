@@ -90,9 +90,9 @@ public class SettingsDocumentService {
     private Settings findLatestSettingsDocument(Server server, String type) {
         Query query = Query.query(MongoQueries.where(SettingsFields.TYPE).is(type))
                 .with(Sort.by(
-                        Sort.Order.desc(SettingsFields.VERSION.path()),
-                        Sort.Order.desc(SettingsFields.UPDATED_AT.path()),
-                        Sort.Order.desc(SettingsFields.ID.path())
+                        Sort.Order.desc(SettingsFields.VERSION),
+                        Sort.Order.desc(SettingsFields.UPDATED_AT),
+                        Sort.Order.desc(SettingsFields.ID)
                 ))
                 .limit(2);
         List<Settings> matches = settingsRepository.find(server, query);

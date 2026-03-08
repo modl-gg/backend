@@ -1,10 +1,5 @@
 package gg.modl.backend.role.service;
 
-import com.mongodb.client.result.DeleteResult;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.StaffFields;
-import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.StaffRole;
@@ -15,16 +10,9 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -36,19 +24,10 @@ public class RoleService {
     private final ServerTimestampService serverTimestampService;
 
     public List<RoleResponse> getAllRoles(Server server) {
-        // Fix any custom roles with incorrect ordering
         fixCustomRoleOrdering(server);
 
-        // Get all roles sorted by order
-        Query query = new Query().with(Sort.by(
-                Sort.Direction.ASC,
-                StaffRoleFields.ORDER.path(),
-                StaffRoleFields.CREATED_AT.path()
-        ));
-        List<StaffRole> roles = staffRoleRepository.find(server, query);
-
-        // Get staff counts per role
-        Map<String, Integer> roleCounts = getStaffCountsByRole(server);
+        List<StaffRole> roles = staffRoleRepository.findAllOrdered(server);
+        Map<String, Integer> roleCounts = staffRepository.countByRoleName(server);
 
         return roles.stream()
                 .map(role -> toRoleResponse(role, roleCounts.getOrDefault(role.getName(), 0)))
@@ -72,10 +51,9 @@ public class RoleService {
             return false;
         }
 
-        StaffRole original = staffRoleRepository.snapshot(role);
         role.setPermissions(permissions != null ? new ArrayList<>(permissions) : new ArrayList<>());
         role.setUpdatedAt(new Date());
-        staffRoleRepository.saveChanges(server, original, role);
+        staffRoleRepository.saveEntity(server, role);
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
@@ -100,8 +78,7 @@ public class RoleService {
         String id = "custom-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
 
         // Find highest order and add 1
-        Query orderQuery = new Query().with(Sort.by(Sort.Direction.DESC, StaffRoleFields.ORDER.path())).limit(1);
-        StaffRole highestRole = staffRoleRepository.findOne(server, orderQuery).orElse(null);
+        StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
         int nextOrder = highestRole != null ? highestRole.getOrder() + 1 : 4;
 
         StaffRole newRole = StaffRole.builder()
@@ -156,12 +133,11 @@ public class RoleService {
             return Optional.empty();
         }
 
-        StaffRole original = staffRoleRepository.snapshot(updated);
         updated.setName(roleName);
         updated.setDescription(request.description());
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
-        updated = staffRoleRepository.saveChanges(server, original, updated);
+        updated = staffRoleRepository.saveEntity(server, updated);
 
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
@@ -193,10 +169,7 @@ public class RoleService {
             throw new IllegalStateException("Cannot delete role that is currently assigned to staff members");
         }
 
-        Query deleteQuery = Query.query(MongoQueries.where(StaffRoleFields.ID).is(id));
-        DeleteResult result = staffRoleRepository.remove(server, deleteQuery);
-
-        return result.getDeletedCount() > 0;
+        return staffRoleRepository.deleteById(server, id);
     }
 
     public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleName, boolean isSuperAdmin) {
@@ -223,10 +196,7 @@ public class RoleService {
         }
 
         request.roleOrder().forEach(item -> {
-            Query query = Query.query(MongoQueries.where(StaffRoleFields.ID).is(item.id()));
-            Update update = new Update();
-            MongoUpdates.set(update, StaffRoleFields.ORDER, item.order());
-            staffRoleRepository.updateFirst(server, query, update);
+            staffRoleRepository.updateOrder(server, item.id(), item.order());
         });
     }
 
@@ -326,8 +296,7 @@ public class RoleService {
         );
 
         for (StaffRole role : defaultRoles) {
-            Query query = Query.query(MongoQueries.where(StaffRoleFields.ID).is(role.getId()));
-            staffRoleRepository.upsert(server, query, buildUpdateFromRole(role));
+            staffRoleRepository.upsertRole(server, role);
         }
     }
 
@@ -374,40 +343,24 @@ public class RoleService {
     }
 
     private void fixCustomRoleOrdering(Server server) {
-        // Find custom roles with order 0 (should only be Super Admin)
-        Query query = Query.query(MongoQueries.where(StaffRoleFields.IS_DEFAULT).is(false)
-                .and(StaffRoleFields.ORDER.path()).is(0));
-        List<StaffRole> problematicRoles = staffRoleRepository.find(server, query);
+        List<StaffRole> problematicRoles = staffRoleRepository.findCustomRolesWithOrderZero(server);
 
         if (!problematicRoles.isEmpty()) {
-            // Find highest order
-            Query orderQuery = new Query().with(Sort.by(Sort.Direction.DESC, StaffRoleFields.ORDER.path())).limit(1);
-            StaffRole highestRole = staffRoleRepository.findOne(server, orderQuery).orElse(null);
+            StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
             int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
 
             for (StaffRole role : problematicRoles) {
-                Query updateQuery = Query.query(MongoQueries.where(StaffRoleFields.ID).is(role.getId()));
-                Update update = new Update();
-                MongoUpdates.set(update, StaffRoleFields.ORDER, nextOrder++);
-                staffRoleRepository.updateFirst(server, updateQuery, update);
+                staffRoleRepository.updateOrder(server, role.getId(), nextOrder++);
             }
         }
     }
 
     private Map<String, Integer> getStaffCountsByRole(Server server) {
-        Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.group(StaffFields.ROLE.path()).count().as("count")
-        );
-
-        AggregationResults<RoleCount> results = staffRepository.aggregate(server, aggregation, RoleCount.class);
-
-        return results.getMappedResults().stream()
-                .collect(Collectors.toMap(RoleCount::getId, RoleCount::getCount));
+        return staffRepository.countByRoleName(server);
     }
 
     private int getStaffCountForRole(Server server, String roleName) {
-        Query query = Query.query(MongoQueries.where(StaffFields.ROLE).is(roleName));
-        return (int) staffRepository.count(server, query);
+        return staffRepository.countByRoleName(server, roleName);
     }
 
     private RoleResponse toRoleResponse(StaffRole role, int userCount) {
@@ -424,39 +377,16 @@ public class RoleService {
         );
     }
 
-    private Update buildUpdateFromRole(StaffRole role) {
-        Update update = new Update();
-        MongoUpdates.set(update, StaffRoleFields.NAME, role.getName());
-        MongoUpdates.set(update, StaffRoleFields.DESCRIPTION, role.getDescription());
-        MongoUpdates.set(update, StaffRoleFields.PERMISSIONS, role.getPermissions());
-        MongoUpdates.set(update, StaffRoleFields.IS_DEFAULT, role.isDefault());
-        MongoUpdates.set(update, StaffRoleFields.ORDER, role.getOrder());
-        MongoUpdates.setOnInsert(update, StaffRoleFields.CREATED_AT, role.getCreatedAt());
-        MongoUpdates.set(update, StaffRoleFields.UPDATED_AT, role.getUpdatedAt());
-        return update;
-    }
-
     private void ensureRoleNameAvailable(Server server, String roleName, String excludeRoleId) {
         if (roleName == null || roleName.isBlank()) {
             throw new IllegalArgumentException("Role name cannot be empty");
         }
 
-        Criteria criteria = MongoQueries.where(StaffRoleFields.NAME)
-                .regex("^" + Pattern.quote(roleName) + "$", "i");
-        if (excludeRoleId != null && !excludeRoleId.isBlank()) {
-            criteria = criteria.and(StaffRoleFields.ID.path()).ne(excludeRoleId);
-        }
-
-        Query query = Query.query(criteria);
-        if (staffRoleRepository.exists(server, query)) {
+        boolean exists = excludeRoleId != null && !excludeRoleId.isBlank()
+                ? staffRoleRepository.existsByNameIgnoreCaseExcludingId(server, roleName, excludeRoleId)
+                : staffRoleRepository.existsByNameIgnoreCase(server, roleName);
+        if (exists) {
             throw new IllegalArgumentException("A role with this name already exists");
         }
-    }
-
-    // Helper class for aggregation results
-    @lombok.Data
-    private static class RoleCount {
-        private String id;
-        private int count;
     }
 }

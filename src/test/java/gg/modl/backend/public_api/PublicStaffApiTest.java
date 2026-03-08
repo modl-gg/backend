@@ -16,7 +16,7 @@ class PublicStaffApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -36,3 +36,4 @@ class PublicStaffApiTest {
         assertTrue(status == 400 || status == 404, "Expected 400 or 404 but got " + status);
     }
 }
+

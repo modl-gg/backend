@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -10,6 +11,7 @@ import java.util.List;
 
 @Data
 @Document(collection = "admin_users")
+@GenerateMongoFields
 public class AdminUser {
     @Id
     private String id;

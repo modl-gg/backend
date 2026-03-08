@@ -1,7 +1,5 @@
 package gg.modl.backend.ticket.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.server.data.Server;
@@ -19,9 +17,6 @@ import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
@@ -49,24 +44,7 @@ public class TicketService {
     }
 
     public List<Ticket> getMinecraftTickets(Server server, String status, String type, int limit) {
-        List<Criteria> conditions = new ArrayList<>();
-
-        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
-            conditions.add(MongoQueries.where(TicketFields.STATUS).is(status));
-        }
-
-        if (type != null && !type.isBlank()) {
-            conditions.add(MongoQueries.where(TicketFields.TYPE).is(type));
-        } else {
-            conditions.add(MongoQueries.where(TicketFields.TYPE).in("SUPPORT", "BUG", "APPEAL"));
-        }
-
-        Query query = conditions.isEmpty()
-                ? new Query()
-                : Query.query(new Criteria().andOperator(conditions.toArray(new Criteria[0])));
-        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
-        query.limit(Math.min(limit, 100));
-        return ticketRepository.find(server, query);
+        return ticketRepository.findMinecraftTickets(server, status, type, limit);
     }
 
     public Optional<Ticket> getMinecraftTicket(Server server, String ticketId) {
@@ -74,10 +52,7 @@ public class TicketService {
     }
 
     public List<Ticket> getMinecraftTicketsByCreator(Server server, String creatorUuid, int limit) {
-        Query query = Query.query(MongoQueries.where(TicketFields.CREATOR_UUID).is(creatorUuid));
-        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
-        query.limit(Math.min(limit, 50));
-        return ticketRepository.find(server, query);
+        return ticketRepository.findRecentByCreator(server, creatorUuid, limit);
     }
 
     public MinecraftTicketClaimResult claimMinecraftTicket(Server server, String ticketId, MinecraftClaimTicketRequest request) {
@@ -90,8 +65,6 @@ public class TicketService {
         if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
             return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         String oldCreatorName = ticket.getCreatorName();
         ticket.setCreatorUuid(request.playerUuid());
         ticket.setCreatorName(request.playerName());
@@ -108,7 +81,7 @@ public class TicketService {
             ticket.setReplies(updatedReplies);
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
         return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.SUCCESS, saved);
     }
 
@@ -116,24 +89,17 @@ public class TicketService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-
-        Query query = Query.query(MongoQueries.where(TicketFields.ID).in(ids));
-        return ticketRepository.find(server, query);
+        return ticketRepository.findByIds(server, ids);
     }
 
     public List<Map<String, Object>> getMinecraftReports(Server server, String status, int limit) {
-        Query query = Query.query(buildReportCriteria(status, null));
-        query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
-        query.limit(Math.min(limit, 100));
-        return ticketRepository.find(server, query).stream()
+        return ticketRepository.findReports(server, status, null, limit, true).stream()
                 .map(this::toMinecraftReport)
                 .toList();
     }
 
     public List<Map<String, Object>> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
-        Query query = Query.query(buildReportCriteria(status, playerUuid));
-        query.limit(Math.min(limit, 100));
-        return ticketRepository.find(server, query).stream()
+        return ticketRepository.findReports(server, status, playerUuid, limit, false).stream()
                 .map(this::toMinecraftReport)
                 .toList();
     }
@@ -143,8 +109,6 @@ public class TicketService {
         if (ticket == null) {
             return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         Date now = new Date();
         String staffName = request.dismissedBy() != null ? request.dismissedBy() : "Staff";
         TicketReply reply = TicketReply.builder()
@@ -171,7 +135,7 @@ public class TicketService {
             data.put("dismissedAt", now);
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
         notificationService.notifyTicketReply(server, saved, reply);
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
@@ -181,8 +145,6 @@ public class TicketService {
         if (ticket == null) {
             return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         Date now = new Date();
         String staffName = request.resolvedBy() != null ? request.resolvedBy() : "Staff";
         TicketReply reply = TicketReply.builder()
@@ -212,7 +174,7 @@ public class TicketService {
             ensureTicketData(ticket).put("linkedPunishmentId", request.punishmentId());
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
         notificationService.notifyTicketReply(server, saved, reply);
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
@@ -222,13 +184,11 @@ public class TicketService {
         if (ticket == null) {
             return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ticket.setAssignedTo("none".equalsIgnoreCase(request.assignee())
                 ? List.of()
                 : TicketAssigneeUtil.normalizeCsv(request.assignee()));
         ticket.setUpdatedAt(new Date());
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
 
@@ -239,85 +199,27 @@ public class TicketService {
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, List<String> types,
                                                    String author, List<String> labels, List<String> assignees, String sort) {
-        Query query = new Query();
-        query.addCriteria(MongoQueries.where(TicketFields.STATUS).ne("Unfinished"));
+        TicketMongoRepository.TicketSearchFilter filter = new TicketMongoRepository.TicketSearchFilter(
+                search,
+                status,
+                types,
+                author,
+                labels,
+                assignees
+        );
+        TicketMongoRepository.TicketSearchPage searchPage = ticketRepository.searchTickets(
+                server,
+                filter,
+                TicketMongoRepository.TicketSortOption.from(sort),
+                page,
+                limit
+        );
 
-        if (search != null && !search.isBlank()) {
-            String escapedSearch = java.util.regex.Pattern.quote(search);
-            Criteria searchCriteria = new Criteria().orOperator(
-                    MongoQueries.where(TicketFields.ID).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.SUBJECT).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.REPLY_NAME).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.REPLY_CONTENT).regex(escapedSearch, "i")
-            );
-            query.addCriteria(searchCriteria);
-        }
-
-        if (status != null && !status.isBlank() && !status.equals("all")) {
-            if (status.equals("open")) {
-                query.addCriteria(MongoQueries.where(TicketFields.LOCKED).ne(true));
-            } else if (status.equals("closed")) {
-                query.addCriteria(MongoQueries.where(TicketFields.LOCKED).is(true));
-            }
-        }
-
-        // Filter by types (OR logic for multiple types)
-        if (types != null && !types.isEmpty()) {
-            List<String> validTypes = types.stream()
-                    .filter(t -> t != null && !t.isBlank() && !t.equals("all"))
-                    .toList();
-            if (!validTypes.isEmpty()) {
-                List<Criteria> typeCriteriaList = validTypes.stream()
-                        .flatMap(type -> {
-                            String escapedType = java.util.regex.Pattern.quote(type);
-                            return java.util.stream.Stream.of(
-                                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i"),
-                                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i")
-                            );
-                        })
-                        .toList();
-                query.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
-            }
-        }
-
-        // Filter by author (creator name)
-        if (author != null && !author.isBlank()) {
-            String escapedAuthor = java.util.regex.Pattern.quote(author);
-            query.addCriteria(MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedAuthor, "i"));
-        }
-
-        // Filter by labels (tags)
-        if (labels != null && !labels.isEmpty()) {
-            query.addCriteria(MongoQueries.where(TicketFields.TAGS).all(labels));
-        }
-
-        Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
-        if (assigneeCriteria != null) {
-            query.addCriteria(assigneeCriteria);
-        }
-
-        long totalTickets = ticketRepository.count(server, query);
-
-        int skip = (page - 1) * limit;
-
-        // Apply sorting
-        Sort sorting = switch (sort != null ? sort : "newest") {
-            case "oldest" -> MongoQueries.sort(Sort.Direction.ASC, TicketFields.CREATED);
-            case "recently-updated" -> MongoQueries.sort(Sort.Direction.DESC, TicketFields.UPDATED_AT);
-            case "least-recently-updated" -> MongoQueries.sort(Sort.Direction.ASC, TicketFields.UPDATED_AT);
-            default -> MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED);
-        };
-        query.with(sorting);
-        query.skip(skip).limit(limit);
-
-        List<Ticket> tickets = ticketRepository.find(server, query);
-
-        List<TicketListItemResponse> ticketItems = tickets.stream()
+        List<TicketListItemResponse> ticketItems = searchPage.tickets().stream()
                 .map(this::toListItemResponse)
                 .toList();
 
-        int totalPages = (int) Math.ceil((double) totalTickets / limit);
+        int totalPages = (int) Math.ceil((double) searchPage.total() / limit);
 
         return new PaginatedTicketsResponse(
                 ticketItems,
@@ -325,7 +227,7 @@ public class TicketService {
                         page,
                         totalPages,
                         limit,
-                        totalTickets,
+                        searchPage.total(),
                         page < totalPages,
                         page > 1
                 ),
@@ -334,67 +236,15 @@ public class TicketService {
     }
 
     public Map<String, Long> getTicketCounts(Server server, String search, List<String> types, String author, List<String> labels, List<String> assignees) {
-        // Build base query without status filter
-        Query baseQuery = new Query();
-        baseQuery.addCriteria(MongoQueries.where(TicketFields.STATUS).ne("Unfinished"));
+        TicketMongoRepository.TicketCounts ticketCounts = ticketRepository.countTickets(
+                server,
+                new TicketMongoRepository.TicketSearchFilter(search, null, types, author, labels, assignees)
+        );
 
-        if (search != null && !search.isBlank()) {
-            String escapedSearch = java.util.regex.Pattern.quote(search);
-            Criteria searchCriteria = new Criteria().orOperator(
-                    MongoQueries.where(TicketFields.ID).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.SUBJECT).regex(escapedSearch, "i"),
-                    MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedSearch, "i")
-            );
-            baseQuery.addCriteria(searchCriteria);
-        }
-
-        // Filter by types (OR logic for multiple types)
-        if (types != null && !types.isEmpty()) {
-            List<String> validTypes = types.stream()
-                    .filter(t -> t != null && !t.isBlank() && !t.equals("all"))
-                    .toList();
-            if (!validTypes.isEmpty()) {
-                List<Criteria> typeCriteriaList = validTypes.stream()
-                        .flatMap(type -> {
-                            String escapedType = java.util.regex.Pattern.quote(type);
-                            return java.util.stream.Stream.of(
-                                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i"),
-                                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i")
-                            );
-                        })
-                        .toList();
-                baseQuery.addCriteria(new Criteria().orOperator(typeCriteriaList.toArray(new Criteria[0])));
-            }
-        }
-
-        if (author != null && !author.isBlank()) {
-            String escapedAuthor = java.util.regex.Pattern.quote(author);
-            baseQuery.addCriteria(MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedAuthor, "i"));
-        }
-
-        if (labels != null && !labels.isEmpty()) {
-            baseQuery.addCriteria(MongoQueries.where(TicketFields.TAGS).all(labels));
-        }
-
-        Criteria assigneeCriteria = buildAssigneeCriteria(assignees);
-        if (assigneeCriteria != null) {
-            baseQuery.addCriteria(assigneeCriteria);
-        }
-
-        // Count open tickets
-        Query openQuery = Query.of(baseQuery);
-        openQuery.addCriteria(MongoQueries.where(TicketFields.LOCKED).ne(true));
-        long openCount = ticketRepository.count(server, openQuery);
-
-        // Count closed tickets
-        Query closedQuery = Query.of(baseQuery);
-        closedQuery.addCriteria(MongoQueries.where(TicketFields.LOCKED).is(true));
-        long closedCount = ticketRepository.count(server, closedQuery);
-
-        Map<String, Long> counts = new HashMap<>();
-        counts.put("open", openCount);
-        counts.put("closed", closedCount);
-        return counts;
+        Map<String, Long> result = new HashMap<>();
+        result.put("open", ticketCounts.open());
+        result.put("closed", ticketCounts.closed());
+        return result;
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
@@ -405,8 +255,6 @@ public class TicketService {
             if (ticket == null) {
                 continue;
             }
-
-            Ticket original = ticketRepository.snapshot(ticket);
             Date now = new Date();
             ticket.setUpdatedAt(now);
             boolean hasChanges = false;
@@ -458,7 +306,7 @@ public class TicketService {
             }
 
             if (hasChanges) {
-                Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+                Ticket saved = ticketRepository.saveEntity(server, ticket);
                 updatedCount++;
 
                 // Send transcript email when ticket is closed via bulk operation
@@ -562,8 +410,6 @@ public class TicketService {
         if (ticket == null) {
             return Optional.empty();
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ticket.setUpdatedAt(new Date());
 
         if (request.status() != null) {
@@ -623,7 +469,7 @@ public class TicketService {
             ensureTicketNotes(ticket).add(newNote);
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
 
         // Send notifications for staff replies
         if (newReply != null && newReply.isStaff()) {
@@ -660,11 +506,9 @@ public class TicketService {
                 .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
                 .creatorIdentifier(request.creatorIdentifier())
                 .build();
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ensureTicketReplies(ticket).add(newReply);
         ticket.setUpdatedAt(new Date());
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
 
         // Send notifications for staff replies
         if (request.staff()) {
@@ -686,11 +530,9 @@ public class TicketService {
                 .issuerAvatar(request.issuerAvatar())
                 .date(new Date())
                 .build();
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ensureTicketNotes(ticket).add(newNote);
         ticket.setUpdatedAt(new Date());
-        ticketRepository.saveChanges(server, original, ticket);
+        ticketRepository.saveEntity(server, ticket);
 
         return Optional.of(newNote);
     }
@@ -703,11 +545,10 @@ public class TicketService {
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (!tags.contains(tag)) {
-            Ticket original = ticketRepository.snapshot(ticket);
             tags.add(tag);
             ticket.setTags(tags);
             ticket.setUpdatedAt(new Date());
-            ticketRepository.saveChanges(server, original, ticket);
+            ticketRepository.saveEntity(server, ticket);
         }
 
         return Optional.of(tags);
@@ -721,31 +562,20 @@ public class TicketService {
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (tags.remove(tag)) {
-            Ticket original = ticketRepository.snapshot(ticket);
             ticket.setTags(tags);
             ticket.setUpdatedAt(new Date());
-            ticketRepository.saveChanges(server, original, ticket);
+            ticketRepository.saveEntity(server, ticket);
         }
 
         return Optional.of(tags);
     }
 
     public List<Ticket> getTicketsByPlayer(Server server, String playerUuid) {
-        Criteria criteria = new Criteria().andOperator(
-                new Criteria().orOperator(
-                        MongoQueries.where(TicketFields.CREATOR_UUID).is(playerUuid),
-                        MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid)
-                ),
-                MongoQueries.where(TicketFields.STATUS).ne("Unfinished")
-        );
-
-        Query query = Query.query(criteria).with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
-        return ticketRepository.find(server, query);
+        return ticketRepository.findByPlayer(server, playerUuid);
     }
 
     public List<Ticket> getTicketsByTag(Server server, String tag) {
-        Query query = Query.query(MongoQueries.where(TicketFields.TAGS).is(tag));
-        return ticketRepository.find(server, query);
+        return ticketRepository.findByTag(server, tag);
     }
 
     public QuickResponseResult processQuickResponse(Server server, String ticketId, QuickResponseRequest request, String staffUsername) {
@@ -772,8 +602,6 @@ public class TicketService {
                 .created(new Date())
                 .staff(true)
                 .build();
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ensureTicketReplies(ticket).add(responseReply);
         ticket.setUpdatedAt(new Date());
         boolean ticketClosed = false;
@@ -783,7 +611,7 @@ public class TicketService {
             ticketClosed = true;
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
 
         // Send notifications for the quick response (which is a staff reply)
         notificationService.notifyTicketReply(server, saved, responseReply);
@@ -809,8 +637,6 @@ public class TicketService {
         if (ticket == null) {
             return Optional.empty();
         }
-
-        Ticket original = ticketRepository.snapshot(ticket);
         ticket.setStatus("Open");
         ticket.setUpdatedAt(new Date());
 
@@ -876,7 +702,7 @@ public class TicketService {
             }
         }
 
-        Ticket saved = ticketRepository.saveChanges(server, original, ticket);
+        Ticket saved = ticketRepository.saveEntity(server, ticket);
 
         return Optional.of(toTicketResponse(saved));
     }
@@ -1197,7 +1023,7 @@ public class TicketService {
             int randomId = 100000 + RANDOM.nextInt(900000);
             ticketId = prefix + "-" + randomId;
             attempts++;
-        } while (ticketRepository.exists(server, Query.query(MongoQueries.where(TicketFields.ID).is(ticketId))) && attempts < 10);
+        } while (ticketRepository.existsByTicketId(server, ticketId) && attempts < 10);
 
         return ticketId;
     }
@@ -1217,44 +1043,6 @@ public class TicketService {
     public enum ReportOperationStatus {
         SUCCESS,
         NOT_FOUND
-    }
-
-    private Criteria buildAssigneeCriteria(List<String> assignees) {
-        if (assignees == null || assignees.isEmpty()) {
-            return null;
-        }
-
-        List<Criteria> assigneeCriteriaList = new ArrayList<>();
-        for (String assignee : assignees) {
-            if (assignee == null || assignee.isBlank()) {
-                continue;
-            }
-
-            if ("none".equalsIgnoreCase(assignee)) {
-                assigneeCriteriaList.add(buildUnassignedCriteria());
-                continue;
-            }
-
-            String normalizedAssignee = TicketAssigneeUtil.normalizeSingle(assignee);
-            if (normalizedAssignee != null) {
-                // Equality on array fields matches documents where the array contains the value.
-                assigneeCriteriaList.add(MongoQueries.where(TicketFields.ASSIGNED_TO).is(normalizedAssignee));
-            }
-        }
-
-        if (assigneeCriteriaList.isEmpty()) {
-            return null;
-        }
-
-        return new Criteria().orOperator(assigneeCriteriaList.toArray(new Criteria[0]));
-    }
-
-    private Criteria buildUnassignedCriteria() {
-        return new Criteria().orOperator(
-                Criteria.where(TicketFields.ASSIGNED_TO.path()).exists(false),
-                Criteria.where(TicketFields.ASSIGNED_TO.path()).is(null),
-                Criteria.where(TicketFields.ASSIGNED_TO.path()).size(0)
-        );
     }
 
     private String buildTicketContent(CreateTicketRequest request, Map<String, Object> formDataForContent) {
@@ -1437,27 +1225,6 @@ public class TicketService {
         return new Date();
     }
 
-    private Criteria buildReportCriteria(String status, String playerUuid) {
-        List<Criteria> conditions = new ArrayList<>();
-        conditions.add(MongoQueries.where(TicketFields.TYPE).is("REPORT"));
-
-        if (playerUuid != null && !playerUuid.isBlank()) {
-            conditions.add(MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid));
-        }
-
-        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
-            conditions.add(MongoQueries.where(TicketFields.STATUS).in(status, normalizeTicketStatus(status)));
-        }
-
-        return conditions.size() == 1
-                ? conditions.get(0)
-                : new Criteria().andOperator(conditions.toArray(new Criteria[0]));
-    }
-
-    private String normalizeTicketStatus(String status) {
-        return status.substring(0, 1).toUpperCase(Locale.ROOT) + status.substring(1).toLowerCase(Locale.ROOT);
-    }
-
     private Map<String, Object> toMinecraftReport(Ticket ticket) {
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("id", ticket.getId());
@@ -1500,3 +1267,4 @@ public class TicketService {
         return ticket.getData();
     }
 }
+
