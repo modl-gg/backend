@@ -54,15 +54,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     private static final String INVALID_PLAN_SENTINEL = "__invalid_plan__";
     private static final String RESET_MESSAGE = "Database reset - awaiting reprovisioning";
 
-    private static final String FIELD_ADMIN_EMAIL = "adminEmail";
-    private static final String FIELD_EMAIL_VERIFIED = "emailVerified";
-    private static final String FIELD_PROVISIONING_STATUS = "provisioningStatus";
-    private static final String FIELD_PROVISIONING_NOTES = "provisioningNotes";
-    private static final String FIELD_PLAN = "plan";
-    private static final String FIELD_SUBSCRIPTION_STATUS = "subscriptionStatus";
-    private static final String FIELD_LAST_ACTIVITY_AT = "lastActivityAt";
-    private static final String FIELD_UPDATED_AT = "updatedAt";
-
     private static final Set<String> ADMIN_SORT_FIELDS = Set.of(
             ServerFields.SERVER_NAME,
             ServerFields.CUSTOM_DOMAIN,
@@ -324,6 +315,23 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public Optional<AIUsageSnapshot> findAIUsageSnapshotById(String serverId) {
+        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
+        query.fields()
+                .include(ServerFields.AI_REQUESTS_CURRENT_PERIOD)
+                .include(ServerFields.MAX_AI_OVERAGE_REQUESTS);
+
+        Document document = globalTemplate().findOne(query, Document.class, collectionName());
+        if (document == null) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new AIUsageSnapshot(
+                extractLong(document, ServerFields.AI_REQUESTS_CURRENT_PERIOD),
+                extractLong(document, ServerFields.MAX_AI_OVERAGE_REQUESTS)
+        ));
+    }
+
     public void resetUsageCounters(String serverId) {
         updateFirst(
                 Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
@@ -361,35 +369,35 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             }
 
             switch (key) {
-                case FIELD_ADMIN_EMAIL -> {
+                case ServerFields.ADMIN_EMAIL -> {
                     update.set(ServerFields.ADMIN_EMAIL, value);
                     hasChanges = true;
                 }
-                case FIELD_EMAIL_VERIFIED -> {
+                case ServerFields.EMAIL_VERIFIED -> {
                     update.set(ServerFields.EMAIL_VERIFIED, value);
                     hasChanges = true;
                 }
-                case FIELD_PROVISIONING_STATUS -> {
+                case ServerFields.PROVISIONING_STATUS -> {
                     update.set(ServerFields.PROVISIONING_STATUS, normalizeProvisioningStatus(value));
                     hasChanges = true;
                 }
-                case FIELD_PROVISIONING_NOTES -> {
+                case ServerFields.PROVISIONING_NOTES -> {
                     update.set(ServerFields.PROVISIONING_NOTES, value);
                     hasChanges = true;
                 }
-                case FIELD_PLAN -> {
+                case ServerFields.PLAN -> {
                     update.set(ServerFields.PLAN, normalizePlan(value));
                     hasChanges = true;
                 }
-                case FIELD_SUBSCRIPTION_STATUS -> {
+                case ServerFields.SUBSCRIPTION_STATUS -> {
                     update.set(ServerFields.SUBSCRIPTION_STATUS, normalizeSubscriptionStatus(value));
                     hasChanges = true;
                 }
-                case FIELD_LAST_ACTIVITY_AT -> {
+                case ServerFields.LAST_ACTIVITY_AT -> {
                     update.set(ServerFields.LAST_ACTIVITY_AT, value);
                     hasChanges = true;
                 }
-                case FIELD_UPDATED_AT -> {
+                case ServerFields.UPDATED_AT -> {
                     update.set(ServerFields.UPDATED_AT, value);
                     hasChanges = true;
                 }
@@ -566,6 +574,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return value instanceof Number number ? number.longValue() : 0L;
     }
 
+    public record AIUsageSnapshot(long aiRequestsCurrentPeriod, long maxAiOverageRequests) {}
+
     public record UsageTotals(long totalUsers, long totalTickets) {}
 }
-

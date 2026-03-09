@@ -4,21 +4,20 @@ import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 @Data
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
 @Document
 @GenerateMongoFields
@@ -30,7 +29,8 @@ import java.util.Map;
 })
 public class Ticket {
     @Id
-    private String id;
+    @NotNull
+    private final String id;
 
     private String type;
     private String category;
@@ -45,38 +45,46 @@ public class Ticket {
     private String reportedPlayerUuid;
 
     @Builder.Default
+    @NotNull
     private List<String> tags = new ArrayList<>();
 
     @Builder.Default
+    @NotNull
     private List<TicketReply> replies = new ArrayList<>();
 
     @Builder.Default
+    @NotNull
     private List<TicketNote> notes = new ArrayList<>();
 
+    @Nullable
     private List<ChatMessage> chatMessages;
 
+    @Nullable
     private Map<String, Object> formData;
+    @Nullable
     private Map<String, Object> data;
 
     private boolean locked;
     private String priority;
 
     @Builder.Default
+    @NotNull
     private List<String> assignedTo = new ArrayList<>();
 
     private Date created;
     private Date updatedAt;
 
+    @Nullable
     private AIAnalysisResult aiAnalysis;
 
     private boolean emailAuthEnabled;
     private boolean hidden;
 
     @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
     public static class ChatMessage {
+        @NotNull
         private String content;
+        @NotNull
         private Date timestamp;
     }
 }
