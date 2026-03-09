@@ -15,6 +15,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @Builder
@@ -32,10 +34,16 @@ public class Ticket {
     @NotNull
     private final String id;
 
-    private String type;
-    private String category;
+    @Field(targetType = FieldType.STRING)
+    private TicketBucket type;
+
+    @Field(targetType = FieldType.STRING)
+    private TicketCategory category;
+
     private String subject;
-    private String status;
+
+    @Field(targetType = FieldType.STRING)
+    private TicketStatus status;
 
     private String creatorUuid;
     private String creatorName;
@@ -61,11 +69,15 @@ public class Ticket {
 
     @Nullable
     private Map<String, Object> formData;
+    
     @Nullable
     private Map<String, Object> data;
 
     private boolean locked;
-    private String priority;
+
+    @Builder.Default
+    @Field(targetType = FieldType.STRING)
+    private TicketPriority priority = TicketPriority.NORMAL;
 
     @Builder.Default
     @NotNull
@@ -75,15 +87,21 @@ public class Ticket {
     private Date updatedAt;
 
     @Nullable
+    @Field(targetType = FieldType.STRING)
+    private AppealWorkflowStatus appealWorkflowStatus;
+
+    @Nullable
     private AIAnalysisResult aiAnalysis;
 
     private boolean emailAuthEnabled;
     private boolean hidden;
 
     @Data
+    @AllArgsConstructor
     public static class ChatMessage {
         @NotNull
         private String content;
+
         @NotNull
         private Date timestamp;
     }

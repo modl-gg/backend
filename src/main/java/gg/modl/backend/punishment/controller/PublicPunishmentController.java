@@ -64,7 +64,11 @@ public class PublicPunishmentController {
             Map<String, Object> existingAppeal = new HashMap<>();
             existingAppeal.put("id", latestAppeal.id());
             existingAppeal.put("submittedDate", latestAppeal.date());
-            existingAppeal.put("status", latestAppeal.status());
+            String workflowStatus = latestAppeal.appealWorkflowStatus() != null
+                    ? latestAppeal.appealWorkflowStatus()
+                    : latestAppeal.status();
+            existingAppeal.put("status", workflowStatus);
+            existingAppeal.put("appealWorkflowStatus", workflowStatus);
             response.put("existingAppeal", existingAppeal);
         }
 

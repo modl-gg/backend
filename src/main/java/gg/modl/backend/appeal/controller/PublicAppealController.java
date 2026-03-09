@@ -47,6 +47,7 @@ public class PublicAppealController {
 
         try {
             TicketResponse appeal = appealService.createAppeal(server, createRequest);
+            String workflowStatus = appeal.appealWorkflowStatus() != null ? appeal.appealWorkflowStatus() : appeal.status();
 
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                     "success", true,
@@ -57,7 +58,8 @@ public class PublicAppealController {
                             "_id", appeal.id(),
                             "type", appeal.type(),
                             "subject", appeal.subject(),
-                            "status", appeal.status(),
+                            "status", workflowStatus,
+                            "appealWorkflowStatus", workflowStatus,
                             "created", appeal.date().toInstant().toString()
                     )
             ));

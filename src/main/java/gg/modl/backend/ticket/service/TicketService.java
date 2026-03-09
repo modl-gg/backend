@@ -5,10 +5,14 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.ticket.data.AppealWorkflowStatus;
+import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
+import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.data.TicketType;
+import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.request.*;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.ticket.dto.response.TicketListItemResponse;
@@ -122,8 +126,7 @@ public class TicketService {
                 .build();
 
         ensureTicketReplies(ticket).add(reply);
-        ticket.setStatus("Closed");
-        ticket.setLocked(true);
+        applyLifecycleStatus(ticket, TicketStatus.CLOSED);
         ticket.setUpdatedAt(now);
 
         if (request.reason() != null && !request.reason().isBlank()) {
@@ -158,8 +161,7 @@ public class TicketService {
                 .build();
 
         ensureTicketReplies(ticket).add(reply);
-        ticket.setStatus("Closed");
-        ticket.setLocked(true);
+        applyLifecycleStatus(ticket, TicketStatus.CLOSED);
         ticket.setUpdatedAt(now);
 
         if (request.resolution() != null && !request.resolution().isBlank()) {
@@ -258,15 +260,14 @@ public class TicketService {
             Date now = new Date();
             ticket.setUpdatedAt(now);
             boolean hasChanges = false;
+            boolean wasClosed = ticket.getStatus() != null && ticket.getStatus().isTerminal();
 
             // Update locked status
             if (request.locked() != null) {
-                ticket.setLocked(request.locked());
-                if (request.locked()) {
-                    ticket.setStatus("Closed");
-                } else {
-                    ticket.setStatus("Open");
-                }
+                TicketStatus nextStatus = request.locked()
+                        ? TicketStatus.CLOSED
+                        : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+                applyLifecycleStatus(ticket, nextStatus);
                 hasChanges = true;
             }
 
@@ -309,8 +310,7 @@ public class TicketService {
                 Ticket saved = ticketRepository.saveEntity(server, ticket);
                 updatedCount++;
 
-                // Send transcript email when ticket is closed via bulk operation
-                if (Boolean.TRUE.equals(request.locked())) {
+                if (!wasClosed && saved.getStatus() != null && saved.getStatus().isTerminal()) {
                     notificationService.notifyTicketClosed(server, saved);
                 }
             }
@@ -328,21 +328,19 @@ public class TicketService {
     }
 
     public TicketResponse createTicket(Server server, CreateTicketRequest request) {
-        TicketType ticketType = TicketType.fromId(request.type());
-        String ticketId = generateTicketId(server, ticketType);
+        TicketCategory ticketCategory = TicketCategory.fromCanonicalId(request.type());
+        String ticketId = generateTicketId(server, ticketCategory);
 
-        boolean isReport = "player".equalsIgnoreCase(request.type()) || "chat".equalsIgnoreCase(request.type());
-        String ticketStatus = isReport || (request.subject() != null && !request.subject().isBlank()) ? "Open" : "Unfinished";
+        boolean shouldOpenImmediately = ticketCategory.isReport()
+                || (request.subject() != null && !request.subject().isBlank());
+        TicketStatus ticketStatus = shouldOpenImmediately ? TicketStatus.OPEN : TicketStatus.UNFINISHED;
         String subject = (request.subject() != null && !request.subject().isBlank())
                 ? request.subject()
-                : ticketType.getDisplayName();
+                : ticketCategory.getDisplayName();
 
         List<String> tags = request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>();
 
         Map<String, Object> data = new HashMap<>();
-        if (request.priority() != null) {
-            data.put("priority", request.priority());
-        }
         String creatorEmail = EmailAddressUtil.normalizeIfValid(request.creatorEmail());
         if (creatorEmail != null) {
             data.put("creatorEmail", creatorEmail);
@@ -379,10 +377,11 @@ public class TicketService {
 
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
-                .type(request.type())
-                .category(request.type())
+                .type(ticketCategory.toBucket())
+                .category(ticketCategory)
                 .subject(subject)
                 .status(ticketStatus)
+                .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
                 .creatorName(creatorDisplayName)
                 .creatorUuid(request.creatorUuid())
                 .reportedPlayer(request.reportedPlayerName())
@@ -393,8 +392,8 @@ public class TicketService {
                 .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : sanitizeChatMessages(request.chatMessages()))
                 .formData(request.formData())
                 .data(data)
-                .locked(false)
-                .priority(request.priority())
+                .locked(ticketStatus.isTerminal())
+                .priority(resolvePriority(request.priority()))
                 .emailAuthEnabled(emailAuth)
                 .created(new Date())
                 .updatedAt(new Date())
@@ -410,21 +409,18 @@ public class TicketService {
         if (ticket == null) {
             return Optional.empty();
         }
+        boolean wasClosed = ticket.getStatus() != null && ticket.getStatus().isTerminal();
         ticket.setUpdatedAt(new Date());
 
         if (request.status() != null) {
-            // Validate status is one of the allowed values
-            String validatedStatus = switch (request.status().toLowerCase()) {
-                case "open" -> "Open";
-                case "closed" -> "Closed";
-                case "unfinished" -> "Unfinished";
-                default -> "Open";
-            };
-            ticket.setStatus(validatedStatus);
+            applyLifecycleStatus(ticket, TicketStatus.fromCanonicalId(request.status()));
         }
 
         if (request.locked() != null) {
-            ticket.setLocked(request.locked());
+            TicketStatus nextStatus = request.locked()
+                    ? TicketStatus.CLOSED
+                    : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+            applyLifecycleStatus(ticket, nextStatus);
         }
 
         if (request.tags() != null) {
@@ -476,8 +472,7 @@ public class TicketService {
             notificationService.notifyTicketReply(server, saved, newReply);
         }
 
-        // Send transcript email when ticket is closed (locked)
-        if (Boolean.TRUE.equals(request.locked())) {
+        if (!wasClosed && saved.getStatus() != null && saved.getStatus().isTerminal()) {
             notificationService.notifyTicketClosed(server, saved);
         }
 
@@ -606,8 +601,7 @@ public class TicketService {
         ticket.setUpdatedAt(new Date());
         boolean ticketClosed = false;
         if (Boolean.TRUE.equals(action.getCloseTicket())) {
-            ticket.setLocked(true);
-            ticket.setStatus("Closed");
+            applyLifecycleStatus(ticket, TicketStatus.CLOSED);
             ticketClosed = true;
         }
 
@@ -637,7 +631,7 @@ public class TicketService {
         if (ticket == null) {
             return Optional.empty();
         }
-        ticket.setStatus("Open");
+        applyLifecycleStatus(ticket, TicketStatus.OPEN);
         ticket.setUpdatedAt(new Date());
 
         Map<String, Object> requestFormData = request.formData() != null ? request.formData() : Collections.emptyMap();
@@ -943,8 +937,8 @@ public class TicketService {
     }
 
     private Ticket createMinecraftTicket(Server server, MinecraftCreateTicketRequest request, boolean unfinished) {
-        TicketType ticketType = TicketType.fromId(request.type());
-        String ticketId = generateTicketId(server, ticketType);
+        TicketCategory ticketCategory = TicketCategory.fromCanonicalId(request.type());
+        String ticketId = generateTicketId(server, ticketCategory);
         Date now = new Date();
 
         List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
@@ -967,10 +961,11 @@ public class TicketService {
 
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
-                .type(mapMinecraftTicketType(request.type()))
-                .category(request.type())
+                .type(ticketCategory.toBucket())
+                .category(ticketCategory)
                 .subject(request.subject())
-                .status(unfinished ? "Unfinished" : "Open")
+                .status(unfinished ? TicketStatus.UNFINISHED : TicketStatus.OPEN)
+                .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
                 .creatorUuid(request.creatorUuid())
                 .creatorName(request.creatorName())
                 .reportedPlayer(request.reportedPlayerName())
@@ -980,7 +975,8 @@ public class TicketService {
                 .notes(new ArrayList<>())
                 .chatMessages(unfinished ? null : chatMessages)
                 .data(ticketData.isEmpty() ? null : ticketData)
-                .priority(request.priority() != null ? request.priority() : "normal")
+                .priority(resolvePriority(request.priority()))
+                .locked(false)
                 .created(now)
                 .updatedAt(now)
                 .build();
@@ -1001,21 +997,8 @@ public class TicketService {
         return ticketRepository.saveEntity(server, ticket);
     }
 
-    private String mapMinecraftTicketType(String type) {
-        if (type == null) {
-            return "SUPPORT";
-        }
-
-        return switch (type.toLowerCase(Locale.ROOT)) {
-            case "player", "chat" -> "REPORT";
-            case "bug" -> "BUG";
-            case "appeal" -> "APPEAL";
-            default -> "SUPPORT";
-        };
-    }
-
-    private String generateTicketId(Server server, TicketType type) {
-        String prefix = TicketType.getPrefix(type);
+    private String generateTicketId(Server server, TicketCategory category) {
+        String prefix = category.getTicketPrefix();
         String ticketId;
         int attempts = 0;
 
@@ -1133,13 +1116,13 @@ public class TicketService {
         return new TicketListItemResponse(
                 ticket.getId(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-                ticket.getStatus(),
+                ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
                 creatorName,
                 creatorName,
                 ticket.getCreated(),
-                TicketType.fromId(ticket.getType()).getDisplayName(),
+                ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
                 ticket.isLocked(),
-                ticket.getType(),
+                ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId(),
                 lastReply,
                 replyCount,
                 ticket.getTags() != null ? ticket.getTags() : new ArrayList<>(),
@@ -1155,10 +1138,11 @@ public class TicketService {
 
         return new TicketResponse(
                 ticket.getId(),
-                ticket.getType(),
-                TicketType.fromId(ticket.getType()).getDisplayName(),
+                ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId(),
+                ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-                ticket.getStatus(),
+                ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+                ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : null,
                 creatorName,
                 ticket.getCreatorUuid(),
                 creatorName,
@@ -1228,8 +1212,9 @@ public class TicketService {
     private Map<String, Object> toMinecraftReport(Ticket ticket) {
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("id", ticket.getId());
-        report.put("type", ticket.getCategory() != null ? ticket.getCategory() : ticket.getType());
-        report.put("category", ticket.getCategory());
+        report.put("type", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+        report.put("bucket", ticket.getType() != null ? ticket.getType().getId() : null);
+        report.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
         report.put("reporterName", ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown");
         report.put("reporterUuid", ticket.getCreatorUuid());
         report.put("reportedPlayerUuid", ticket.getReportedPlayerUuid());
@@ -1238,12 +1223,27 @@ public class TicketService {
         report.put("content", ticket.getReplies() != null && !ticket.getReplies().isEmpty()
                 ? ticket.getReplies().get(0).getContent()
                 : null);
-        report.put("status", ticket.getStatus());
-        report.put("priority", ticket.getPriority());
+        report.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId());
+        report.put("priority", resolvePriority(ticket).getId());
         report.put("createdAt", ticket.getCreated());
         report.put("assignedTo", ticket.getAssignedTo());
         report.put("chatMessages", ticket.getChatMessages());
         return report;
+    }
+
+    private void applyLifecycleStatus(Ticket ticket, TicketStatus status) {
+        ticket.setStatus(status);
+        ticket.setLocked(status != null && status.isTerminal());
+    }
+
+    private TicketPriority resolvePriority(String priority) {
+        return priority == null || priority.isBlank()
+                ? TicketPriority.NORMAL
+                : TicketPriority.fromCanonicalId(priority);
+    }
+
+    private TicketPriority resolvePriority(Ticket ticket) {
+        return ticket.getPriority() != null ? ticket.getPriority() : TicketPriority.NORMAL;
     }
 
     private List<TicketReply> ensureTicketReplies(Ticket ticket) {

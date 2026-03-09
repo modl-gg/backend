@@ -10,6 +10,8 @@ import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -59,10 +61,10 @@ public class AnalyticsService {
         Date startDate = getStartDate(period);
         List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
         List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
-                .map(doc -> new TicketAnalyticsResponse.StatusCount(doc.getString("_id"), doc.getInteger("count", 0)))
+                .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
                 .toList();
 
-        List<Document> categoryResults = analyticsRepository.aggregateTicketTypeCounts(server, startDate);
+        List<Document> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
         List<TicketAnalyticsResponse.CategoryCount> byCategory = categoryResults.stream()
                 .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
                 .toList();
@@ -290,17 +292,20 @@ public class AnalyticsService {
         }
     }
 
-    private String normalizeCategory(String type) {
-        if (type == null) return "Other";
-        return switch (type.toLowerCase()) {
-            case "bug" -> "Bug";
-            case "support" -> "Support";
-            case "appeal" -> "Appeal";
-            case "player" -> "Player Report";
-            case "chat" -> "Chat Report";
-            case "staff" -> "Application";
-            default -> "Other";
-        };
+    private String normalizeCategory(String category) {
+        try {
+            return TicketCategory.fromCanonicalId(category).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return "Other";
+        }
+    }
+
+    private String normalizeStatus(String status) {
+        try {
+            return TicketStatus.fromCanonicalId(status).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return "Other";
+        }
     }
 
     private Date getStartDate(String period) {

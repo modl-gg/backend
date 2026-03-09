@@ -7,6 +7,7 @@ import gg.modl.backend.email.EmailService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,7 +57,7 @@ public class TicketNotificationService {
         try {
             String serverName = server.getServerName() != null ? server.getServerName() : "Server";
             String playerName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-            String ticketType = ticket.getType() != null ? formatTicketType(ticket.getType()) : "Support";
+            String ticketType = resolveTicketLabel(ticket);
             String ticketId = ticket.getId();
             String ticketSubject = ticket.getSubject() != null ? ticket.getSubject() : "No Subject";
             String replyAuthor = reply.getName() != null ? reply.getName() : "Staff";
@@ -127,7 +128,7 @@ public class TicketNotificationService {
         try {
             String serverName = server.getServerName() != null ? server.getServerName() : "Server";
             String playerName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-            String ticketType = ticket.getType() != null ? formatTicketType(ticket.getType()) : "Support";
+            String ticketType = resolveTicketLabel(ticket);
             String ticketId = ticket.getId();
             String ticketSubject = ticket.getSubject() != null ? ticket.getSubject() : "No Subject";
             String ticketUrl = buildTicketUrl(server, ticketId);
@@ -241,17 +242,8 @@ public class TicketNotificationService {
         return String.format("%s replied to your ticket #%s", replyAuthor, ticket.getId());
     }
 
-    private String formatTicketType(String type) {
-        if (type == null) {
-            return "Support";
-        }
-        return switch (type.toLowerCase()) {
-            case "report", "player" -> "Report";
-            case "appeal" -> "Appeal";
-            case "support" -> "Support";
-            case "bug" -> "Bug Report";
-            case "application" -> "Application";
-            default -> type.substring(0, 1).toUpperCase() + type.substring(1).toLowerCase();
-        };
+    private String resolveTicketLabel(Ticket ticket) {
+        TicketCategory category = ticket.getCategory();
+        return category != null ? category.getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 }

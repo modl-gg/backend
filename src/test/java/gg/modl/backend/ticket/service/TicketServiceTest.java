@@ -4,8 +4,13 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.QuickResponseSettings;
+import gg.modl.backend.ticket.data.TicketBucket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketStatus;
+import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.QuickResponseRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
 import gg.modl.backend.ticket.dto.request.DismissReportRequest;
@@ -72,12 +77,47 @@ class TicketServiceTest {
                 "survival"
         ));
 
-        assertEquals("REPORT", ticket.getType());
-        assertEquals("chat", ticket.getCategory());
-        assertEquals("normal", ticket.getPriority());
+        assertEquals(TicketBucket.REPORT, ticket.getType());
+        assertEquals(TicketCategory.CHAT, ticket.getCategory());
+        assertEquals(TicketPriority.NORMAL, ticket.getPriority());
         assertEquals(1, ticket.getReplies().size());
         assertEquals("reported bad chat", ticket.getReplies().get(0).getContent());
         assertEquals(1, ticket.getChatMessages().size());
+    }
+
+    @Test
+    void createTicketAcceptsLegacyTypeSpacingAndPriorityAliases() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.existsByTicketId(any(Server.class), any())).thenReturn(false);
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+                .thenAnswer(invocation -> invocation.getArgument(1));
+
+        ticketService.createTicket(server, new CreateTicketRequest(
+                "staff application",
+                "",
+                "Legacy alias submit",
+                null,
+                "Applicant",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of("legacy"),
+                "medium",
+                null,
+                null
+        ));
+
+        ArgumentCaptor<Ticket> savedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(ticketRepository).saveEntity(any(Server.class), savedTicketCaptor.capture());
+        Ticket savedTicket = savedTicketCaptor.getValue();
+
+        assertEquals(TicketBucket.STAFF, savedTicket.getType());
+        assertEquals(TicketCategory.APPLICATION, savedTicket.getCategory());
+        assertEquals(TicketPriority.NORMAL, savedTicket.getPriority());
+        assertEquals(TicketStatus.UNFINISHED, savedTicket.getStatus());
     }
 
     @Test
@@ -138,7 +178,7 @@ class TicketServiceTest {
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
-        assertEquals("Closed", updatedTicket.getStatus());
+        assertEquals(TicketStatus.CLOSED, updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());
         assertEquals(1, updatedTicket.getReplies().size());
         assertEquals("Moderator", updatedTicket.getReplies().get(0).getName());
@@ -182,7 +222,7 @@ class TicketServiceTest {
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
-        assertEquals("Closed", updatedTicket.getStatus());
+        assertEquals(TicketStatus.CLOSED, updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());
         assertEquals(1, updatedTicket.getReplies().size());
         assertEquals("Moderator", updatedTicket.getReplies().get(0).getName());
@@ -195,7 +235,7 @@ class TicketServiceTest {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         Ticket ticket = Ticket.builder()
                 .id("SUPPORT-2")
-                .status("Unfinished")
+                .status(TicketStatus.UNFINISHED)
                 .creatorName("PlayerOne")
                 .replies(new ArrayList<>())
                 .notes(new ArrayList<>())
@@ -223,7 +263,7 @@ class TicketServiceTest {
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
         Ticket updatedTicket = updatedTicketCaptor.getValue();
-        assertEquals("Open", updatedTicket.getStatus());
+        assertEquals(TicketStatus.OPEN, updatedTicket.getStatus());
         assertEquals("Updated subject", updatedTicket.getSubject());
         assertTrue(updatedTicket.isEmailAuthEnabled());
         assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));

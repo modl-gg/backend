@@ -21,7 +21,11 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketBucket;
+import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -60,14 +64,18 @@ public class DashboardService {
 
     public MinecraftDashboardStatsResponse getMinecraftStats(Server server) {
         Query unresolvedReportsQuery = Query.query(new Criteria().andOperator(
-                MongoQueries.where(TicketFields.TYPE).is("REPORT"),
-                MongoQueries.where(TicketFields.STATUS).in("Open", "Unfinished")
+                MongoQueries.where(TicketFields.TYPE).is(TicketBucket.REPORT.getId()),
+                MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
         ));
         long unresolvedReports = ticketRepository.count(server, unresolvedReportsQuery);
 
         Query unresolvedTicketsQuery = Query.query(new Criteria().andOperator(
-                MongoQueries.where(TicketFields.TYPE).in("SUPPORT", "BUG", "APPEAL"),
-                MongoQueries.where(TicketFields.STATUS).in("Open", "Unfinished")
+                MongoQueries.where(TicketFields.TYPE).in(
+                        TicketBucket.SUPPORT.getId(),
+                        TicketBucket.BUG.getId(),
+                        TicketBucket.APPEAL.getId()
+                ),
+                MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
         ));
         long unresolvedTickets = ticketRepository.count(server, unresolvedTicketsQuery);
 
@@ -143,7 +151,7 @@ public class DashboardService {
         Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
 
         long totalTickets = ticketRepository.count(server, new Query());
-        long openTickets = ticketRepository.count(server, Query.query(MongoQueries.where(TicketFields.STATUS).is("Open")));
+        long openTickets = ticketRepository.count(server, Query.query(MongoQueries.where(TicketFields.STATUS).is(TicketStatus.OPEN.getId())));
         long totalPlayers = playerRepository.count(server, new Query());
         long totalStaff = staffRepository.count(server, new Query());
 
@@ -169,7 +177,7 @@ public class DashboardService {
     public List<RecentTicketResponse> getRecentTickets(Server server, int limit) {
         int safeLimit = clampLimit(limit, MAX_RECENT_TICKETS_LIMIT);
 
-        Query query = Query.query(MongoQueries.where(TicketFields.STATUS).ne("Unfinished"))
+        Query query = Query.query(MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId()))
                 .with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED))
                 .limit(safeLimit);
 
@@ -201,11 +209,11 @@ public class DashboardService {
                             ticket.getId(),
                             ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
                             initialMessage,
-                            ticket.getStatus() != null ? ticket.getStatus().toLowerCase() : "open",
-                            ticket.getPriority() != null ? ticket.getPriority().toLowerCase() : "medium",
+                            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+                            ticket.getPriority() != null ? ticket.getPriority().getId() : TicketPriority.NORMAL.getId(),
                             ticket.getCreated(),
                             ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown",
-                            ticket.getType() != null ? ticket.getType().toLowerCase() : "support"
+                            ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId()
                     );
                 })
                 .toList();
@@ -309,7 +317,7 @@ public class DashboardService {
                             "blue",
                             "Created ticket: " + (ticket.getSubject() != null ? ticket.getSubject() : "No Subject"),
                             ticket.getCreated(),
-                            "Created " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket",
+                            "Created " + displayCategory(ticket) + " ticket",
                             List.of(new ActivityItemResponse.ActivityAction("View Ticket", "/panel/tickets/" + ticket.getId(), true))
                     ));
                 }
@@ -325,8 +333,8 @@ public class DashboardService {
                         String color = isStaffReply ? "green" : "blue";
                         String replyName = reply.getName() != null ? reply.getName() : "Unknown";
                         String description = isStaffReply
-                                ? "You replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket"
-                                : replyName + " replied to " + (ticket.getCategory() != null ? ticket.getCategory() : "Support") + " ticket";
+                                ? "You replied to " + displayCategory(ticket) + " ticket"
+                                : replyName + " replied to " + displayCategory(ticket) + " ticket";
 
                         activities.add(new ActivityItemResponse(
                                 "ticket-reply-" + ticket.getId() + "-" + reply.getCreated().getTime(),
@@ -493,5 +501,9 @@ public class DashboardService {
 
     private MongoTemplate getTemplate(Server server) {
         return tenantMongoAccess.forServer(server);
+    }
+
+    private String displayCategory(Ticket ticket) {
+        return ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 }

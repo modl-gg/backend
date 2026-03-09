@@ -7,6 +7,9 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketBucket;
+import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -15,18 +18,14 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 @Repository
 public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket> {
-    private static final String STATUS_UNFINISHED = "Unfinished";
-    private static final String TYPE_SUPPORT = "SUPPORT";
-    private static final String TYPE_BUG = "BUG";
-    private static final String TYPE_APPEAL = "APPEAL";
-    private static final String TYPE_REPORT = "REPORT";
-
     private static final String FILTER_ALL = "all";
     private static final String FILTER_OPEN = "open";
     private static final String FILTER_CLOSED = "closed";
@@ -45,7 +44,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         Update update = new Update()
                 .set(TicketFields.REPLIES, ticket.getReplies())
                 .set(TicketFields.LOCKED, ticket.isLocked())
-                .set(TicketFields.STATUS, ticket.getStatus())
+                .set(TicketFields.STATUS, ticket.getStatus() != null ? ticket.getStatus().getId() : null)
                 .set(TicketFields.UPDATED_AT, ticket.getUpdatedAt());
         updateFirst(server, query, update);
     }
@@ -68,13 +67,17 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         List<Criteria> conditions = new ArrayList<>();
 
         if (status != null && !status.isBlank() && !FILTER_ALL.equalsIgnoreCase(status)) {
-            conditions.add(MongoQueries.where(TicketFields.STATUS).is(status));
+            conditions.add(MongoQueries.where(TicketFields.STATUS).is(TicketStatus.fromCanonicalId(status).getId()));
         }
 
         if (type != null && !type.isBlank()) {
-            conditions.add(MongoQueries.where(TicketFields.TYPE).is(type));
+            conditions.add(resolveMinecraftTypeCriteria(type));
         } else {
-            conditions.add(MongoQueries.where(TicketFields.TYPE).in(TYPE_SUPPORT, TYPE_BUG, TYPE_APPEAL));
+            conditions.add(MongoQueries.where(TicketFields.TYPE).in(
+                    TicketBucket.SUPPORT.getId(),
+                    TicketBucket.BUG.getId(),
+                    TicketBucket.APPEAL.getId()
+            ));
         }
 
         Query query = conditions.isEmpty()
@@ -128,7 +131,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
                         MongoQueries.where(TicketFields.CREATOR_UUID).is(playerUuid),
                         MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid)
                 ),
-                MongoQueries.where(TicketFields.STATUS).ne(STATUS_UNFINISHED)
+                MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId())
         );
         Query query = Query.query(criteria).with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED));
         return find(server, query);
@@ -145,7 +148,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
 
         Query query = Query.query(
                 MongoQueries.where(TicketFields.ID).in(ticketIds)
-                        .and(TicketFields.STATUS).ne(STATUS_UNFINISHED)
+                        .and(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId())
                         .and(TicketFields.REPLIES + ".0").exists(true)
         );
         query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.UPDATED_AT));
@@ -157,7 +160,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         Query query = Query.query(
                 MongoQueries.where(TicketFields.ASSIGNED_TO).is(assignee)
                         .and(TicketFields.REPLIES + ".0").exists(true)
-                        .and(TicketFields.STATUS).ne(STATUS_UNFINISHED)
+                        .and(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId())
         );
         query.with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.UPDATED_AT));
         query.limit(limit);
@@ -169,11 +172,14 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     private Query buildSearchQuery(TicketSearchFilter filter, boolean includeReplySearch) {
+        TicketStatus requestedStatus = tryResolveTicketStatus(filter.status());
         Query query = new Query();
-        query.addCriteria(MongoQueries.where(TicketFields.STATUS).ne(STATUS_UNFINISHED));
+        if (requestedStatus != TicketStatus.UNFINISHED) {
+            query.addCriteria(MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId()));
+        }
 
         if (filter.search() != null && !filter.search().isBlank()) {
-            String escapedSearch = java.util.regex.Pattern.quote(filter.search());
+            String escapedSearch = Pattern.quote(filter.search());
             List<Criteria> searchCriteria = new ArrayList<>();
             searchCriteria.add(MongoQueries.where(TicketFields.ID).regex(escapedSearch, "i"));
             searchCriteria.add(MongoQueries.where(TicketFields.SUBJECT).regex(escapedSearch, "i"));
@@ -185,10 +191,16 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
             query.addCriteria(new Criteria().orOperator(searchCriteria.toArray(new Criteria[0])));
         }
 
-        if (filter.status() != null && !filter.status().isBlank() && !filter.status().equals(FILTER_ALL)) {
-            if (filter.status().equals(FILTER_OPEN)) {
+        if (filter.status() != null && !filter.status().isBlank() && !filter.status().equalsIgnoreCase(FILTER_ALL)) {
+            if (requestedStatus == TicketStatus.UNFINISHED) {
+                query.addCriteria(MongoQueries.where(TicketFields.STATUS).is(TicketStatus.UNFINISHED.getId()));
+            } else if (requestedStatus != null) {
+                query.addCriteria(requestedStatus.isTerminal()
+                        ? MongoQueries.where(TicketFields.LOCKED).is(true)
+                        : MongoQueries.where(TicketFields.LOCKED).ne(true));
+            } else if (filter.status().equalsIgnoreCase(FILTER_OPEN)) {
                 query.addCriteria(MongoQueries.where(TicketFields.LOCKED).ne(true));
-            } else if (filter.status().equals(FILTER_CLOSED)) {
+            } else if (filter.status().equalsIgnoreCase(FILTER_CLOSED)) {
                 query.addCriteria(MongoQueries.where(TicketFields.LOCKED).is(true));
             }
         }
@@ -199,20 +211,14 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
                     .toList();
             if (!validTypes.isEmpty()) {
                 List<Criteria> typeCriteria = validTypes.stream()
-                        .flatMap(type -> {
-                            String escapedType = java.util.regex.Pattern.quote(type);
-                            return java.util.stream.Stream.of(
-                                    MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i"),
-                                    MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i")
-                            );
-                        })
+                        .map(this::buildTypeCriteria)
                         .toList();
                 query.addCriteria(new Criteria().orOperator(typeCriteria.toArray(new Criteria[0])));
             }
         }
 
         if (filter.author() != null && !filter.author().isBlank()) {
-            String escapedAuthor = java.util.regex.Pattern.quote(filter.author());
+            String escapedAuthor = Pattern.quote(filter.author());
             query.addCriteria(MongoQueries.where(TicketFields.CREATOR_NAME).regex(escapedAuthor, "i"));
         }
 
@@ -230,14 +236,14 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
 
     private Criteria buildReportCriteria(String status, String playerUuid) {
         List<Criteria> conditions = new ArrayList<>();
-        conditions.add(MongoQueries.where(TicketFields.TYPE).is(TYPE_REPORT));
+        conditions.add(MongoQueries.where(TicketFields.TYPE).is(TicketBucket.REPORT.getId()));
 
         if (playerUuid != null && !playerUuid.isBlank()) {
             conditions.add(MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid));
         }
 
         if (status != null && !status.isBlank() && !FILTER_ALL.equalsIgnoreCase(status)) {
-            conditions.add(MongoQueries.where(TicketFields.STATUS).in(status, normalizeTicketStatus(status)));
+            conditions.add(MongoQueries.where(TicketFields.STATUS).is(TicketStatus.fromCanonicalId(status).getId()));
         }
 
         return conditions.size() == 1
@@ -282,8 +288,153 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         );
     }
 
-    private String normalizeTicketStatus(String status) {
-        return status.substring(0, 1).toUpperCase(Locale.ROOT) + status.substring(1).toLowerCase(Locale.ROOT);
+    private Criteria buildTypeCriteria(String type) {
+        TicketCategory category = tryResolveCategory(type);
+        String normalizedType = normalizeTypeValue(type);
+        if (category != null && !isCanonicalBucketFilter(normalizedType)) {
+            return buildCategoryCriteria(category);
+        }
+
+        TicketBucket bucket = tryResolveBucket(type);
+        if (bucket != null) {
+            return buildBucketCriteria(bucket);
+        }
+
+        String escapedType = Pattern.quote(normalizedType);
+        return new Criteria().orOperator(
+                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i"),
+                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i")
+        );
+    }
+
+    private Criteria resolveMinecraftTypeCriteria(String type) {
+        TicketCategory category = tryResolveCategory(type);
+        String normalizedType = normalizeTypeValue(type);
+        if (category != null && !isCanonicalBucketFilter(normalizedType)) {
+            return buildCategoryCriteria(category);
+        }
+
+        TicketBucket bucket = tryResolveBucket(type);
+        if (bucket != null) {
+            return buildBucketCriteria(bucket);
+        }
+
+        String escapedType = Pattern.quote(normalizedType);
+        return new Criteria().orOperator(
+                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i"),
+                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i")
+        );
+    }
+
+    private Criteria buildCategoryCriteria(TicketCategory category) {
+        return new Criteria().orOperator(
+                MongoQueries.where(TicketFields.CATEGORY).in(categoryStorageValues(category)),
+                MongoQueries.where(TicketFields.TYPE).in(typeStorageValuesForCategory(category))
+        );
+    }
+
+    private Criteria buildBucketCriteria(TicketBucket bucket) {
+        return new Criteria().orOperator(
+                MongoQueries.where(TicketFields.TYPE).in(typeStorageValuesForBucket(bucket)),
+                MongoQueries.where(TicketFields.CATEGORY).in(categoryStorageValuesForBucket(bucket))
+        );
+    }
+
+    private List<String> categoryStorageValues(TicketCategory category) {
+        return switch (category) {
+            case BUG -> List.of("bug", "bug_report");
+            case PLAYER -> List.of("player", "player_report");
+            case CHAT -> List.of("chat", "chat_report");
+            case APPEAL -> List.of("appeal", "ban_appeal");
+            case APPLICATION -> List.of("application", "staff", "staff_application", "apply");
+            case SUPPORT -> List.of("support", "general_support");
+        };
+    }
+
+    private List<String> typeStorageValuesForCategory(TicketCategory category) {
+        return switch (category) {
+            case BUG -> List.of("bug", "bug_report");
+            case PLAYER -> List.of("player", "player_report");
+            case CHAT -> List.of("chat", "chat_report");
+            case APPEAL -> List.of("appeal", "ban_appeal");
+            case APPLICATION -> List.of("staff", "application", "staff_application", "apply");
+            case SUPPORT -> List.of("support", "general_support");
+        };
+    }
+
+    private List<String> typeStorageValuesForBucket(TicketBucket bucket) {
+        return switch (bucket) {
+            case BUG -> List.of("bug", "bug_report");
+            case REPORT -> List.of("report", "player", "player_report", "chat", "chat_report");
+            case APPEAL -> List.of("appeal", "ban_appeal");
+            case SUPPORT -> List.of("support", "general_support");
+            case STAFF -> List.of("staff", "application", "staff_application", "apply");
+        };
+    }
+
+    private List<String> categoryStorageValuesForBucket(TicketBucket bucket) {
+        Set<String> values = new LinkedHashSet<>();
+        switch (bucket) {
+            case BUG -> values.addAll(categoryStorageValues(TicketCategory.BUG));
+            case REPORT -> {
+                values.addAll(categoryStorageValues(TicketCategory.PLAYER));
+                values.addAll(categoryStorageValues(TicketCategory.CHAT));
+            }
+            case APPEAL -> values.addAll(categoryStorageValues(TicketCategory.APPEAL));
+            case SUPPORT -> values.addAll(categoryStorageValues(TicketCategory.SUPPORT));
+            case STAFF -> values.addAll(categoryStorageValues(TicketCategory.APPLICATION));
+        }
+        return List.copyOf(values);
+    }
+
+    private TicketStatus tryResolveTicketStatus(String rawStatus) {
+        if (rawStatus == null || rawStatus.isBlank() || FILTER_ALL.equalsIgnoreCase(rawStatus)) {
+            return null;
+        }
+        try {
+            return TicketStatus.fromCanonicalId(rawStatus);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private TicketCategory tryResolveCategory(String rawType) {
+        if (rawType == null || rawType.isBlank() || FILTER_ALL.equalsIgnoreCase(rawType)) {
+            return null;
+        }
+        try {
+            return TicketCategory.fromCanonicalId(rawType);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private TicketBucket tryResolveBucket(String rawType) {
+        if (rawType == null || rawType.isBlank() || FILTER_ALL.equalsIgnoreCase(rawType)) {
+            return null;
+        }
+        try {
+            return TicketBucket.fromCanonicalId(rawType);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private boolean isCanonicalBucketFilter(String type) {
+        return type != null && switch (type) {
+            case "bug", "report", "appeal", "support", "staff" -> true;
+            default -> false;
+        };
+    }
+
+    private String normalizeTypeValue(String type) {
+        if (type == null) {
+            return "";
+        }
+        return type.trim()
+                .toLowerCase()
+                .replaceAll("[^a-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "");
     }
 
     public record TicketSearchFilter(
@@ -328,4 +479,3 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         }
     }
 }
-

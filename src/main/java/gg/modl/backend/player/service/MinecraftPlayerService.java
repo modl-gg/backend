@@ -511,12 +511,14 @@ public class MinecraftPlayerService {
                 .map(ticket -> {
                     Map<String, Object> report = new LinkedHashMap<>();
                     report.put("id", ticket.getId());
-                    report.put("type", ticket.getType());
+                    report.put("type", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+                    report.put("bucket", ticket.getType() != null ? ticket.getType().getId() : null);
+                    report.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
                     report.put("reporterName", ticket.getCreatorName());
                     report.put("reporterUuid", ticket.getCreatorUuid());
                     report.put("subject", ticket.getSubject());
-                    report.put("status", ticket.getStatus());
-                    report.put("priority", ticket.getPriority());
+                    report.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
+                    report.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
                     report.put("createdAt", ticket.getCreated());
                     return report;
                 })

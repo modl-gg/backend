@@ -12,6 +12,7 @@ import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -204,7 +205,7 @@ public class PublicMediaController {
         }
 
         Ticket ticket = ticketOpt.get();
-        boolean isAppealTicket = "appeal".equalsIgnoreCase(ticket.getType());
+        boolean isAppealTicket = ticket.getType() == TicketBucket.APPEAL;
         if ("appeal".equals(normalizedType) && !isAppealTicket) {
             return ResponseEntity.status(403).body(Map.of("error", "Entity is not an appeal ticket"));
         }

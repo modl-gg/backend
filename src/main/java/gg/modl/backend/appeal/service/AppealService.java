@@ -11,8 +11,12 @@ import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketBucket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,11 +38,7 @@ public class AppealService {
     private final PunishmentService punishmentService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String APPEAL_TYPE = "appeal";
-    private static final Set<String> VALID_STATUSES = Set.of(
-            "Open", "Closed", "Under Review", "Pending Player Response",
-            "Resolved", "Approved", "Denied", "Accepted", "Rejected"
-    );
+    private static final String APPEAL_TYPE = TicketBucket.APPEAL.getId();
 
     public List<TicketResponse> getAppealsByPunishment(Server server, String punishmentId) {
         MongoTemplate template = getTemplate(server);
@@ -55,7 +55,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (ticket == null || !APPEAL_TYPE.equals(ticket.getType())) {
+        if (ticket == null || ticket.getType() != TicketBucket.APPEAL) {
             return Optional.empty();
         }
 
@@ -110,9 +110,10 @@ public class AppealService {
 
         Ticket appeal = Ticket.builder()
                 .id(appealId)
-                .type(APPEAL_TYPE)
-                .category(APPEAL_TYPE)
-                .status("Open")
+                .type(TicketBucket.APPEAL)
+                .category(TicketCategory.APPEAL)
+                .status(TicketStatus.OPEN)
+                .appealWorkflowStatus(AppealWorkflowStatus.OPEN)
                 .subject("Appeal for Punishment: " + request.punishmentId())
                 .tags(new ArrayList<>())
                 .creatorName(username)
@@ -138,7 +139,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (appeal == null || !APPEAL_TYPE.equals(appeal.getType())) {
+        if (appeal == null || appeal.getType() != TicketBucket.APPEAL) {
             return Optional.empty();
         }
 
@@ -173,7 +174,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (appeal == null || !APPEAL_TYPE.equals(appeal.getType())) {
+        if (appeal == null || appeal.getType() != TicketBucket.APPEAL) {
             return Optional.empty();
         }
 
@@ -181,18 +182,25 @@ public class AppealService {
         List<TicketReply> systemReplies = new ArrayList<>();
         boolean statusChanged = false;
 
-        if (request.status() != null && !request.status().equals(appeal.getStatus())) {
-            if (!VALID_STATUSES.contains(request.status())) {
-                throw new IllegalArgumentException("Invalid status value: " + request.status());
-            }
-            update.set("status", request.status());
-            appeal.setStatus(request.status());
+        AppealWorkflowStatus requestedWorkflowStatus = null;
+        if (request.status() != null) {
+            requestedWorkflowStatus = AppealWorkflowStatus.fromCanonicalId(request.status());
+        }
+
+        if (requestedWorkflowStatus != null && requestedWorkflowStatus != appeal.getAppealWorkflowStatus()) {
+            TicketStatus lifecycleStatus = requestedWorkflowStatus.isTerminal() ? TicketStatus.CLOSED : TicketStatus.OPEN;
+            update.set("appealWorkflowStatus", requestedWorkflowStatus.getId());
+            update.set("status", lifecycleStatus.getId());
+            update.set("locked", lifecycleStatus.isTerminal());
+            appeal.setAppealWorkflowStatus(requestedWorkflowStatus);
+            appeal.setStatus(lifecycleStatus);
+            appeal.setLocked(lifecycleStatus.isTerminal());
             statusChanged = true;
 
             systemReplies.add(createSystemReply(
                     request.staffUsername(),
-                    "Status changed to " + request.status() + ".",
-                    "STATUS_" + request.status().toUpperCase().replace(" ", "_")
+                    "Appeal status changed to " + requestedWorkflowStatus.getDisplayName() + ".",
+                    "APPEAL_STATUS_" + requestedWorkflowStatus.name()
             ));
         }
 
@@ -211,9 +219,12 @@ public class AppealService {
             }
         }
 
-        if (request.locked() != null && request.locked() != appeal.isLocked()) {
+        if (!statusChanged && request.locked() != null && request.locked() != appeal.isLocked()) {
+            TicketStatus lifecycleStatus = request.locked() ? TicketStatus.CLOSED : TicketStatus.OPEN;
             update.set("locked", request.locked());
+            update.set("status", lifecycleStatus.getId());
             appeal.setLocked(request.locked());
+            appeal.setStatus(lifecycleStatus);
 
             systemReplies.add(createSystemReply(
                     request.staffUsername(),
@@ -229,19 +240,17 @@ public class AppealService {
 
         template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
 
-        if (shouldPardonPunishment(request.status(), request.resolution())) {
+        if (shouldPardonPunishment(appeal.getAppealWorkflowStatus())) {
             pardonPunishment(template, appeal, request.staffUsername());
-        } else if (shouldRejectPunishment(request.status(), request.resolution())) {
+        } else if (shouldRejectPunishment(appeal.getAppealWorkflowStatus())) {
             addAppealRejectedNote(template, appeal, request.staffUsername());
         }
 
         return Optional.of(toTicketResponse(appeal));
     }
 
-    private boolean shouldRejectPunishment(String status, String resolution) {
-        boolean isClosed = "Closed".equals(status) || "Resolved".equals(status);
-        boolean isRejected = "Denied".equals(resolution) || "Rejected".equals(resolution);
-        return isClosed && isRejected;
+    private boolean shouldRejectPunishment(AppealWorkflowStatus workflowStatus) {
+        return workflowStatus == AppealWorkflowStatus.REJECTED;
     }
 
     private void addAppealRejectedNote(MongoTemplate template, Ticket appeal, String staffUsername) {
@@ -278,10 +287,8 @@ public class AppealService {
         template.updateFirst(playerQuery, update, Player.class, CollectionName.PLAYERS);
     }
 
-    private boolean shouldPardonPunishment(String status, String resolution) {
-        boolean isClosed = "Closed".equals(status) || "Resolved".equals(status);
-        boolean isApproved = "Approved".equals(resolution) || "Accepted".equals(resolution);
-        return isClosed && isApproved;
+    private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
+        return workflowStatus == AppealWorkflowStatus.APPROVED;
     }
 
     private void pardonPunishment(MongoTemplate template, Ticket appeal, String staffUsername) {
@@ -459,10 +466,11 @@ public class AppealService {
     private TicketResponse toTicketResponse(Ticket ticket) {
         return new TicketResponse(
                 ticket.getId(),
-                ticket.getType(),
-                "Ban Appeal",
+                TicketCategory.APPEAL.getId(),
+                TicketCategory.APPEAL.getDisplayName(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-                ticket.getStatus(),
+                ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+                ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : AppealWorkflowStatus.OPEN.getId(),
                 ticket.getCreatorName(),
                 ticket.getCreatorUuid(),
                 ticket.getCreatorName(),

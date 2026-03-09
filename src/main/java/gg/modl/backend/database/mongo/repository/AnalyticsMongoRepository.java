@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.fields.AuditLogFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.TicketStatus;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
@@ -33,9 +34,6 @@ public class AnalyticsMongoRepository {
     private static final String FACET_BY_COUNTRY = "byCountry";
     private static final String FACET_SUSPICIOUS = "suspicious";
 
-    private static final String STATUS_OPEN = "Open";
-    private static final String STATUS_UNFINISHED = "Unfinished";
-
     private static final String ALIAS_N = "n";
     private static final String ALIAS_COUNT = "count";
     private static final String ALIAS_DATE = "date";
@@ -50,7 +48,7 @@ public class AnalyticsMongoRepository {
                 new Document("$facet", new Document()
                         .append(FACET_TOTAL, List.of(new Document("$count", ALIAS_N)))
                         .append(FACET_ACTIVE, List.of(
-                                new Document("$match", new Document(TicketFields.STATUS, STATUS_OPEN)),
+                                new Document("$match", new Document(TicketFields.STATUS, TicketStatus.OPEN.getId())),
                                 new Document("$count", ALIAS_N)
                         ))
                         .append(FACET_RECENT, List.of(
@@ -82,7 +80,7 @@ public class AnalyticsMongoRepository {
     }
 
     public List<Document> aggregateTicketStatusCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(STATUS_UNFINISHED);
+        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
@@ -97,15 +95,15 @@ public class AnalyticsMongoRepository {
                 .getMappedResults();
     }
 
-    public List<Document> aggregateTicketTypeCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(STATUS_UNFINISHED);
+    public List<Document> aggregateTicketCategoryCounts(Server server, Date startDate) {
+        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
 
         final Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(criteria),
-                Aggregation.group(TicketFields.TYPE).count().as(ALIAS_COUNT)
+                Aggregation.group(TicketFields.CATEGORY).count().as(ALIAS_COUNT)
         );
 
         return tenantMongoAccess.forServer(server)
@@ -114,7 +112,7 @@ public class AnalyticsMongoRepository {
     }
 
     public List<Document> aggregateDailyTicketCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(STATUS_UNFINISHED);
+        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }

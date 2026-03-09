@@ -5,6 +5,7 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
@@ -39,7 +40,7 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         Ticket ticket = ticketService.createMinecraftTicket(server, request);
 
-        if ("chat".equalsIgnoreCase(request.type())
+        if (TicketCategory.fromCanonicalId(request.type()) == TicketCategory.CHAT
                 && request.chatMessages() != null
                 && !request.chatMessages().isEmpty()) {
             aiTicketAnalysisService.analyzeTicketAsync(server, ticket.getId());
@@ -117,9 +118,10 @@ public class MinecraftTicketsController {
                 .map(ticket -> {
                     Map<String, Object> response = new LinkedHashMap<>();
                     response.put("id", ticket.getId());
-                    response.put("type", ticket.getType());
+                    response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+                    response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
                     response.put("subject", ticket.getSubject());
-                    response.put("status", ticket.getStatus());
+                    response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
                     response.put("createdAt", ticket.getCreated());
                     return response;
                 })
@@ -192,13 +194,13 @@ public class MinecraftTicketsController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
-        response.put("type", ticket.getType());
-        response.put("category", ticket.getCategory());
+        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
         response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus());
+        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());
         response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority());
+        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
         response.put("assignedTo", ticket.getAssignedTo());
         response.put("createdAt", ticket.getCreated());
         response.put("updatedAt", ticket.getUpdatedAt());
@@ -225,13 +227,13 @@ public class MinecraftTicketsController {
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
-        response.put("type", ticket.getType());
-        response.put("category", ticket.getCategory());
+        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
         response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus());
+        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());
         response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority());
+        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
         response.put("assignedTo", ticket.getAssignedTo());
         response.put("createdAt", ticket.getCreated());
         response.put("updatedAt", ticket.getUpdatedAt());
@@ -244,10 +246,10 @@ public class MinecraftTicketsController {
     private Map<String, Object> toTicketLookupItem(Ticket ticket) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
-        response.put("type", ticket.getType());
-        response.put("category", ticket.getCategory());
+        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
         response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus());
+        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());
         response.put("playerUuid", ticket.getCreatorUuid());
         response.put("createdAt", ticket.getCreated());

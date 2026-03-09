@@ -27,6 +27,7 @@ import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -1200,8 +1201,7 @@ public class PunishmentService {
                         .build();
 
                 ticket.getReplies().add(systemReply);
-                ticket.setLocked(false);
-                ticket.setStatus("Open");
+                applyTicketLifecycleStatus(ticket, TicketStatus.OPEN);
                 ticket.setUpdatedAt(new Date());
                 persistTicketState(server, ticket);
             } catch (Exception e) {
@@ -1234,8 +1234,7 @@ public class PunishmentService {
                         .build();
 
                 ticket.getReplies().add(systemReply);
-                ticket.setLocked(true);
-                ticket.setStatus("Closed");
+                applyTicketLifecycleStatus(ticket, TicketStatus.CLOSED);
                 ticket.setUpdatedAt(new Date());
                 persistTicketState(server, ticket);
             } catch (Exception e) {
@@ -1379,6 +1378,11 @@ public class PunishmentService {
 
     private void persistTicketState(Server server, Ticket ticket) {
         ticketRepository.updateState(server, ticket);
+    }
+
+    private void applyTicketLifecycleStatus(Ticket ticket, TicketStatus status) {
+        ticket.setStatus(status);
+        ticket.setLocked(status != null && status.isTerminal());
     }
 
     private void addSystemPardon(Punishment punishment, String reason, Date now) {

@@ -19,9 +19,11 @@ import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -191,7 +193,7 @@ public class AITicketAnalysisService {
     }
 
     private boolean isChatReport(Ticket ticket) {
-        return "chat".equalsIgnoreCase(ticket.getCategory());
+        return ticket.getCategory() == TicketCategory.CHAT;
     }
 
     private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
@@ -234,9 +236,15 @@ public class AITicketAnalysisService {
                 .build();
 
         aiAnalysis.setWasAppliedAutomatically(true);
+        if (ticket.getReplies() == null) {
+            ticket.setReplies(new ArrayList<>());
+        }
+        if (ticket.getNotes() == null) {
+            ticket.setNotes(new ArrayList<>());
+        }
         ticket.getReplies().add(systemReply);
         ticket.getNotes().add(staffNote);
-        ticket.setStatus("Closed");
+        ticket.setStatus(TicketStatus.CLOSED);
         ticket.setLocked(true);
         ticket.setUpdatedAt(now);
     }

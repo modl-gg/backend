@@ -13,6 +13,7 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -80,10 +81,12 @@ class AITicketAnalysisServiceTest {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         Ticket ticket = Ticket.builder()
                 .id("REPORT-1")
-                .aiAnalysis(AIAnalysisResult.builder()
-                        .analysis("Toxic chat")
-                        .suggestedAction(AIAnalysisResult.SuggestedAction.builder().punishmentTypeId(2).severity("regular").build())
-                        .build())
+                .aiAnalysis(new AIAnalysisResult(
+                        "Toxic chat",
+                        new AIAnalysisResult.SuggestedAction(2, "regular"),
+                        new Date(),
+                        "{}"
+                ))
                 .build();
 
         when(ticketRepository.findById(server, "REPORT-1")).thenReturn(Optional.of(ticket));
@@ -106,10 +109,12 @@ class AITicketAnalysisServiceTest {
                 .reportedPlayerUuid(playerUuid)
                 .replies(new ArrayList<>())
                 .notes(new ArrayList<>())
-                .aiAnalysis(AIAnalysisResult.builder()
-                        .analysis("Severe toxicity")
-                        .suggestedAction(AIAnalysisResult.SuggestedAction.builder().punishmentTypeId(4).severity("severe").build())
-                        .build())
+                .aiAnalysis(new AIAnalysisResult(
+                        "Severe toxicity",
+                        new AIAnalysisResult.SuggestedAction(4, "severe"),
+                        new Date(),
+                        "{}"
+                ))
                 .build();
 
         when(ticketRepository.findById(server, "REPORT-2")).thenReturn(Optional.of(ticket));
@@ -124,7 +129,7 @@ class AITicketAnalysisServiceTest {
         ArgumentCaptor<Ticket> updatedCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedCaptor.capture());
         Ticket updatedTicket = updatedCaptor.getValue();
-        assertEquals("Closed", updatedTicket.getStatus());
+        assertEquals(TicketStatus.CLOSED, updatedTicket.getStatus());
         assertTrue(updatedTicket.isLocked());
         assertTrue(updatedTicket.getAiAnalysis().isWasAppliedAutomatically());
         assertEquals(1, updatedTicket.getReplies().size());

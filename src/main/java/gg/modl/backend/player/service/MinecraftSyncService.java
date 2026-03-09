@@ -13,6 +13,9 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketBucket;
+import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketStatus;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -365,13 +368,13 @@ public class MinecraftSyncService {
 
         try {
             Query ticketQuery = Query.query(Criteria.where("created").gte(Date.from(lastSync))
-                    .and("status").ne("Unfinished"));
+                    .and("status").ne(TicketStatus.UNFINISHED.getId()));
             ticketQuery.limit(20);
             List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : recentTickets) {
-                String ticketType = ticket.getType();
-                if ("STAFF".equalsIgnoreCase(ticketType)) {
+                TicketBucket ticketType = ticket.getType();
+                if (ticketType == TicketBucket.STAFF) {
                     continue;
                 }
 
@@ -385,10 +388,10 @@ public class MinecraftSyncService {
                 }
 
                 String message;
-                if ("REPORT".equalsIgnoreCase(ticketType)) {
+                if (ticketType == TicketBucket.REPORT) {
                     String reportedPlayer = ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "Unknown";
-                    String category = ticket.getCategory();
-                    String categoryLabel = category != null && category.toLowerCase().contains("chat") ? "Chat" : "Gameplay";
+                    TicketCategory category = ticket.getCategory();
+                    String categoryLabel = category == TicketCategory.CHAT ? "Chat" : "Gameplay";
                     message = creatorName + ": reported " + reportedPlayer;
                     if (createdServer != null) {
                         message += " on " + createdServer;
@@ -426,10 +429,10 @@ public class MinecraftSyncService {
                     domain = server.getCustomDomain() + ".modl.gg";
                 }
                 data.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
-                data.put("ticketType", ticketType != null ? ticketType : "");
-                if ("REPORT".equalsIgnoreCase(ticketType)) {
+                data.put("ticketType", ticketType != null ? ticketType.getId() : "");
+                if (ticketType == TicketBucket.REPORT) {
                     data.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
-                    data.put("category", ticket.getCategory() != null ? ticket.getCategory() : "");
+                    data.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : "");
                 }
 
                 notification.put("data", data);

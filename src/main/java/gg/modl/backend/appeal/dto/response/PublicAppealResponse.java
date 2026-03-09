@@ -13,6 +13,7 @@ public record PublicAppealResponse(
         String type,
         String subject,
         String status,
+        String appealWorkflowStatus,
         String creator,
         String creatorName,
         String creatorUuid,
@@ -28,6 +29,7 @@ public record PublicAppealResponse(
     public static PublicAppealResponse fromTicketResponse(TicketResponse appeal) {
         String creatorName = appeal.creatorName() != null ? appeal.creatorName() : "";
         String creatorUuid = appeal.creatorUuid() != null ? appeal.creatorUuid() : "";
+        String workflowStatus = appeal.appealWorkflowStatus() != null ? appeal.appealWorkflowStatus() : appeal.status();
         List<TicketReply> messages = appeal.messages() != null ? appeal.messages() : Collections.emptyList();
         List<TicketNote> notes = appeal.notes() != null ? appeal.notes() : Collections.emptyList();
         List<String> tags = appeal.tags() != null ? appeal.tags() : Collections.emptyList();
@@ -37,7 +39,8 @@ public record PublicAppealResponse(
                 appeal.id(),
                 appeal.type(),
                 appeal.subject(),
-                appeal.status(),
+                workflowStatus,
+                workflowStatus,
                 creatorName,
                 creatorName,
                 creatorUuid,
