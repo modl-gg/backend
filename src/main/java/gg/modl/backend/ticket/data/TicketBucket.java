@@ -25,6 +25,7 @@ public enum TicketBucket {
         registerAlias(REPORT, "player_report");
         registerAlias(REPORT, "chat");
         registerAlias(REPORT, "chat_report");
+        registerAlias(BUG, "bug_report");
         registerAlias(STAFF, "application");
         registerAlias(STAFF, "staff_application");
         registerAlias(STAFF, "apply");

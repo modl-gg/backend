@@ -10,6 +10,7 @@ class TicketEnumCompatibilityTest {
     void ticketBucketSupportsLegacyAliases() {
         assertEquals(TicketBucket.REPORT, TicketBucket.fromCanonicalId("player"));
         assertEquals(TicketBucket.REPORT, TicketBucket.fromCanonicalId("chat_report"));
+        assertEquals(TicketBucket.BUG, TicketBucket.fromCanonicalId("bug_report"));
         assertEquals(TicketBucket.STAFF, TicketBucket.fromCanonicalId("application"));
         assertEquals(TicketBucket.STAFF, TicketBucket.fromCanonicalId("staff application"));
     }
