@@ -87,9 +87,71 @@ async function main() {
         }
 
         printGlobalSummary(globalSummary, tenantSummaries);
+
+        const unregisteredTenants = discoverUnregisteredTenants(tenants);
+        if (unregisteredTenants.length > 0) {
+            print(`\nFound ${unregisteredTenants.length} unregistered database(s) with tickets collections:`);
+            const unregisteredSummaries = [];
+            for (const tenant of unregisteredTenants) {
+                const tenantSummary = await migrateTenant(tenant);
+                unregisteredSummaries.push(tenantSummary);
+                accumulateGlobalSummary(globalSummary, tenantSummary);
+                printTenantSummary(tenantSummary);
+            }
+            print("\n--- UNREGISTERED DATABASES SUMMARY ---");
+            print(`  Databases processed: ${unregisteredTenants.length}`);
+            const unregScanned = unregisteredSummaries.reduce((sum, s) => sum + s.ticketsScanned, 0);
+            const unregChanged = unregisteredSummaries.reduce((sum, s) => sum + s.changedDocs, 0);
+            const unregModified = unregisteredSummaries.reduce((sum, s) => sum + s.dbModified, 0);
+            print(`  Tickets scanned: ${unregScanned}`);
+            print(`  Documents needing changes: ${unregChanged}`);
+            print(`  Documents modified: ${unregModified}`);
+            print("--------------------------------------");
+        } else {
+            print("\nNo unregistered databases with tickets collections found.");
+        }
+
+        const allTenants = [...tenants, ...unregisteredTenants];
+
+        if (CONFIG.apply) {
+            print("\nBackfilling boolean defaults on all databases...");
+            await backfillBooleanDefaults(allTenants);
+        }
     } catch (error) {
         print(`\n[FATAL ERROR] Migration failed: ${error.message}`);
     }
+}
+
+async function backfillBooleanDefaults(tenants) {
+    const booleanFields = { locked: false, emailAuthEnabled: false, hidden: false };
+    let totalModified = 0;
+
+    for (const tenant of tenants) {
+        const tenantDb = db.getSiblingDB(tenant.databaseName);
+        const ticketsCollection = tenantDb.getCollection(CONFIG.ticketsCollectionName);
+
+        const filter = { $or: Object.keys(booleanFields).map(field => ({ [field]: { $exists: false } })) };
+        const update = { $set: {} };
+        for (const [field, defaultValue] of Object.entries(booleanFields)) {
+            update.$set[field] = defaultValue;
+        }
+
+        // Only update documents that are actually missing at least one field
+        // Use individual updates per field to avoid overwriting existing values
+        for (const [field, defaultValue] of Object.entries(booleanFields)) {
+            const result = await ticketsCollection.updateMany(
+                { [field]: { $exists: false } },
+                { $set: { [field]: defaultValue } }
+            );
+            const modified = result.modifiedCount ?? result.nModified ?? 0;
+            if (modified > 0) {
+                print(`  [${tenant.databaseName}] set ${field}=${defaultValue} on ${modified} documents`);
+                totalModified += modified;
+            }
+        }
+    }
+
+    print(`Boolean defaults backfill complete: ${totalModified} total field updates`);
 }
 
 function discoverTenants(collection, summary) {
@@ -114,6 +176,29 @@ function discoverTenants(collection, summary) {
     }
     summary.tenantsSelected = tenants.length;
     return tenants.sort((left, right) => left.databaseName.localeCompare(right.databaseName));
+}
+
+function discoverUnregisteredTenants(registeredTenants) {
+    const registeredNames = new Set(registeredTenants.map(t => t.databaseName));
+    const skipDatabases = new Set(["admin", "local", "config", CONFIG.globalDatabaseName]);
+    const unregistered = [];
+
+    const allDatabases = db.adminCommand({ listDatabases: 1, nameOnly: true }).databases;
+    for (const dbInfo of allDatabases) {
+        const dbName = dbInfo.name;
+        if (skipDatabases.has(dbName) || registeredNames.has(dbName)) continue;
+
+        const collections = db.getSiblingDB(dbName).getCollectionNames();
+        if (collections.includes(CONFIG.ticketsCollectionName)) {
+            unregistered.push({
+                serverId: null,
+                serverName: null,
+                databaseName: dbName
+            });
+        }
+    }
+
+    return unregistered.sort((left, right) => left.databaseName.localeCompare(right.databaseName));
 }
 
 async function migrateTenant(tenant) {
