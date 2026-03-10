@@ -59,7 +59,7 @@ const globalSummary = {
     tenantsSkippedNoDatabase: 0, tenantsSkippedDuplicateDatabase: 0,
     ticketsScanned: 0, changedDocs: 0, typeChanged: 0,
     statusChanged: 0, priorityChanged: 0, legacyPriorityRemoved: 0,
-    appealWorkflowStatusChanged: 0, lockedChanged: 0, anomalyCount: 0,
+    appealWorkflowStatusChanged: 0, lockedChanged: 0, defaultsAdded: 0, anomalyCount: 0,
     dbMatched: 0, dbModified: 0, writeErrors: 0
 };
 
@@ -123,7 +123,7 @@ async function migrateTenant(tenant) {
     const summary = {
         serverId: tenant.serverId, serverName: tenant.serverName, databaseName: tenant.databaseName,
         ticketsScanned: 0, changedDocs: 0, typeChanged: 0,
-        statusChanged: 0, priorityChanged: 0, legacyPriorityRemoved: 0,
+        statusChanged: 0, priorityChanged: 0, legacyPriorityRemoved: 0, defaultsAdded: 0,
         appealWorkflowStatusChanged: 0, lockedChanged: 0, anomalyCount: 0, anomalySamples: [],
         dbMatched: 0, dbModified: 0, writeErrors: 0
     };
@@ -134,7 +134,8 @@ async function migrateTenant(tenant) {
     const cursor = ticketsCollection.find({}, {
         _id: 1, type: 1, category: 1, status: 1, priority: 1,
         appealWorkflowStatus: 1, locked: 1, reportedPlayer: 1,
-        reportedPlayerUuid: 1, chatMessages: 1, data: 1
+        reportedPlayerUuid: 1, chatMessages: 1, data: 1,
+        emailAuthEnabled: 1, hidden: 1
     });
 
     for await (const ticket of cursor) {
@@ -226,7 +227,11 @@ function normalizeTicket(ticket, summary) {
         unsetOperations.appealWorkflowStatus = ""; summary.appealWorkflowStatusChanged += 1;
     }
 
-    if (ticket.locked !== nextValues.locked) { setOperations.locked = nextValues.locked; summary.lockedChanged += 1; }
+    if (ticket.locked === undefined || ticket.locked === null) { setOperations.locked = nextValues.locked; summary.lockedChanged += 1; }
+    else if (ticket.locked !== nextValues.locked) { setOperations.locked = nextValues.locked; summary.lockedChanged += 1; }
+
+    if (ticket.emailAuthEnabled === undefined || ticket.emailAuthEnabled === null) { setOperations.emailAuthEnabled = false; summary.defaultsAdded += 1; }
+    if (ticket.hidden === undefined || ticket.hidden === null) { setOperations.hidden = false; summary.defaultsAdded += 1; }
 
     for (const anomaly of anomalies) recordSummaryAnomaly(summary, ticketId, anomaly);
 
@@ -348,6 +353,7 @@ function accumulateGlobalSummary(global, tenant) {
     global.legacyPriorityRemoved += tenant.legacyPriorityRemoved;
     global.appealWorkflowStatusChanged += tenant.appealWorkflowStatusChanged;
     global.lockedChanged += tenant.lockedChanged;
+    global.defaultsAdded += tenant.defaultsAdded;
     global.anomalyCount += tenant.anomalyCount;
     global.dbMatched += tenant.dbMatched;
     global.dbModified += tenant.dbModified;

@@ -8,9 +8,11 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.annotation.Id;
@@ -20,7 +22,8 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @Builder
-@AllArgsConstructor
+@NoArgsConstructor(force = true)
+@AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Document
 @GenerateMongoFields
 @MongoFieldAliases({
