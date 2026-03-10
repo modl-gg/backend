@@ -21,7 +21,6 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -64,16 +63,16 @@ public class DashboardService {
 
     public MinecraftDashboardStatsResponse getMinecraftStats(Server server) {
         Query unresolvedReportsQuery = Query.query(new Criteria().andOperator(
-                MongoQueries.where(TicketFields.TYPE).is(TicketBucket.REPORT.getId()),
+                MongoQueries.where(TicketFields.TYPE).in(TicketCategory.reportCategoryIds()),
                 MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
         ));
         long unresolvedReports = ticketRepository.count(server, unresolvedReportsQuery);
 
         Query unresolvedTicketsQuery = Query.query(new Criteria().andOperator(
                 MongoQueries.where(TicketFields.TYPE).in(
-                        TicketBucket.SUPPORT.getId(),
-                        TicketBucket.BUG.getId(),
-                        TicketBucket.APPEAL.getId()
+                        TicketCategory.SUPPORT.getId(),
+                        TicketCategory.BUG.getId(),
+                        TicketCategory.APPEAL.getId()
                 ),
                 MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
         ));
@@ -213,7 +212,7 @@ public class DashboardService {
                             ticket.getPriority() != null ? ticket.getPriority().getId() : TicketPriority.NORMAL.getId(),
                             ticket.getCreated(),
                             ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown",
-                            ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId()
+                            ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId()
                     );
                 })
                 .toList();
@@ -297,7 +296,7 @@ public class DashboardService {
             MongoQueries.include(
                     ticketQuery,
                     TicketFields.SUBJECT,
-                    TicketFields.CATEGORY,
+                    TicketFields.TYPE,
                     TicketFields.CREATED,
                     TicketFields.CREATOR_NAME,
                     TicketFields.REPLY_NAME,
@@ -504,6 +503,6 @@ public class DashboardService {
     }
 
     private String displayCategory(Ticket ticket) {
-        return ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
+        return ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 }

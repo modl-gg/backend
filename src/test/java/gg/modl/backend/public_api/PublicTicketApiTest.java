@@ -50,7 +50,7 @@ class PublicTicketApiTest {
         if (TestDatabase.isAvailable()) {
             var dbTicket = TestDatabase.getInstance().findTicketById(ticketId);
             assertNotNull(dbTicket, "Ticket should exist in DB after public creation");
-            assertEquals("bug_report", dbTicket.getString("type"));
+            assertEquals("bug", dbTicket.getString("type"));
         }
 
         // Get ticket

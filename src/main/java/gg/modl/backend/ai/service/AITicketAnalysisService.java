@@ -193,7 +193,7 @@ public class AITicketAnalysisService {
     }
 
     private boolean isChatReport(Ticket ticket) {
-        return ticket.getCategory() == TicketCategory.CHAT;
+        return ticket.getType() == TicketCategory.CHAT;
     }
 
     private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {

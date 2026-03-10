@@ -103,7 +103,7 @@ public class AnalyticsMongoRepository {
 
         final Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(criteria),
-                Aggregation.group(TicketFields.CATEGORY).count().as(ALIAS_COUNT)
+                Aggregation.group(TicketFields.TYPE).count().as(ALIAS_COUNT)
         );
 
         return tenantMongoAccess.forServer(server)

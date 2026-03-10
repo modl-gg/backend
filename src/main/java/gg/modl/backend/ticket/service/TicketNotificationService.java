@@ -243,7 +243,7 @@ public class TicketNotificationService {
     }
 
     private String resolveTicketLabel(Ticket ticket) {
-        TicketCategory category = ticket.getCategory();
+        TicketCategory category = ticket.getType();
         return category != null ? category.getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 }

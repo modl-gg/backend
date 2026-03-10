@@ -284,7 +284,7 @@ public class AuditMongoRepository {
                 Aggregation.sort(Sort.Direction.DESC, TicketFields.REPLY_CREATED),
                 Aggregation.group(TicketFields.ID)
                         .first(TicketFields.SUBJECT).as(ALIAS_SUBJECT)
-                        .first(TicketFields.CATEGORY).as(ALIAS_CATEGORY)
+                        .first(TicketFields.TYPE).as(ALIAS_CATEGORY)
                         .first(TicketFields.STATUS).as(ALIAS_STATUS)
                         .first(TicketFields.CREATED).as(ALIAS_TICKET_CREATED)
                         .max(TicketFields.REPLY_CREATED).as(ALIAS_LAST_ACTIVITY)

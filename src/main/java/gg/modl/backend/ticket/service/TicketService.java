@@ -6,7 +6,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
@@ -377,8 +376,7 @@ public class TicketService {
 
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
-                .type(ticketCategory.toBucket())
-                .category(ticketCategory)
+                .type(ticketCategory)
                 .subject(subject)
                 .status(ticketStatus)
                 .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
@@ -961,8 +959,7 @@ public class TicketService {
 
         Ticket ticket = Ticket.builder()
                 .id(ticketId)
-                .type(ticketCategory.toBucket())
-                .category(ticketCategory)
+                .type(ticketCategory)
                 .subject(request.subject())
                 .status(unfinished ? TicketStatus.UNFINISHED : TicketStatus.OPEN)
                 .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
@@ -1120,9 +1117,9 @@ public class TicketService {
                 creatorName,
                 creatorName,
                 ticket.getCreated(),
-                ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
+                ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
                 ticket.isLocked(),
-                ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId(),
+                ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
                 lastReply,
                 replyCount,
                 ticket.getTags() != null ? ticket.getTags() : new ArrayList<>(),
@@ -1138,8 +1135,8 @@ public class TicketService {
 
         return new TicketResponse(
                 ticket.getId(),
-                ticket.getCategory() != null ? ticket.getCategory().getId() : TicketCategory.SUPPORT.getId(),
-                ticket.getCategory() != null ? ticket.getCategory().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
+                ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
+                ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
                 ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
                 ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
                 ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : null,
@@ -1212,9 +1209,7 @@ public class TicketService {
     private Map<String, Object> toMinecraftReport(Ticket ticket) {
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("id", ticket.getId());
-        report.put("type", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
-        report.put("bucket", ticket.getType() != null ? ticket.getType().getId() : null);
-        report.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+        report.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
         report.put("reporterName", ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown");
         report.put("reporterUuid", ticket.getCreatorUuid());
         report.put("reportedPlayerUuid", ticket.getReportedPlayerUuid());

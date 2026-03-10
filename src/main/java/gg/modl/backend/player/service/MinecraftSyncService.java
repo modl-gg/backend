@@ -13,7 +13,6 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -373,8 +372,8 @@ public class MinecraftSyncService {
             List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
 
             for (Ticket ticket : recentTickets) {
-                TicketBucket ticketType = ticket.getType();
-                if (ticketType == TicketBucket.STAFF) {
+                TicketCategory ticketType = ticket.getType();
+                if (ticketType == TicketCategory.APPLICATION) {
                     continue;
                 }
 
@@ -388,10 +387,9 @@ public class MinecraftSyncService {
                 }
 
                 String message;
-                if (ticketType == TicketBucket.REPORT) {
+                if (ticketType != null && ticketType.isReport()) {
                     String reportedPlayer = ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "Unknown";
-                    TicketCategory category = ticket.getCategory();
-                    String categoryLabel = category == TicketCategory.CHAT ? "Chat" : "Gameplay";
+                    String categoryLabel = ticketType == TicketCategory.CHAT ? "Chat" : "Gameplay";
                     message = creatorName + ": reported " + reportedPlayer;
                     if (createdServer != null) {
                         message += " on " + createdServer;
@@ -430,9 +428,9 @@ public class MinecraftSyncService {
                 }
                 data.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
                 data.put("ticketType", ticketType != null ? ticketType.getId() : "");
-                if (ticketType == TicketBucket.REPORT) {
+                if (ticketType != null && ticketType.isReport()) {
                     data.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
-                    data.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : "");
+                    data.put("category", ticketType.getId());
                 }
 
                 notification.put("data", data);

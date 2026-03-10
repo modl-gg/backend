@@ -1,7 +1,6 @@
 package gg.modl.backend.database;
 
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketStatus;
@@ -20,8 +19,6 @@ public class TicketMongoEnumConfiguration {
         return new MongoCustomConversions(List.of(
                 new TicketCategoryWriteConverter(),
                 new TicketCategoryReadConverter(),
-                new TicketBucketWriteConverter(),
-                new TicketBucketReadConverter(),
                 new TicketPriorityWriteConverter(),
                 new TicketPriorityReadConverter(),
                 new TicketStatusWriteConverter(),
@@ -44,22 +41,6 @@ public class TicketMongoEnumConfiguration {
         @Override
         public TicketCategory convert(String source) {
             return TicketCategory.fromCanonicalId(source);
-        }
-    }
-
-    @WritingConverter
-    static class TicketBucketWriteConverter implements Converter<TicketBucket, String> {
-        @Override
-        public String convert(TicketBucket source) {
-            return source.getId();
-        }
-    }
-
-    @ReadingConverter
-    static class TicketBucketReadConverter implements Converter<String, TicketBucket> {
-        @Override
-        public TicketBucket convert(String source) {
-            return TicketBucket.fromCanonicalId(source);
         }
     }
 

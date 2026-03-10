@@ -3,6 +3,7 @@ package gg.modl.backend.ticket.data;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -31,6 +32,7 @@ public enum TicketCategory {
         registerAlias(APPLICATION, "staff_application");
         registerAlias(APPLICATION, "apply");
         registerAlias(SUPPORT, "general_support");
+        registerAlias(PLAYER, "report");
     }
 
     TicketCategory(String id, String displayName, String ticketPrefix) {
@@ -52,22 +54,34 @@ public enum TicketCategory {
         return ticketPrefix;
     }
 
-    public TicketBucket toBucket() {
-        return switch (this) {
-            case BUG -> TicketBucket.BUG;
-            case PLAYER, CHAT -> TicketBucket.REPORT;
-            case APPEAL -> TicketBucket.APPEAL;
-            case APPLICATION -> TicketBucket.STAFF;
-            case SUPPORT -> TicketBucket.SUPPORT;
-        };
-    }
-
     public boolean isReport() {
         return this == PLAYER || this == CHAT;
     }
 
     public boolean isAppeal() {
         return this == APPEAL;
+    }
+
+    public static List<String> reportCategoryIds() {
+        return List.of(PLAYER.id, CHAT.id);
+    }
+
+    public static List<String> categoryIdsForBucket(String bucket) {
+        return switch (normalize(bucket)) {
+            case "bug" -> List.of(BUG.id);
+            case "report" -> List.of(PLAYER.id, CHAT.id);
+            case "appeal" -> List.of(APPEAL.id);
+            case "staff" -> List.of(APPLICATION.id);
+            case "support" -> List.of(SUPPORT.id);
+            default -> List.of();
+        };
+    }
+
+    public static boolean isCanonicalBucket(String value) {
+        return value != null && switch (value) {
+            case "bug", "report", "appeal", "support", "staff" -> true;
+            default -> false;
+        };
     }
 
     @JsonCreator

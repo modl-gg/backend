@@ -119,7 +119,7 @@ public class MinecraftTicketsController {
                     Map<String, Object> response = new LinkedHashMap<>();
                     response.put("id", ticket.getId());
                     response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-                    response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+                    response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
                     response.put("subject", ticket.getSubject());
                     response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
                     response.put("createdAt", ticket.getCreated());
@@ -195,7 +195,7 @@ public class MinecraftTicketsController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
         response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
         response.put("subject", ticket.getSubject());
         response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());
@@ -228,7 +228,7 @@ public class MinecraftTicketsController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
         response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
         response.put("subject", ticket.getSubject());
         response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());
@@ -247,7 +247,7 @@ public class MinecraftTicketsController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("id", ticket.getId());
         response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getCategory() != null ? ticket.getCategory().getId() : null);
+        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
         response.put("subject", ticket.getSubject());
         response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
         response.put("playerName", ticket.getCreatorName());

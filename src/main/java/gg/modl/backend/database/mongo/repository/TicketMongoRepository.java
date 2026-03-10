@@ -7,7 +7,6 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
@@ -18,10 +17,8 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 @Repository
@@ -71,12 +68,12 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         }
 
         if (type != null && !type.isBlank()) {
-            conditions.add(resolveMinecraftTypeCriteria(type));
+            conditions.add(buildTypeCriteria(type));
         } else {
             conditions.add(MongoQueries.where(TicketFields.TYPE).in(
-                    TicketBucket.SUPPORT.getId(),
-                    TicketBucket.BUG.getId(),
-                    TicketBucket.APPEAL.getId()
+                    TicketCategory.SUPPORT.getId(),
+                    TicketCategory.BUG.getId(),
+                    TicketCategory.APPEAL.getId()
             ));
         }
 
@@ -236,7 +233,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
 
     private Criteria buildReportCriteria(String status, String playerUuid) {
         List<Criteria> conditions = new ArrayList<>();
-        conditions.add(MongoQueries.where(TicketFields.TYPE).is(TicketBucket.REPORT.getId()));
+        conditions.add(MongoQueries.where(TicketFields.TYPE).in(TicketCategory.reportCategoryIds()));
 
         if (playerUuid != null && !playerUuid.isBlank()) {
             conditions.add(MongoQueries.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid));
@@ -289,102 +286,20 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     private Criteria buildTypeCriteria(String type) {
-        TicketCategory category = tryResolveCategory(type);
         String normalizedType = normalizeTypeValue(type);
-        if (category != null && !isCanonicalBucketFilter(normalizedType)) {
-            return buildCategoryCriteria(category);
+
+        TicketCategory category = tryResolveCategory(type);
+        if (category != null && !TicketCategory.isCanonicalBucket(normalizedType)) {
+            return MongoQueries.where(TicketFields.TYPE).is(category.getId());
         }
 
-        TicketBucket bucket = tryResolveBucket(type);
-        if (bucket != null) {
-            return buildBucketCriteria(bucket);
+        List<String> bucketCategoryIds = TicketCategory.categoryIdsForBucket(normalizedType);
+        if (!bucketCategoryIds.isEmpty()) {
+            return MongoQueries.where(TicketFields.TYPE).in(bucketCategoryIds);
         }
 
         String escapedType = Pattern.quote(normalizedType);
-        return new Criteria().orOperator(
-                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i"),
-                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i")
-        );
-    }
-
-    private Criteria resolveMinecraftTypeCriteria(String type) {
-        TicketCategory category = tryResolveCategory(type);
-        String normalizedType = normalizeTypeValue(type);
-        if (category != null && !isCanonicalBucketFilter(normalizedType)) {
-            return buildCategoryCriteria(category);
-        }
-
-        TicketBucket bucket = tryResolveBucket(type);
-        if (bucket != null) {
-            return buildBucketCriteria(bucket);
-        }
-
-        String escapedType = Pattern.quote(normalizedType);
-        return new Criteria().orOperator(
-                MongoQueries.where(TicketFields.CATEGORY).regex("^" + escapedType + "$", "i"),
-                MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i")
-        );
-    }
-
-    private Criteria buildCategoryCriteria(TicketCategory category) {
-        return new Criteria().orOperator(
-                MongoQueries.where(TicketFields.CATEGORY).in(categoryStorageValues(category)),
-                MongoQueries.where(TicketFields.TYPE).in(typeStorageValuesForCategory(category))
-        );
-    }
-
-    private Criteria buildBucketCriteria(TicketBucket bucket) {
-        return new Criteria().orOperator(
-                MongoQueries.where(TicketFields.TYPE).in(typeStorageValuesForBucket(bucket)),
-                MongoQueries.where(TicketFields.CATEGORY).in(categoryStorageValuesForBucket(bucket))
-        );
-    }
-
-    private List<String> categoryStorageValues(TicketCategory category) {
-        return switch (category) {
-            case BUG -> List.of("bug", "bug_report");
-            case PLAYER -> List.of("player", "player_report");
-            case CHAT -> List.of("chat", "chat_report");
-            case APPEAL -> List.of("appeal", "ban_appeal");
-            case APPLICATION -> List.of("application", "staff", "staff_application", "apply");
-            case SUPPORT -> List.of("support", "general_support");
-        };
-    }
-
-    private List<String> typeStorageValuesForCategory(TicketCategory category) {
-        return switch (category) {
-            case BUG -> List.of("bug", "bug_report");
-            case PLAYER -> List.of("player", "player_report");
-            case CHAT -> List.of("chat", "chat_report");
-            case APPEAL -> List.of("appeal", "ban_appeal");
-            case APPLICATION -> List.of("staff", "application", "staff_application", "apply");
-            case SUPPORT -> List.of("support", "general_support");
-        };
-    }
-
-    private List<String> typeStorageValuesForBucket(TicketBucket bucket) {
-        return switch (bucket) {
-            case BUG -> List.of("bug", "bug_report");
-            case REPORT -> List.of("report", "player", "player_report", "chat", "chat_report");
-            case APPEAL -> List.of("appeal", "ban_appeal");
-            case SUPPORT -> List.of("support", "general_support");
-            case STAFF -> List.of("staff", "application", "staff_application", "apply");
-        };
-    }
-
-    private List<String> categoryStorageValuesForBucket(TicketBucket bucket) {
-        Set<String> values = new LinkedHashSet<>();
-        switch (bucket) {
-            case BUG -> values.addAll(categoryStorageValues(TicketCategory.BUG));
-            case REPORT -> {
-                values.addAll(categoryStorageValues(TicketCategory.PLAYER));
-                values.addAll(categoryStorageValues(TicketCategory.CHAT));
-            }
-            case APPEAL -> values.addAll(categoryStorageValues(TicketCategory.APPEAL));
-            case SUPPORT -> values.addAll(categoryStorageValues(TicketCategory.SUPPORT));
-            case STAFF -> values.addAll(categoryStorageValues(TicketCategory.APPLICATION));
-        }
-        return List.copyOf(values);
+        return MongoQueries.where(TicketFields.TYPE).regex("^" + escapedType + "$", "i");
     }
 
     private TicketStatus tryResolveTicketStatus(String rawStatus) {
@@ -407,24 +322,6 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         } catch (IllegalArgumentException ignored) {
             return null;
         }
-    }
-
-    private TicketBucket tryResolveBucket(String rawType) {
-        if (rawType == null || rawType.isBlank() || FILTER_ALL.equalsIgnoreCase(rawType)) {
-            return null;
-        }
-        try {
-            return TicketBucket.fromCanonicalId(rawType);
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
-    }
-
-    private boolean isCanonicalBucketFilter(String type) {
-        return type != null && switch (type) {
-            case "bug", "report", "appeal", "support", "staff" -> true;
-            default -> false;
-        };
     }
 
     private String normalizeTypeValue(String type) {

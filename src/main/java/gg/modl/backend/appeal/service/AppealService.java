@@ -13,7 +13,6 @@ import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
@@ -38,7 +37,7 @@ public class AppealService {
     private final PunishmentService punishmentService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String APPEAL_TYPE = TicketBucket.APPEAL.getId();
+    private static final String APPEAL_TYPE = TicketCategory.APPEAL.getId();
 
     public List<TicketResponse> getAppealsByPunishment(Server server, String punishmentId) {
         MongoTemplate template = getTemplate(server);
@@ -55,7 +54,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (ticket == null || ticket.getType() != TicketBucket.APPEAL) {
+        if (ticket == null || ticket.getType() != TicketCategory.APPEAL) {
             return Optional.empty();
         }
 
@@ -110,8 +109,7 @@ public class AppealService {
 
         Ticket appeal = Ticket.builder()
                 .id(appealId)
-                .type(TicketBucket.APPEAL)
-                .category(TicketCategory.APPEAL)
+                .type(TicketCategory.APPEAL)
                 .status(TicketStatus.OPEN)
                 .appealWorkflowStatus(AppealWorkflowStatus.OPEN)
                 .subject("Appeal for Punishment: " + request.punishmentId())
@@ -139,7 +137,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (appeal == null || appeal.getType() != TicketBucket.APPEAL) {
+        if (appeal == null || appeal.getType() != TicketCategory.APPEAL) {
             return Optional.empty();
         }
 
@@ -174,7 +172,7 @@ public class AppealService {
         Query query = Query.query(Criteria.where("_id").is(appealId));
         Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
 
-        if (appeal == null || appeal.getType() != TicketBucket.APPEAL) {
+        if (appeal == null || appeal.getType() != TicketCategory.APPEAL) {
             return Optional.empty();
         }
 

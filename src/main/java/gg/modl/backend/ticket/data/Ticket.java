@@ -35,10 +35,7 @@ public class Ticket {
     private final String id;
 
     @Field(targetType = FieldType.STRING)
-    private TicketBucket type;
-
-    @Field(targetType = FieldType.STRING)
-    private TicketCategory category;
+    private TicketCategory type;
 
     private String subject;
 

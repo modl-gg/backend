@@ -4,7 +4,6 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.QuickResponseSettings;
-import gg.modl.backend.ticket.data.TicketBucket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketPriority;
@@ -77,8 +76,7 @@ class TicketServiceTest {
                 "survival"
         ));
 
-        assertEquals(TicketBucket.REPORT, ticket.getType());
-        assertEquals(TicketCategory.CHAT, ticket.getCategory());
+        assertEquals(TicketCategory.CHAT, ticket.getType());
         assertEquals(TicketPriority.NORMAL, ticket.getPriority());
         assertEquals(1, ticket.getReplies().size());
         assertEquals("reported bad chat", ticket.getReplies().get(0).getContent());
@@ -114,8 +112,7 @@ class TicketServiceTest {
         verify(ticketRepository).saveEntity(any(Server.class), savedTicketCaptor.capture());
         Ticket savedTicket = savedTicketCaptor.getValue();
 
-        assertEquals(TicketBucket.STAFF, savedTicket.getType());
-        assertEquals(TicketCategory.APPLICATION, savedTicket.getCategory());
+        assertEquals(TicketCategory.APPLICATION, savedTicket.getType());
         assertEquals(TicketPriority.NORMAL, savedTicket.getPriority());
         assertEquals(TicketStatus.UNFINISHED, savedTicket.getStatus());
     }

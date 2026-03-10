@@ -7,15 +7,6 @@ import org.junit.jupiter.api.Test;
 class TicketEnumCompatibilityTest {
 
     @Test
-    void ticketBucketSupportsLegacyAliases() {
-        assertEquals(TicketBucket.REPORT, TicketBucket.fromCanonicalId("player"));
-        assertEquals(TicketBucket.REPORT, TicketBucket.fromCanonicalId("chat_report"));
-        assertEquals(TicketBucket.BUG, TicketBucket.fromCanonicalId("bug_report"));
-        assertEquals(TicketBucket.STAFF, TicketBucket.fromCanonicalId("application"));
-        assertEquals(TicketBucket.STAFF, TicketBucket.fromCanonicalId("staff application"));
-    }
-
-    @Test
     void ticketCategorySupportsLegacyAliases() {
         assertEquals(TicketCategory.APPLICATION, TicketCategory.fromCanonicalId("staff"));
         assertEquals(TicketCategory.APPEAL, TicketCategory.fromCanonicalId("ban_appeal"));
