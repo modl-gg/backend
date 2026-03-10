@@ -11,6 +11,7 @@ import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.annotation.Id;
@@ -20,6 +21,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @Builder
+@NoArgsConstructor
 @AllArgsConstructor
 @Document
 @GenerateMongoFields
@@ -32,7 +34,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 public class Ticket {
     @Id
     @NotNull
-    private final String id;
+    private String id;
 
     @Field(targetType = FieldType.STRING)
     private TicketCategory type;

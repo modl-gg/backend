@@ -79,6 +79,10 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+tasks.withType(JavaCompile) {
+    options.compilerArgs << '-parameters'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 	binaryResultsDirectory = file("$buildDir/test-results/test/binary-${System.currentTimeMillis()}")
