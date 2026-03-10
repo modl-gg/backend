@@ -79,20 +79,4 @@ public final class RequestValidationLimits {
     public static final int EVIDENCE_URL_MAX_LENGTH = 2_048;
     public static final int FILE_NAME_MAX_LENGTH = 255;
     public static final int CONTENT_TYPE_MAX_LENGTH = 128;
-
-    public static final String NON_BLANK_TEXT = "(?s)^.*\\S.*$";
-    public static final String LOG_LEVEL = "^(?i)(critical|error|warning|info|debug)$";
-    public static final String LOG_TOKEN = "^[A-Za-z0-9._:-]+$";
-    public static final String OPTIONAL_OBJECT_ID = "^[0-9a-fA-F]{24}$";
-    public static final String LANGUAGE_TAG = "^[a-z]{2}(?:-[A-Z]{2})?$";
-    public static final String IP_OR_CIDR = "^([0-9a-fA-F.:]+)(?:/\\d{1,3})?$";
-    public static final String ORIGIN = "^https?://[^\\s/]+(?::\\d{1,5})?$";
-    public static final String PUNISHMENT_CATEGORY = "^(Administrative|Social|Gameplay)$";
-    public static final String AI_STRICTNESS_LEVEL = "^(LENIENT|STANDARD|STRICT)$";
-    public static final String NUMERIC_IDENTIFIER = "^\\d{1,10}$";
-    public static final String OPTIONAL_DISCORD_WEBHOOK_URL = "^$|^https://(?:discord(?:app)?\\.com)/api/webhooks/[A-Za-z0-9._~/%=-]+$";
-    public static final String OPTIONAL_HTTPS_URL = "^$|^https://[^\\s]+$";
-    public static final String OPTIONAL_DISCORD_ROLE_ID = "^$|^\\d{17,20}$";
-    public static final String HEX_COLOR = "^#[0-9a-fA-F]{6}$";
-    public static final String GENERIC_ID_TOKEN = "^[A-Za-z0-9_-]+$";
 }

@@ -8,9 +8,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,16 +61,13 @@ public record UpdateSystemConfigRequest(
             String adminEmail,
 
             @Size(max = RequestValidationLimits.TIMEZONE_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.NON_BLANK_TEXT)
             String timezone,
 
-            @Pattern(regexp = RequestValidationLimits.LANGUAGE_TAG)
             String defaultLanguage,
 
             Boolean maintenanceMode,
 
             @Size(max = RequestValidationLimits.MAINTENANCE_MESSAGE_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.NON_BLANK_TEXT)
             String maintenanceMessage
     ) {
         public SystemConfig.GeneralConfig toConfig() {
@@ -140,13 +135,11 @@ public record UpdateSystemConfigRequest(
             Boolean passwordRequireSpecial,
             @Size(max = RequestValidationLimits.IP_WHITELIST_MAX_ENTRIES)
             List<
-                    @Pattern(regexp = RequestValidationLimits.IP_OR_CIDR)
                     @Size(max = RequestValidationLimits.IP_WHITELIST_ENTRY_MAX_LENGTH)
                     String
                     > ipWhitelist,
             @Size(max = RequestValidationLimits.CORS_ORIGIN_MAX_ENTRIES)
             List<
-                    @Pattern(regexp = RequestValidationLimits.ORIGIN)
                     @Size(max = RequestValidationLimits.CORS_ORIGIN_MAX_LENGTH)
                     String
                     > corsOrigins
@@ -187,10 +180,8 @@ public record UpdateSystemConfigRequest(
             Boolean weeklyReports,
             Boolean maintenanceAlerts,
             @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.OPTIONAL_HTTPS_URL)
             String slackWebhook,
             @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.OPTIONAL_HTTPS_URL)
             String discordWebhook
     ) {
         public SystemConfig.NotificationsConfig toConfig() {

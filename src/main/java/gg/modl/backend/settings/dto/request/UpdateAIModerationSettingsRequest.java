@@ -4,9 +4,7 @@ import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -15,11 +13,10 @@ public record UpdateAIModerationSettingsRequest(
         Boolean enableAIReview,
         Boolean enableAutomatedActions,
         @NotBlank
-        @Pattern(regexp = RequestValidationLimits.AI_STRICTNESS_LEVEL)
         String strictnessLevel,
         @Size(max = RequestValidationLimits.AI_PUNISHMENT_CONFIGS_MAX_ENTRIES)
         Map<
-                @Pattern(regexp = RequestValidationLimits.NUMERIC_IDENTIFIER) String,
+                String,
                 @Valid AIPunishmentConfigRequest
                 > aiPunishmentConfigs
 ) {
@@ -48,7 +45,6 @@ public record UpdateAIModerationSettingsRequest(
 
     public record AIPunishmentConfigRequest(
             @NotBlank
-            @Pattern(regexp = RequestValidationLimits.NUMERIC_IDENTIFIER)
             String id,
             @NotBlank
             @Size(max = RequestValidationLimits.AI_PUNISHMENT_NAME_MAX_LENGTH)

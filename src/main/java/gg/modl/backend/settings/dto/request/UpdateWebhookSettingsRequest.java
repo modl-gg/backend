@@ -4,22 +4,16 @@ import gg.modl.backend.settings.data.WebhookSettings;
 import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-
 import java.util.List;
 
 public record UpdateWebhookSettingsRequest(
         @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
-        @Pattern(regexp = RequestValidationLimits.OPTIONAL_DISCORD_WEBHOOK_URL)
         String discordWebhookUrl,
-        @Pattern(regexp = RequestValidationLimits.OPTIONAL_DISCORD_ROLE_ID)
         String discordAdminRoleId,
         @Size(max = RequestValidationLimits.DISCORD_BOT_NAME_MAX_LENGTH)
-        @Pattern(regexp = RequestValidationLimits.NON_BLANK_TEXT)
         String botName,
         @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
-        @Pattern(regexp = RequestValidationLimits.OPTIONAL_HTTPS_URL)
         String avatarUrl,
         Boolean enabled,
         @Valid NotificationSettingsRequest notifications,
@@ -67,12 +61,9 @@ public record UpdateWebhookSettingsRequest(
 
     public record EmbedTemplateRequest(
             @Size(max = RequestValidationLimits.EMBED_TITLE_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.NON_BLANK_TEXT)
             String title,
             @Size(max = RequestValidationLimits.EMBED_DESCRIPTION_MAX_LENGTH)
-            @Pattern(regexp = RequestValidationLimits.NON_BLANK_TEXT)
             String description,
-            @Pattern(regexp = RequestValidationLimits.HEX_COLOR)
             String color,
             @Size(max = RequestValidationLimits.EMBED_FIELDS_MAX_ENTRIES)
             List<@Valid EmbedFieldRequest> fields
