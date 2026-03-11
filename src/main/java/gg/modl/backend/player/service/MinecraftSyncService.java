@@ -1,9 +1,13 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
+import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -14,8 +18,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.ticket.data.TicketStatus;
-import org.springframework.data.mongodb.core.MongoTemplate;
+import gg.modl.backend.util.PlayerDataUtils;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -29,29 +32,45 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
 public class MinecraftSyncService {
-    private final TenantMongoAccess tenantMongoAccess;
+    private final PlayerMongoRepository playerRepository;
+    private final StaffMongoRepository staffRepository;
+    private final StaffRoleMongoRepository staffRoleRepository;
+    private final TicketMongoRepository ticketRepository;
+    private final ServerMongoRepository serverRepository;
+    private final MigrationMongoRepository migrationRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
-    private final PunishmentService punishmentService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
     private final MinecraftChatLogService minecraftChatLogService;
     private final IssuerNameResolver issuerNameResolver;
 
     public MinecraftSyncService(
-            TenantMongoAccess tenantMongoAccess,
+            PlayerMongoRepository playerRepository,
+            StaffMongoRepository staffRepository,
+            StaffRoleMongoRepository staffRoleRepository,
+            TicketMongoRepository ticketRepository,
+            ServerMongoRepository serverRepository,
+            MigrationMongoRepository migrationRepository,
             PlayerStatusCalculator statusCalculator,
             PunishmentTypeService punishmentTypeService,
-            PunishmentService punishmentService,
+            PunishmentLifecycleService punishmentLifecycleService,
             MinecraftChatLogService minecraftChatLogService,
             IssuerNameResolver issuerNameResolver
     ) {
-        this.tenantMongoAccess = tenantMongoAccess;
+        this.playerRepository = playerRepository;
+        this.staffRepository = staffRepository;
+        this.staffRoleRepository = staffRoleRepository;
+        this.ticketRepository = ticketRepository;
+        this.serverRepository = serverRepository;
+        this.migrationRepository = migrationRepository;
         this.statusCalculator = statusCalculator;
         this.punishmentTypeService = punishmentTypeService;
-        this.punishmentService = punishmentService;
+        this.punishmentLifecycleService = punishmentLifecycleService;
         this.minecraftChatLogService = minecraftChatLogService;
         this.issuerNameResolver = issuerNameResolver;
     }
@@ -64,16 +83,15 @@ public class MinecraftSyncService {
             List<ChatLogInput> chatLogs,
             List<CommandLogInput> commandLogs
     ) {
-        MongoTemplate template = tenantMongoAccess.forServer(server);
         Instant now = Instant.now();
 
-        tenantMongoAccess.global().updateFirst(
+        serverRepository.updateFirst(
                 Query.query(Criteria.where("_id").is(server.getId())),
                 new Update()
                         .set("lastActivityAt", Date.from(now))
-                        .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L),
-                Server.class
+                        .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
         );
+
         Instant lastSync = lastSyncTimestamp != null
                 ? Instant.parse(lastSyncTimestamp)
                 : now.minusSeconds(30);
@@ -92,23 +110,11 @@ public class MinecraftSyncService {
             }
         }
 
-        Criteria staleOnlineCriteria = MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-                .and(PlayerFields.MINECRAFT_UUID).nin(onlineUuids);
-        if (serverName != null && !serverName.isBlank()) {
-            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER).is(serverName);
-        }
-
-        Query staleOnlineQuery = Query.query(staleOnlineCriteria);
-        Update markOffline = new Update()
-                .set(PlayerFields.DATA_IS_ONLINE, false)
-                .set(PlayerFields.DATA_LAST_LOGOUT, Date.from(now));
-        template.updateMulti(staleOnlineQuery, markOffline, Player.class, CollectionName.PLAYERS);
+        markOfflinePlayers(server, onlineUuids, serverName, Date.from(now));
 
         if (!onlineUuids.isEmpty()) {
-            Query playerQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(onlineUuids));
-            List<Player> players = template.find(playerQuery, Player.class, CollectionName.PLAYERS);
+            List<Player> players = playerRepository.findByMinecraftUuids(server, onlineUuids);
 
-            // Batch resolve issuer IDs for all punishments across all players
             Set<String> allIssuerIds = new HashSet<>();
             for (Player p : players) {
                 for (Punishment pun : p.getPunishments()) {
@@ -120,22 +126,19 @@ public class MinecraftSyncService {
             }
             Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
                     ? Map.of()
-                    : issuerNameResolver.batchResolve(allIssuerIds, template);
+                    : issuerNameResolver.batchResolve(allIssuerIds, server, staffRepository);
 
             for (Player player : players) {
-                List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
+                List<String> promoted = punishmentLifecycleService.promoteUnstartedPunishments(server, player);
                 if (!promoted.isEmpty()) {
-                    Query refetchQuery = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
-                    player = template.findOne(refetchQuery, Player.class, CollectionName.PLAYERS);
+                    player = playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString()).orElse(null);
                     if (player == null) {
                         continue;
                     }
                 }
 
                 String uuid = player.getMinecraftUuid().toString();
-                String username = player.getUsernames().isEmpty()
-                        ? "Unknown"
-                        : player.getUsernames().get(player.getUsernames().size() - 1).username();
+                String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
                 Set<String> categoriesWithActiveStarted = new HashSet<>();
                 Map<String, Punishment> oldestUnstartedPerCategory = new LinkedHashMap<>();
@@ -274,7 +277,7 @@ public class MinecraftSyncService {
         }
 
         pendingPunishments = deduplicatePendingPunishments(pendingPunishments);
-        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(template, lastSync, types, recentlyModifiedPunishments, server);
+        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(server, lastSync, types, recentlyModifiedPunishments);
 
         Map<String, String> onlinePlayerIps = new HashMap<>();
         if (onlinePlayers != null) {
@@ -285,7 +288,7 @@ public class MinecraftSyncService {
             }
         }
 
-        List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(template, onlinePlayerIps);
+        List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(server, onlinePlayerIps);
 
         if (chatLogs != null && !chatLogs.isEmpty()) {
             minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
@@ -326,27 +329,22 @@ public class MinecraftSyncService {
                 : null);
 
         try {
-            Query pendingQuery = Query.query(Criteria.where("twoFactorPendingDelivery").is(true)
-                    .and("assignedMinecraftUuid").exists(true).ne(null).ne(""));
-            List<Staff> pendingStaff = template.find(pendingQuery, Staff.class, CollectionName.STAFF);
+            List<Staff> pendingStaff = staffRepository.findWithPendingTwoFactorDelivery(server);
             if (!pendingStaff.isEmpty()) {
                 data.put("staff2faVerifications", pendingStaff.stream()
                         .map(staff -> Map.<String, Object>of("minecraftUuid", staff.getAssignedMinecraftUuid()))
                         .toList());
-                template.updateMulti(pendingQuery, new Update().set("twoFactorPendingDelivery", false), Staff.class, CollectionName.STAFF);
+                staffRepository.clearPendingTwoFactorDelivery(server);
             }
         } catch (Exception ignored) {
         }
 
         try {
-            Query migrationQuery = Query.query(Criteria.where("status").is("building_json"));
-            MigrationStatus activeMigration = template.findOne(migrationQuery, MigrationStatus.class, "migrations");
-            if (activeMigration != null) {
-                data.put("migrationTask", Map.of(
-                        "taskId", activeMigration.getTaskId(),
-                        "type", activeMigration.getType()
-                ));
-            }
+            Optional<MigrationStatus> activeMigration = migrationRepository.findActiveMigration(server);
+            activeMigration.ifPresent(migration -> data.put("migrationTask", Map.of(
+                    "taskId", migration.getTaskId(),
+                    "type", migration.getType()
+            )));
         } catch (Exception ignored) {
         }
 
@@ -356,20 +354,25 @@ public class MinecraftSyncService {
         );
     }
 
+    private void markOfflinePlayers(Server server, Set<String> onlineUuids, String serverName, Date logoutTime) {
+        Criteria staleOnlineCriteria = MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
+                .and(PlayerFields.MINECRAFT_UUID).nin(onlineUuids);
+        if (serverName != null && !serverName.isBlank()) {
+            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER).is(serverName);
+        }
+        playerRepository.markStalePlayersOffline(server, staleOnlineCriteria, logoutTime);
+    }
+
     private List<Map<String, Object>> getRecentStaffEvents(
-            MongoTemplate template,
+            Server server,
             Instant lastSync,
             List<PunishmentType> types,
-            List<Map<String, Object>> recentlyModifiedPunishments,
-            Server server
+            List<Map<String, Object>> recentlyModifiedPunishments
     ) {
         List<Map<String, Object>> notifications = new ArrayList<>();
 
         try {
-            Query ticketQuery = Query.query(Criteria.where("created").gte(Date.from(lastSync))
-                    .and("status").ne(TicketStatus.UNFINISHED.getId()));
-            ticketQuery.limit(20);
-            List<Ticket> recentTickets = template.find(ticketQuery, Ticket.class, CollectionName.TICKETS);
+            List<Ticket> recentTickets = ticketRepository.findCreatedAfterExcludingUnfinished(server, Date.from(lastSync), 20);
 
             for (Ticket ticket : recentTickets) {
                 TicketCategory ticketType = ticket.getType();
@@ -408,10 +411,10 @@ public class MinecraftSyncService {
                 notification.put("message", message);
                 notification.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
 
-                Map<String, Object> data = new LinkedHashMap<>();
-                data.put("ticketId", ticket.getId());
-                data.put("creatorName", creatorName);
-                data.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
+                Map<String, Object> ticketData = new LinkedHashMap<>();
+                ticketData.put("ticketId", ticket.getId());
+                ticketData.put("creatorName", creatorName);
+                ticketData.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
 
                 String firstReply = "";
                 if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
@@ -420,31 +423,27 @@ public class MinecraftSyncService {
                         firstReply = content.replace("**", "").replace("```", "");
                     }
                 }
-                data.put("firstReplyContent", firstReply);
+                ticketData.put("firstReplyContent", firstReply);
 
                 String domain = server.getCustomDomainOverride();
                 if (domain == null || domain.isBlank()) {
                     domain = server.getCustomDomain() + ".modl.gg";
                 }
-                data.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
-                data.put("ticketType", ticketType != null ? ticketType.getId() : "");
+                ticketData.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
+                ticketData.put("ticketType", ticketType != null ? ticketType.getId() : "");
                 if (ticketType != null && ticketType.isReport()) {
-                    data.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
-                    data.put("category", ticketType.getId());
+                    ticketData.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
+                    ticketData.put("category", ticketType.getId());
                 }
 
-                notification.put("data", data);
+                notification.put("data", ticketData);
                 notifications.add(notification);
             }
         } catch (Exception ignored) {
         }
 
         try {
-            Query punishmentQuery = Query.query(Criteria.where("punishments").elemMatch(
-                    Criteria.where("issued").gte(Date.from(lastSync))
-            ));
-            punishmentQuery.limit(50);
-            List<Player> playersWithNewPunishments = template.find(punishmentQuery, Player.class, CollectionName.PLAYERS);
+            List<Player> playersWithNewPunishments = playerRepository.findWithPunishmentsIssuedAfter(server, Date.from(lastSync), 50);
 
             Set<String> issuerIds = new HashSet<>();
             for (Player player : playersWithNewPunishments) {
@@ -454,12 +453,10 @@ public class MinecraftSyncService {
             }
             Map<String, String> resolvedIssuers = issuerIds.isEmpty()
                     ? Map.of()
-                    : issuerNameResolver.batchResolve(issuerIds, template);
+                    : issuerNameResolver.batchResolve(issuerIds, server, staffRepository);
 
             for (Player player : playersWithNewPunishments) {
-                String playerName = player.getUsernames().isEmpty()
-                        ? "Unknown"
-                        : player.getUsernames().get(player.getUsernames().size() - 1).username();
+                String playerName = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
                 for (Punishment punishment : player.getPunishments()) {
                     if (punishment.getIssued() != null && punishment.getIssued().toInstant().isAfter(lastSync)) {
@@ -559,14 +556,12 @@ public class MinecraftSyncService {
         return result;
     }
 
-    private List<Map<String, Object>> getActiveStaffMembers(MongoTemplate template, Map<String, String> onlinePlayerIps) {
-        Query staffQuery = Query.query(Criteria.where("assignedMinecraftUuid").exists(true).ne(null).ne(""));
-        List<Staff> staffWithMinecraft = template.find(staffQuery, Staff.class, CollectionName.STAFF);
+    private List<Map<String, Object>> getActiveStaffMembers(Server server, Map<String, String> onlinePlayerIps) {
+        List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Staff staff : staffWithMinecraft) {
-            Query roleQuery = Query.query(Criteria.where("name").is(staff.getRole()));
-            StaffRole role = template.findOne(roleQuery, StaffRole.class, CollectionName.STAFF_ROLES);
+            StaffRole role = staffRoleRepository.findByName(server, staff.getRole()).orElse(null);
             List<String> permissions = role != null ? role.getPermissions() : List.of();
 
             String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());

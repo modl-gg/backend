@@ -2,7 +2,7 @@ package gg.modl.backend.punishment.controller;
 
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -22,7 +22,7 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.PUBLIC_PUNISHMENT)
 @RequiredArgsConstructor
 public class PublicPunishmentController {
-    private final PunishmentService punishmentService;
+    private final PunishmentQueryService punishmentQueryService;
     private final PunishmentTypeService punishmentTypeService;
     private final AppealService appealService;
     private final PlayerStatusCalculator statusCalculator;
@@ -34,7 +34,7 @@ public class PublicPunishmentController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        var punishmentOpt = punishmentService.getPunishmentById(server, punishmentId);
+        var punishmentOpt = punishmentQueryService.getPunishmentById(server, punishmentId);
         if (punishmentOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }

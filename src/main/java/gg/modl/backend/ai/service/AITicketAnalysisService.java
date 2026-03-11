@@ -12,7 +12,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.AIModerationSettings;
@@ -55,7 +55,7 @@ public class AITicketAnalysisService {
     private final AIModerationSettingsService aiModerationSettingsService;
     private final TicketMongoRepository ticketRepository;
     private final ServerMongoRepository serverRepository;
-    private final PunishmentService punishmentService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentTypeService punishmentTypeService;
     private final UsageTrackingService usageTrackingService;
     private final ObjectMapper objectMapper;
@@ -213,7 +213,7 @@ public class AITicketAnalysisService {
                 reason, null
         );
 
-        punishmentService.createPunishment(server, playerUuid, request);
+        punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         Date now = new Date();
         String typeName = punishmentTypeService.getPunishmentTypeName(server, suggestion.getPunishmentTypeId());

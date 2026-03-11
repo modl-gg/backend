@@ -45,7 +45,7 @@ class MinecraftPlayerServiceTest {
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
-    private PunishmentService punishmentService;
+    private PunishmentLifecycleService punishmentLifecycleService;
 
     @Mock
     private AccountLinkingService accountLinkingService;
@@ -69,7 +69,7 @@ class MinecraftPlayerServiceTest {
                 ticketRepository,
                 statusCalculator,
                 punishmentTypeService,
-                punishmentService,
+                punishmentLifecycleService,
                 accountLinkingService,
                 mojangApiService,
                 issuerNameResolver,

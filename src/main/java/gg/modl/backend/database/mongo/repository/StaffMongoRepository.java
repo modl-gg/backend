@@ -173,5 +173,21 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         Update update = new Update().addToSet(StaffFields.SUBSCRIBED_TICKETS, subscription);
         updateFirst(server, query, update);
     }
+
+    public List<Staff> findWithPendingTwoFactorDelivery(Server server) {
+        Query query = Query.query(
+                MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
+                        .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+        );
+        return find(server, query);
+    }
+
+    public void clearPendingTwoFactorDelivery(Server server) {
+        Query query = Query.query(
+                MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
+                        .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+        );
+        updateMulti(server, query, new Update().set(StaffFields.TWO_FACTOR_PENDING_DELIVERY, false));
+    }
 }
 

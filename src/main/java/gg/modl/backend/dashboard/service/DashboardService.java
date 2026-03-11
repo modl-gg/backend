@@ -6,7 +6,6 @@ import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
 import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
 import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
@@ -26,11 +25,11 @@ import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import gg.modl.backend.util.PlayerDataUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -54,7 +53,6 @@ public class DashboardService {
     private static final int MAX_DAYS = 90;
     private static final int MAX_QUERY_RESULTS = 200;
 
-    private final TenantMongoAccess tenantMongoAccess;
     private final TicketMongoRepository ticketRepository;
     private final PlayerMongoRepository playerRepository;
     private final StaffMongoRepository staffRepository;
@@ -244,8 +242,8 @@ public class DashboardService {
             }
 
             String typeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
-            String playerName = extractLatestUsername(row.get(PlayerFields.USERNAMES));
-            String playerUuid = extractMinecraftUuid(row);
+            String playerName = PlayerDataUtils.extractLatestUsername(row.get(PlayerFields.USERNAMES));
+            String playerUuid = PlayerDataUtils.extractMinecraftUuid(row);
 
             results.add(new RecentPunishmentResponse(
                     punishment.getId(),
@@ -365,9 +363,9 @@ public class DashboardService {
 
                 normalizePunishmentCollections(punishment);
 
-                String username = extractLatestUsername(row.get(PlayerFields.USERNAMES));
+                String username = PlayerDataUtils.extractLatestUsername(row.get(PlayerFields.USERNAMES));
                 String punishmentTypeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");
-                String playerUuid = extractMinecraftUuid(row);
+                String playerUuid = PlayerDataUtils.extractMinecraftUuid(row);
 
                 activities.add(new ActivityItemResponse(
                         "punishment-" + punishment.getId(),
@@ -412,7 +410,7 @@ public class DashboardService {
         }
 
         try {
-            return getTemplate(server).getConverter().read(Punishment.class, punishmentDocument);
+            return playerRepository.readPunishment(server, punishmentDocument);
         } catch (Exception exception) {
             log.warn("Failed to parse punishment document for dashboard response", exception);
             return null;
@@ -459,32 +457,6 @@ public class DashboardService {
         }
     }
 
-    private String extractLatestUsername(Object usernamesValue) {
-        if (!(usernamesValue instanceof List<?> usernames) || usernames.isEmpty()) {
-            return "Unknown";
-        }
-
-        Object lastEntry = usernames.get(usernames.size() - 1);
-        if (lastEntry instanceof Document entryDocument) {
-            Object username = entryDocument.get("username");
-            if (username != null && !String.valueOf(username).isBlank()) {
-                return String.valueOf(username);
-            }
-        } else if (lastEntry instanceof Map<?, ?> entryMap) {
-            Object username = entryMap.get("username");
-            if (username != null && !String.valueOf(username).isBlank()) {
-                return String.valueOf(username);
-            }
-        }
-
-        return "Unknown";
-    }
-
-    private String extractMinecraftUuid(Document row) {
-        Object value = row.get(PlayerFields.MINECRAFT_UUID);
-        return value != null ? String.valueOf(value) : "";
-    }
-
     private String getStaffUsernameByEmail(Server server, String email) {
         Query query = Query.query(MongoQueries.where(StaffFields.EMAIL).is(email));
         MongoQueries.include(query, StaffFields.USERNAME);
@@ -496,10 +468,6 @@ public class DashboardService {
 
     private int clampLimit(int value, int max) {
         return Math.max(1, Math.min(value, max));
-    }
-
-    private MongoTemplate getTemplate(Server server) {
-        return tenantMongoAccess.forServer(server);
     }
 
     private String displayCategory(Ticket ticket) {

@@ -1,36 +1,29 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
+import gg.modl.backend.util.IdGenerator;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class ApiKeySettingsService {
+public class ApiKeySettingsService extends AbstractSettingsService {
     private static final String SETTINGS_TYPE_API_KEYS = "apiKeys";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final IdGenerator idGenerator;
+
+    public ApiKeySettingsService(SettingsMongoRepository settingsRepository, IdGenerator idGenerator) {
+        super(settingsRepository);
+        this.idGenerator = idGenerator;
+    }
 
     public String generateApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = settings != null && settings.getData() != null
                 ? new HashMap<>((Map<String, Object>) settings.getData())
@@ -40,21 +33,13 @@ public class ApiKeySettingsService {
         String fieldName = getFieldNameForType(keyType);
 
         data.put(fieldName, newApiKey);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_API_KEYS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return newApiKey;
     }
 
     public String revealApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return null;
@@ -68,10 +53,7 @@ public class ApiKeySettingsService {
     }
 
     public boolean deleteApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return false;
@@ -86,12 +68,7 @@ public class ApiKeySettingsService {
         }
 
         data.remove(fieldName);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_API_KEYS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return true;
     }
@@ -102,9 +79,7 @@ public class ApiKeySettingsService {
     }
 
     private String generateSecureApiKey() {
-        byte[] bytes = new byte[32];
-        SECURE_RANDOM.nextBytes(bytes);
-        return "modl_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        return "modl_" + idGenerator.generateToken();
     }
 
     private String getFieldNameForType(String keyType) {

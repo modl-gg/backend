@@ -5,7 +5,12 @@ import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.dto.request.CreateUploadTokenRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentEvidenceService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
+import gg.modl.backend.player.service.PunishmentMutationService;
+import gg.modl.backend.player.service.PunishmentQueryService;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -28,7 +33,10 @@ import java.util.UUID;
 @RequestMapping(RESTMappingV1.MINECRAFT_PUNISHMENTS)
 @RequiredArgsConstructor
 public class MinecraftPunishmentController {
-    private final PunishmentService punishmentService;
+    private final PunishmentQueryService punishmentQueryService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
+    private final PunishmentEvidenceService punishmentEvidenceService;
+    private final PunishmentMutationService punishmentMutationService;
 
     @PostMapping("/create")
     public ResponseEntity<?> createPunishment(
@@ -74,7 +82,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> punishment = punishmentService.getMinecraftPunishmentById(server, punishmentId).orElse(null);
+        Map<String, Object> punishment = punishmentQueryService.getMinecraftPunishmentById(server, punishmentId).orElse(null);
         if (punishment == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
@@ -95,7 +103,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        String token = punishmentService.createEvidenceUploadToken(server, punishmentId, body.issuerName()).orElse(null);
+        String token = punishmentQueryService.createEvidenceUploadToken(server, punishmentId, body.issuerName()).orElse(null);
         if (token == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
@@ -117,7 +125,7 @@ public class MinecraftPunishmentController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "punishments", punishmentService.getRecentPunishments(server, hours)
+                "punishments", punishmentQueryService.getRecentPunishments(server, hours)
         ));
     }
 
@@ -128,7 +136,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(punishmentService.previewPunishment(server, playerUuid, typeOrdinal));
+        return ResponseEntity.ok(punishmentQueryService.previewPunishment(server, playerUuid, typeOrdinal));
     }
 
     @PostMapping("/acknowledge")
@@ -137,7 +145,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.acknowledgePunishment(
+        PunishmentOperationResult result = punishmentLifecycleService.acknowledgePunishment(
                 server,
                 UUID.fromString(request.playerUuid()),
                 request.punishmentId()
@@ -166,7 +174,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.pardonPunishment(
+        PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
                 server,
                 punishmentId,
                 request.issuerName(),
@@ -205,7 +213,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.addPunishmentNote(
+        PunishmentOperationResult result = punishmentEvidenceService.addPunishmentNote(
                 server,
                 punishmentId,
                 request.note(),
@@ -213,7 +221,7 @@ public class MinecraftPunishmentController {
                 request.issuerId()
         );
 
-        if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", result.message()
@@ -234,7 +242,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.addEvidence(
+        PunishmentOperationResult result = punishmentEvidenceService.addEvidence(
                 server,
                 punishmentId,
                 request.evidenceUrl(),
@@ -242,7 +250,7 @@ public class MinecraftPunishmentController {
                 request.issuerId()
         );
 
-        if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", result.message()
@@ -263,7 +271,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.changeDuration(
+        PunishmentOperationResult result = punishmentMutationService.changeDuration(
                 server,
                 punishmentId,
                 request.newDuration(),
@@ -271,7 +279,7 @@ public class MinecraftPunishmentController {
                 request.issuerId()
         );
 
-        if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", result.message()
@@ -292,7 +300,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.toggleOption(
+        PunishmentOperationResult result = punishmentMutationService.toggleOption(
                 server,
                 punishmentId,
                 request.option(),
@@ -325,7 +333,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.acknowledgeStatWipe(server, punishmentId);
+        PunishmentOperationResult result = punishmentMutationService.acknowledgeStatWipe(server, punishmentId);
 
         return switch (result.status()) {
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
@@ -355,7 +363,7 @@ public class MinecraftPunishmentController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        PunishmentService.PunishmentOperationResult result = punishmentService.modifyPunishmentTickets(
+        PunishmentOperationResult result = punishmentMutationService.modifyPunishmentTickets(
                 server,
                 punishmentId,
                 new ModifyPunishmentTicketsRequest(
@@ -367,7 +375,7 @@ public class MinecraftPunishmentController {
                 )
         );
 
-        if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", result.message()
@@ -408,7 +416,7 @@ public class MinecraftPunishmentController {
                 request.duration()
         );
 
-        return punishmentService.createPunishment(server, playerUuid, serviceRequest);
+        return punishmentLifecycleService.createPunishment(server, playerUuid, serviceRequest);
     }
 
     public record MinecraftCreatePunishmentRequest(

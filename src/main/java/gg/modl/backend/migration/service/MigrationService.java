@@ -1,16 +1,12 @@
 package gg.modl.backend.migration.service;
 
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.server.data.Server;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
@@ -20,24 +16,17 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class MigrationService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final MigrationMongoRepository migrationRepository;
 
-    private static final String COLLECTION_NAME = "migrations";
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
             "idle", "building_json", "uploading_json", "processing_data", "completed", "failed"
     );
-    private static final long COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
-    private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024; // 500 MB
+    private static final long COOLDOWN_MS = 60 * 60 * 1000;
+    private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
 
     public MigrationStatusResponse getMigrationStatus(Server server) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = new Query()
-                .with(Sort.by(Sort.Direction.DESC, "startedAt"))
-                .limit(1);
-
-        MigrationStatus status = template.findOne(query, MigrationStatus.class, COLLECTION_NAME);
+        MigrationStatus status = migrationRepository.findLatest(server).orElse(null);
 
         MigrationStatusResponse.CurrentMigration currentMigration = null;
         if (status != null) {
@@ -58,13 +47,7 @@ public class MigrationService {
     }
 
     public MigrationStatusResponse.CooldownInfo checkCooldown(Server server) {
-        MongoTemplate template = getTemplate(server);
-
-        Query query = Query.query(
-                Criteria.where("status").in("completed", "failed")
-        ).with(Sort.by(Sort.Direction.DESC, "completedAt")).limit(1);
-
-        MigrationStatus lastMigration = template.findOne(query, MigrationStatus.class, COLLECTION_NAME);
+        MigrationStatus lastMigration = migrationRepository.findLatestCompletedOrFailed(server).orElse(null);
 
         if (lastMigration == null || lastMigration.getCompletedAt() == null) {
             return new MigrationStatusResponse.CooldownInfo(false, null);
@@ -84,12 +67,7 @@ public class MigrationService {
             return Map.of("success", false, "error", "Invalid migration type");
         }
 
-        MongoTemplate template = getTemplate(server);
-
-        Query activeQuery = Query.query(
-                Criteria.where("status").in("building_json", "uploading_json", "processing_data")
-        );
-        if (template.exists(activeQuery, MigrationStatus.class, COLLECTION_NAME)) {
+        if (migrationRepository.existsActiveMigration(server)) {
             return Map.of("success", false, "error", "A migration is already in progress");
         }
 
@@ -113,7 +91,7 @@ public class MigrationService {
                 .startedAt(now)
                 .build();
 
-        template.save(status, COLLECTION_NAME);
+        migrationRepository.saveEntity(server, status);
 
         return Map.of(
                 "success", true,
@@ -123,12 +101,7 @@ public class MigrationService {
     }
 
     public Map<String, Object> cancelMigration(Server server) {
-        MongoTemplate template = getTemplate(server);
-
-        Query activeQuery = Query.query(
-                Criteria.where("status").in("building_json", "uploading_json", "processing_data")
-        );
-        MigrationStatus activeMigration = template.findOne(activeQuery, MigrationStatus.class, COLLECTION_NAME);
+        MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);
 
         if (activeMigration == null) {
             return Map.of("success", false, "error", "No active migration to cancel");
@@ -140,12 +113,7 @@ public class MigrationService {
                 .set("completedAt", new Date())
                 .set("progress.message", "Migration cancelled by administrator");
 
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(activeMigration.getId())),
-                update,
-                MigrationStatus.class,
-                COLLECTION_NAME
-        );
+        migrationRepository.updateById(server, activeMigration.getId(), update);
 
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
@@ -169,12 +137,7 @@ public class MigrationService {
             return Map.of("success", false, "error", "Invalid totalRecords value");
         }
 
-        MongoTemplate template = getTemplate(server);
-
-        Query activeQuery = Query.query(
-                Criteria.where("status").in("building_json", "uploading_json", "processing_data")
-        );
-        MigrationStatus activeMigration = template.findOne(activeQuery, MigrationStatus.class, COLLECTION_NAME);
+        MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);
 
         if (activeMigration == null) {
             return Map.of("success", false, "error", "No active migration found");
@@ -198,12 +161,7 @@ public class MigrationService {
             update.set("completedAt", new Date());
         }
 
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(activeMigration.getId())),
-                update,
-                MigrationStatus.class,
-                COLLECTION_NAME
-        );
+        migrationRepository.updateById(server, activeMigration.getId(), update);
 
         return Map.of("success", true);
     }
@@ -213,9 +171,5 @@ public class MigrationService {
             return server.getMigrationFileSizeLimit();
         }
         return DEFAULT_FILE_SIZE_LIMIT;
-    }
-
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 }

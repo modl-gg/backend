@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -68,6 +69,14 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff) {
         return find(server, Query.query(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff)));
+    }
+
+    public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff, int limit) {
+        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+                Criteria.where("issued").gte(cutoff)
+        ));
+        query.limit(limit);
+        return find(server, query);
     }
 
     public List<Player> findPlayersWithPunishments(Server server, int limit) {
@@ -195,6 +204,38 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
         Update update = new Update().set(PlayerFields.DATA_LAST_SERVER, serverName);
         return updateFirst(server, query, update).getMatchedCount() > 0;
+    }
+
+    public void markStalePlayersOffline(Server server, Criteria staleOnlineCriteria, Date logoutTime) {
+        Query query = Query.query(staleOnlineCriteria);
+        Update update = new Update()
+                .set(PlayerFields.DATA_IS_ONLINE, false)
+                .set(PlayerFields.DATA_LAST_LOGOUT, logoutTime);
+        updateMulti(server, query, update);
+    }
+
+    public List<Player> findByMinecraftUuids(Server server, List<UUID> minecraftUuids) {
+        if (minecraftUuids == null || minecraftUuids.isEmpty()) {
+            return List.of();
+        }
+        Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(minecraftUuids));
+        return find(server, query);
+    }
+
+    public void insertAll(Server server, List<Player> players) {
+        serverTemplate(server).insertAll(players);
+    }
+
+    public org.springframework.data.mongodb.core.BulkOperations bulkOps(Server server) {
+        return serverTemplate(server).bulkOps(
+                org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
+                Player.class,
+                CollectionName.PLAYERS
+        );
+    }
+
+    public Punishment readPunishment(Server server, Document punishmentDocument) {
+        return serverTemplate(server).getConverter().read(Punishment.class, punishmentDocument);
     }
 
     public Map<String, Integer> countPunishmentsByIssuerName(Server server) {

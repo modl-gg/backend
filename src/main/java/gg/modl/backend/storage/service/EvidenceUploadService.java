@@ -4,7 +4,10 @@ import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.Player;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentEvidenceService;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
+import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -31,7 +34,7 @@ public class EvidenceUploadService {
     private final ServerService serverService;
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
-    private final PunishmentService punishmentService;
+    private final PunishmentEvidenceService punishmentEvidenceService;
 
     public TokenValidationResult validateToken(String token) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
@@ -135,8 +138,8 @@ public class EvidenceUploadService {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
         }
 
-        List<PunishmentService.UploadedEvidenceItem> evidenceItems = request.evidence().stream()
-                .map(item -> new PunishmentService.UploadedEvidenceItem(
+        List<UploadedEvidenceItem> evidenceItems = request.evidence().stream()
+                .map(item -> new UploadedEvidenceItem(
                         item.url(),
                         item.fileName(),
                         item.fileType(),
@@ -144,14 +147,14 @@ public class EvidenceUploadService {
                 ))
                 .toList();
 
-        PunishmentService.PunishmentOperationResult result = punishmentService.addUploadedEvidence(
+        PunishmentOperationResult result = punishmentEvidenceService.addUploadedEvidence(
                 server,
                 uploadToken.punishmentId(),
                 uploadToken.issuerName(),
                 null,
                 evidenceItems
         );
-        if (result.status() == PunishmentService.PunishmentOperationStatus.NOT_FOUND) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.PUNISHMENT_NOT_FOUND, result.message());
         }
 

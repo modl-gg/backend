@@ -8,11 +8,12 @@ import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,27 +56,37 @@ class PunishmentServiceTest {
     private OffenderThresholdSettingsService thresholdSettingsService;
 
     @Mock
-    private EvidenceUploadTokenService evidenceUploadTokenService;
-
-    @Mock
     private IssuerNameResolver issuerNameResolver;
 
     @Mock
     private TenantMongoAccess tenantMongoAccess;
 
-    private PunishmentService punishmentService;
+    @Mock
+    private PunishmentQueryService punishmentQueryService;
+
+    private PunishmentLifecycleService punishmentLifecycleService;
+
+    private PunishmentMutationService punishmentMutationService;
 
     @BeforeEach
     void setUp() {
-        punishmentService = new PunishmentService(
+        punishmentLifecycleService = new PunishmentLifecycleService(
                 playerRepository,
                 ticketRepository,
                 statusCalculator,
                 punishmentTypeService,
                 thresholdSettingsService,
-                evidenceUploadTokenService,
                 issuerNameResolver,
-                tenantMongoAccess
+                tenantMongoAccess,
+                punishmentQueryService
+        );
+        punishmentMutationService = new PunishmentMutationService(
+                playerRepository,
+                ticketRepository,
+                issuerNameResolver,
+                tenantMongoAccess,
+                punishmentQueryService,
+                punishmentLifecycleService
         );
     }
 
@@ -103,13 +114,13 @@ class PunishmentServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
-        PunishmentService.PunishmentOperationResult result = punishmentService.acknowledgePunishment(
+        PunishmentOperationResult result = punishmentLifecycleService.acknowledgePunishment(
                 server,
                 playerUuid,
                 "punish-1"
         );
 
-        assertEquals(PunishmentService.PunishmentOperationStatus.SUCCESS, result.status());
+        assertEquals(PunishmentOperationStatus.SUCCESS, result.status());
         assertEquals("Punishment acknowledged", result.message());
         verify(playerRepository).replacePunishments(eq(server), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
@@ -121,7 +132,7 @@ class PunishmentServiceTest {
     void toggleOptionRejectsUnknownOption() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
-        PunishmentService.PunishmentOperationResult result = punishmentService.toggleOption(
+        PunishmentOperationResult result = punishmentMutationService.toggleOption(
                 server,
                 "punish-1",
                 "UNKNOWN_OPTION",
@@ -130,7 +141,7 @@ class PunishmentServiceTest {
                 null
         );
 
-        assertEquals(PunishmentService.PunishmentOperationStatus.INVALID_REQUEST, result.status());
+        assertEquals(PunishmentOperationStatus.INVALID_REQUEST, result.status());
         assertEquals("Invalid option", result.message());
     }
 
@@ -161,7 +172,7 @@ class PunishmentServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
-        String punishmentId = punishmentService.createPunishment(server, playerUuid, request);
+        String punishmentId = punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         assertNotNull(punishmentId);
         verify(playerRepository).replacePunishments(eq(server), eq(player));
@@ -196,7 +207,7 @@ class PunishmentServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
-        punishmentService.systemPardonPunishment(server, playerUuid, "punish-1", "Auto-pardoned");
+        punishmentLifecycleService.systemPardonPunishment(server, playerUuid, "punish-1", "Auto-pardoned");
 
         verify(playerRepository).replacePunishments(eq(server), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
@@ -231,7 +242,7 @@ class PunishmentServiceTest {
         when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(true);
 
-        int updatedCount = punishmentService.cascadePardonLinkedBans("db", "parent-1");
+        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(1, updatedCount);
         verify(playerRepository).replacePunishments(eq("db"), eq(player));
@@ -263,7 +274,7 @@ class PunishmentServiceTest {
         when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(false);
 
-        int updatedCount = punishmentService.cascadePardonLinkedBans("db", "parent-1");
+        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(0, updatedCount);
         verify(playerRepository, never()).replacePunishments(eq("db"), any(Player.class));

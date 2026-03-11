@@ -6,7 +6,7 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -28,7 +28,7 @@ import org.springframework.http.ResponseEntity;
 class PublicPunishmentControllerTest {
 
     @Mock
-    private PunishmentService punishmentService;
+    private PunishmentQueryService punishmentQueryService;
 
     @Mock
     private PunishmentTypeService punishmentTypeService;
@@ -47,7 +47,7 @@ class PublicPunishmentControllerTest {
     @BeforeEach
     void setUp() {
         controller = new PublicPunishmentController(
-                punishmentService,
+                punishmentQueryService,
                 punishmentTypeService,
                 appealService,
                 statusCalculator
@@ -108,7 +108,7 @@ class PublicPunishmentControllerTest {
         );
 
         when(request.getAttribute(RequestAttribute.SERVER)).thenReturn(server);
-        when(punishmentService.getPunishmentById(server, "punishment-1")).thenReturn(Optional.of(punishment));
+        when(punishmentQueryService.getPunishmentById(server, "punishment-1")).thenReturn(Optional.of(punishment));
         when(appealService.getAppealsByPunishment(server, "punishment-1")).thenReturn(List.of(appeal));
         when(punishmentTypeService.getPunishmentTypeByOrdinal(server, 1)).thenReturn(Optional.empty());
 

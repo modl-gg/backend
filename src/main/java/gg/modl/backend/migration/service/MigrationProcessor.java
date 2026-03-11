@@ -1,11 +1,7 @@
 package gg.modl.backend.migration.service;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.migration.validation.MigrationValidator;
 import gg.modl.backend.player.data.*;
@@ -15,14 +11,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.BulkOperations;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +26,7 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class MigrationProcessor {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final PlayerMongoRepository playerRepository;
     private final MigrationService migrationService;
     private final MigrationValidator validator;
     private final ObjectMapper objectMapper;
@@ -81,7 +75,6 @@ public class MigrationProcessor {
                     0, 0, totalRecords
             ));
 
-            MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
             List<Map<?, ?>> batch = new ArrayList<>();
 
             for (int i = 0; i < players.size(); i++) {
@@ -96,7 +89,7 @@ public class MigrationProcessor {
                 batch.add(playerMap);
 
                 if (batch.size() >= BATCH_SIZE || i == players.size() - 1) {
-                    int[] results = processBatch(template, batch);
+                    int[] results = processBatch(server, batch);
                     recordsProcessed += results[0];
                     recordsSkipped += results[1];
                     batch.clear();
@@ -133,7 +126,7 @@ public class MigrationProcessor {
         }
     }
 
-    private int[] processBatch(MongoTemplate template, List<Map<?, ?>> batch) {
+    private int[] processBatch(Server server, List<Map<?, ?>> batch) {
         int processed = 0;
         int skipped = 0;
 
@@ -161,17 +154,15 @@ public class MigrationProcessor {
             return new int[]{0, skipped};
         }
 
-        Query existingQuery = Query.query(Criteria.where("minecraftUuid").in(
-                uuids.stream().map(UUID::fromString).toList()
-        ));
-        List<Player> existingPlayers = template.find(existingQuery, Player.class, CollectionName.PLAYERS);
+        List<Player> existingPlayers = playerRepository.findByMinecraftUuids(server,
+                uuids.stream().map(UUID::fromString).toList());
         Map<String, Player> existingMap = new HashMap<>();
         for (Player p : existingPlayers) {
             existingMap.put(p.getMinecraftUuid().toString(), p);
         }
 
         List<Player> toInsert = new ArrayList<>();
-        BulkOperations bulkOps = template.bulkOps(BulkOperations.BulkMode.UNORDERED, Player.class, CollectionName.PLAYERS);
+        BulkOperations bulkOps = playerRepository.bulkOps(server);
         boolean hasUpdates = false;
 
         for (String uuid : uuids) {
@@ -202,7 +193,7 @@ public class MigrationProcessor {
         }
 
         if (!toInsert.isEmpty()) {
-            template.insertAll(toInsert);
+            playerRepository.insertAll(server, toInsert);
         }
 
         if (hasUpdates) {

@@ -1,17 +1,11 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.data.WebhookSettings;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -23,19 +17,21 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class WebhookSettingsService {
+public class WebhookSettingsService extends AbstractSettingsService {
     private static final String SETTINGS_TYPE_WEBHOOKS = "webhookSettings";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
 
+    public WebhookSettingsService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper, RestTemplate restTemplate) {
+        super(settingsRepository);
+        this.objectMapper = objectMapper;
+        this.restTemplate = restTemplate;
+    }
+
     public WebhookSettings getWebhookSettings(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_WEBHOOKS));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_WEBHOOKS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return getDefaultWebhookSettings();
@@ -50,17 +46,10 @@ public class WebhookSettingsService {
     }
 
     public WebhookSettings updateWebhookSettings(Server server, WebhookSettings newSettings) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_WEBHOOKS));
-
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
 
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_WEBHOOKS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertSettings(server, SETTINGS_TYPE_WEBHOOKS, data);
 
         return getWebhookSettings(server);
     }

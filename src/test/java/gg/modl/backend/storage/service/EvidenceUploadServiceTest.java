@@ -1,7 +1,10 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentEvidenceService;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
+import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -44,7 +47,7 @@ class EvidenceUploadServiceTest {
     private MediaValidationService validationService;
 
     @Mock
-    private PunishmentService punishmentService;
+    private PunishmentEvidenceService punishmentEvidenceService;
 
     private EvidenceUploadService evidenceUploadService;
 
@@ -57,7 +60,7 @@ class EvidenceUploadServiceTest {
                 serverService,
                 quotaService,
                 validationService,
-                punishmentService
+                punishmentEvidenceService
         );
     }
 
@@ -76,9 +79,9 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getCdnDomain()).thenReturn("cdn.example.com");
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(punishmentService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any()))
-                .thenReturn(new PunishmentService.PunishmentOperationResult(
-                        PunishmentService.PunishmentOperationStatus.SUCCESS,
+        when(punishmentEvidenceService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any()))
+                .thenReturn(new PunishmentOperationResult(
+                        PunishmentOperationStatus.SUCCESS,
                         "ok",
                         true,
                         1
@@ -97,7 +100,7 @@ class EvidenceUploadServiceTest {
         );
 
         assertEquals(EvidenceUploadService.SubmitEvidenceStatus.SUCCESS, result.status());
-        verify(punishmentService).addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any());
+        verify(punishmentEvidenceService).addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any());
         verify(tokenService).invalidateToken("token-1");
     }
 }

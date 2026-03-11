@@ -5,7 +5,10 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.dto.request.*;
 import gg.modl.backend.player.dto.response.*;
 import gg.modl.backend.player.service.AccountLinkingService;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentEvidenceService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
+import gg.modl.backend.player.service.PunishmentMutationService;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -30,7 +33,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PanelPlayerController {
     private final PlayerService playerService;
-    private final PunishmentService punishmentService;
+    private final PunishmentQueryService punishmentQueryService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
+    private final PunishmentEvidenceService punishmentEvidenceService;
+    private final PunishmentMutationService punishmentMutationService;
     private final AccountLinkingService accountLinkingService;
 
     @GetMapping
@@ -130,7 +136,7 @@ public class PanelPlayerController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         try {
-            punishmentService.createPunishment(server, UUID.fromString(uuid), createRequest);
+            punishmentLifecycleService.createPunishment(server, UUID.fromString(uuid), createRequest);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
@@ -146,7 +152,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentService.addModification(
+        Player player = punishmentMutationService.addModification(
                 server,
                 UUID.fromString(uuid),
                 punishmentId,
@@ -165,7 +171,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<PunishmentResponse> punishments = punishmentService.getActivePunishments(
+        List<PunishmentResponse> punishments = punishmentQueryService.getActivePunishments(
                 server,
                 UUID.fromString(uuid)
         );
@@ -180,7 +186,7 @@ public class PanelPlayerController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return punishmentService.getPunishmentById(server, punishmentId)
+        return punishmentQueryService.getPunishmentById(server, punishmentId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -192,7 +198,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<PunishmentSearchResult> results = punishmentService.searchPunishments(server, q, activeOnly);
+        List<PunishmentSearchResult> results = punishmentQueryService.searchPunishments(server, q, activeOnly);
         return ResponseEntity.ok(results);
     }
 
@@ -204,7 +210,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentService.addPunishmentNote(
+        Player player = punishmentEvidenceService.addPunishmentNote(
                 server,
                 UUID.fromString(uuid),
                 punishmentId,
@@ -227,7 +233,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentService.addEvidence(
+        Player player = punishmentEvidenceService.addEvidence(
                 server,
                 UUID.fromString(uuid),
                 punishmentId,
@@ -248,7 +254,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentService.modifyPunishmentTickets(
+        Player player = punishmentMutationService.modifyPunishmentTickets(
                 server,
                 UUID.fromString(uuid),
                 punishmentId,
@@ -281,7 +287,7 @@ public class PanelPlayerController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Map<String, Object>> linkedBans = punishmentService.getLinkedBansForParent(server, punishmentId);
+        List<Map<String, Object>> linkedBans = punishmentQueryService.getLinkedBansForParent(server, punishmentId);
         return ResponseEntity.ok(linkedBans);
     }
 

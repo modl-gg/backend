@@ -5,6 +5,7 @@ import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.server.data.CustomDomainStatus;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -446,6 +447,57 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
                 .set(ServerFields.PLAN, plan)
                 .set(ServerFields.UPDATED_AT, updatedAt);
         return updateMulti(Query.query(MongoQueries.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+    }
+
+    public void updateCustomDomain(String serverId, String customDomain, String status,
+                                    String cloudflareHostnameId, String error) {
+        CustomDomainStatus domainStatus = switch (status) {
+            case "active" -> CustomDomainStatus.ACTIVE;
+            case "error" -> CustomDomainStatus.ERROR;
+            case "verifying" -> CustomDomainStatus.VERIFYING;
+            default -> CustomDomainStatus.PENDING;
+        };
+        updateFirst(
+                Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+                new Update()
+                        .set(ServerFields.CUSTOM_DOMAIN_OVERRIDE, customDomain)
+                        .set(ServerFields.CUSTOM_DOMAIN_STATUS, domainStatus.name())
+                        .set(ServerFields.CUSTOM_DOMAIN_CLOUDFLARE_ID, cloudflareHostnameId)
+                        .set(ServerFields.CUSTOM_DOMAIN_LAST_CHECKED, new Date())
+                        .set(ServerFields.CUSTOM_DOMAIN_ERROR, error)
+                        .set(ServerFields.UPDATED_AT, new Date())
+        );
+    }
+
+    public void clearCustomDomain(String serverId) {
+        updateFirst(
+                Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+                new Update()
+                        .unset(ServerFields.CUSTOM_DOMAIN_OVERRIDE)
+                        .unset(ServerFields.CUSTOM_DOMAIN_STATUS)
+                        .unset(ServerFields.CUSTOM_DOMAIN_CLOUDFLARE_ID)
+                        .unset(ServerFields.CUSTOM_DOMAIN_LAST_CHECKED)
+                        .unset(ServerFields.CUSTOM_DOMAIN_ERROR)
+                        .set(ServerFields.UPDATED_AT, new Date())
+        );
+    }
+
+    public void updateStaffPermissionsTimestamp(String serverId, Date timestamp) {
+        updateFirst(
+                Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+                new Update()
+                        .set(ServerFields.STAFF_PERMISSIONS_UPDATED_AT, timestamp)
+                        .set(ServerFields.UPDATED_AT, timestamp)
+        );
+    }
+
+    public void updatePunishmentTypesTimestamp(String serverId, Date timestamp) {
+        updateFirst(
+                Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+                new Update()
+                        .set(ServerFields.PUNISHMENT_TYPES_UPDATED_AT, timestamp)
+                        .set(ServerFields.UPDATED_AT, timestamp)
+        );
     }
 
     public void updateUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {

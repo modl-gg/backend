@@ -7,10 +7,13 @@ import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.util.PlayerDataUtils;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.ticket.data.Ticket;
 import org.bson.types.ObjectId;
 import org.springframework.http.HttpStatus;
@@ -34,7 +37,7 @@ public class MinecraftPlayerService {
     private final TicketMongoRepository ticketRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
-    private final PunishmentService punishmentService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
     private final AccountLinkingService accountLinkingService;
     private final MojangApiService mojangApiService;
     private final IssuerNameResolver issuerNameResolver;
@@ -46,7 +49,7 @@ public class MinecraftPlayerService {
             TicketMongoRepository ticketRepository,
             PlayerStatusCalculator statusCalculator,
             PunishmentTypeService punishmentTypeService,
-            PunishmentService punishmentService,
+            PunishmentLifecycleService punishmentLifecycleService,
             AccountLinkingService accountLinkingService,
             MojangApiService mojangApiService,
             IssuerNameResolver issuerNameResolver,
@@ -57,7 +60,7 @@ public class MinecraftPlayerService {
         this.ticketRepository = ticketRepository;
         this.statusCalculator = statusCalculator;
         this.punishmentTypeService = punishmentTypeService;
-        this.punishmentService = punishmentService;
+        this.punishmentLifecycleService = punishmentLifecycleService;
         this.accountLinkingService = accountLinkingService;
         this.mojangApiService = mojangApiService;
         this.issuerNameResolver = issuerNameResolver;
@@ -78,9 +81,9 @@ public class MinecraftPlayerService {
 
         player = findPlayerByUuid(server, playerUuid.toString()).orElse(player);
 
-        List<String> promoted = punishmentService.promoteUnstartedPunishments(server, player);
-        List<String> autoPardoned = punishmentService.checkRestrictionAutoPardons(server, player, username, skinHash);
-        List<String> linkedBans = punishmentService.enforceAltBlockingBans(server, player);
+        List<String> promoted = punishmentLifecycleService.promoteUnstartedPunishments(server, player);
+        List<String> autoPardoned = punishmentLifecycleService.checkRestrictionAutoPardons(server, player, username, skinHash);
+        List<String> linkedBans = punishmentLifecycleService.enforceAltBlockingBans(server, player);
 
         if (!promoted.isEmpty() || !autoPardoned.isEmpty() || !linkedBans.isEmpty()) {
             player = findPlayerByUuid(server, playerUuid.toString()).orElse(player);
@@ -138,7 +141,7 @@ public class MinecraftPlayerService {
 
             pendingStatWipes.add(Map.of(
                     "minecraftUuid", playerUuid.toString(),
-                    "username", getLatestUsername(player),
+                    "username", PlayerDataUtils.extractLatestUsername(safeUsernames(player)),
                     "punishmentId", punishment.getId()
             ));
         }
@@ -177,7 +180,7 @@ public class MinecraftPlayerService {
 
                     Map<String, Object> entry = new LinkedHashMap<>();
                     entry.put("uuid", player.getMinecraftUuid().toString());
-                    entry.put("username", getLatestUsername(player));
+                    entry.put("username", PlayerDataUtils.extractLatestUsername(safeUsernames(player)));
                     entry.put("joinedAt", joinedAt);
                     entry.put("totalPlaytimeMs", totalPlaytimeMs);
                     return entry;
@@ -577,14 +580,14 @@ public class MinecraftPlayerService {
                 continue;
             }
 
-            PunishmentService.PunishmentOperationResult result = punishmentService.pardonPunishment(
+            PunishmentQueryService.PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
                     server,
                     punishment.getId(),
                     issuerName,
                     issuerId,
                     reason
             );
-            if (result.status() == PunishmentService.PunishmentOperationStatus.SUCCESS) {
+            if (result.status() == PunishmentQueryService.PunishmentOperationStatus.SUCCESS) {
                 pardoned++;
             }
         }
@@ -617,14 +620,6 @@ public class MinecraftPlayerService {
                 "pendingNotifications", List.of(),
                 "data", Map.of()
         );
-    }
-
-    private String getLatestUsername(Player player) {
-        if (safeUsernames(player).isEmpty()) {
-            return "Unknown";
-        }
-        List<gg.modl.backend.player.data.UsernameEntry> usernames = safeUsernames(player);
-        return usernames.get(usernames.size() - 1).username();
     }
 
     private Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes) {
@@ -689,7 +684,7 @@ public class MinecraftPlayerService {
     }
 
     private Map<String, Object> buildLookupResponse(Server server, Player player, List<PunishmentType> types) {
-        String currentUsername = getLatestUsername(player);
+        String currentUsername = PlayerDataUtils.extractLatestUsername(safeUsernames(player));
         List<String> previousUsernames = player.getUsernames().stream()
                 .map(username -> username.username())
                 .skip(1)

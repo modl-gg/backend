@@ -1,42 +1,45 @@
 package gg.modl.backend.settings.service;
 
 import gg.modl.backend.cors.DynamicCorsConfigurationSource;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.domain.external.CloudflareClient;
-import gg.modl.backend.server.ServerField;
-import gg.modl.backend.server.data.CustomDomainStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class DomainSettingsService {
+public class DomainSettingsService extends AbstractSettingsService {
     private static final String SETTINGS_TYPE_DOMAIN = "domain";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
     private final CloudflareClient cloudflareClient;
     private final DynamicCorsConfigurationSource corsConfigurationSource;
     private final CustomDomainAccessService customDomainAccessService;
 
+    public DomainSettingsService(
+            SettingsMongoRepository settingsRepository,
+            ServerMongoRepository serverRepository,
+            CloudflareClient cloudflareClient,
+            DynamicCorsConfigurationSource corsConfigurationSource,
+            CustomDomainAccessService customDomainAccessService
+    ) {
+        super(settingsRepository);
+        this.serverRepository = serverRepository;
+        this.cloudflareClient = cloudflareClient;
+        this.corsConfigurationSource = corsConfigurationSource;
+        this.customDomainAccessService = customDomainAccessService;
+    }
+
     public DomainSettings getDomainSettings(Server server, String requestHost) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         String modlSubdomainUrl = "https://" + server.getCustomDomain() + ".modl.gg";
         boolean accessingFromCustomDomain = false;
@@ -90,13 +93,9 @@ public class DomainSettingsService {
             throw new IllegalArgumentException("modl.gg domains cannot be used as custom domains.");
         }
 
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query settingsQuery = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
-
-        // Check if the domain is the same as currently configured
         String currentDomain = server.getCustomDomainOverride();
         if (currentDomain == null) {
-            Settings existingSettings = template.findOne(settingsQuery, Settings.class, CollectionName.SETTINGS);
+            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
             if (existingSettings != null && existingSettings.getData() != null) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
@@ -155,13 +154,8 @@ public class DomainSettingsService {
         data.put("status", statusMap);
         data.put("cloudflareHostnameId", cloudflareHostnameId);
 
-        Update settingsUpdate = new Update()
-                .set("type", SETTINGS_TYPE_DOMAIN)
-                .set("data", data);
+        upsertSettings(server, SETTINGS_TYPE_DOMAIN, data);
 
-        template.upsert(settingsQuery, settingsUpdate, Settings.class, CollectionName.SETTINGS);
-
-        // Update the main Server document in the global database
         updateServerDocument(server.getId(), customDomain, initialStatus, cloudflareHostnameId, error);
 
         return DomainSettings.builder()
@@ -175,35 +169,13 @@ public class DomainSettingsService {
 
     private void updateServerDocument(String serverId, String customDomain, String status,
                                        String cloudflareHostnameId, String error) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query serverQuery = new Query(Criteria.where("_id").is(serverId));
-
-        CustomDomainStatus domainStatus = switch (status) {
-            case "active" -> CustomDomainStatus.ACTIVE;
-            case "error" -> CustomDomainStatus.ERROR;
-            case "verifying" -> CustomDomainStatus.VERIFYING;
-            default -> CustomDomainStatus.PENDING;
-        };
-
-        Update serverUpdate = new Update()
-                .set(ServerField.CUSTOM_DOMAIN, customDomain)
-                .set(ServerField.CUSTOM_DOMAIN_STATUS, domainStatus.name())
-                .set("customDomainCloudflareId", cloudflareHostnameId)
-                .set("customDomainLastChecked", new Date())
-                .set("customDomainError", error)
-                .set("updatedAt", new Date());
-
-        globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
-
-        // Invalidate CORS cache so the new domain status is recognized immediately
+        serverRepository.updateCustomDomain(serverId, customDomain, status, cloudflareHostnameId, error);
         corsConfigurationSource.invalidateCache(customDomain);
         log.debug("Invalidated CORS cache for domain: {}", customDomain);
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             throw new IllegalStateException("No domain configured");
@@ -274,12 +246,8 @@ public class DomainSettingsService {
             data.put("cloudflareHostnameId", cloudflareHostnameId);
         }
 
-        Update update = new Update()
-                .set("data", data);
+        updateDataSettings(server, SETTINGS_TYPE_DOMAIN, data);
 
-        template.updateFirst(query, update, Settings.class, CollectionName.SETTINGS);
-
-        // Update the main Server document in the global database
         updateServerDocument(server.getId(), domain, verifiedStatus, cloudflareHostnameId, error);
 
         return DomainSettings.builder()
@@ -292,9 +260,7 @@ public class DomainSettingsService {
     }
 
     public void removeDomain(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_DOMAIN));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         String customDomain = null;
 
@@ -317,17 +283,14 @@ public class DomainSettingsService {
             }
         }
 
-        // Also check if domain is stored in Server document
         if (customDomain == null && server.getCustomDomainOverride() != null) {
             customDomain = server.getCustomDomainOverride();
         }
 
-        template.remove(query, Settings.class, CollectionName.SETTINGS);
+        removeSettings(server, SETTINGS_TYPE_DOMAIN);
 
-        // Clear custom domain fields from the main Server document
         clearServerDomainFields(server.getId());
 
-        // Invalidate CORS cache for the removed domain
         if (customDomain != null && !customDomain.isEmpty()) {
             corsConfigurationSource.invalidateCache(customDomain);
             log.debug("Invalidated CORS cache for removed domain: {}", customDomain);
@@ -335,18 +298,7 @@ public class DomainSettingsService {
     }
 
     private void clearServerDomainFields(String serverId) {
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Query serverQuery = new Query(Criteria.where("_id").is(serverId));
-
-        Update serverUpdate = new Update()
-                .unset(ServerField.CUSTOM_DOMAIN)
-                .unset(ServerField.CUSTOM_DOMAIN_STATUS)
-                .unset("customDomainCloudflareId")
-                .unset("customDomainLastChecked")
-                .unset("customDomainError")
-                .set("updatedAt", new Date());
-
-        globalDb.updateFirst(serverQuery, serverUpdate, Server.class, CollectionName.MODL_SERVERS);
+        serverRepository.clearCustomDomain(serverId);
     }
 
     private String mapCloudflareStatus(String cfStatus) {

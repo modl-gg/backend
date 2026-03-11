@@ -1,7 +1,6 @@
 package gg.modl.backend.dashboard.service;
 
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -34,9 +33,6 @@ import static org.mockito.Mockito.when;
 class DashboardServiceTest {
 
     @Mock
-    private TenantMongoAccess tenantMongoAccess;
-
-    @Mock
     private TicketMongoRepository ticketRepository;
 
     @Mock
@@ -59,7 +55,6 @@ class DashboardServiceTest {
     @BeforeEach
     void setUp() {
         dashboardService = new DashboardService(
-                tenantMongoAccess,
                 ticketRepository,
                 playerRepository,
                 staffRepository,

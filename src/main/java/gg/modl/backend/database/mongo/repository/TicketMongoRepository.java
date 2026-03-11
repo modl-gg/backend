@@ -8,6 +8,7 @@ import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import org.springframework.data.domain.Sort;
@@ -17,6 +18,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -166,6 +168,48 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
 
     public boolean existsByTicketId(Server server, String ticketId) {
         return exists(server, Query.query(MongoQueries.where(TicketFields.ID).is(ticketId)));
+    }
+
+    public List<Ticket> findAppealsByPunishmentId(Server server, String punishmentId) {
+        Query query = Query.query(
+                MongoQueries.where(TicketFields.TYPE).is(TicketCategory.APPEAL.getId())
+                        .and(TicketFields.DATA + ".punishmentId").is(punishmentId)
+        );
+        return find(server, query);
+    }
+
+    public boolean existsAppealForPunishment(Server server, String punishmentId) {
+        Query query = Query.query(
+                MongoQueries.where(TicketFields.TYPE).is(TicketCategory.APPEAL.getId())
+                        .and(TicketFields.DATA + ".punishmentId").is(punishmentId)
+        );
+        return exists(server, query);
+    }
+
+    public Ticket saveAppeal(Server server, Ticket appeal) {
+        return saveEntity(server, appeal);
+    }
+
+    public void pushReply(Server server, String ticketId, TicketReply reply) {
+        Query query = Query.query(MongoQueries.where(TicketFields.ID).is(ticketId));
+        Update update = new Update()
+                .push(TicketFields.REPLIES, reply)
+                .set(TicketFields.UPDATED_AT, new Date());
+        updateFirst(server, query, update);
+    }
+
+    public void applyStatusUpdate(Server server, String ticketId, Update update) {
+        Query query = Query.query(MongoQueries.where(TicketFields.ID).is(ticketId));
+        updateFirst(server, query, update);
+    }
+
+    public List<Ticket> findCreatedAfterExcludingUnfinished(Server server, Date after, int limit) {
+        Query query = Query.query(
+                MongoQueries.where(TicketFields.CREATED).gte(after)
+                        .and(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId())
+        );
+        query.limit(limit);
+        return find(server, query);
     }
 
     private Query buildSearchQuery(TicketSearchFilter filter, boolean includeReplySearch) {

@@ -1,16 +1,12 @@
 package gg.modl.backend.role.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,7 +17,7 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class PermissionService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final StaffRoleMongoRepository staffRoleRepository;
     private final PunishmentTypeService punishmentTypeService;
 
     private static final List<Permission> BASE_PERMISSIONS = List.of(
@@ -127,16 +123,12 @@ public class PermissionService {
             return false;
         }
 
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        String normalizedRoleName = staffRole.trim();
-        Query query = Query.query(Criteria.where("name").is(normalizedRoleName));
-        StaffRole role = template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES);
+        StaffRole role = staffRoleRepository.findByName(server, staffRole.trim()).orElse(null);
 
         if (role == null) {
             return false;
         }
 
-        // Super Admin has all permissions - check both ID and name for robustness
         if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
             return true;
         }
@@ -153,11 +145,7 @@ public class PermissionService {
             return Optional.empty();
         }
 
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        String normalizedRoleName = roleName.trim();
-
-        Query query = Query.query(Criteria.where("name").is(normalizedRoleName));
-        return Optional.ofNullable(template.findOne(query, StaffRole.class, CollectionName.STAFF_ROLES));
+        return staffRoleRepository.findByName(server, roleName.trim());
     }
 
     public boolean isSuperAdmin(Server server, String staffEmail) {

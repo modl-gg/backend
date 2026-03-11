@@ -92,5 +92,9 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         }
         return find(server, Query.query(MongoQueries.where(StaffRoleFields.NAME).in(roleNames)));
     }
+
+    public Optional<StaffRole> findByName(Server server, String roleName) {
+        return findOne(server, Query.query(MongoQueries.where(StaffRoleFields.NAME).is(roleName)));
+    }
 }
 

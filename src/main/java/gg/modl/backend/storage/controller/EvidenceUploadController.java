@@ -1,6 +1,5 @@
 package gg.modl.backend.storage.controller;
 
-import gg.modl.backend.player.service.PunishmentService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;

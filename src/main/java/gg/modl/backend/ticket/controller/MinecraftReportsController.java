@@ -6,7 +6,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.dto.request.AssignReportRequest;
 import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
-import gg.modl.backend.ticket.service.TicketService;
+import gg.modl.backend.ticket.service.MinecraftTicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +23,7 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.MINECRAFT_REPORTS)
 @RequiredArgsConstructor
 public class MinecraftReportsController {
-    private final TicketService ticketService;
+    private final MinecraftTicketService minecraftTicketService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllReports(
@@ -32,7 +32,7 @@ public class MinecraftReportsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> reports = ticketService.getMinecraftReports(server, status, limit);
+        List<Map<String, Object>> reports = minecraftTicketService.getMinecraftReports(server, status, limit);
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "reports", reports
@@ -46,8 +46,8 @@ public class MinecraftReportsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        TicketService.ReportOperationResult result = ticketService.dismissMinecraftReport(server, id, request);
-        if (result.status() == TicketService.ReportOperationStatus.NOT_FOUND) {
+        MinecraftTicketService.ReportOperationResult result = minecraftTicketService.dismissMinecraftReport(server, id, request);
+        if (result.status() == MinecraftTicketService.ReportOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Report not found"
@@ -68,8 +68,8 @@ public class MinecraftReportsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        TicketService.ReportOperationResult result = ticketService.resolveMinecraftReport(server, id, request);
-        if (result.status() == TicketService.ReportOperationStatus.NOT_FOUND) {
+        MinecraftTicketService.ReportOperationResult result = minecraftTicketService.resolveMinecraftReport(server, id, request);
+        if (result.status() == MinecraftTicketService.ReportOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Report not found"
@@ -91,7 +91,7 @@ public class MinecraftReportsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> reports = ticketService.getMinecraftReportsForPlayer(server, uuid, status, limit);
+        List<Map<String, Object>> reports = minecraftTicketService.getMinecraftReportsForPlayer(server, uuid, status, limit);
         return ResponseEntity.ok(Map.of(
                 "status", 200,
                 "reports", reports
@@ -105,8 +105,8 @@ public class MinecraftReportsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        TicketService.ReportOperationResult result = ticketService.assignMinecraftReport(server, id, request);
-        if (result.status() == TicketService.ReportOperationStatus.NOT_FOUND) {
+        MinecraftTicketService.ReportOperationResult result = minecraftTicketService.assignMinecraftReport(server, id, request);
+        if (result.status() == MinecraftTicketService.ReportOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
                     "message", "Report not found"

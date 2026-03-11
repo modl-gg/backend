@@ -3,13 +3,13 @@ package gg.modl.backend.appeal.service;
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
@@ -17,54 +17,42 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.util.PlayerDataUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
 import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AppealService {
-    private final DynamicMongoTemplateProvider mongoProvider;
-    private final PunishmentService punishmentService;
+    private final TicketMongoRepository ticketRepository;
+    private final PlayerMongoRepository playerRepository;
+    private final PunishmentLifecycleService punishmentLifecycleService;
+    private final IdGenerator idGenerator;
 
-    private static final SecureRandom RANDOM = new SecureRandom();
     private static final String APPEAL_TYPE = TicketCategory.APPEAL.getId();
 
     public List<TicketResponse> getAppealsByPunishment(Server server, String punishmentId) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(
-                Criteria.where("type").is(APPEAL_TYPE)
-                        .and("data.punishmentId").is(punishmentId)
-        );
-        List<Ticket> appeals = template.find(query, Ticket.class, CollectionName.TICKETS);
-        return appeals.stream().map(this::toTicketResponse).toList();
+        return ticketRepository.findAppealsByPunishmentId(server, punishmentId)
+                .stream().map(this::toTicketResponse).toList();
     }
 
     public Optional<TicketResponse> getAppealById(Server server, String appealId) {
-        MongoTemplate template = getTemplate(server);
-        Query query = Query.query(Criteria.where("_id").is(appealId));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
-        if (ticket == null || ticket.getType() != TicketCategory.APPEAL) {
-            return Optional.empty();
-        }
-
-        return Optional.of(toTicketResponse(ticket));
+        return ticketRepository.findByTicketId(server, appealId)
+                .filter(t -> t.getType() == TicketCategory.APPEAL)
+                .map(this::toTicketResponse);
     }
 
     public TicketResponse createAppeal(Server server, CreateAppealRequest request) {
-        MongoTemplate template = getTemplate(server);
-
-        Player player = findPlayerWithPunishment(template, request.playerUuid(), request.punishmentId());
+        Player player = findPlayerWithPunishment(server, request.playerUuid(), request.punishmentId());
         if (player == null) {
             throw new IllegalArgumentException("Punishment not found for the specified player");
         }
@@ -74,15 +62,11 @@ public class AppealService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Punishment details not found"));
 
-        Query existingQuery = Query.query(
-                Criteria.where("type").is(APPEAL_TYPE)
-                        .and("data.punishmentId").is(request.punishmentId())
-        );
-        if (template.exists(existingQuery, Ticket.class, CollectionName.TICKETS)) {
+        if (ticketRepository.existsAppealForPunishment(server, request.punishmentId())) {
             throw new IllegalStateException("An appeal already exists for this punishment");
         }
 
-        String appealId = generateAppealId(template);
+        String appealId = generateAppealId(server);
 
         Map<String, Object> data = new HashMap<>();
         data.put("punishmentId", request.punishmentId());
@@ -93,7 +77,7 @@ public class AppealService {
             data.putAll(request.additionalData());
         }
 
-        String username = getLatestUsername(player);
+        String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
         String initialContent = buildInitialContent(request);
 
@@ -124,22 +108,21 @@ public class AppealService {
                 .updatedAt(new Date())
                 .build();
 
-        template.save(appeal, CollectionName.TICKETS);
+        ticketRepository.saveAppeal(server, appeal);
 
-        linkAppealToPunishment(template, request.playerUuid(), request.punishmentId(), appealId);
+        linkAppealToPunishment(server, request.playerUuid(), request.punishmentId(), appealId);
 
         return toTicketResponse(appeal);
     }
 
     public Optional<TicketReply> addReply(Server server, String appealId, AddAppealReplyRequest request) {
-        MongoTemplate template = getTemplate(server);
+        Optional<Ticket> appealOpt = ticketRepository.findByTicketId(server, appealId);
 
-        Query query = Query.query(Criteria.where("_id").is(appealId));
-        Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
-        if (appeal == null || appeal.getType() != TicketCategory.APPEAL) {
+        if (appealOpt.isEmpty() || appealOpt.get().getType() != TicketCategory.APPEAL) {
             return Optional.empty();
         }
+
+        Ticket appeal = appealOpt.get();
 
         if (appeal.isLocked()) {
             throw new IllegalStateException("Appeal is locked and cannot accept new replies");
@@ -157,24 +140,19 @@ public class AppealService {
                 .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
                 .build();
 
-        Update update = new Update()
-                .push("replies", newReply)
-                .set("updatedAt", new Date());
-
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        ticketRepository.pushReply(server, appealId, newReply);
 
         return Optional.of(newReply);
     }
 
     public Optional<TicketResponse> updateStatus(Server server, String appealId, UpdateAppealStatusRequest request) {
-        MongoTemplate template = getTemplate(server);
+        Optional<Ticket> appealOpt = ticketRepository.findByTicketId(server, appealId);
 
-        Query query = Query.query(Criteria.where("_id").is(appealId));
-        Ticket appeal = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
-        if (appeal == null || appeal.getType() != TicketCategory.APPEAL) {
+        if (appealOpt.isEmpty() || appealOpt.get().getType() != TicketCategory.APPEAL) {
             return Optional.empty();
         }
+
+        Ticket appeal = appealOpt.get();
 
         Update update = new Update().set("updatedAt", new Date());
         List<TicketReply> systemReplies = new ArrayList<>();
@@ -236,12 +214,12 @@ public class AppealService {
             appeal.getReplies().add(reply);
         }
 
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
+        ticketRepository.applyStatusUpdate(server, appealId, update);
 
         if (shouldPardonPunishment(appeal.getAppealWorkflowStatus())) {
-            pardonPunishment(template, appeal, request.staffUsername());
+            pardonPunishment(server, appeal, request.staffUsername());
         } else if (shouldRejectPunishment(appeal.getAppealWorkflowStatus())) {
-            addAppealRejectedNote(template, appeal, request.staffUsername());
+            addAppealRejectedNote(server, appeal, request.staffUsername());
         }
 
         return Optional.of(toTicketResponse(appeal));
@@ -251,7 +229,7 @@ public class AppealService {
         return workflowStatus == AppealWorkflowStatus.REJECTED;
     }
 
-    private void addAppealRejectedNote(MongoTemplate template, Ticket appeal, String staffUsername) {
+    private void addAppealRejectedNote(Server server, Ticket appeal, String staffUsername) {
         Map<String, Object> data = appeal.getData();
         if (data == null) return;
 
@@ -268,7 +246,6 @@ public class AppealService {
         Date now = new Date();
         String staffName = staffUsername != null ? staffUsername : "System";
 
-        // Create automatic note for appeal rejection
         PunishmentNote appealRejectedNote = new PunishmentNote(
                 new ObjectId().toHexString(),
                 "rejected appeal (#" + appeal.getId() + ")",
@@ -282,14 +259,14 @@ public class AppealService {
                 .set("punishments.$.data.appealOutcome", "Rejected")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 
-        template.updateFirst(playerQuery, update, Player.class, CollectionName.PLAYERS);
+        playerRepository.updateFirst(server, playerQuery, update);
     }
 
     private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
         return workflowStatus == AppealWorkflowStatus.APPROVED;
     }
 
-    private void pardonPunishment(MongoTemplate template, Ticket appeal, String staffUsername) {
+    private void pardonPunishment(Server server, Ticket appeal, String staffUsername) {
         Map<String, Object> data = appeal.getData();
         if (data == null) return;
 
@@ -318,7 +295,6 @@ public class AppealService {
                 null
         );
 
-        // Create automatic note for appeal acceptance
         PunishmentNote appealAcceptedNote = new PunishmentNote(
                 new ObjectId().toHexString(),
                 "accepted appeal (#" + appeal.getId() + ")",
@@ -333,21 +309,19 @@ public class AppealService {
                 .set("punishments.$.data.appealOutcome", "Approved")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 
-        template.updateFirst(playerQuery, update, Player.class, CollectionName.PLAYERS);
+        playerRepository.updateFirst(server, playerQuery, update);
 
-        // Cascade pardon linked bans if the appealed punishment had alt-blocking enabled
-        Player player = template.findOne(Query.query(Criteria.where("minecraftUuid").is(playerUuid)), Player.class, CollectionName.PLAYERS);
-        if (player != null) {
-            Punishment appealedPunishment = player.getPunishments().stream()
-                    .filter(p -> punishmentId.equals(p.getId()))
-                    .findFirst()
-                    .orElse(null);
-            if (appealedPunishment != null && appealedPunishment.getData() != null
-                    && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
-                String dbName = template.getDb().getName();
-                punishmentService.cascadePardonLinkedBans(dbName, punishmentId);
-            }
-        }
+        playerRepository.findOne(server, Query.query(Criteria.where("minecraftUuid").is(playerUuid)))
+                .ifPresent(player -> {
+                    Punishment appealedPunishment = player.getPunishments().stream()
+                            .filter(p -> punishmentId.equals(p.getId()))
+                            .findFirst()
+                            .orElse(null);
+                    if (appealedPunishment != null && appealedPunishment.getData() != null
+                            && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
+                        punishmentLifecycleService.cascadePardonLinkedBans(server.getDatabaseName(), punishmentId);
+                    }
+                });
     }
 
     private TicketReply createSystemReply(String staffUsername, String content, String action) {
@@ -362,34 +336,33 @@ public class AppealService {
                 .build();
     }
 
-    private String generateAppealId(MongoTemplate template) {
+    private String generateAppealId(Server server) {
         String appealId;
         int attempts = 0;
 
         do {
-            int randomId = 100000 + RANDOM.nextInt(900000);
+            int randomId = idGenerator.nextSixDigitInt();
             appealId = "APPEAL-" + randomId;
             attempts++;
-        } while (template.exists(Query.query(Criteria.where("_id").is(appealId)), Ticket.class, CollectionName.TICKETS) && attempts < 10);
+        } while (ticketRepository.existsByTicketId(server, appealId) && attempts < 10);
 
         return appealId;
     }
 
-    private Player findPlayerWithPunishment(MongoTemplate template, String playerUuid, String punishmentId) {
+    private Player findPlayerWithPunishment(Server server, String playerUuid, String punishmentId) {
         Query query = Query.query(
                 Criteria.where("minecraftUuid").is(playerUuid)
                         .and("punishments.id").is(punishmentId)
         );
-        return template.findOne(query, Player.class, CollectionName.PLAYERS);
+        return playerRepository.findOne(server, query).orElse(null);
     }
 
-    private void linkAppealToPunishment(MongoTemplate template, String playerUuid, String punishmentId, String appealId) {
+    private void linkAppealToPunishment(Server server, String playerUuid, String punishmentId, String appealId) {
         Query query = Query.query(
                 Criteria.where("minecraftUuid").is(playerUuid)
                         .and("punishments.id").is(punishmentId)
         );
 
-        // Create automatic note for appeal creation
         PunishmentNote appealOpenedNote = new PunishmentNote(
                 new ObjectId().toHexString(),
                 "opened appeal (#" + appealId + ")",
@@ -401,14 +374,7 @@ public class AppealService {
         Update update = new Update()
                 .push("punishments.$.attachedTicketIds", appealId)
                 .push("punishments.$.notes", appealOpenedNote);
-        template.updateFirst(query, update, Player.class, CollectionName.PLAYERS);
-    }
-
-    private String getLatestUsername(Player player) {
-        if (player.getUsernames() == null || player.getUsernames().isEmpty()) {
-            return player.getMinecraftUuid().toString();
-        }
-        return player.getUsernames().get(player.getUsernames().size() - 1).username();
+        playerRepository.updateFirst(server, query, update);
     }
 
     private String buildInitialContent(CreateAppealRequest request) {
@@ -486,9 +452,5 @@ public class AppealService {
                 ticket.isEmailAuthEnabled(),
                 ticket.isHidden()
         );
-    }
-
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
     }
 }

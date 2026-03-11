@@ -1,8 +1,10 @@
 package gg.modl.backend.server.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.database.MongoIndexBootstrapService;
+import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.repository.HomepageCardMongoRepository;
+import gg.modl.backend.database.mongo.repository.KnowledgebaseCategoryMongoRepository;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.role.service.RoleService;
@@ -10,7 +12,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
@@ -21,39 +22,36 @@ import java.util.*;
 @RequiredArgsConstructor
 @Slf4j
 public class ServerProvisioningService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final TenantMongoAccess tenantMongoAccess;
     private final MongoIndexBootstrapService mongoIndexBootstrapService;
+    private final SettingsMongoRepository settingsRepository;
+    private final KnowledgebaseCategoryMongoRepository knowledgebaseCategoryRepository;
+    private final HomepageCardMongoRepository homepageCardRepository;
     private final RoleService roleService;
 
-    /**
-     * Seeds all default data for a newly provisioned server.
-     * This is called once during email verification.
-     */
     public void provision(Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
         try {
-            mongoIndexBootstrapService.createIndexes(template);
-            seedAIModerationSettings(template);
-            seedTicketForms(template);
-            seedQuickResponses(template);
-            seedGeneralSettings(template);
-            seedTicketLabelSettings(template);
-            List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(template);
-            seedHomepageCards(template, categories);
+            mongoIndexBootstrapService.createIndexes(tenantMongoAccess.forServer(server));
+            seedAIModerationSettings(server);
+            seedTicketForms(server);
+            seedQuickResponses(server);
+            seedGeneralSettings(server);
+            seedTicketLabelSettings(server);
+            List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(server);
+            seedHomepageCards(server, categories);
             roleService.createDefaultRoles(server);
         } catch (Exception e) {
             log.error("[Provisioning] Error provisioning server: {}", server.getCustomDomain(), e);
         }
     }
 
-    private boolean settingsExist(MongoTemplate template, String type) {
+    private boolean settingsExist(Server server, String type) {
         Query query = new Query(Criteria.where("type").is(type));
-        return template.exists(query, Settings.class, CollectionName.SETTINGS);
+        return settingsRepository.exists(server, query);
     }
 
-    private void seedAIModerationSettings(MongoTemplate template) {
-        if (settingsExist(template, "aiModerationSettings")) return;
+    private void seedAIModerationSettings(Server server) {
+        if (settingsExist(server, "aiModerationSettings")) return;
 
         Map<String, Object> chatAbuseConfig = new LinkedHashMap<>();
         chatAbuseConfig.put("id", "6");
@@ -77,12 +75,11 @@ public class ServerProvisioningService {
         data.put("strictnessLevel", "STANDARD");
         data.put("aiPunishmentConfigs", aiPunishmentConfigs);
 
-        Settings settings = newSettingsDocument("aiModerationSettings", data);
-        template.save(settings, CollectionName.SETTINGS);
+        settingsRepository.saveEntity(server, newSettingsDocument("aiModerationSettings", data));
     }
 
-    private void seedTicketForms(MongoTemplate template) {
-        if (settingsExist(template, "ticketForms")) return;
+    private void seedTicketForms(Server server) {
+        if (settingsExist(server, "ticketForms")) return;
 
         // Bug report form
         Map<String, Object> bugForm = new LinkedHashMap<>();
@@ -115,8 +112,7 @@ public class ServerProvisioningService {
         data.put("support", supportForm);
         data.put("application", applicationForm);
 
-        Settings settings = newSettingsDocument("ticketForms", data);
-        template.save(settings, CollectionName.SETTINGS);
+        settingsRepository.saveEntity(server, newSettingsDocument("ticketForms", data));
     }
 
     private Map<String, Object> buildApplicationForm() {
@@ -190,8 +186,8 @@ public class ServerProvisioningService {
         return form;
     }
 
-    private void seedQuickResponses(MongoTemplate template) {
-        if (settingsExist(template, "quickResponses")) return;
+    private void seedQuickResponses(Server server) {
+        if (settingsExist(server, "quickResponses")) return;
 
         List<Map<String, Object>> categories = new ArrayList<>();
 
@@ -253,12 +249,11 @@ public class ServerProvisioningService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("categories", categories);
 
-        Settings settings = newSettingsDocument("quickResponses", data);
-        template.save(settings, CollectionName.SETTINGS);
+        settingsRepository.saveEntity(server, newSettingsDocument("quickResponses", data));
     }
 
-    private void seedGeneralSettings(MongoTemplate template) {
-        if (settingsExist(template, "general")) return;
+    private void seedGeneralSettings(Server server) {
+        if (settingsExist(server, "general")) return;
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("serverDisplayName", "");
@@ -266,12 +261,11 @@ public class ServerProvisioningService {
         data.put("homepageIconUrl", "");
         data.put("panelIconUrl", "");
 
-        Settings settings = newSettingsDocument("general", data);
-        template.save(settings, CollectionName.SETTINGS);
+        settingsRepository.saveEntity(server, newSettingsDocument("general", data));
     }
 
-    private void seedTicketLabelSettings(MongoTemplate template) {
-        if (settingsExist(template, "ticketLabels")) return;
+    private void seedTicketLabelSettings(Server server) {
+        if (settingsExist(server, "ticketLabels")) return;
 
         List<Map<String, Object>> labels = List.of(
                 labelMap("high priority", "#e74c3c", "High priority tickets"),
@@ -284,17 +278,15 @@ public class ServerProvisioningService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("labels", labels);
 
-        Settings settings = newSettingsDocument("ticketLabels", data);
-        template.save(settings, CollectionName.SETTINGS);
+        settingsRepository.saveEntity(server, newSettingsDocument("ticketLabels", data));
     }
 
     private Settings newSettingsDocument(String type, Map<String, Object> data) {
         return new Settings(null, type, data, 0L, new Date());
     }
 
-    private List<KnowledgebaseCategory> seedKnowledgebaseCategories(MongoTemplate template) {
-        long existingCount = template.count(new Query(), KnowledgebaseCategory.class, CollectionName.KNOWLEDGEBASE_CATEGORIES);
-        if (existingCount > 0) return List.of();
+    private List<KnowledgebaseCategory> seedKnowledgebaseCategories(Server server) {
+        if (knowledgebaseCategoryRepository.count(server, new Query()) > 0) return List.of();
 
         Date now = new Date();
         List<KnowledgebaseCategory> categories = List.of(
@@ -328,14 +320,13 @@ public class ServerProvisioningService {
         );
 
         for (KnowledgebaseCategory category : categories) {
-            template.save(category, CollectionName.KNOWLEDGEBASE_CATEGORIES);
+            knowledgebaseCategoryRepository.saveEntity(server, category);
         }
         return categories;
     }
 
-    private void seedHomepageCards(MongoTemplate template, List<KnowledgebaseCategory> categories) {
-        long existingCount = template.count(new Query(), HomepageCard.class, CollectionName.HOMEPAGE_CARDS);
-        if (existingCount > 0) return;
+    private void seedHomepageCards(Server server, List<KnowledgebaseCategory> categories) {
+        if (homepageCardRepository.count(server, new Query()) > 0) return;
 
         // Find category IDs for category_dropdown cards
         String rulesCategoryId = categories.stream()
@@ -429,7 +420,7 @@ public class ServerProvisioningService {
         );
 
         for (HomepageCard card : cards) {
-            template.save(card, CollectionName.HOMEPAGE_CARDS);
+            homepageCardRepository.saveEntity(server, card);
         }
     }
 

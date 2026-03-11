@@ -16,6 +16,7 @@ import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.util.IdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,11 +49,16 @@ class TicketServiceTest {
     @Mock
     private TicketNotificationService notificationService;
 
+    @Mock
+    private IdGenerator idGenerator;
+
     private TicketService ticketService;
+    private MinecraftTicketService minecraftTicketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, quickResponseSettingsService, notificationService);
+        ticketService = new TicketService(ticketRepository, quickResponseSettingsService, notificationService, idGenerator);
+        minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, idGenerator);
     }
 
     @Test
@@ -62,7 +68,7 @@ class TicketServiceTest {
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
-        Ticket ticket = ticketService.createMinecraftTicket(server, new MinecraftCreateTicketRequest(
+        Ticket ticket = minecraftTicketService.createMinecraftTicket(server, new MinecraftCreateTicketRequest(
                 "uuid-1",
                 "PlayerOne",
                 "chat",
@@ -133,13 +139,13 @@ class TicketServiceTest {
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
-        TicketService.MinecraftTicketClaimResult result = ticketService.claimMinecraftTicket(
+        MinecraftTicketService.MinecraftTicketClaimResult result = minecraftTicketService.claimMinecraftTicket(
                 server,
                 "SUPPORT-123456",
                 new MinecraftClaimTicketRequest("uuid-new", "VerifiedPlayer")
         );
 
-        assertEquals(TicketService.MinecraftTicketClaimStatus.SUCCESS, result.status());
+        assertEquals(MinecraftTicketService.MinecraftTicketClaimStatus.SUCCESS, result.status());
         assertEquals("uuid-new", result.ticket().getCreatorUuid());
         assertEquals("VerifiedPlayer", result.ticket().getCreatorName());
         assertEquals("VerifiedPlayer", result.ticket().getReplies().get(0).getName());
@@ -164,13 +170,13 @@ class TicketServiceTest {
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
-        TicketService.ReportOperationResult result = ticketService.dismissMinecraftReport(
+        MinecraftTicketService.ReportOperationResult result = minecraftTicketService.dismissMinecraftReport(
                 server,
                 "REPORT-1",
                 new DismissReportRequest("Moderator", "Insufficient evidence")
         );
 
-        assertEquals(TicketService.ReportOperationStatus.SUCCESS, result.status());
+        assertEquals(MinecraftTicketService.ReportOperationStatus.SUCCESS, result.status());
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());

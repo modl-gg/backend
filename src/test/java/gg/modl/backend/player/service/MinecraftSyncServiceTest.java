@@ -1,32 +1,47 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
+import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.player.service.IssuerNameResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MinecraftSyncServiceTest {
 
     @Mock
-    private TenantMongoAccess tenantMongoAccess;
+    private PlayerMongoRepository playerRepository;
+
+    @Mock
+    private StaffMongoRepository staffRepository;
+
+    @Mock
+    private StaffRoleMongoRepository staffRoleRepository;
+
+    @Mock
+    private TicketMongoRepository ticketRepository;
+
+    @Mock
+    private ServerMongoRepository serverRepository;
+
+    @Mock
+    private MigrationMongoRepository migrationRepository;
 
     @Mock
     private PlayerStatusCalculator statusCalculator;
@@ -35,7 +50,7 @@ class MinecraftSyncServiceTest {
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
-    private PunishmentService punishmentService;
+    private PunishmentLifecycleService punishmentLifecycleService;
 
     @Mock
     private MinecraftChatLogService minecraftChatLogService;
@@ -43,18 +58,20 @@ class MinecraftSyncServiceTest {
     @Mock
     private IssuerNameResolver issuerNameResolver;
 
-    @Mock
-    private MongoTemplate mongoTemplate;
-
     private MinecraftSyncService minecraftSyncService;
 
     @BeforeEach
     void setUp() {
         minecraftSyncService = new MinecraftSyncService(
-                tenantMongoAccess,
+                playerRepository,
+                staffRepository,
+                staffRoleRepository,
+                ticketRepository,
+                serverRepository,
+                migrationRepository,
                 statusCalculator,
                 punishmentTypeService,
-                punishmentService,
+                punishmentLifecycleService,
                 minecraftChatLogService,
                 issuerNameResolver
         );
@@ -65,11 +82,7 @@ class MinecraftSyncServiceTest {
     void syncReturnsEnvelopeWhenNoPlayersAreOnline() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
-        when(tenantMongoAccess.forServer(server)).thenReturn(mongoTemplate);
-        when(tenantMongoAccess.global()).thenReturn(mongoTemplate);
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
-        when(mongoTemplate.find(any(Query.class), any(Class.class), anyString())).thenReturn((List) List.of());
-        when(mongoTemplate.findOne(any(Query.class), any(Class.class), anyString())).thenReturn(null);
 
         Map<String, Object> response = minecraftSyncService.sync(
                 server,

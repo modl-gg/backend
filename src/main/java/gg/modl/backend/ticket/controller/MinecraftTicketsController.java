@@ -10,7 +10,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftTicketsByIdsRequest;
-import gg.modl.backend.ticket.service.TicketService;
+import gg.modl.backend.ticket.service.MinecraftTicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +29,7 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
-    private final TicketService ticketService;
+    private final MinecraftTicketService minecraftTicketService;
     private final AITicketAnalysisService aiTicketAnalysisService;
 
     @PostMapping
@@ -38,7 +38,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Ticket ticket = ticketService.createMinecraftTicket(server, request);
+        Ticket ticket = minecraftTicketService.createMinecraftTicket(server, request);
 
         if (TicketCategory.fromCanonicalId(request.type()) == TicketCategory.CHAT
                 && request.chatMessages() != null
@@ -60,7 +60,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Ticket ticket = ticketService.createUnfinishedMinecraftTicket(server, request);
+        Ticket ticket = minecraftTicketService.createUnfinishedMinecraftTicket(server, request);
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
@@ -78,7 +78,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> ticketList = ticketService.getMinecraftTickets(server, status, type, limit).stream()
+        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTickets(server, status, type, limit).stream()
                 .map(this::toTicketListItem)
                 .toList();
 
@@ -94,7 +94,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Ticket ticket = ticketService.getMinecraftTicket(server, id).orElse(null);
+        Ticket ticket = minecraftTicketService.getMinecraftTicket(server, id).orElse(null);
         if (ticket == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
@@ -114,7 +114,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> tickets = ticketService.getMinecraftTicketsByCreator(server, uuid, 50).stream()
+        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50).stream()
                 .map(ticket -> {
                     Map<String, Object> response = new LinkedHashMap<>();
                     response.put("id", ticket.getId());
@@ -140,7 +140,7 @@ public class MinecraftTicketsController {
             HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        TicketService.MinecraftTicketClaimResult result = ticketService.claimMinecraftTicket(server, id, request);
+        MinecraftTicketService.MinecraftTicketClaimResult result = minecraftTicketService.claimMinecraftTicket(server, id, request);
 
         return switch (result.status()) {
             case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
@@ -176,7 +176,7 @@ public class MinecraftTicketsController {
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> ticketList = ticketService.getMinecraftTicketsByIds(server, request.ids()).stream()
+        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTicketsByIds(server, request.ids()).stream()
                 .map(this::toTicketLookupItem)
                 .toList();
 

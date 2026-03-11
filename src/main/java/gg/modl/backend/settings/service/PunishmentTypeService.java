@@ -2,39 +2,35 @@ package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.PunishmentType;
-import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class PunishmentTypeService {
+public class PunishmentTypeService extends AbstractSettingsService {
     private static final String SETTINGS_TYPE_PUNISHMENT_TYPES = "punishmentTypes";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
     private final ObjectMapper objectMapper;
     private final ServerTimestampService serverTimestampService;
 
+    public PunishmentTypeService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper, ServerTimestampService serverTimestampService) {
+        super(settingsRepository);
+        this.objectMapper = objectMapper;
+        this.serverTimestampService = serverTimestampService;
+    }
+
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_PUNISHMENT_TYPES));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return initializeDefaultTypes(server);
@@ -64,13 +60,7 @@ public class PunishmentTypeService {
     }
 
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_PUNISHMENT_TYPES));
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_PUNISHMENT_TYPES)
-                .set("data", types);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
         serverTimestampService.updatePunishmentTypesTimestamp(server);
         return types;
     }

@@ -9,6 +9,8 @@ import gg.modl.backend.ticket.dto.request.*;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.service.TicketReplyService;
+import gg.modl.backend.ticket.service.TicketSearchService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,6 +29,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PanelTicketController {
     private final TicketService ticketService;
+    private final TicketSearchService ticketSearchService;
+    private final TicketReplyService ticketReplyService;
     private final TicketSubscriptionService subscriptionService;
 
     @GetMapping
@@ -43,7 +47,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        PaginatedTicketsResponse response = ticketService.searchTickets(
+        PaginatedTicketsResponse response = ticketSearchService.searchTickets(
                 server, page, limit, search, status, type, author, labels, assignee, sort);
         return ResponseEntity.ok(response);
     }
@@ -58,7 +62,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Map<String, Long> counts = ticketService.getTicketCounts(server, search, type, author, labels, assignee);
+        Map<String, Long> counts = ticketSearchService.getTicketCounts(server, search, type, author, labels, assignee);
         return ResponseEntity.ok(counts);
     }
 
@@ -139,7 +143,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.addNote(server, id, noteRequest)
+        return ticketReplyService.addNote(server, id, noteRequest)
                 .map(note -> ResponseEntity.status(HttpStatus.CREATED).body(note))
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -154,7 +158,7 @@ public class PanelTicketController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         try {
-            Optional<TicketReply> replyOpt = ticketService.addReply(server, id, replyRequest);
+            Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
 
             if (replyOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();
@@ -178,7 +182,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.addTag(server, id, tagRequest.tag())
+        return ticketReplyService.addTag(server, id, tagRequest.tag())
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -191,7 +195,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.removeTag(server, id, tag)
+        return ticketReplyService.removeTag(server, id, tag)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -202,7 +206,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketService.getTicketsByPlayer(server, uuid);
+        List<Ticket> tickets = ticketSearchService.getTicketsByPlayer(server, uuid);
         return ResponseEntity.ok(tickets);
     }
 
@@ -212,7 +216,7 @@ public class PanelTicketController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketService.getTicketsByTag(server, tag);
+        List<Ticket> tickets = ticketSearchService.getTicketsByTag(server, tag);
         return ResponseEntity.ok(tickets);
     }
 

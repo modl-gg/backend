@@ -1,20 +1,21 @@
 package gg.modl.backend.util;
 
-import java.security.SecureRandom;
-import lombok.experimental.UtilityClass;
+import org.springframework.stereotype.Component;
 
-@UtilityClass
-public final class IdGenerator {
-    private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int ID_LENGTH = 8;
+import java.security.SecureRandom;
+import java.util.Base64;
+
+@Component
+public class IdGenerator {
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    public static String generate() {
-        final StringBuilder sb = new StringBuilder(ID_LENGTH);
-        for (int i = 0; i < ID_LENGTH; i++) {
-            sb.append(ALPHANUMERIC.charAt(RANDOM.nextInt(ALPHANUMERIC.length())));
-        }
+    public int nextSixDigitInt() {
+        return 100000 + RANDOM.nextInt(900000);
+    }
 
-        return sb.toString();
+    public String generateToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

@@ -11,6 +11,7 @@ import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
 import gg.modl.backend.ticket.dto.request.VerifyTicketCodeRequest;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
+import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -29,6 +30,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PublicTicketController {
     private final TicketService ticketService;
+    private final TicketReplyService ticketReplyService;
     private final TicketEmailVerificationService verificationService;
 
     @PostMapping
@@ -201,7 +203,7 @@ public class PublicTicketController {
         }
 
         try {
-            Optional<TicketReply> replyOpt = ticketService.addReply(server, id, replyRequest);
+            Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
 
             if (replyOpt.isEmpty()) {
                 return ResponseEntity.notFound().build();

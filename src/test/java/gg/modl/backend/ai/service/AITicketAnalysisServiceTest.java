@@ -7,7 +7,7 @@ import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
@@ -48,7 +48,7 @@ class AITicketAnalysisServiceTest {
     private ServerMongoRepository serverRepository;
 
     @Mock
-    private PunishmentService punishmentService;
+    private PunishmentLifecycleService punishmentLifecycleService;
 
     @Mock
     private PunishmentTypeService punishmentTypeService;
@@ -68,7 +68,7 @@ class AITicketAnalysisServiceTest {
                 aiModerationSettingsService,
                 ticketRepository,
                 serverRepository,
-                punishmentService,
+                punishmentLifecycleService,
                 punishmentTypeService,
                 usageTrackingService,
                 new ObjectMapper(),
@@ -134,6 +134,6 @@ class AITicketAnalysisServiceTest {
         assertTrue(updatedTicket.getAiAnalysis().isWasAppliedAutomatically());
         assertEquals(1, updatedTicket.getReplies().size());
         assertEquals(1, updatedTicket.getNotes().size());
-        verify(punishmentService).createPunishment(any(Server.class), any(UUID.class), any());
+        verify(punishmentLifecycleService).createPunishment(any(Server.class), any(UUID.class), any());
     }
 }
