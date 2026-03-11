@@ -3,10 +3,9 @@ package gg.modl.backend.settings.service;
 import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
-
 import java.util.Map;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
 public abstract class AbstractSettingsService {

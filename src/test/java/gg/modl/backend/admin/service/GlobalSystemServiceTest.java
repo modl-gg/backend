@@ -1,21 +1,20 @@
 package gg.modl.backend.admin.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
+
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.mongo.repository.SystemConfigMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Optional;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class GlobalSystemServiceTest {
@@ -34,9 +33,9 @@ class GlobalSystemServiceTest {
     @BeforeEach
     void setUp() {
         globalSystemService = new GlobalSystemService(
-                systemConfigRepository,
-                systemPromptRepository,
-                ticketAnalysisService
+            systemConfigRepository,
+            systemPromptRepository,
+            ticketAnalysisService
         );
     }
 

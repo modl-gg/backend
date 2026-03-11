@@ -13,38 +13,38 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record PunishmentTypeRequest(
-        @NotBlank
-        @Size(
-                min = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MIN_LENGTH,
-                max = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MAX_LENGTH
-        )
-        String name,
-        @NotBlank
-        String category,
-        @Valid
-        PunishmentDurations durations,
-        @Valid
-        OffenseLevelDurations singleSeverityDurations,
-        @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
-        @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
-        Integer singleSeverityPoints,
-        @Valid
-        PunishmentPoints points,
-        @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
-        @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
-        Integer customPoints,
-        @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
-        String staffDescription,
-        @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
-        String playerDescription,
-        Boolean singleSeverityPunishment,
-        Boolean canBeAltBlocking,
-        Boolean canBeStatWiping,
-        Boolean appealable,
-        @Valid
-        AppealForm appealForm,
-        Boolean permanentUntilSkinChange,
-        Boolean permanentUntilUsernameChange
+    @NotBlank
+    @Size(
+        min = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MIN_LENGTH,
+        max = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MAX_LENGTH
+    )
+    String name,
+    @NotBlank
+    String category,
+    @Valid
+    PunishmentDurations durations,
+    @Valid
+    OffenseLevelDurations singleSeverityDurations,
+    @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
+    @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
+    Integer singleSeverityPoints,
+    @Valid
+    PunishmentPoints points,
+    @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
+    @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
+    Integer customPoints,
+    @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
+    String staffDescription,
+    @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
+    String playerDescription,
+    Boolean singleSeverityPunishment,
+    Boolean canBeAltBlocking,
+    Boolean canBeStatWiping,
+    Boolean appealable,
+    @Valid
+    AppealForm appealForm,
+    Boolean permanentUntilSkinChange,
+    Boolean permanentUntilUsernameChange
 ) {
     public PunishmentType toPunishmentType() {
         PunishmentType punishmentType = new PunishmentType();

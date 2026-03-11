@@ -4,10 +4,16 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
@@ -15,13 +21,6 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Repository
 public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
@@ -37,19 +36,14 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         return findOne(server, Query.query(MongoQueries.where(StaffFields.EMAIL).is(email)));
     }
 
-    public Optional<Staff> findByEmailIgnoreCase(Server server, String email) {
-        return findOne(server, Query.query(MongoQueries.where(StaffFields.EMAIL)
-                .regex("^" + Pattern.quote(email) + "$", "i")));
-    }
-
     public boolean existsByUsername(Server server, String username) {
         return exists(server, Query.query(MongoQueries.where(StaffFields.USERNAME).is(username)));
     }
 
     public boolean existsByEmailOrUsername(Server server, String email, String username) {
         Query query = new Query(new Criteria().orOperator(
-                MongoQueries.where(StaffFields.EMAIL).is(email),
-                MongoQueries.where(StaffFields.USERNAME).is(username)
+            MongoQueries.where(StaffFields.EMAIL).is(email),
+            MongoQueries.where(StaffFields.USERNAME).is(username)
         ));
         return exists(server, query);
     }
@@ -63,9 +57,14 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         return existing != null && !existing.getEmail().equalsIgnoreCase(currentEmail);
     }
 
+    public Optional<Staff> findByEmailIgnoreCase(Server server, String email) {
+        return findOne(server, Query.query(MongoQueries.where(StaffFields.EMAIL)
+            .regex("^" + Pattern.quote(email) + "$", "i")));
+    }
+
     public boolean existsByUsernameExcludingId(Server server, String username, String excludedStaffId) {
         Query query = Query.query(MongoQueries.where(StaffFields.USERNAME).is(username)
-                .and(StaffFields.ID).ne(excludedStaffId));
+            .and(StaffFields.ID).ne(excludedStaffId));
         return exists(server, query);
     }
 
@@ -75,15 +74,15 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public List<Staff> findAssignedMinecraftStaff(Server server) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+            MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
         );
         return find(server, query);
     }
 
     public Optional<Staff> findByAssignedMinecraftUuidExcludingId(Server server, String minecraftUuid, String excludedStaffId) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid)
-                        .and(StaffFields.ID).ne(excludedStaffId)
+            MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid)
+                .and(StaffFields.ID).ne(excludedStaffId)
         );
         return findOne(server, query);
     }
@@ -100,7 +99,7 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public Map<String, Integer> countByRoleName(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.group(StaffFields.ROLE).count().as("count")
+            Aggregation.group(StaffFields.ROLE).count().as("count")
         );
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
         Map<String, Integer> counts = new LinkedHashMap<>();
@@ -135,8 +134,8 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public boolean activateTwoFactorSession(Server server, String staffId, String token, String sessionIp, long sessionExpiresAt) {
         Query query = Query.query(new Criteria().andOperator(
-                MongoQueries.where(StaffFields.ID).is(staffId),
-                MongoQueries.where(StaffFields.TWO_FACTOR_TOKEN).is(token)
+            MongoQueries.where(StaffFields.ID).is(staffId),
+            MongoQueries.where(StaffFields.TWO_FACTOR_TOKEN).is(token)
         ));
         Update update = new Update();
         MongoUpdates.unset(update, StaffFields.TWO_FACTOR_TOKEN);
@@ -150,9 +149,9 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public boolean deactivateSubscription(Server server, String email, String ticketId) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.EMAIL).is(email)
-                        .and(StaffFields.SUBSCRIBED_TICKET_TICKET_ID).is(ticketId)
-                        .and(StaffFields.SUBSCRIBED_TICKET_ACTIVE).is(true)
+            MongoQueries.where(StaffFields.EMAIL).is(email)
+                .and(StaffFields.SUBSCRIBED_TICKET_TICKET_ID).is(ticketId)
+                .and(StaffFields.SUBSCRIBED_TICKET_ACTIVE).is(true)
         );
         Update update = new Update().set(StaffFields.SUBSCRIBED_TICKET_POS_ACTIVE, false);
         return updateFirst(server, query, update).getModifiedCount() > 0;
@@ -160,9 +159,9 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public boolean markSubscriptionRead(Server server, String email, String ticketId, java.util.Date lastReadAt) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.EMAIL).is(email)
-                        .and(StaffFields.SUBSCRIBED_TICKET_TICKET_ID).is(ticketId)
-                        .and(StaffFields.SUBSCRIBED_TICKET_ACTIVE).is(true)
+            MongoQueries.where(StaffFields.EMAIL).is(email)
+                .and(StaffFields.SUBSCRIBED_TICKET_TICKET_ID).is(ticketId)
+                .and(StaffFields.SUBSCRIBED_TICKET_ACTIVE).is(true)
         );
         Update update = new Update().set(StaffFields.SUBSCRIBED_TICKET_POS_LAST_READ_AT, lastReadAt);
         return updateFirst(server, query, update).getModifiedCount() > 0;
@@ -176,16 +175,16 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public List<Staff> findWithPendingTwoFactorDelivery(Server server) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
-                        .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+            MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
+                .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
         );
         return find(server, query);
     }
 
     public void clearPendingTwoFactorDelivery(Server server) {
         Query query = Query.query(
-                MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
-                        .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
+            MongoQueries.where(StaffFields.TWO_FACTOR_PENDING_DELIVERY).is(true)
+                .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
         );
         updateMulti(server, query, new Update().set(StaffFields.TWO_FACTOR_PENDING_DELIVERY, false));
     }

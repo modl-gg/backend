@@ -4,22 +4,20 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class QuickResponseSettingsService {
-    private static final String SETTINGS_TYPE_QUICK_RESPONSES = "quickResponses";
-
     private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
+    private static final String SETTINGS_TYPE_QUICK_RESPONSES = "quickResponses";
 
     public QuickResponseSettings getQuickResponseSettings(Server server) {
         return getQuickResponseSettingsState(server).data();
@@ -53,9 +51,9 @@ public class QuickResponseSettingsService {
     }
 
     public VersionedSettings<QuickResponseSettings> patchQuickResponseSettings(
-            Server server,
-            long expectedVersion,
-            UpdateQuickResponsesRequest quickResponses
+        Server server,
+        long expectedVersion,
+        UpdateQuickResponsesRequest quickResponses
     ) {
         QuickResponseSettings currentSettings = getQuickResponseSettings(server);
         if (quickResponses != null && quickResponses.categories() != null) {
@@ -65,10 +63,10 @@ public class QuickResponseSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(currentSettings, Map.class);
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_QUICK_RESPONSES,
-                expectedVersion,
-                new LinkedHashMap<>(data)
+            server,
+            SETTINGS_TYPE_QUICK_RESPONSES,
+            expectedVersion,
+            new LinkedHashMap<>(data)
         );
         return new VersionedSettings<>(mapToQuickResponseSettings(updated.data()), updated.version(), updated.updatedAt());
     }

@@ -9,14 +9,19 @@ import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.admin.service.GlobalSystemService;
 import gg.modl.backend.rest.RESTMappingV1;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_SYSTEM)
@@ -41,8 +46,8 @@ public class AdminSystemController {
     @GetMapping("/maintenance")
     public ResponseEntity<?> getMaintenanceStatus() {
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", globalSystemService.getMaintenanceStatus()
+            "success", true,
+            "data", globalSystemService.getMaintenanceStatus()
         ));
     }
 
@@ -52,17 +57,17 @@ public class AdminSystemController {
         Map<String, Object> data = globalSystemService.toggleMaintenance(request);
         log.info("Maintenance mode {} by admin", enabled ? "enabled" : "disabled");
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", data,
-                "message", "Maintenance mode " + (enabled ? "enabled" : "disabled")
+            "success", true,
+            "data", data,
+            "message", "Maintenance mode " + (enabled ? "enabled" : "disabled")
         ));
     }
 
     @GetMapping("/rate-limits")
     public ResponseEntity<?> getRateLimits() {
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", globalSystemService.getRateLimitStatus()
+            "success", true,
+            "data", globalSystemService.getRateLimitStatus()
         ));
     }
 
@@ -87,7 +92,8 @@ public class AdminSystemController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
             log.info("System prompt for {} level updated", updated.getStrictnessLevel());
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt for " + updated.getStrictnessLevel() + " level updated successfully"));
+            return ResponseEntity.ok(
+                Map.of("success", true, "data", updated, "message", "System prompt for " + updated.getStrictnessLevel() + " level updated successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
         }
@@ -101,7 +107,8 @@ public class AdminSystemController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
             }
             log.info("System prompt for {} level reset to default", reset.getStrictnessLevel());
-            return ResponseEntity.ok(Map.of("success", true, "data", reset, "message", "System prompt for " + reset.getStrictnessLevel() + " level reset to default"));
+            return ResponseEntity.ok(
+                Map.of("success", true, "data", reset, "message", "System prompt for " + reset.getStrictnessLevel() + " level reset to default"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
         }
@@ -112,21 +119,21 @@ public class AdminSystemController {
         List<String> allowedServices = List.of("api", "worker", "scheduler", "cache", "database");
         if (!allowedServices.contains(service)) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "success", false,
-                    "error", "Invalid service name. Allowed: " + String.join(", ", allowedServices)
+                "success", false,
+                "error", "Invalid service name. Allowed: " + String.join(", ", allowedServices)
             ));
         }
 
         log.info("Service restart requested for: {} by admin", service);
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of(
-                        "service", service,
-                        "status", "restarting",
-                        "requestedAt", new Date()
-                ),
-                "message", "Service " + service + " restart initiated"
+            "success", true,
+            "data", Map.of(
+                "service", service,
+                "status", "restarting",
+                "requestedAt", new Date()
+            ),
+            "message", "Service " + service + " restart initiated"
         ));
     }
 }

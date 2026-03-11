@@ -5,13 +5,12 @@ import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AdminUserFields;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Repository;
-
 import java.util.Date;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public class AdminUserMongoRepository extends AbstractGlobalMongoRepository<AdminUser> {
@@ -33,8 +32,8 @@ public class AdminUserMongoRepository extends AbstractGlobalMongoRepository<Admi
         String escapedEmail = Pattern.quote(normalizedEmail);
         Query query = Query.query(MongoQueries.where(AdminUserFields.EMAIL).regex("^" + escapedEmail + "$", "i"));
         Update update = new Update()
-                .set(AdminUserFields.LAST_ACTIVITY_AT, lastActivityAt)
-                .addToSet(AdminUserFields.LOGGED_IN_IPS, clientIp);
+            .set(AdminUserFields.LAST_ACTIVITY_AT, lastActivityAt)
+            .addToSet(AdminUserFields.LOGGED_IN_IPS, clientIp);
         updateFirst(query, update);
     }
 }

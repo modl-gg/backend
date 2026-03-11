@@ -9,13 +9,12 @@ import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.mongo.repository.SystemConfigMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -24,15 +23,10 @@ public class GlobalSystemService {
     private final SystemPromptMongoRepository systemPromptRepository;
     private final AITicketAnalysisService ticketAnalysisService;
 
-    public SystemConfig getOrCreateConfig() {
-        return systemConfigRepository.findMainConfig()
-                .orElseGet(() -> systemConfigRepository.saveEntity(new SystemConfig()));
-    }
-
     public SystemConfig.GeneralConfig getGeneralConfigOrDefault() {
         return systemConfigRepository.findMainConfig()
-                .map(SystemConfig::getGeneral)
-                .orElseGet(SystemConfig.GeneralConfig::new);
+            .map(SystemConfig::getGeneral)
+            .orElseGet(SystemConfig.GeneralConfig::new);
     }
 
     public SystemConfig updateConfig(UpdateSystemConfigRequest request) {
@@ -42,11 +36,16 @@ public class GlobalSystemService {
         return systemConfigRepository.saveEntity(existing);
     }
 
+    public SystemConfig getOrCreateConfig() {
+        return systemConfigRepository.findMainConfig()
+            .orElseGet(() -> systemConfigRepository.saveEntity(new SystemConfig()));
+    }
+
     public Map<String, Object> getMaintenanceStatus() {
         SystemConfig config = getOrCreateConfig();
         return Map.of(
-                "isActive", config.getGeneral().isMaintenanceMode(),
-                "message", config.getGeneral().getMaintenanceMessage()
+            "isActive", config.getGeneral().isMaintenanceMode(),
+            "message", config.getGeneral().getMaintenanceMessage()
         );
     }
 
@@ -59,17 +58,17 @@ public class GlobalSystemService {
         config.setUpdatedAt(new Date());
         SystemConfig saved = systemConfigRepository.saveEntity(config);
         return Map.of(
-                "isActive", saved.getGeneral().isMaintenanceMode(),
-                "message", saved.getGeneral().getMaintenanceMessage()
+            "isActive", saved.getGeneral().isMaintenanceMode(),
+            "message", saved.getGeneral().getMaintenanceMessage()
         );
     }
 
     public Map<String, Object> getRateLimitStatus() {
         SystemConfig config = getOrCreateConfig();
         return Map.of(
-                "current", config.getPerformance(),
-                "active", true,
-                "resetTime", new Date(System.currentTimeMillis() + 15 * 60 * 1000)
+            "current", config.getPerformance(),
+            "active", true,
+            "resetTime", new Date(System.currentTimeMillis() + 15 * 60 * 1000)
         );
     }
 
@@ -104,14 +103,6 @@ public class GlobalSystemService {
         return upsertPrompt(normalizedStrictnessLevel, prompt);
     }
 
-    public SystemPrompt resetPrompt(String strictnessLevel) {
-        String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
-        if (normalizedStrictnessLevel == null) {
-            throw new IllegalArgumentException("Invalid strictness level");
-        }
-        return upsertPrompt(normalizedStrictnessLevel, ticketAnalysisService.getDefaultPrompt(normalizedStrictnessLevel));
-    }
-
     private SystemPrompt upsertPrompt(String strictnessLevel, String prompt) {
         return systemPromptRepository.upsertPrompt(strictnessLevel, prompt, new Date());
     }
@@ -126,5 +117,13 @@ public class GlobalSystemService {
             case "LENIENT", "STANDARD", "STRICT" -> normalized;
             default -> null;
         };
+    }
+
+    public SystemPrompt resetPrompt(String strictnessLevel) {
+        String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
+        if (normalizedStrictnessLevel == null) {
+            throw new IllegalArgumentException("Invalid strictness level");
+        }
+        return upsertPrompt(normalizedStrictnessLevel, ticketAnalysisService.getDefaultPrompt(normalizedStrictnessLevel));
     }
 }

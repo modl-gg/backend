@@ -1,12 +1,11 @@
 package gg.modl.backend.admin.data;
 
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import java.util.Date;
+import java.util.Map;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.util.Date;
-import java.util.Map;
 
 @Data
 @Document(collection = "system_logs")
@@ -25,15 +24,15 @@ public class SystemLog {
     private Date resolvedAt;
     private Date timestamp;
 
-    public SystemLog() {
-        this.timestamp = new Date();
-        this.resolved = false;
-    }
-
     public SystemLog(String level, String message, String source) {
         this();
         this.level = level;
         this.message = message;
         this.source = source;
+    }
+
+    public SystemLog() {
+        this.timestamp = new Date();
+        this.resolved = false;
     }
 }

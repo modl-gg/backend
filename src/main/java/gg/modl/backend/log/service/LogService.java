@@ -4,12 +4,11 @@ import gg.modl.backend.database.mongo.repository.ServerLogMongoRepository;
 import gg.modl.backend.log.data.SystemLog;
 import gg.modl.backend.log.dto.response.SystemLogResponse;
 import gg.modl.backend.server.data.Server;
+import java.util.Date;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -25,23 +24,23 @@ public class LogService {
         List<SystemLog> logs = serverLogRepository.findRecent(server, safeLimit);
 
         return logs.stream()
-                .map(l -> new SystemLogResponse(
-                        l.getId(),
-                        l.getDescription(),
-                        l.getLevel(),
-                        l.getSource(),
-                        l.getCreated()
-                ))
-                .toList();
+            .map(l -> new SystemLogResponse(
+                l.getId(),
+                l.getDescription(),
+                l.getLevel(),
+                l.getSource(),
+                l.getCreated()
+            ))
+            .toList();
     }
 
     public SystemLog createLog(Server server, String description, String level, String source) {
         SystemLog logEntry = SystemLog.builder()
-                .description(description)
-                .level(level != null ? level : "info")
-                .source(source != null ? source : "system")
-                .created(new Date())
-                .build();
+            .description(description)
+            .level(level != null ? level : "info")
+            .source(source != null ? source : "system")
+            .created(new Date())
+            .build();
 
         return serverLogRepository.saveEntity(server, logEntry);
     }

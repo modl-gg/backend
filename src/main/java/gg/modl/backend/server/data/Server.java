@@ -3,6 +3,7 @@ package gg.modl.backend.server.data;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.server.ServerField;
+import java.util.Date;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
@@ -13,32 +14,26 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
-import java.util.Date;
-
 @Document(collection = CollectionName.MODL_SERVERS)
 @Data
 @RequiredArgsConstructor
 @GenerateMongoFields
 public class Server {
-    // Core Identifiers
-    @Id
-    @Field(targetType = FieldType.OBJECT_ID)
-    private String id;
-
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
     @Indexed(name = "uidx_servers_serverName", unique = true)
     private final String serverName;
-
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
     @Indexed(name = "uidx_servers_customDomain", unique = true)
     private final String customDomain;
-
     @Nullable
     @Field(name = "databaseName", targetType = FieldType.STRING)
     private final String databaseName;
-
+    // Core Identifiers
+    @Id
+    @Field(targetType = FieldType.OBJECT_ID)
+    private String id;
     // Admin & Verification
     @NotNull
     @Field(name = ServerField.ADMIN_EMAIL, targetType = FieldType.STRING)

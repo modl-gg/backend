@@ -4,9 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DurationDetail(
-        int value,
-        String unit,
-        String type
+    int value,
+    String unit,
+    String type
 ) {
     public long toMilliseconds() {
         // Handle permanent punishments

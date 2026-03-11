@@ -16,11 +16,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -28,6 +23,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.types.ObjectId;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -51,15 +50,15 @@ public class PunishmentMutationService {
         String modIssuerId = request.issuerId();
 
         PunishmentModification modification = new PunishmentModification(
-                new ObjectId().toHexString(),
-                request.type(),
-                now,
-                modIssuerName,
-                modIssuerId,
-                request.reason() != null ? request.reason() : "",
-                request.effectiveDuration(),
-                request.appealTicketId(),
-                null
+            new ObjectId().toHexString(),
+            request.type(),
+            now,
+            modIssuerName,
+            modIssuerId,
+            request.reason() != null ? request.reason() : "",
+            request.effectiveDuration(),
+            request.appealTicketId(),
+            null
         );
 
         Punishment punishment = findPunishment(player, punishmentId);
@@ -79,6 +78,39 @@ public class PunishmentMutationService {
         return player;
     }
 
+    private Punishment findPunishment(Player player, String punishmentId) {
+        if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
+            return null;
+        }
+        return player.getPunishments()
+            .stream()
+            .filter(punishment -> punishmentId.equals(punishment.getId()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    private void ensurePunishmentCollections(Punishment punishment) {
+        if (punishment.getModifications() == null) {
+            punishment.setModifications(new ArrayList<>());
+        }
+        if (punishment.getNotes() == null) {
+            punishment.setNotes(new ArrayList<>());
+        }
+        if (punishment.getEvidence() == null) {
+            punishment.setEvidence(new ArrayList<>());
+        }
+        if (punishment.getAttachedTicketIds() == null) {
+            punishment.setAttachedTicketIds(new ArrayList<>());
+        }
+    }
+
+    private void persistPlayerPunishments(Server server, Player player) {
+        if (player.getPunishments() == null) {
+            player.setPunishments(new ArrayList<>());
+        }
+        playerRepository.replacePunishments(server, player);
+    }
+
     public PunishmentOperationResult changeDuration(Server server, String punishmentId, Long newDuration, String issuerName, String issuerId) {
         PunishmentContext context = punishmentQueryService.findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
@@ -92,26 +124,26 @@ public class PunishmentMutationService {
         ensurePunishmentCollections(punishment);
 
         punishment.getModifications().add(new PunishmentModification(
-                new ObjectId().toHexString(),
-                "MANUAL_DURATION_CHANGE",
-                now,
-                resolvedIssuerName,
-                issuerId,
-                "Duration changed",
-                newDuration,
-                null,
-                null
+            new ObjectId().toHexString(),
+            "MANUAL_DURATION_CHANGE",
+            now,
+            resolvedIssuerName,
+            issuerId,
+            "Duration changed",
+            newDuration,
+            null,
+            null
         ));
 
         String durationText = newDuration == null || newDuration < 0
-                ? "permanent"
-                : PunishmentMapper.formatDuration(newDuration, false);
+                              ? "permanent"
+                              : PunishmentMapper.formatDuration(newDuration, false);
         punishment.getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
-                "changed duration to " + durationText,
-                now,
-                resolvedIssuerName,
-                issuerId
+            new ObjectId().toHexString(),
+            "changed duration to " + durationText,
+            now,
+            resolvedIssuerName,
+            issuerId
         ));
         ensurePunishmentData(punishment).put("duration", newDuration);
         if (punishment.getStarted() == null) {
@@ -124,15 +156,22 @@ public class PunishmentMutationService {
             int cascaded = punishmentLifecycleService.cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
             if (cascaded > 0) {
                 return new PunishmentOperationResult(
-                        PunishmentOperationStatus.SUCCESS,
-                        "Duration changed (cascaded to " + cascaded + " linked ban" + (cascaded > 1 ? "s" : "") + ")",
-                        true,
-                        cascaded + 1
+                    PunishmentOperationStatus.SUCCESS,
+                    "Duration changed (cascaded to " + cascaded + " linked ban" + (cascaded > 1 ? "s" : "") + ")",
+                    true,
+                    cascaded + 1
                 );
             }
         }
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Duration changed", true, 1);
+    }
+
+    private Map<String, Object> ensurePunishmentData(Punishment punishment) {
+        if (punishment.getData() == null) {
+            punishment.setData(new HashMap<>());
+        }
+        return punishment.getData();
     }
 
     public PunishmentOperationResult toggleOption(Server server, String punishmentId, String option, boolean enabled, String issuerName, String issuerId) {
@@ -152,11 +191,11 @@ public class PunishmentMutationService {
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         ensurePunishmentData(punishment).put(toggleOption.dataKey, enabled);
         punishment.getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
-                (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
-                now,
-                resolvedIssuerName,
-                issuerId
+            new ObjectId().toHexString(),
+            (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
+            now,
+            resolvedIssuerName,
+            issuerId
         ));
         persistPlayerPunishments(server, context.player());
 
@@ -172,10 +211,10 @@ public class PunishmentMutationService {
         Map<String, Object> data = context.punishment().getData();
         if (data == null || !Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) {
             return new PunishmentOperationResult(
-                    PunishmentOperationStatus.NO_OP,
-                    "Stat wipe no longer enabled for this punishment",
-                    false,
-                    0
+                PunishmentOperationStatus.NO_OP,
+                "Stat wipe no longer enabled for this punishment",
+                false,
+                0
             );
         }
 
@@ -207,17 +246,18 @@ public class PunishmentMutationService {
             return null;
         }
 
-        Punishment punishment = player.getPunishments().stream()
-                .filter(p -> p.getId().equals(punishmentId))
-                .findFirst()
-                .orElse(null);
+        Punishment punishment = player.getPunishments()
+            .stream()
+            .filter(p -> p.getId().equals(punishmentId))
+            .findFirst()
+            .orElse(null);
         if (punishment == null) {
             return null;
         }
 
         List<String> currentIds = punishment.getAttachedTicketIds() != null
-                ? new ArrayList<>(punishment.getAttachedTicketIds())
-                : new ArrayList<>();
+                                  ? new ArrayList<>(punishment.getAttachedTicketIds())
+                                  : new ArrayList<>();
 
         if (request.addTicketIds() != null) {
             for (String id : request.addTicketIds()) {
@@ -260,15 +300,15 @@ public class PunishmentMutationService {
                 }
 
                 TicketReply systemReply = TicketReply.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(issuerName)
-                        .content("Report accepted - punishment has been issued.")
-                        .type("public")
-                        .created(new Date())
-                        .staff(true)
-                        .action("report_accepted")
-                        .attachments(new ArrayList<>())
-                        .build();
+                    .id(UUID.randomUUID().toString())
+                    .name(issuerName)
+                    .content("Report accepted - punishment has been issued.")
+                    .type("public")
+                    .created(new Date())
+                    .staff(true)
+                    .action("report_accepted")
+                    .attachments(new ArrayList<>())
+                    .build();
 
                 ticket.getReplies().add(systemReply);
                 applyTicketLifecycleStatus(ticket, TicketStatus.CLOSED);
@@ -278,6 +318,11 @@ public class PunishmentMutationService {
                 log.error("[TICKET_CLOSE] Failed to close ticket {}: {}", ticketId, e.getMessage());
             }
         }
+    }
+
+    private void applyTicketLifecycleStatus(Ticket ticket, TicketStatus status) {
+        ticket.setStatus(status);
+        ticket.setLocked(status != null && status.isTerminal());
     }
 
     private void reopenAttachedTickets(Server server, List<String> ticketIds, String issuerName) {
@@ -293,15 +338,15 @@ public class PunishmentMutationService {
                 }
 
                 TicketReply systemReply = TicketReply.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(issuerName)
-                        .content("Ticket reopened - punishment association removed.")
-                        .type("public")
-                        .created(new Date())
-                        .staff(true)
-                        .action("report_reopened")
-                        .attachments(new ArrayList<>())
-                        .build();
+                    .id(UUID.randomUUID().toString())
+                    .name(issuerName)
+                    .content("Ticket reopened - punishment association removed.")
+                    .type("public")
+                    .created(new Date())
+                    .staff(true)
+                    .action("report_reopened")
+                    .attachments(new ArrayList<>())
+                    .build();
 
                 ticket.getReplies().add(systemReply);
                 applyTicketLifecycleStatus(ticket, TicketStatus.OPEN);
@@ -311,50 +356,6 @@ public class PunishmentMutationService {
                 log.error("[TICKET_REOPEN] Failed to reopen ticket {}: {}", ticketId, e.getMessage());
             }
         }
-    }
-
-    private void applyTicketLifecycleStatus(Ticket ticket, TicketStatus status) {
-        ticket.setStatus(status);
-        ticket.setLocked(status != null && status.isTerminal());
-    }
-
-    private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
-            return null;
-        }
-        return player.getPunishments().stream()
-                .filter(punishment -> punishmentId.equals(punishment.getId()))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void ensurePunishmentCollections(Punishment punishment) {
-        if (punishment.getModifications() == null) {
-            punishment.setModifications(new ArrayList<>());
-        }
-        if (punishment.getNotes() == null) {
-            punishment.setNotes(new ArrayList<>());
-        }
-        if (punishment.getEvidence() == null) {
-            punishment.setEvidence(new ArrayList<>());
-        }
-        if (punishment.getAttachedTicketIds() == null) {
-            punishment.setAttachedTicketIds(new ArrayList<>());
-        }
-    }
-
-    private Map<String, Object> ensurePunishmentData(Punishment punishment) {
-        if (punishment.getData() == null) {
-            punishment.setData(new HashMap<>());
-        }
-        return punishment.getData();
-    }
-
-    private void persistPlayerPunishments(Server server, Player player) {
-        if (player.getPunishments() == null) {
-            player.setPunishments(new ArrayList<>());
-        }
-        playerRepository.replacePunishments(server, player);
     }
 
     private enum PunishmentToggleOption {

@@ -4,27 +4,27 @@ import java.util.Date;
 import java.util.List;
 
 public record ActivePunishmentResponse(
-        String id,
-        String playerId,
-        String playerName,
-        String type,
-        String category,
-        String staffName,
-        String reason,
-        Long duration,
-        Date issued,
-        Date started,
-        Date expires,
-        boolean active,
-        boolean hasEvidence,
-        int evidenceCount,
-        List<EvidenceItem> evidence,
-        List<String> attachedTicketIds
+    String id,
+    String playerId,
+    String playerName,
+    String type,
+    String category,
+    String staffName,
+    String reason,
+    Long duration,
+    Date issued,
+    Date started,
+    Date expires,
+    boolean active,
+    boolean hasEvidence,
+    int evidenceCount,
+    List<EvidenceItem> evidence,
+    List<String> attachedTicketIds
 ) {
     public record EvidenceItem(
-            String text,
-            String url,
-            String type,
-            String fileName
+        String text,
+        String url,
+        String type,
+        String fileName
     ) {}
 }

@@ -12,29 +12,102 @@ import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
-import gg.modl.backend.ticket.dto.request.*;
+import gg.modl.backend.ticket.dto.request.BulkTicketUpdateRequest;
+import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
+import gg.modl.backend.ticket.dto.request.QuickResponseRequest;
+import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
+import gg.modl.backend.ticket.dto.request.UpdateTicketRequest;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.time.Instant;
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
 public class TicketService {
-    static final int MAX_CHAT_MESSAGE_LENGTH = 256;
-    static final int MAX_CHAT_MESSAGES = 50;
-
     private final TicketMongoRepository ticketRepository;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
+    static final int MAX_CHAT_MESSAGE_LENGTH = 256;
+    static final int MAX_CHAT_MESSAGES = 50;
+
+    private static Date parseTimestamp(Object value) {
+        if (value instanceof Date date) {
+            return date;
+        }
+        if (value instanceof String str) {
+            return Date.from(Instant.parse(str));
+        }
+        return new Date();
+    }
 
     public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
         return ticketRepository.findById(server, ticketId).map(this::toTicketResponse);
+    }
+
+    private TicketResponse toTicketResponse(Ticket ticket) {
+        List<TicketReply> processedReplies = processRepliesWithNames(ticket);
+        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
+
+        return new TicketResponse(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
+            ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
+            ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
+            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+            ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : null,
+            creatorName,
+            ticket.getCreatorUuid(),
+            creatorName,
+            ticket.getReportedPlayer(),
+            ticket.getReportedPlayerUuid(),
+            ticket.getCreated(),
+            ticket.isLocked(),
+            processedReplies,
+            ticket.getNotes(),
+            ticket.getTags(),
+            ticket.getFormData(),
+            ticket.getData(),
+            ticket.getChatMessages(),
+            ticket.getAiAnalysis(),
+            ticket.isEmailAuthEnabled(),
+            ticket.isHidden()
+        );
+    }
+
+    private List<TicketReply> processRepliesWithNames(Ticket ticket) {
+        if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
+            return ticket.getReplies();
+        }
+
+        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
+
+        return ticket.getReplies()
+            .stream().map(reply -> {
+                if (reply.getName() == null || reply.getName().isBlank()) {
+                    String fallbackName = reply.isStaff() ? "Staff" : creatorName;
+                    reply.setName(fallbackName);
+                }
+                if (reply.getType() == null || reply.getType().isBlank()) {
+                    reply.setType(reply.isStaff() ? "staff" : "user");
+                }
+                return reply;
+            }).toList();
     }
 
     public Optional<Ticket> getTicketRaw(Server server, String ticketId) {
@@ -46,11 +119,11 @@ public class TicketService {
         String ticketId = ticketIdGenerator.generate(server, ticketCategory);
 
         boolean shouldOpenImmediately = ticketCategory.isReport()
-                || (request.subject() != null && !request.subject().isBlank());
+                                        || (request.subject() != null && !request.subject().isBlank());
         TicketStatus ticketStatus = shouldOpenImmediately ? TicketStatus.OPEN : TicketStatus.UNFINISHED;
         String subject = (request.subject() != null && !request.subject().isBlank())
-                ? request.subject()
-                : ticketCategory.getDisplayName();
+                         ? request.subject()
+                         : ticketCategory.getDisplayName();
 
         List<String> tags = request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>();
 
@@ -65,23 +138,23 @@ public class TicketService {
 
         FormDataProcessingResult createFormDataProcessing = processFormDataForContent(request.formData());
         List<Object> initialAttachments = mergeAttachments(
-                normalizeAttachments(request.attachments()),
-                createFormDataProcessing.attachments()
+            normalizeAttachments(request.attachments()),
+            createFormDataProcessing.attachments()
         );
 
         List<TicketReply> replies = new ArrayList<>();
         String content = buildTicketContent(request, createFormDataProcessing.formData());
         if (!content.isBlank() || !initialAttachments.isEmpty()) {
             TicketReply initialReply = TicketReply.builder()
-                    .id(UUID.randomUUID().toString())
-                    .name(request.creatorName() != null ? request.creatorName() : "API User")
-                    .content(content)
-                    .type("user")
-                    .created(new Date())
-                    .staff(false)
-                    .attachments(initialAttachments)
-                    .creatorIdentifier(request.creatorIdentifier())
-                    .build();
+                .id(UUID.randomUUID().toString())
+                .name(request.creatorName() != null ? request.creatorName() : "API User")
+                .content(content)
+                .type("user")
+                .created(new Date())
+                .staff(false)
+                .attachments(initialAttachments)
+                .creatorIdentifier(request.creatorIdentifier())
+                .build();
             replies.add(initialReply);
         }
 
@@ -90,27 +163,27 @@ public class TicketService {
         boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
 
         Ticket ticket = Ticket.builder()
-                .id(ticketId)
-                .type(ticketCategory)
-                .subject(subject)
-                .status(ticketStatus)
-                .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
-                .creatorName(creatorDisplayName)
-                .creatorUuid(request.creatorUuid())
-                .reportedPlayer(request.reportedPlayerName())
-                .reportedPlayerUuid(request.reportedPlayerUuid())
-                .tags(tags)
-                .replies(replies)
-                .notes(new ArrayList<>())
-                .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : sanitizeChatMessages(request.chatMessages()))
-                .formData(request.formData())
-                .data(data)
-                .locked(ticketStatus.isTerminal())
-                .priority(TicketPriority.resolveOrDefault(request.priority()))
-                .emailAuthEnabled(emailAuth)
-                .created(new Date())
-                .updatedAt(new Date())
-                .build();
+            .id(ticketId)
+            .type(ticketCategory)
+            .subject(subject)
+            .status(ticketStatus)
+            .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
+            .creatorName(creatorDisplayName)
+            .creatorUuid(request.creatorUuid())
+            .reportedPlayer(request.reportedPlayerName())
+            .reportedPlayerUuid(request.reportedPlayerUuid())
+            .tags(tags)
+            .replies(replies)
+            .notes(new ArrayList<>())
+            .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : sanitizeChatMessages(request.chatMessages()))
+            .formData(request.formData())
+            .data(data)
+            .locked(ticketStatus.isTerminal())
+            .priority(TicketPriority.resolveOrDefault(request.priority()))
+            .emailAuthEnabled(emailAuth)
+            .created(new Date())
+            .updatedAt(new Date())
+            .build();
 
         ticketRepository.saveEntity(server, ticket);
 
@@ -131,8 +204,8 @@ public class TicketService {
 
         if (request.locked() != null) {
             TicketStatus nextStatus = request.locked()
-                    ? TicketStatus.CLOSED
-                    : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+                                      ? TicketStatus.CLOSED
+                                      : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
             ticket.applyLifecycleStatus(nextStatus);
         }
 
@@ -153,27 +226,27 @@ public class TicketService {
         TicketReply newReply = null;
         if (request.newReply() != null) {
             newReply = TicketReply.builder()
-                    .id(UUID.randomUUID().toString())
-                    .name(request.newReply().name())
-                    .avatar(request.newReply().avatar())
-                    .content(request.newReply().content())
-                    .type(request.newReply().type() != null ? request.newReply().type() : "public")
-                    .created(new Date())
-                    .staff(request.newReply().staff())
-                    .action(request.newReply().action())
-                    .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
-                    .build();
+                .id(UUID.randomUUID().toString())
+                .name(request.newReply().name())
+                .avatar(request.newReply().avatar())
+                .content(request.newReply().content())
+                .type(request.newReply().type() != null ? request.newReply().type() : "public")
+                .created(new Date())
+                .staff(request.newReply().staff())
+                .action(request.newReply().action())
+                .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
+                .build();
 
             ticket.ensureReplies().add(newReply);
         }
 
         if (request.newNote() != null) {
             TicketNote newNote = TicketNote.builder()
-                    .text(request.newNote().text())
-                    .issuerName(request.newNote().issuerName())
-                    .issuerAvatar(request.newNote().issuerAvatar())
-                    .date(new Date())
-                    .build();
+                .text(request.newNote().text())
+                .issuerName(request.newNote().issuerName())
+                .issuerAvatar(request.newNote().issuerAvatar())
+                .date(new Date())
+                .build();
 
             ticket.ensureNotes().add(newNote);
         }
@@ -206,8 +279,8 @@ public class TicketService {
 
             if (request.locked() != null) {
                 TicketStatus nextStatus = request.locked()
-                        ? TicketStatus.CLOSED
-                        : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+                                          ? TicketStatus.CLOSED
+                                          : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
                 ticket.applyLifecycleStatus(nextStatus);
                 hasChanges = true;
             }
@@ -237,8 +310,8 @@ public class TicketService {
 
             if (request.assignTo() != null) {
                 List<String> assignees = "none".equalsIgnoreCase(request.assignTo())
-                        ? List.of()
-                        : TicketAssigneeUtil.normalizeCsv(request.assignTo());
+                                         ? List.of()
+                                         : TicketAssigneeUtil.normalizeCsv(request.assignTo());
                 ticket.setAssignedTo(assignees);
                 hasChanges = true;
             }
@@ -273,13 +346,13 @@ public class TicketService {
         }
 
         TicketReply responseReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(staffUsername != null ? staffUsername : "System")
-                .content(action.getMessage())
-                .type("public")
-                .created(new Date())
-                .staff(true)
-                .build();
+            .id(UUID.randomUUID().toString())
+            .name(staffUsername != null ? staffUsername : "System")
+            .content(action.getMessage())
+            .type("public")
+            .created(new Date())
+            .staff(true)
+            .build();
         ticket.ensureReplies().add(responseReply);
         ticket.setUpdatedAt(new Date());
         boolean ticketClosed = false;
@@ -297,13 +370,13 @@ public class TicketService {
         }
 
         return new QuickResponseResult(
-                true,
-                "Quick response applied successfully",
-                ticketId,
-                action.getName(),
-                ticketClosed,
-                false,
-                action.getAppealAction()
+            true,
+            "Quick response applied successfully",
+            ticketId,
+            action.getName(),
+            ticketClosed,
+            false,
+            action.getAppealAction()
         );
     }
 
@@ -318,8 +391,8 @@ public class TicketService {
         Map<String, Object> requestFormData = request.formData() != null ? request.formData() : Collections.emptyMap();
         FormDataProcessingResult formDataProcessing = processFormDataForContent(requestFormData);
         List<Object> initialAttachments = mergeAttachments(
-                normalizeAttachments(request.attachments()),
-                formDataProcessing.attachments()
+            normalizeAttachments(request.attachments()),
+            formDataProcessing.attachments()
         );
 
         if (request.subject() != null) {
@@ -362,15 +435,15 @@ public class TicketService {
             String content = buildFormDataContent(formDataProcessing.formData());
             if (!content.isBlank() || !initialAttachments.isEmpty()) {
                 TicketReply initialReply = TicketReply.builder()
-                        .id(UUID.randomUUID().toString())
-                        .name(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player")
-                        .content(content)
-                        .type("user")
-                        .created(new Date())
-                        .staff(false)
-                        .attachments(initialAttachments)
-                        .creatorIdentifier(request.creatorIdentifier())
-                        .build();
+                    .id(UUID.randomUUID().toString())
+                    .name(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player")
+                    .content(content)
+                    .type("user")
+                    .created(new Date())
+                    .staff(false)
+                    .attachments(initialAttachments)
+                    .creatorIdentifier(request.creatorIdentifier())
+                    .build();
                 ticket.ensureReplies().add(initialReply);
             }
         }
@@ -378,6 +451,22 @@ public class TicketService {
         Ticket saved = ticketRepository.saveEntity(server, ticket);
 
         return Optional.of(toTicketResponse(saved));
+    }
+
+    public String getEmailHint(Ticket ticket) {
+        if (ticket.getData() == null) {
+            return null;
+        }
+        Object email = ticket.getData().get("creatorEmail");
+        if (email == null) {
+            return null;
+        }
+        String emailStr = email.toString();
+        int atIndex = emailStr.indexOf('@');
+        if (atIndex <= 1) {
+            return emailStr;
+        }
+        return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
     }
 
     private String resolveCreatorEmail(SubmitTicketFormRequest request) {
@@ -391,8 +480,8 @@ public class TicketService {
         }
 
         Object legacyEmail = request.formData().containsKey("contact_email")
-                ? request.formData().get("contact_email")
-                : request.formData().get("email");
+                             ? request.formData().get("contact_email")
+                             : request.formData().get("email");
         if (legacyEmail == null) {
             return null;
         }
@@ -549,15 +638,15 @@ public class TicketService {
         }
 
         String normalizedKey = key
-                .replaceAll("([a-z])([A-Z])", "$1 $2")
-                .replace('_', ' ')
-                .replace('-', ' ')
-                .toLowerCase(Locale.ROOT);
+            .replaceAll("([a-z])([A-Z])", "$1 $2")
+            .replace('_', ' ')
+            .replace('-', ' ')
+            .toLowerCase(Locale.ROOT);
 
         for (String token : normalizedKey.split("\\s+")) {
             if (token.equals("attachment") || token.equals("attachments")
-                    || token.equals("upload") || token.equals("uploads")
-                    || token.equals("file") || token.equals("files")) {
+                || token.equals("upload") || token.equals("uploads")
+                || token.equals("file") || token.equals("files")) {
                 return true;
             }
         }
@@ -642,8 +731,6 @@ public class TicketService {
         return content.toString().trim();
     }
 
-    private record FormDataProcessingResult(Map<String, Object> formData, List<Object> attachments) {}
-
     private String formatFormDataKey(String key) {
         if (key == null || key.isBlank()) {
             return key;
@@ -679,85 +766,22 @@ public class TicketService {
         return titleCase.toString();
     }
 
-    private TicketResponse toTicketResponse(Ticket ticket) {
-        List<TicketReply> processedReplies = processRepliesWithNames(ticket);
-        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
-
-        return new TicketResponse(
-                ticket.getId(),
-                ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
-                ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
-                ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-                ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
-                ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : null,
-                creatorName,
-                ticket.getCreatorUuid(),
-                creatorName,
-                ticket.getReportedPlayer(),
-                ticket.getReportedPlayerUuid(),
-                ticket.getCreated(),
-                ticket.isLocked(),
-                processedReplies,
-                ticket.getNotes(),
-                ticket.getTags(),
-                ticket.getFormData(),
-                ticket.getData(),
-                ticket.getChatMessages(),
-                ticket.getAiAnalysis(),
-                ticket.isEmailAuthEnabled(),
-                ticket.isHidden()
-        );
-    }
-
-    private List<TicketReply> processRepliesWithNames(Ticket ticket) {
-        if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
-            return ticket.getReplies();
-        }
-
-        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-
-        return ticket.getReplies().stream().map(reply -> {
-            if (reply.getName() == null || reply.getName().isBlank()) {
-                String fallbackName = reply.isStaff() ? "Staff" : creatorName;
-                reply.setName(fallbackName);
-            }
-            if (reply.getType() == null || reply.getType().isBlank()) {
-                reply.setType(reply.isStaff() ? "staff" : "user");
-            }
-            return reply;
-        }).toList();
-    }
-
     private List<Ticket.ChatMessage> sanitizeChatMessages(List<Map<String, Object>> rawMessages) {
         List<Map<String, Object>> trimmed = rawMessages.size() > MAX_CHAT_MESSAGES
-                ? rawMessages.subList(rawMessages.size() - MAX_CHAT_MESSAGES, rawMessages.size())
-                : rawMessages;
+                                            ? rawMessages.subList(rawMessages.size() - MAX_CHAT_MESSAGES, rawMessages.size())
+                                            : rawMessages;
 
         return trimmed.stream()
-                .map(x -> {
-                    String content = (String) x.get("content");
-                    if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
-                        content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
-                    }
-                    return new Ticket.ChatMessage(content, parseTimestamp(x.get("timestamp")));
-                })
-                .toList();
+            .map(x -> {
+                String content = (String) x.get("content");
+                if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
+                    content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
+                }
+                return new Ticket.ChatMessage(content, parseTimestamp(x.get("timestamp")));
+            })
+            .toList();
     }
 
-    private static Date parseTimestamp(Object value) {
-        if (value instanceof Date date) return date;
-        if (value instanceof String str) return Date.from(Instant.parse(str));
-        return new Date();
-    }
-
-    public String getEmailHint(Ticket ticket) {
-        if (ticket.getData() == null) return null;
-        Object email = ticket.getData().get("creatorEmail");
-        if (email == null) return null;
-        String emailStr = email.toString();
-        int atIndex = emailStr.indexOf('@');
-        if (atIndex <= 1) return emailStr;
-        return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
-    }
+    private record FormDataProcessingResult(Map<String, Object> formData, List<Object> attachments) {}
 
 }

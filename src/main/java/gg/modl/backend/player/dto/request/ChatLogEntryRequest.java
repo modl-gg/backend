@@ -8,23 +8,23 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 public record ChatLogEntryRequest(
-        @NotBlank
-        @Pattern(regexp = RegExpConstants.UUID)
-        String uuid,
+    @NotBlank
+    @Pattern(regexp = RegExpConstants.UUID)
+    String uuid,
 
-        @NotBlank
-        @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME)
-        @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH)
-        String username,
+    @NotBlank
+    @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME)
+    @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH)
+    String username,
 
-        @NotBlank
-        @Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH)
-        String message,
+    @NotBlank
+    @Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH)
+    String message,
 
-        @PositiveOrZero
-        long timestamp,
+    @PositiveOrZero
+    long timestamp,
 
-        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH)
-        String server
+    @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH)
+    String server
 ) {
 }

@@ -19,8 +19,8 @@ import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
@@ -42,15 +42,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class AITicketAnalysisService {
-    private static final String JSON_FORMAT = """
-            {
-              "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
-              "suggestedAction": {
-                "punishmentTypeId": "<punishment_type_id>",
-                "severity": "low|regular|severe"
-              } OR null if no action needed
-            }""";
-
     private final LLMService llmService;
     private final AIModerationSettingsService aiModerationSettingsService;
     private final TicketMongoRepository ticketRepository;
@@ -61,8 +52,14 @@ public class AITicketAnalysisService {
     private final ObjectMapper objectMapper;
     private final SystemPromptMongoRepository systemPromptRepository;
     public static final String AI_MODERATOR = "AI Moderator";
-
-    public record AISuggestionResult(boolean success, String error) {}
+    private static final String JSON_FORMAT = """
+        {
+          "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
+          "suggestedAction": {
+            "punishmentTypeId": "<punishment_type_id>",
+            "severity": "low|regular|severe"
+          } OR null if no action needed
+        }""";
 
     @Async
     public void analyzeTicketAsync(@NotNull Server server, @NotNull String ticketId) {
@@ -90,7 +87,8 @@ public class AITicketAnalysisService {
 
         final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
         final String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
-        final String chatLog = ticket.getChatMessages().stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
+        final String chatLog = ticket.getChatMessages()
+            .stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
         final String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
 
         final String rawResponse;
@@ -114,52 +112,6 @@ public class AITicketAnalysisService {
         ticket.setAiAnalysis(result);
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
-    }
-
-    @NotNull
-    public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @NotNull String staffName) {
-        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-
-        if (ticket == null) {
-            return new AISuggestionResult(false, "Ticket not found");
-        }
-
-        final AIAnalysisResult aiAnalysis = ticket.getAiAnalysis();
-        if (aiAnalysis == null || aiAnalysis.getSuggestedAction() == null) {
-            return new AISuggestionResult(false, "No AI suggestion to apply");
-        }
-
-        if (aiAnalysis.isWasAppliedAutomatically() || aiAnalysis.isDismissed()) {
-            return new AISuggestionResult(false, "AI suggestion already handled");
-        }
-
-        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
-            return new AISuggestionResult(false, "No reported player UUID");
-        }
-
-        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
-        ticketRepository.saveEntity(server, ticket);
-
-        return new AISuggestionResult(true, null);
-    }
-
-    @NotNull
-    public AISuggestionResult dismissAISuggestion(@NotNull Server server, @NotNull String ticketId) {
-        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-
-        if (ticket == null) {
-            return new AISuggestionResult(false, "Ticket not found");
-        }
-
-        if (ticket.getAiAnalysis() == null) {
-            return new AISuggestionResult(false, "No AI analysis to dismiss");
-        }
-
-        ticket.getAiAnalysis().setDismissed(true);
-        ticket.setUpdatedAt(new Date());
-        ticketRepository.saveEntity(server, ticket);
-
-        return new AISuggestionResult(true, null);
     }
 
     private boolean shouldAnalyze(@NotNull Server server) {
@@ -188,65 +140,11 @@ public class AITicketAnalysisService {
             }
         }
 
-
         return true;
     }
 
     private boolean isChatReport(Ticket ticket) {
         return ticket.getType() == TicketCategory.CHAT;
-    }
-
-    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
-        UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
-        AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
-        String reason = aiAnalysis.getAnalysis() != null ? aiAnalysis.getAnalysis() : "AI-detected violation";
-
-        CreatePunishmentRequest request = new CreatePunishmentRequest(
-                staffName,
-                null,
-                suggestion.getPunishmentTypeId(),
-                null, null,
-                List.of(ticket.getId()),
-                suggestion.getSeverity(),
-                "active",
-                Map.of("aiGenerated", true),
-                reason, null
-        );
-
-        punishmentLifecycleService.createPunishment(server, playerUuid, request);
-
-        Date now = new Date();
-        String typeName = punishmentTypeService.getPunishmentTypeName(server, suggestion.getPunishmentTypeId());
-
-        TicketReply systemReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(staffName)
-                .content("This report has been reviewed and appropriate action has been taken. Thank you for your report.")
-                .type("system")
-                .created(now)
-                .staff(true)
-                .action("Close")
-                .attachments(new ArrayList<>())
-                .build();
-
-        TicketNote staffNote = TicketNote.builder()
-                .text("AI Analysis by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
-                .issuerName(staffName)
-                .date(now)
-                .build();
-
-        aiAnalysis.setWasAppliedAutomatically(true);
-        if (ticket.getReplies() == null) {
-            ticket.setReplies(new ArrayList<>());
-        }
-        if (ticket.getNotes() == null) {
-            ticket.setNotes(new ArrayList<>());
-        }
-        ticket.getReplies().add(systemReply);
-        ticket.getNotes().add(staffNote);
-        ticket.setStatus(TicketStatus.CLOSED);
-        ticket.setLocked(true);
-        ticket.setUpdatedAt(now);
     }
 
     private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
@@ -281,10 +179,63 @@ public class AITicketAnalysisService {
         }
     }
 
+    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
+        UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
+        AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
+        String reason = aiAnalysis.getAnalysis() != null ? aiAnalysis.getAnalysis() : "AI-detected violation";
+
+        CreatePunishmentRequest request = new CreatePunishmentRequest(
+            staffName,
+            null,
+            suggestion.getPunishmentTypeId(),
+            null, null,
+            List.of(ticket.getId()),
+            suggestion.getSeverity(),
+            "active",
+            Map.of("aiGenerated", true),
+            reason, null
+        );
+
+        punishmentLifecycleService.createPunishment(server, playerUuid, request);
+
+        Date now = new Date();
+        String typeName = punishmentTypeService.getPunishmentTypeName(server, suggestion.getPunishmentTypeId());
+
+        TicketReply systemReply = TicketReply.builder()
+            .id(UUID.randomUUID().toString())
+            .name(staffName)
+            .content("This report has been reviewed and appropriate action has been taken. Thank you for your report.")
+            .type("system")
+            .created(now)
+            .staff(true)
+            .action("Close")
+            .attachments(new ArrayList<>())
+            .build();
+
+        TicketNote staffNote = TicketNote.builder()
+            .text("AI Analysis by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
+            .issuerName(staffName)
+            .date(now)
+            .build();
+
+        aiAnalysis.setWasAppliedAutomatically(true);
+        if (ticket.getReplies() == null) {
+            ticket.setReplies(new ArrayList<>());
+        }
+        if (ticket.getNotes() == null) {
+            ticket.setNotes(new ArrayList<>());
+        }
+        ticket.getReplies().add(systemReply);
+        ticket.getNotes().add(staffNote);
+        ticket.setStatus(TicketStatus.CLOSED);
+        ticket.setLocked(true);
+        ticket.setUpdatedAt(now);
+    }
+
     private String getSystemPrompt(String strictnessLevel) {
         String normalizedStrictnessLevel = strictnessLevel == null
-                ? "STANDARD"
-                : strictnessLevel.trim().toUpperCase(Locale.ROOT);
+                                           ? "STANDARD"
+                                           : strictnessLevel.trim().toUpperCase(Locale.ROOT);
         SystemPrompt prompt = systemPromptRepository.findActiveByStrictnessLevel(normalizedStrictnessLevel).orElse(null);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
@@ -295,12 +246,23 @@ public class AITicketAnalysisService {
     }
 
     @NotNull
+    public static String getDefaultPrompt(@NotNull String level) {
+        final String modeInstruction = switch (level.trim().toUpperCase()) {
+            case "LENIENT" -> DefaultPrompts.LENIENT;
+            case "STRICT" -> DefaultPrompts.STRICT;
+            default -> DefaultPrompts.STANDARD;
+        };
+
+        return DefaultPrompts.MAIN.formatted(modeInstruction);
+    }
+
+    @NotNull
     private String buildPrompt(@NotNull String systemPrompt, @NotNull String chatLog, @NotNull String reportedPlayer, @NotNull AIModerationSettings settings) {
         final String punishmentTypes = formatPunishmentTypes(settings);
 
         systemPrompt = systemPrompt
-                .replace("{{PUNISHMENT_TYPES}}", punishmentTypes)
-                .replace("{{JSON_FORMAT}}", JSON_FORMAT);
+            .replace("{{PUNISHMENT_TYPES}}", punishmentTypes)
+            .replace("{{JSON_FORMAT}}", JSON_FORMAT);
 
         return DefaultPrompts.WRAPPER.formatted(systemPrompt, chatLog, reportedPlayer);
     }
@@ -311,16 +273,17 @@ public class AITicketAnalysisService {
             return "No punishment types configured";
         }
 
-        return settings.getAiPunishmentConfigs().values().stream()
-                .filter(AIPunishmentConfig::isEnabled)
-                .map(config -> {
-                    String description = config.getAiDescription();
-                    return "%s: %s".formatted(
-                            config.getId(),
-                            description != null && !description.isBlank() ? description : config.getName()
-                    );
-                })
-                .collect(Collectors.joining("\n"));
+        return settings.getAiPunishmentConfigs().values()
+            .stream()
+            .filter(AIPunishmentConfig::isEnabled)
+            .map(config -> {
+                String description = config.getAiDescription();
+                return "%s: %s".formatted(
+                    config.getId(),
+                    description != null && !description.isBlank() ? description : config.getName()
+                );
+            })
+            .collect(Collectors.joining("\n"));
     }
 
     @Nullable
@@ -389,13 +352,50 @@ public class AITicketAnalysisService {
     }
 
     @NotNull
-    public static String getDefaultPrompt(@NotNull String level) {
-        final String modeInstruction = switch (level.trim().toUpperCase()) {
-            case "LENIENT" -> DefaultPrompts.LENIENT;
-            case "STRICT" -> DefaultPrompts.STRICT;
-            default -> DefaultPrompts.STANDARD;
-        };
+    public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @NotNull String staffName) {
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
-        return DefaultPrompts.MAIN.formatted(modeInstruction);
+        if (ticket == null) {
+            return new AISuggestionResult(false, "Ticket not found");
+        }
+
+        final AIAnalysisResult aiAnalysis = ticket.getAiAnalysis();
+        if (aiAnalysis == null || aiAnalysis.getSuggestedAction() == null) {
+            return new AISuggestionResult(false, "No AI suggestion to apply");
+        }
+
+        if (aiAnalysis.isWasAppliedAutomatically() || aiAnalysis.isDismissed()) {
+            return new AISuggestionResult(false, "AI suggestion already handled");
+        }
+
+        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
+            return new AISuggestionResult(false, "No reported player UUID");
+        }
+
+        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
+        ticketRepository.saveEntity(server, ticket);
+
+        return new AISuggestionResult(true, null);
     }
+
+    @NotNull
+    public AISuggestionResult dismissAISuggestion(@NotNull Server server, @NotNull String ticketId) {
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+
+        if (ticket == null) {
+            return new AISuggestionResult(false, "Ticket not found");
+        }
+
+        if (ticket.getAiAnalysis() == null) {
+            return new AISuggestionResult(false, "No AI analysis to dismiss");
+        }
+
+        ticket.getAiAnalysis().setDismissed(true);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveEntity(server, ticket);
+
+        return new AISuggestionResult(true, null);
+    }
+
+    public record AISuggestionResult(boolean success, String error) {}
 }

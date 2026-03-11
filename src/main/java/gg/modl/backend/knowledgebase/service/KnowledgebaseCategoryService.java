@@ -7,13 +7,12 @@ import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.knowledgebase.dto.request.CreateCategoryRequest;
 import gg.modl.backend.knowledgebase.dto.request.UpdateCategoryRequest;
 import gg.modl.backend.server.data.Server;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -37,27 +36,27 @@ public class KnowledgebaseCategoryService {
 
     public KnowledgebaseCategory createCategory(Server server, CreateCategoryRequest request) {
         KnowledgebaseCategory category = KnowledgebaseCategory.builder()
-                .name(request.name())
-                .slug(slugify.slugify(request.name()))
-                .description(request.description())
-                .ordinal(categoryRepository.findMaxOrdinal(server) + 1)
-                .isVisible(true)
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
+            .name(request.name())
+            .slug(slugify.slugify(request.name()))
+            .description(request.description())
+            .ordinal(categoryRepository.findMaxOrdinal(server) + 1)
+            .isVisible(true)
+            .createdAt(new Date())
+            .updatedAt(new Date())
+            .build();
 
         return categoryRepository.saveEntity(server, category);
     }
 
     public Optional<KnowledgebaseCategory> updateCategory(Server server, String id, UpdateCategoryRequest request) {
         return categoryRepository.updateCategory(
-                server,
-                id,
-                request.name(),
-                request.name() != null ? slugify.slugify(request.name()) : null,
-                request.description(),
-                request.isVisible(),
-                new Date()
+            server,
+            id,
+            request.name(),
+            request.name() != null ? slugify.slugify(request.name()) : null,
+            request.description(),
+            request.isVisible(),
+            new Date()
         );
     }
 

@@ -21,16 +21,13 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class TicketEmailVerificationService {
-    private static final SecureRandom RANDOM = new SecureRandom();
-
     private final TicketVerificationMongoRepository ticketVerificationRepository;
     private final EmailService emailService;
-
     @Value("${modl.ticket.email-verification.code-expiry-seconds:300}")
     private long codeExpirySeconds;
-
     @Value("${modl.ticket.email-verification.token-expiry-seconds:300}")
     private long tokenExpirySeconds;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     public String sendVerificationCode(Server server, Ticket ticket) {
         String email = getCreatorEmail(ticket);
@@ -42,12 +39,12 @@ public class TicketEmailVerificationService {
         String codeHash = hashCode(code);
 
         TicketVerification verification = TicketVerification.builder()
-                .id(UUID.randomUUID().toString())
-                .ticketId(ticket.getId())
-                .codeHash(codeHash)
-                .email(email)
-                .expiresAt(new Date(System.currentTimeMillis() + (codeExpirySeconds * 1000L)))
-                .build();
+            .id(UUID.randomUUID().toString())
+            .ticketId(ticket.getId())
+            .codeHash(codeHash)
+            .email(email)
+            .expiresAt(new Date(System.currentTimeMillis() + (codeExpirySeconds * 1000L)))
+            .build();
         ticketVerificationRepository.replaceCodeVerification(server, verification);
 
         try {
@@ -60,34 +57,6 @@ public class TicketEmailVerificationService {
         }
 
         return EmailAddressUtil.mask(email);
-    }
-
-    public String verifyCode(Server server, String ticketId, String code) {
-        String codeHash = hashCode(code);
-        Date now = new Date();
-        TicketVerification verification = ticketVerificationRepository.consumeMatchingCode(server, ticketId, codeHash, now)
-                .orElse(null);
-        if (verification == null) {
-            return null;
-        }
-
-        String token = UUID.randomUUID().toString();
-        TicketVerification tokenVerification = TicketVerification.builder()
-                .id(UUID.randomUUID().toString())
-                .ticketId(ticketId)
-                .token(token)
-                .email(verification.getEmail())
-                .expiresAt(new Date(System.currentTimeMillis() + (tokenExpirySeconds * 1000L)))
-                .build();
-        ticketVerificationRepository.saveEntity(server, tokenVerification);
-        return token;
-    }
-
-    public boolean validateToken(Server server, String ticketId, String token) {
-        if (token == null || token.isBlank()) {
-            return false;
-        }
-        return ticketVerificationRepository.existsActiveToken(server, ticketId, token, new Date());
     }
 
     private String getCreatorEmail(Ticket ticket) {
@@ -116,5 +85,33 @@ public class TicketEmailVerificationService {
         } catch (Exception e) {
             throw new RuntimeException("Failed to hash code", e);
         }
+    }
+
+    public String verifyCode(Server server, String ticketId, String code) {
+        String codeHash = hashCode(code);
+        Date now = new Date();
+        TicketVerification verification = ticketVerificationRepository.consumeMatchingCode(server, ticketId, codeHash, now)
+            .orElse(null);
+        if (verification == null) {
+            return null;
+        }
+
+        String token = UUID.randomUUID().toString();
+        TicketVerification tokenVerification = TicketVerification.builder()
+            .id(UUID.randomUUID().toString())
+            .ticketId(ticketId)
+            .token(token)
+            .email(verification.getEmail())
+            .expiresAt(new Date(System.currentTimeMillis() + (tokenExpirySeconds * 1000L)))
+            .build();
+        ticketVerificationRepository.saveEntity(server, tokenVerification);
+        return token;
+    }
+
+    public boolean validateToken(Server server, String ticketId, String token) {
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        return ticketVerificationRepository.existsActiveToken(server, ticketId, token, new Date());
     }
 }

@@ -17,12 +17,18 @@ import gg.modl.backend.staff.service.StaffService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_ROLES)
@@ -31,11 +37,6 @@ public class PanelRoleController {
     private final RoleService roleService;
     private final PermissionService permissionService;
     private final StaffService staffService;
-
-    private String getStaffRole(Server server, String email) {
-        return staffService.getStaffByEmail(server, email)
-                .map(Staff::getRole).orElse(null);
-    }
 
     @GetMapping
     public ResponseEntity<RoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -54,20 +55,20 @@ public class PanelRoleController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, RoleResponse>> getRoleById(
-            @PathVariable String id,
-            HttpServletRequest request
+        @PathVariable String id,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return roleService.getRoleById(server, id)
-                .map(role -> ResponseEntity.ok(Map.of("role", role)))
-                .orElse(ResponseEntity.notFound().build());
+            .map(role -> ResponseEntity.ok(Map.of("role", role)))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public ResponseEntity<?> createRole(
-            @RequestBody @Valid CreateRoleRequest createRequest,
-            HttpServletRequest request
+        @RequestBody @Valid CreateRoleRequest createRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
@@ -77,8 +78,8 @@ public class PanelRoleController {
         try {
             RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "message", "Role created successfully",
-                    "role", role
+                "message", "Role created successfully",
+                "role", role
             ));
         } catch (IllegalArgumentException e) {
             if (e.getMessage() != null && e.getMessage().contains("authority")) {
@@ -88,11 +89,16 @@ public class PanelRoleController {
         }
     }
 
+    private String getStaffRole(Server server, String email) {
+        return staffService.getStaffByEmail(server, email)
+            .map(Staff::getRole).orElse(null);
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<?> updateRole(
-            @PathVariable String id,
-            @RequestBody @Valid UpdateRoleRequest updateRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid UpdateRoleRequest updateRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
@@ -101,11 +107,11 @@ public class PanelRoleController {
 
         try {
             return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
-                    .map(role -> ResponseEntity.ok(Map.of(
-                            "message", "Role updated successfully",
-                            "role", role
-                    )))
-                    .orElse(ResponseEntity.notFound().build());
+                .map(role -> ResponseEntity.ok(Map.of(
+                    "message", "Role updated successfully",
+                    "role", role
+                )))
+                .orElse(ResponseEntity.notFound().build());
         } catch (IllegalArgumentException e) {
             if (e.getMessage() != null && e.getMessage().contains("authority")) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
@@ -116,8 +122,8 @@ public class PanelRoleController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteRole(
-            @PathVariable String id,
-            HttpServletRequest request
+        @PathVariable String id,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
@@ -135,16 +141,16 @@ public class PanelRoleController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "error", e.getMessage(),
-                    "message", "Please reassign all staff members to a different role before deleting this role."
+                "error", e.getMessage(),
+                "message", "Please reassign all staff members to a different role before deleting this role."
             ));
         }
     }
 
     @PostMapping("/reorder")
     public ResponseEntity<?> reorderRoles(
-            @RequestBody @Valid ReorderRolesRequest reorderRequest,
-            HttpServletRequest request
+        @RequestBody @Valid ReorderRolesRequest reorderRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);

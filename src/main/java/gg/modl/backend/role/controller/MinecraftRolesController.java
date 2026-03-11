@@ -7,14 +7,18 @@ import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_ROLES)
@@ -25,55 +29,14 @@ public class MinecraftRolesController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllRoles(HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> roleList = roleService.getAllRoles(server).stream()
-                .map(this::toRoleMap)
-                .toList();
+        List<Map<String, Object>> roleList = roleService.getAllRoles(server)
+            .stream()
+            .map(this::toRoleMap)
+            .toList();
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "roles", roleList
-        ));
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getRole(
-            @PathVariable String id,
-            HttpServletRequest httpRequest
-    ) {
-        Server server = RequestUtil.getRequestServer(httpRequest);
-        RoleResponse role = roleService.getRoleById(server, id).orElse(null);
-
-        if (role == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Role not found"
-            ));
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "role", toRoleMap(role)
-        ));
-    }
-
-    @PatchMapping("/{id}/permissions")
-    public ResponseEntity<Map<String, Object>> updateRolePermissions(
-            @PathVariable String id,
-            @RequestBody @Valid UpdatePermissionsRequest request,
-            HttpServletRequest httpRequest
-    ) {
-        Server server = RequestUtil.getRequestServer(httpRequest);
-        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Role not found"
-            ));
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Role permissions updated"
+            "status", 200,
+            "roles", roleList
         ));
     }
 
@@ -90,7 +53,49 @@ public class MinecraftRolesController {
         return roleData;
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getRole(
+        @PathVariable String id,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        RoleResponse role = roleService.getRoleById(server, id).orElse(null);
+
+        if (role == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Role not found"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "role", toRoleMap(role)
+        ));
+    }
+
+    @PatchMapping("/{id}/permissions")
+    public ResponseEntity<Map<String, Object>> updateRolePermissions(
+        @PathVariable String id,
+        @RequestBody @Valid UpdatePermissionsRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Role not found"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "success", true,
+            "message", "Role permissions updated"
+        ));
+    }
+
     public record UpdatePermissionsRequest(
-            List<String> permissions
+        List<String> permissions
     ) {}
 }

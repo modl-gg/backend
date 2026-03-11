@@ -1,17 +1,18 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
 import gg.modl.backend.support.TestDatabase;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelKnowledgebaseApiTest {
 
@@ -34,16 +35,18 @@ class PanelKnowledgebaseApiTest {
     @Test
     void createAndDeleteCategory() throws Exception {
         var createResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Category " + System.currentTimeMillis(),
-                "description", "Created by automated test"
+            "name", "API Test Category " + System.currentTimeMillis(),
+            "description", "Created by automated test"
         ));
         int status = createResponse.statusCode();
         assertTrue(status == 200 || status == 201, "Expected 200 or 201 but got " + status);
 
         var json = JsonHelper.parseObject(createResponse.body());
         String categoryId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            json.has("_id") ? json.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         // DB VERIFICATION: confirm category created
         if (TestDatabase.isAvailable()) {
@@ -66,17 +69,21 @@ class PanelKnowledgebaseApiTest {
     void updateCategory() throws Exception {
         // Create category
         var createResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Update " + System.currentTimeMillis()
+            "name", "API Test Update " + System.currentTimeMillis()
         ));
-        if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) return;
+        if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) {
+            return;
+        }
         var json = JsonHelper.parseObject(createResponse.body());
         String categoryId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            json.has("_id") ? json.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         var updateResponse = api.panelPut("/v1/panel/knowledgebase/categories/" + categoryId, Map.of(
-                "name", "API Test Updated " + System.currentTimeMillis(),
-                "description", "Updated by test"
+            "name", "API Test Updated " + System.currentTimeMillis(),
+            "description", "Updated by test"
         ));
         JsonHelper.assertStatus(updateResponse, 200);
 
@@ -88,7 +95,9 @@ class PanelKnowledgebaseApiTest {
     void reorderCategories() throws Exception {
         var listResponse = api.panelGet("/v1/panel/knowledgebase/categories");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.size() < 2) return;
+        if (arr.size() < 2) {
+            return;
+        }
 
         List<String> ids = new java.util.ArrayList<>();
         arr.forEach(c -> {
@@ -106,25 +115,29 @@ class PanelKnowledgebaseApiTest {
     void createAndDeleteArticle() throws Exception {
         // Need a category first
         var catResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Article Cat " + System.currentTimeMillis()
+            "name", "API Test Article Cat " + System.currentTimeMillis()
         ));
-        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) return;
+        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) {
+            return;
+        }
         var catJson = JsonHelper.parseObject(catResponse.body());
         String categoryId = catJson.has("id") ? catJson.get("id").getAsString() :
-                catJson.has("_id") ? catJson.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            catJson.has("_id") ? catJson.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         var articleResponse = api.panelPost("/v1/panel/knowledgebase/categories/" + categoryId + "/articles", Map.of(
-                "title", "API Test Article " + System.currentTimeMillis(),
-                "content", "This is test content.",
-                "isVisible", true
+            "title", "API Test Article " + System.currentTimeMillis(),
+            "content", "This is test content.",
+            "isVisible", true
         ));
         int articleStatus = articleResponse.statusCode();
         assertTrue(articleStatus == 200 || articleStatus == 201, "Expected 200 or 201 but got " + articleStatus);
 
         var articleJson = JsonHelper.parseObject(articleResponse.body());
         String articleId = articleJson.has("id") ? articleJson.get("id").getAsString() :
-                articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
+                           articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
 
         // DB VERIFICATION: confirm article created
         if (TestDatabase.isAvailable() && articleId != null) {
@@ -149,12 +162,16 @@ class PanelKnowledgebaseApiTest {
     void listArticles() throws Exception {
         var listResponse = api.panelGet("/v1/panel/knowledgebase/categories");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.isEmpty()) return;
+        if (arr.isEmpty()) {
+            return;
+        }
 
         var cat = arr.get(0).getAsJsonObject();
         String categoryId = cat.has("id") ? cat.get("id").getAsString() :
-                cat.has("_id") ? cat.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            cat.has("_id") ? cat.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         var response = api.panelGet("/v1/panel/knowledgebase/categories/" + categoryId + "/articles");
         JsonHelper.assertStatus(response, 200);
@@ -164,17 +181,21 @@ class PanelKnowledgebaseApiTest {
     void getArticleById() throws Exception {
         // Create category + article
         var catResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Get Article " + System.currentTimeMillis()
+            "name", "API Test Get Article " + System.currentTimeMillis()
         ));
-        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) return;
+        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) {
+            return;
+        }
         var catJson = JsonHelper.parseObject(catResponse.body());
         String categoryId = catJson.has("id") ? catJson.get("id").getAsString() :
-                catJson.has("_id") ? catJson.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            catJson.has("_id") ? catJson.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         var articleResponse = api.panelPost("/v1/panel/knowledgebase/categories/" + categoryId + "/articles", Map.of(
-                "title", "API Test Get " + System.currentTimeMillis(),
-                "content", "Test content for get."
+            "title", "API Test Get " + System.currentTimeMillis(),
+            "content", "Test content for get."
         ));
         if (articleResponse.statusCode() != 200 && articleResponse.statusCode() != 201) {
             api.panelDelete("/v1/panel/knowledgebase/categories/" + categoryId);
@@ -182,7 +203,7 @@ class PanelKnowledgebaseApiTest {
         }
         var articleJson = JsonHelper.parseObject(articleResponse.body());
         String articleId = articleJson.has("id") ? articleJson.get("id").getAsString() :
-                articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
+                           articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
         if (articleId == null) {
             api.panelDelete("/v1/panel/knowledgebase/categories/" + categoryId);
             return;
@@ -199,17 +220,21 @@ class PanelKnowledgebaseApiTest {
     @Test
     void updateArticle() throws Exception {
         var catResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Update Article " + System.currentTimeMillis()
+            "name", "API Test Update Article " + System.currentTimeMillis()
         ));
-        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) return;
+        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) {
+            return;
+        }
         var catJson = JsonHelper.parseObject(catResponse.body());
         String categoryId = catJson.has("id") ? catJson.get("id").getAsString() :
-                catJson.has("_id") ? catJson.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            catJson.has("_id") ? catJson.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         var articleResponse = api.panelPost("/v1/panel/knowledgebase/categories/" + categoryId + "/articles", Map.of(
-                "title", "API Test Article Update",
-                "content", "Original content"
+            "title", "API Test Article Update",
+            "content", "Original content"
         ));
         if (articleResponse.statusCode() != 200 && articleResponse.statusCode() != 201) {
             api.panelDelete("/v1/panel/knowledgebase/categories/" + categoryId);
@@ -217,15 +242,15 @@ class PanelKnowledgebaseApiTest {
         }
         var articleJson = JsonHelper.parseObject(articleResponse.body());
         String articleId = articleJson.has("id") ? articleJson.get("id").getAsString() :
-                articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
+                           articleJson.has("_id") ? articleJson.get("_id").getAsString() : null;
         if (articleId == null) {
             api.panelDelete("/v1/panel/knowledgebase/categories/" + categoryId);
             return;
         }
 
         var response = api.panelPut("/v1/panel/knowledgebase/categories/" + categoryId + "/articles/" + articleId, Map.of(
-                "title", "API Test Article Updated",
-                "content", "Updated content"
+            "title", "API Test Article Updated",
+            "content", "Updated content"
         ));
         JsonHelper.assertStatus(response, 200);
 
@@ -237,13 +262,17 @@ class PanelKnowledgebaseApiTest {
     @Test
     void reorderArticles() throws Exception {
         var catResponse = api.panelPost("/v1/panel/knowledgebase/categories", Map.of(
-                "name", "API Test Reorder " + System.currentTimeMillis()
+            "name", "API Test Reorder " + System.currentTimeMillis()
         ));
-        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) return;
+        if (catResponse.statusCode() != 200 && catResponse.statusCode() != 201) {
+            return;
+        }
         var catJson = JsonHelper.parseObject(catResponse.body());
         String categoryId = catJson.has("id") ? catJson.get("id").getAsString() :
-                catJson.has("_id") ? catJson.get("_id").getAsString() : null;
-        if (categoryId == null) return;
+                            catJson.has("_id") ? catJson.get("_id").getAsString() : null;
+        if (categoryId == null) {
+            return;
+        }
 
         // Create 2 articles
         var a1 = api.panelPost("/v1/panel/knowledgebase/categories/" + categoryId + "/articles", Map.of("title", "Art 1", "content", "c1"));
@@ -263,7 +292,7 @@ class PanelKnowledgebaseApiTest {
         String id2 = j2.has("id") ? j2.get("id").getAsString() : j2.get("_id").getAsString();
 
         var response = api.panelPut("/v1/panel/knowledgebase/categories/" + categoryId + "/articles/reorder",
-                Map.of("ids", List.of(id2, id1)));
+            Map.of("ids", List.of(id2, id1)));
         JsonHelper.assertStatus(response, 200);
 
         // Cleanup

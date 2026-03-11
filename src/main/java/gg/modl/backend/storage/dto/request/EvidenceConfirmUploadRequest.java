@@ -5,7 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record EvidenceConfirmUploadRequest(
-        @NotBlank(message = "Key is required")
-        @Size(max = RequestValidationLimits.EVIDENCE_URL_MAX_LENGTH)
-        String key
+    @NotBlank(message = "Key is required")
+    @Size(max = RequestValidationLimits.EVIDENCE_URL_MAX_LENGTH)
+    String key
 ) {}

@@ -4,14 +4,13 @@ import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
 
 @Service
 public class IssuerNameResolver {

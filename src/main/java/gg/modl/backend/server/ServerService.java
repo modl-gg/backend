@@ -1,37 +1,39 @@
 package gg.modl.backend.server;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.server.data.*;
+import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.util.Arrays;
-import java.util.Date;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 @Service
 public class ServerService {
-    public static final String SERVER_DATABASE_PREFIX = "server_";
     private final ServerMongoRepository serverRepository;
     private final ServerProvisioningService provisioningService;
     private final Set<String> appDomains;
+    public static final String SERVER_DATABASE_PREFIX = "server_";
 
     public ServerService(
-            ServerMongoRepository serverRepository,
-            ServerProvisioningService provisioningService,
-            @Value("${modl.cors.app-domains:modl.gg,modl.top}") String appDomainsConfig
+        ServerMongoRepository serverRepository,
+        ServerProvisioningService provisioningService,
+        @Value("${modl.cors.app-domains:modl.gg,modl.top}") String appDomainsConfig
     ) {
         this.serverRepository = serverRepository;
         this.provisioningService = provisioningService;
         this.appDomains = Arrays.stream(appDomainsConfig.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .collect(Collectors.toSet());
+            .map(String::trim)
+            .filter(s -> !s.isBlank())
+            .collect(Collectors.toSet());
     }
 
     @Async
@@ -44,7 +46,7 @@ public class ServerService {
     }
 
     public Server createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail,
-                             @Nullable String emailVerificationToken, @NotNull ServerPlan plan) {
+                               @Nullable String emailVerificationToken, @NotNull ServerPlan plan) {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
@@ -76,6 +78,20 @@ public class ServerService {
         return serverRepository.findByActiveCustomDomainOverride(domain).orElse(null);
     }
 
+    @Nullable
+    private String extractSubdomain(@NotNull String domain) {
+        for (String appDomain : appDomains) {
+            String suffix = "." + appDomain;
+            if (domain.endsWith(suffix)) {
+                String subdomain = domain.substring(0, domain.length() - suffix.length());
+                if (!subdomain.isBlank() && !subdomain.contains(".")) {
+                    return subdomain;
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * Returns the matching app domain (e.g. "modl.gg") if the given domain is a subdomain of one,
      * or null if it's a custom domain.
@@ -88,20 +104,6 @@ public class ServerService {
                 String subdomain = domain.substring(0, domain.length() - suffix.length());
                 if (!subdomain.isBlank() && !subdomain.contains(".")) {
                     return appDomain;
-                }
-            }
-        }
-        return null;
-    }
-
-    @Nullable
-    private String extractSubdomain(@NotNull String domain) {
-        for (String appDomain : appDomains) {
-            String suffix = "." + appDomain;
-            if (domain.endsWith(suffix)) {
-                String subdomain = domain.substring(0, domain.length() - suffix.length());
-                if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return subdomain;
                 }
             }
         }

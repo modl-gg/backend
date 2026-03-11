@@ -7,14 +7,13 @@ import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.AddNoteRequest;
 import gg.modl.backend.ticket.dto.request.AddReplyRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -33,17 +32,17 @@ public class TicketReplyService {
         }
 
         TicketReply newReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(request.name())
-                .avatar(request.avatar())
-                .content(request.content())
-                .type(request.type() != null ? request.type() : "public")
-                .created(new Date())
-                .staff(request.staff())
-                .action(request.action())
-                .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
-                .creatorIdentifier(request.creatorIdentifier())
-                .build();
+            .id(UUID.randomUUID().toString())
+            .name(request.name())
+            .avatar(request.avatar())
+            .content(request.content())
+            .type(request.type() != null ? request.type() : "public")
+            .created(new Date())
+            .staff(request.staff())
+            .action(request.action())
+            .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
+            .creatorIdentifier(request.creatorIdentifier())
+            .build();
         ticket.ensureReplies().add(newReply);
         ticket.setUpdatedAt(new Date());
         Ticket saved = ticketRepository.saveEntity(server, ticket);
@@ -62,11 +61,11 @@ public class TicketReplyService {
         }
 
         TicketNote newNote = TicketNote.builder()
-                .text(request.text())
-                .issuerName(request.issuerName())
-                .issuerAvatar(request.issuerAvatar())
-                .date(new Date())
-                .build();
+            .text(request.text())
+            .issuerName(request.issuerName())
+            .issuerAvatar(request.issuerAvatar())
+            .date(new Date())
+            .build();
         ticket.ensureNotes().add(newNote);
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);

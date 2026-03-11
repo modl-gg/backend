@@ -5,18 +5,20 @@ import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.server.data.Server;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -29,10 +31,11 @@ public class MigrationService {
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
-            "idle", "building_json", "uploading_json", "processing_data", "completed", "failed"
+        "idle", "building_json", "uploading_json", "processing_data", "completed", "failed"
     );
     private static final long COOLDOWN_MS = 60 * 60 * 1000;
     private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
+    private static final int MAX_MESSAGE_LENGTH = 1000;
 
     public MigrationStatusResponse getMigrationStatus(Server server) {
         MigrationStatus status = migrationRepository.findLatest(server).orElse(null);
@@ -40,13 +43,13 @@ public class MigrationService {
         MigrationStatusResponse.CurrentMigration currentMigration = null;
         if (status != null) {
             currentMigration = new MigrationStatusResponse.CurrentMigration(
-                    status.getTaskId(),
-                    status.getType(),
-                    status.getStatus(),
-                    status.getProgress(),
-                    status.getStartedAt(),
-                    status.getCompletedAt(),
-                    status.getError()
+                status.getTaskId(),
+                status.getType(),
+                status.getStatus(),
+                status.getProgress(),
+                status.getStartedAt(),
+                status.getCompletedAt(),
+                status.getError()
             );
         }
 
@@ -89,23 +92,23 @@ public class MigrationService {
         Date now = new Date();
 
         MigrationStatus status = MigrationStatus.builder()
-                .taskId(taskId)
-                .type(migrationType.toLowerCase())
-                .status("building_json")
-                .progress(MigrationStatus.MigrationProgress.builder()
-                        .message("Waiting for Minecraft server to build migration file...")
-                        .recordsProcessed(0)
-                        .recordsSkipped(0)
-                        .build())
-                .startedAt(now)
-                .build();
+            .taskId(taskId)
+            .type(migrationType.toLowerCase())
+            .status("building_json")
+            .progress(MigrationStatus.MigrationProgress.builder()
+                .message("Waiting for Minecraft server to build migration file...")
+                .recordsProcessed(0)
+                .recordsSkipped(0)
+                .build())
+            .startedAt(now)
+            .build();
 
         migrationRepository.saveEntity(server, status);
 
         return Map.of(
-                "success", true,
-                "taskId", taskId,
-                "message", "Migration task initiated. Waiting for Minecraft server to process."
+            "success", true,
+            "taskId", taskId,
+            "message", "Migration task initiated. Waiting for Minecraft server to process."
         );
     }
 
@@ -117,17 +120,36 @@ public class MigrationService {
         }
 
         Update update = new Update()
-                .set("status", "failed")
-                .set("error", "Cancelled by administrator")
-                .set("completedAt", new Date())
-                .set("progress.message", "Migration cancelled by administrator");
+            .set("status", "failed")
+            .set("error", "Cancelled by administrator")
+            .set("completedAt", new Date())
+            .set("progress.message", "Migration cancelled by administrator");
 
         migrationRepository.updateById(server, activeMigration.getId(), update);
 
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
 
-    private static final int MAX_MESSAGE_LENGTH = 1000;
+    public Map<String, Object> validateFileSize(Server server, MultipartFile file) {
+        long fileSizeLimit = getFileSizeLimit(server);
+        if (file.getSize() <= fileSizeLimit) {
+            return null;
+        }
+
+        double fileSizeMB = file.getSize() / (1024.0 * 1024.0);
+        double limitMB = fileSizeLimit / (1024.0 * 1024.0);
+
+        updateProgress(server, new UpdateProgressRequest(
+            "failed", "Migration file exceeds size limit", 0, 0, null
+        ));
+
+        return Map.of(
+            "error", "Migration file exceeds size limit",
+            "message", String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
+            "fileSize", file.getSize(),
+            "limit", fileSizeLimit
+        );
+    }
 
     public Map<String, Object> updateProgress(Server server, UpdateProgressRequest request) {
         if (request.status() == null || !VALID_STATUSES.contains(request.status())) {
@@ -153,8 +175,8 @@ public class MigrationService {
         }
 
         Update update = new Update()
-                .set("status", request.status())
-                .set("progress.message", request.message());
+            .set("status", request.status())
+            .set("progress.message", request.message());
 
         if (request.recordsProcessed() != null) {
             update.set("progress.recordsProcessed", request.recordsProcessed());
@@ -180,27 +202,6 @@ public class MigrationService {
             return server.getMigrationFileSizeLimit();
         }
         return DEFAULT_FILE_SIZE_LIMIT;
-    }
-
-    public Map<String, Object> validateFileSize(Server server, MultipartFile file) {
-        long fileSizeLimit = getFileSizeLimit(server);
-        if (file.getSize() <= fileSizeLimit) {
-            return null;
-        }
-
-        double fileSizeMB = file.getSize() / (1024.0 * 1024.0);
-        double limitMB = fileSizeLimit / (1024.0 * 1024.0);
-
-        updateProgress(server, new UpdateProgressRequest(
-                "failed", "Migration file exceeds size limit", 0, 0, null
-        ));
-
-        return Map.of(
-                "error", "Migration file exceeds size limit",
-                "message", String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
-                "fileSize", file.getSize(),
-                "limit", fileSizeLimit
-        );
     }
 
     public Path saveUploadedFile(MultipartFile file) throws IOException {

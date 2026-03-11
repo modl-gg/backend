@@ -32,6 +32,8 @@ import gg.modl.backend.settings.service.VersionedSettings;
 import gg.modl.backend.settings.service.WebhookSettingsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Date;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,9 +46,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.Date;
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
@@ -69,24 +68,31 @@ public class PanelSettingsController {
         return ResponseEntity.ok(toEnvelope(generalSettingsService.getGeneralSettingsState(server)));
     }
 
+    private <T> SettingsEnvelope<T> toEnvelope(VersionedSettings<T> settings) {
+        return new SettingsEnvelope<>(
+            settings.data(),
+            new SettingsMeta(settings.version(), settings.updatedAt())
+        );
+    }
+
     @PatchMapping("/general")
     public ResponseEntity<SettingsEnvelope<GeneralSettings>> patchGeneralSettings(
-            @RequestBody @Valid PatchGeneralSettingsRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid PatchGeneralSettingsRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         GeneralSettings patch = GeneralSettings.builder()
-                .serverDisplayName(body.serverDisplayName())
-                .discordWebhookUrl(body.discordWebhookUrl())
-                .homepageIconUrl(body.homepageIconUrl())
-                .panelIconUrl(body.panelIconUrl())
-                .build();
+            .serverDisplayName(body.serverDisplayName())
+            .discordWebhookUrl(body.discordWebhookUrl())
+            .homepageIconUrl(body.homepageIconUrl())
+            .panelIconUrl(body.panelIconUrl())
+            .build();
 
         VersionedSettings<GeneralSettings> updated = generalSettingsService.patchGeneralSettings(
-                server,
-                body.expectedVersion(),
-                patch
+            server,
+            body.expectedVersion(),
+            patch
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }
@@ -99,14 +105,14 @@ public class PanelSettingsController {
 
     @PatchMapping("/ticket-labels")
     public ResponseEntity<SettingsEnvelope<TicketLabelSettings>> patchTicketLabelSettings(
-            @RequestBody @Valid PatchTicketLabelSettingsRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid PatchTicketLabelSettingsRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         VersionedSettings<TicketLabelSettings> updated = ticketLabelSettingsService.patchTicketLabelSettings(
-                server,
-                body.expectedVersion(),
-                body.labels()
+            server,
+            body.expectedVersion(),
+            body.labels()
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }
@@ -119,35 +125,35 @@ public class PanelSettingsController {
 
     @PatchMapping("/status-thresholds")
     public ResponseEntity<SettingsEnvelope<OffenderThresholdSettings>> patchStatusThresholds(
-            @RequestBody @Valid PatchStatusThresholdSettingsRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid PatchStatusThresholdSettingsRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         VersionedSettings<OffenderThresholdSettings> updated = offenderThresholdSettingsService.patchThresholdSettings(
-                server,
-                body.expectedVersion(),
-                body.settings()
+            server,
+            body.expectedVersion(),
+            body.settings()
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @PostMapping("/api-keys/{type}/generate")
     public ResponseEntity<?> generateApiKey(
-            @PathVariable String type,
-            HttpServletRequest request
+        @PathVariable String type,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String apiKey = apiKeySettingsService.generateApiKey(server, type);
         return ResponseEntity.ok(Map.of(
-                "message", "API key generated successfully",
-                "apiKey", apiKey
+            "message", "API key generated successfully",
+            "apiKey", apiKey
         ));
     }
 
     @GetMapping("/api-keys/{type}/reveal")
     public ResponseEntity<?> revealApiKey(
-            @PathVariable String type,
-            HttpServletRequest request
+        @PathVariable String type,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String apiKey = apiKeySettingsService.revealApiKey(server, type);
@@ -161,8 +167,8 @@ public class PanelSettingsController {
 
     @DeleteMapping("/api-keys/{type}")
     public ResponseEntity<?> deleteApiKey(
-            @PathVariable String type,
-            HttpServletRequest request
+        @PathVariable String type,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
@@ -176,8 +182,8 @@ public class PanelSettingsController {
 
     @GetMapping("/api-keys/{type}/exists")
     public ResponseEntity<?> checkApiKeyExists(
-            @PathVariable String type,
-            HttpServletRequest request
+        @PathVariable String type,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean exists = apiKeySettingsService.hasApiKey(server, type);
@@ -193,8 +199,8 @@ public class PanelSettingsController {
 
     @PatchMapping("/ai-moderation")
     public ResponseEntity<AIModerationSettings> updateAIModerationSettings(
-            @RequestBody @Valid UpdateAIModerationSettingsRequest requestBody,
-            HttpServletRequest request
+        @RequestBody @Valid UpdateAIModerationSettingsRequest requestBody,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AIModerationSettings settings = requestBody.toSettings();
@@ -211,8 +217,8 @@ public class PanelSettingsController {
 
     @PatchMapping("/webhooks")
     public ResponseEntity<WebhookSettings> updateWebhookSettings(
-            @RequestBody @Valid UpdateWebhookSettingsRequest requestBody,
-            HttpServletRequest request
+        @RequestBody @Valid UpdateWebhookSettingsRequest requestBody,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         WebhookSettings settings = requestBody.toSettings();
@@ -240,22 +246,22 @@ public class PanelSettingsController {
 
     @PatchMapping("/ticket-forms")
     public ResponseEntity<SettingsEnvelope<TicketFormSettings>> patchTicketFormSettings(
-            @RequestBody @Valid PatchTicketFormSettingsRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid PatchTicketFormSettingsRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         VersionedSettings<TicketFormSettings> updated = ticketFormSettingsService.patchTicketFormSettings(
-                server,
-                body.expectedVersion(),
-                body.settings()
+            server,
+            body.expectedVersion(),
+            body.settings()
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @GetMapping("/ticket-forms/{type}")
     public ResponseEntity<TicketFormSettings.TicketForm> getTicketForm(
-            @PathVariable String type,
-            HttpServletRequest request
+        @PathVariable String type,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         TicketFormSettings.TicketForm form = ticketFormSettingsService.getFormByType(server, type);
@@ -275,23 +281,23 @@ public class PanelSettingsController {
 
     @PatchMapping("/quick-responses")
     public ResponseEntity<SettingsEnvelope<QuickResponseSettings>> patchQuickResponses(
-            @RequestBody @Valid PatchQuickResponsesRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid PatchQuickResponsesRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         VersionedSettings<QuickResponseSettings> updated = quickResponseSettingsService.patchQuickResponseSettings(
-                server,
-                body.expectedVersion(),
-                new UpdateQuickResponsesRequest(body.categories())
+            server,
+            body.expectedVersion(),
+            new UpdateQuickResponsesRequest(body.categories())
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }
 
     @PostMapping("/upload-icon")
     public ResponseEntity<?> uploadIcon(
-            @RequestParam("icon") MultipartFile file,
-            @RequestParam("iconType") String iconType,
-            HttpServletRequest request
+        @RequestParam("icon") MultipartFile file,
+        @RequestParam("iconType") String iconType,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return iconUploadService.uploadIcon(server, file, iconType);
@@ -299,9 +305,9 @@ public class PanelSettingsController {
 
     @PostMapping("/ai-apply-punishment/{ticketId}")
     public ResponseEntity<?> applyAIPunishment(
-            @PathVariable String ticketId,
-            @RequestBody @Valid ApplyAIPunishmentRequest body,
-            HttpServletRequest request
+        @PathVariable String ticketId,
+        @RequestBody @Valid ApplyAIPunishmentRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffName = body.staffName() != null ? body.staffName() : "Staff";
@@ -315,8 +321,8 @@ public class PanelSettingsController {
 
     @PostMapping("/ai-dismiss-suggestion/{ticketId}")
     public ResponseEntity<?> dismissAISuggestion(
-            @PathVariable String ticketId,
-            HttpServletRequest request
+        @PathVariable String ticketId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
@@ -325,13 +331,6 @@ public class PanelSettingsController {
             return ResponseEntity.badRequest().body(Map.of("error", result.error()));
         }
         return ResponseEntity.ok(Map.of("success", true));
-    }
-
-    private <T> SettingsEnvelope<T> toEnvelope(VersionedSettings<T> settings) {
-        return new SettingsEnvelope<>(
-                settings.data(),
-                new SettingsMeta(settings.version(), settings.updatedAt())
-        );
     }
 
     public record SettingsEnvelope<T>(T data, SettingsMeta _meta) {

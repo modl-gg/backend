@@ -1,12 +1,12 @@
 package gg.modl.backend.support;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,20 +15,33 @@ public final class StagingCredentials {
 
     private static final Map<String, String> PROPS = loadProperties();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+        .connectTimeout(Duration.ofSeconds(10))
+        .followRedirects(HttpClient.Redirect.NORMAL)
+        .build();
     private static volatile ProbeResult publicApiProbe;
     private static volatile ProbeResult panelApiProbe;
 
     private StagingCredentials() {}
 
-    public static String baseUrl()       { return get("MODL_BASE_URL"); }
-    public static String apiKey()        { return get("MODL_API_KEY"); }
-    public static String sessionToken()  { return get("MODL_SESSION_TOKEN"); }
-    public static String serverDomain()  { return get("MODL_SERVER_DOMAIN"); }
-    public static String mongoUri()      { return get("MODL_MONGO_URI"); }
-    public static String panelOrigin()   { return get("MODL_PANEL_ORIGIN"); }
+    public static String baseUrl() {return get("MODL_BASE_URL");}
+
+    public static String apiKey() {return get("MODL_API_KEY");}
+
+    public static String sessionToken() {return get("MODL_SESSION_TOKEN");}
+
+    public static String serverDomain() {return get("MODL_SERVER_DOMAIN");}
+
+    public static String mongoUri() {return get("MODL_MONGO_URI");}
+
+    private static String get(String key) {
+        String val = PROPS.get(key);
+        if (val != null) {
+            return val;
+        }
+        return System.getenv(key);
+    }
+
+    public static String panelOrigin() {return get("MODL_PANEL_ORIGIN");}
 
     public static boolean isAvailable() {
         return baseUrl() != null && apiKey() != null && sessionToken() != null && serverDomain() != null;
@@ -50,12 +63,6 @@ public final class StagingCredentials {
         return panelApiProbe().reason();
     }
 
-    private static String get(String key) {
-        String val = PROPS.get(key);
-        if (val != null) return val;
-        return System.getenv(key);
-    }
-
     private static Map<String, String> loadProperties() {
         Map<String, String> map = new HashMap<>();
         Path envFile = Path.of("").toAbsolutePath().resolve(".env.test");
@@ -67,7 +74,9 @@ public final class StagingCredentials {
             try {
                 for (String line : Files.readAllLines(envFile)) {
                     line = line.trim();
-                    if (line.isEmpty() || line.startsWith("#")) continue;
+                    if (line.isEmpty() || line.startsWith("#")) {
+                        continue;
+                    }
                     int eq = line.indexOf('=');
                     if (eq > 0) {
                         map.put(line.substring(0, eq).trim(), line.substring(eq + 1).trim());
@@ -113,15 +122,15 @@ public final class StagingCredentials {
 
         try {
             HttpResponse<String> response = HTTP_CLIENT.send(HttpRequest.newBuilder()
-                            .uri(URI.create(baseUrl() + "/v1/public/settings"))
-                            .timeout(Duration.ofSeconds(15))
-                            .header("Accept", "application/json")
-                            .header("User-Agent", "modl-backend-test-suite")
-                            .header("X-Server-Domain", serverDomain())
-                            .header("X-Forwarded-Host", serverDomain())
-                            .GET()
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
+                    .uri(URI.create(baseUrl() + "/v1/public/settings"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "modl-backend-test-suite")
+                    .header("X-Server-Domain", serverDomain())
+                    .header("X-Forwarded-Host", serverDomain())
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return new ProbeResult(true, "OK");
             }
@@ -139,18 +148,18 @@ public final class StagingCredentials {
         try {
             String origin = resolveOrigin(panelOrigin() != null ? panelOrigin() : "https://admin.modl.gg");
             HttpResponse<String> response = HTTP_CLIENT.send(HttpRequest.newBuilder()
-                            .uri(URI.create(baseUrl() + "/v1/panel/auth/me"))
-                            .timeout(Duration.ofSeconds(15))
-                            .header("Accept", "application/json")
-                            .header("User-Agent", "modl-backend-test-suite")
-                            .header("X-Server-Domain", serverDomain())
-                            .header("X-Forwarded-Host", serverDomain())
-                            .header("Origin", origin)
-                            .header("Referer", origin + "/panel")
-                            .header("Cookie", "MODL_SESSION=" + sessionToken())
-                            .GET()
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
+                    .uri(URI.create(baseUrl() + "/v1/panel/auth/me"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "modl-backend-test-suite")
+                    .header("X-Server-Domain", serverDomain())
+                    .header("X-Forwarded-Host", serverDomain())
+                    .header("Origin", origin)
+                    .header("Referer", origin + "/panel")
+                    .header("Cookie", "MODL_SESSION=" + sessionToken())
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
                 return new ProbeResult(true, "OK");
             }
@@ -166,9 +175,9 @@ public final class StagingCredentials {
             throw new IllegalArgumentException("Invalid base URL for origin derivation: " + rawBaseUrl);
         }
         StringBuilder origin = new StringBuilder()
-                .append(uri.getScheme())
-                .append("://")
-                .append(uri.getHost());
+            .append(uri.getScheme())
+            .append("://")
+            .append(uri.getHost());
         if (uri.getPort() != -1) {
             origin.append(":").append(uri.getPort());
         }

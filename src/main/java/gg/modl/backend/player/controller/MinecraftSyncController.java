@@ -9,6 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
@@ -29,33 +28,36 @@ public class MinecraftSyncController {
 
     @PostMapping("/sync")
     public ResponseEntity<Map<String, Object>> sync(
-            @RequestBody @Valid SyncRequest syncRequest,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid SyncRequest syncRequest,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         return ResponseEntity.ok(minecraftSyncService.sync(
-                server,
-                syncRequest.lastSyncTimestamp(),
-                syncRequest.onlinePlayers() == null ? List.of() : syncRequest.onlinePlayers().stream()
-                        .map(player -> new MinecraftSyncService.OnlinePlayerInput(player.uuid(), player.username(), player.ipAddress()))
-                        .toList(),
-                syncRequest.serverName(),
-                syncRequest.chatLogs() == null ? List.of() : syncRequest.chatLogs().stream()
-                        .map(log -> new MinecraftSyncService.ChatLogInput(log.uuid(), log.username(), log.message(), log.timestamp(), log.server()))
-                        .toList(),
-                syncRequest.commandLogs() == null ? List.of() : syncRequest.commandLogs().stream()
-                        .map(log -> new MinecraftSyncService.CommandLogInput(log.uuid(), log.username(), log.command(), log.timestamp(), log.server()))
-                        .toList()
+            server,
+            syncRequest.lastSyncTimestamp(),
+            syncRequest.onlinePlayers() == null ? List.of() : syncRequest.onlinePlayers()
+                .stream()
+                .map(player -> new MinecraftSyncService.OnlinePlayerInput(player.uuid(), player.username(), player.ipAddress()))
+                .toList(),
+            syncRequest.serverName(),
+            syncRequest.chatLogs() == null ? List.of() : syncRequest.chatLogs()
+                .stream()
+                .map(log -> new MinecraftSyncService.ChatLogInput(log.uuid(), log.username(), log.message(), log.timestamp(), log.server()))
+                .toList(),
+            syncRequest.commandLogs() == null ? List.of() : syncRequest.commandLogs()
+                .stream()
+                .map(log -> new MinecraftSyncService.CommandLogInput(log.uuid(), log.username(), log.command(), log.timestamp(), log.server()))
+                .toList()
         ));
     }
 
     public record SyncRequest(
-            String lastSyncTimestamp,
-            @Valid List<OnlinePlayer> onlinePlayers,
-            ServerStatus serverStatus,
-            String serverName,
-            List<ChatLogEntry> chatLogs,
-            List<CommandLogEntry> commandLogs
+        String lastSyncTimestamp,
+        @Valid List<OnlinePlayer> onlinePlayers,
+        ServerStatus serverStatus,
+        String serverName,
+        List<ChatLogEntry> chatLogs,
+        List<CommandLogEntry> commandLogs
     ) {
     }
 
@@ -66,17 +68,17 @@ public class MinecraftSyncController {
     }
 
     public record OnlinePlayer(
-            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @NotBlank String username,
-            String ipAddress
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @NotBlank String username,
+        String ipAddress
     ) {
     }
 
     public record ServerStatus(
-            int onlinePlayerCount,
-            int maxPlayers,
-            String serverVersion,
-            String timestamp
+        int onlinePlayerCount,
+        int maxPlayers,
+        String serverVersion,
+        String timestamp
     ) {
     }
 }

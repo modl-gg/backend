@@ -3,6 +3,8 @@ package gg.modl.backend.database.mongo;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.server.data.Server;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -10,16 +12,13 @@ import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 
-import java.util.List;
-import java.util.Optional;
-
 public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMongoRepository<T> {
     private final TenantMongoAccess tenantMongoAccess;
 
     protected AbstractServerMongoRepository(
-            Class<T> entityType,
-            String collectionName,
-            TenantMongoAccess tenantMongoAccess
+        Class<T> entityType,
+        String collectionName,
+        TenantMongoAccess tenantMongoAccess
     ) {
         super(entityType, collectionName);
         this.tenantMongoAccess = tenantMongoAccess;

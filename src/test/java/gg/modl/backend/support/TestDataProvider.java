@@ -1,14 +1,13 @@
 package gg.modl.backend.support;
 
+import static com.mongodb.client.model.Filters.eq;
+
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.Updates;
-import org.bson.Document;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-
-import static com.mongodb.client.model.Filters.*;
+import org.bson.Document;
 
 public final class TestDataProvider {
 
@@ -27,8 +26,15 @@ public final class TestDataProvider {
 
     private TestDataProvider() {}
 
+    public static List<PlayerInfo> getPlayers() {
+        initialize();
+        return Collections.unmodifiableList(players);
+    }
+
     private static synchronized void initialize() {
-        if (initialized) return;
+        if (initialized) {
+            return;
+        }
 
         if (!TestDatabase.isAvailable()) {
             loadDefaults();
@@ -78,20 +84,28 @@ public final class TestDataProvider {
                         Object entry = usernamesList.get(i);
                         if (entry instanceof Document d) {
                             username = d.getString("username");
-                            if (username != null) break;
+                            if (username != null) {
+                                break;
+                            }
                         }
                     }
                 }
-                if (uuid == null || username == null) continue;
+                if (uuid == null || username == null) {
+                    continue;
+                }
 
                 PlayerInfo info = new PlayerInfo(uuid, username);
                 players.add(info);
 
                 List<Document> punishments = doc.getList("punishments", Document.class);
                 if (punishments != null && !punishments.isEmpty()) {
-                    if (playerWithPunishments == null) playerWithPunishments = info;
+                    if (playerWithPunishments == null) {
+                        playerWithPunishments = info;
+                    }
                 } else {
-                    if (playerWithoutPunishments == null) playerWithoutPunishments = info;
+                    if (playerWithoutPunishments == null) {
+                        playerWithoutPunishments = info;
+                    }
                 }
 
                 if (players.size() >= 5 && playerWithPunishments != null && playerWithoutPunishments != null) {
@@ -103,8 +117,12 @@ public final class TestDataProvider {
         if (players.isEmpty()) {
             players = List.of(new PlayerInfo(DEFAULT_UUID, DEFAULT_USERNAME));
         }
-        if (playerWithPunishments == null) playerWithPunishments = players.get(0);
-        if (playerWithoutPunishments == null) playerWithoutPunishments = players.get(0);
+        if (playerWithPunishments == null) {
+            playerWithPunishments = players.get(0);
+        }
+        if (playerWithoutPunishments == null) {
+            playerWithoutPunishments = players.get(0);
+        }
 
         // Load punishment types from settings
         punishmentTypes = new ArrayList<>();
@@ -159,12 +177,16 @@ public final class TestDataProvider {
         }
     }
 
+    // ── Public accessors ──
+
     private static void cleanupCorruptedUsernames(TestDatabase db) {
         try (MongoCursor<Document> cursor = db.players().find().iterator()) {
             while (cursor.hasNext()) {
                 Document player = cursor.next();
                 Object usernamesObj = player.get("usernames");
-                if (!(usernamesObj instanceof List<?> usernamesList)) continue;
+                if (!(usernamesObj instanceof List<?> usernamesList)) {
+                    continue;
+                }
 
                 boolean corrupted = false;
                 List<Document> clean = new ArrayList<>();
@@ -174,7 +196,9 @@ public final class TestDataProvider {
                     } else if (entry instanceof List<?> nested) {
                         corrupted = true;
                         for (Object n : nested) {
-                            if (n instanceof Document doc) clean.add(doc);
+                            if (n instanceof Document doc) {
+                                clean.add(doc);
+                            }
                         }
                     }
                 }
@@ -183,13 +207,6 @@ public final class TestDataProvider {
                 }
             }
         }
-    }
-
-    // ── Public accessors ──
-
-    public static List<PlayerInfo> getPlayers() {
-        initialize();
-        return Collections.unmodifiableList(players);
     }
 
     public static PlayerInfo getPlayerWithPunishments() {
@@ -220,7 +237,10 @@ public final class TestDataProvider {
     // ── Record types ──
 
     public record PlayerInfo(String uuid, String username) {}
+
     public record PunishmentTypeInfo(int ordinal, String name, String category) {}
+
     public record StaffInfo(String id, String username, String role) {}
+
     public record RoleInfo(String id, String name) {}
 }

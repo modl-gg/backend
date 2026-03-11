@@ -34,8 +34,33 @@ public class AuthSessionMongoRepository {
         return findActiveByEmail(tenantMongoAccess.forServer(server), normalize(email), now);
     }
 
+    private List<AuthSessionData> findActiveByEmail(MongoTemplate template, String normalizedEmail, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail),
+            MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
+        ));
+        return template.find(query, AuthSessionData.class, CollectionName.SESSIONS);
+    }
+
+    private String normalize(String email) {
+        return email.trim().toLowerCase(Locale.ROOT);
+    }
+
     public void deleteByEmail(Server server, String email) {
         deleteByEmailInternal(tenantMongoAccess.forServer(server), email);
+    }
+
+    private void deleteByEmailInternal(MongoTemplate template, String email) {
+        String rawEmail = email == null ? null : email.trim();
+        if (rawEmail == null || rawEmail.isBlank()) {
+            return;
+        }
+
+        String normalizedEmail = normalize(rawEmail);
+        Query query = rawEmail.equals(normalizedEmail)
+                      ? Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail))
+                      : Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).in(rawEmail, normalizedEmail));
+        template.remove(query, AuthSessionData.class, CollectionName.SESSIONS);
     }
 
     public void deleteByEmailGlobal(String email) {
@@ -46,12 +71,29 @@ public class AuthSessionMongoRepository {
         return findActiveById(tenantMongoAccess.forServer(server), sessionId, now);
     }
 
+    private Optional<AuthSessionData> findActiveById(MongoTemplate template, String sessionId, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            MongoQueries.where(AuthSessionDataFields.ID).is(sessionId),
+            MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
+        ));
+        return Optional.ofNullable(template.findOne(query, AuthSessionData.class, CollectionName.SESSIONS));
+    }
+
     public Optional<AuthSessionData> findActiveByIdGlobal(String sessionId, Date now) {
         return findActiveById(tenantMongoAccess.global(), sessionId, now);
     }
 
     public boolean refreshExpiresAt(Server server, String sessionId, Date expiresAt) {
         return refreshExpiresAt(tenantMongoAccess.forServer(server), sessionId, expiresAt);
+    }
+
+    private boolean refreshExpiresAt(MongoTemplate template, String sessionId, Date expiresAt) {
+        Update update = new Update().set(AuthSessionDataFields.EXPIRES_AT, expiresAt);
+        return template.updateFirst(idQuery(sessionId), update, AuthSessionData.class, CollectionName.SESSIONS).getMatchedCount() > 0;
+    }
+
+    private Query idQuery(String sessionId) {
+        return Query.query(MongoQueries.where(AuthSessionDataFields.ID).is(sessionId));
     }
 
     public boolean refreshExpiresAtGlobal(String sessionId, Date expiresAt) {
@@ -64,47 +106,5 @@ public class AuthSessionMongoRepository {
 
     public void deleteByIdGlobal(String sessionId) {
         tenantMongoAccess.global().remove(idQuery(sessionId), AuthSessionData.class, CollectionName.SESSIONS);
-    }
-
-    private List<AuthSessionData> findActiveByEmail(MongoTemplate template, String normalizedEmail, Date now) {
-        Query query = Query.query(new Criteria().andOperator(
-                MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail),
-                MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
-        ));
-        return template.find(query, AuthSessionData.class, CollectionName.SESSIONS);
-    }
-
-    private Optional<AuthSessionData> findActiveById(MongoTemplate template, String sessionId, Date now) {
-        Query query = Query.query(new Criteria().andOperator(
-                MongoQueries.where(AuthSessionDataFields.ID).is(sessionId),
-                MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
-        ));
-        return Optional.ofNullable(template.findOne(query, AuthSessionData.class, CollectionName.SESSIONS));
-    }
-
-    private boolean refreshExpiresAt(MongoTemplate template, String sessionId, Date expiresAt) {
-        Update update = new Update().set(AuthSessionDataFields.EXPIRES_AT, expiresAt);
-        return template.updateFirst(idQuery(sessionId), update, AuthSessionData.class, CollectionName.SESSIONS).getMatchedCount() > 0;
-    }
-
-    private void deleteByEmailInternal(MongoTemplate template, String email) {
-        String rawEmail = email == null ? null : email.trim();
-        if (rawEmail == null || rawEmail.isBlank()) {
-            return;
-        }
-
-        String normalizedEmail = normalize(rawEmail);
-        Query query = rawEmail.equals(normalizedEmail)
-                ? Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail))
-                : Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).in(rawEmail, normalizedEmail));
-        template.remove(query, AuthSessionData.class, CollectionName.SESSIONS);
-    }
-
-    private Query idQuery(String sessionId) {
-        return Query.query(MongoQueries.where(AuthSessionDataFields.ID).is(sessionId));
-    }
-
-    private String normalize(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
     }
 }

@@ -8,13 +8,12 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.InvitationFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Invitation;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Repository;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public class InvitationMongoRepository extends AbstractServerMongoRepository<Invitation> {
@@ -32,8 +31,8 @@ public class InvitationMongoRepository extends AbstractServerMongoRepository<Inv
 
     public boolean existsByEmailActive(Server server, String email, Date now) {
         return exists(server, Query.query(
-                MongoQueries.where(InvitationFields.EMAIL).is(email)
-                        .and(InvitationFields.EXPIRES_AT).gt(now)
+            MongoQueries.where(InvitationFields.EMAIL).is(email)
+                .and(InvitationFields.EXPIRES_AT).gt(now)
         ));
     }
 

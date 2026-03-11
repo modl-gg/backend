@@ -5,7 +5,11 @@ import gg.modl.backend.rest.RESTMappingV1;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_PLAYERS)
@@ -15,9 +19,9 @@ public class PublicPlayerController {
 
     @GetMapping("/avatar/{uuid}")
     public ResponseEntity<byte[]> proxyAvatar(
-            @PathVariable String uuid,
-            @RequestParam(defaultValue = "32") int size,
-            @RequestParam(defaultValue = "true") boolean overlay
+        @PathVariable String uuid,
+        @RequestParam(defaultValue = "32") int size,
+        @RequestParam(defaultValue = "true") boolean overlay
     ) {
         byte[] avatar = crafatarProxyService.getAvatar(uuid, size, overlay);
         if (avatar == null) {
@@ -25,7 +29,7 @@ public class PublicPlayerController {
         }
 
         return ResponseEntity.ok()
-                .contentType(MediaType.IMAGE_PNG)
-                .body(avatar);
+            .contentType(MediaType.IMAGE_PNG)
+            .body(avatar);
     }
 }

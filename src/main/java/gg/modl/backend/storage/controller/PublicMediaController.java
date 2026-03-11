@@ -14,14 +14,17 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_MEDIA)
@@ -42,12 +45,13 @@ public class PublicMediaController {
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         Map<String, Object> supportedTypes = isConfigured
-                ? validationService.getAllSupportedTypes()
-                : Map.of("evidence", List.of(), "tickets", List.of(), "appeals", List.of(), "articles", List.of(), "server-icons", List.of());
+                                             ? validationService.getAllSupportedTypes()
+                                             : Map.of("evidence", List.of(), "tickets", List.of(), "appeals", List.of(), "articles", List.of(), "server-icons",
+                                                 List.of());
 
         Map<String, Object> fileSizeLimits = isConfigured
-                ? validationService.getAllSizeLimits(isPremium)
-                : Map.of("evidence", 0L, "tickets", 0L, "appeals", 0L, "articles", 0L, "server-icons", 0L);
+                                             ? validationService.getAllSizeLimits(isPremium)
+                                             : Map.of("evidence", 0L, "tickets", 0L, "appeals", 0L, "articles", 0L, "server-icons", 0L);
 
         Map<String, Object> response = new HashMap<>();
         response.put("backblazeConfigured", isConfigured);
@@ -60,8 +64,8 @@ public class PublicMediaController {
 
     @PostMapping("/presign")
     public ResponseEntity<?> getPresignedUploadUrl(
-            @RequestBody @Valid PresignUploadRequest presignRequest,
-            HttpServletRequest request
+        @RequestBody @Valid PresignUploadRequest presignRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
@@ -69,26 +73,26 @@ public class PublicMediaController {
 
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(presignRequest.uploadType())) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Upload type not allowed for public uploads. Allowed: " + PUBLIC_ALLOWED_UPLOAD_TYPES
+                "error", "Upload type not allowed for public uploads. Allowed: " + PUBLIC_ALLOWED_UPLOAD_TYPES
             ));
         }
 
         MediaAccessService.AccessResult accessResult = mediaAccessService.validatePublicUploadAccess(
-                server,
-                presignRequest.uploadType(),
-                normalizedEntityId,
-                presignRequest.accessToken()
+            server,
+            presignRequest.uploadType(),
+            normalizedEntityId,
+            presignRequest.accessToken()
         );
         if (!accessResult.isAllowed()) {
             return toResponse(accessResult);
         }
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-                presignRequest.fileName(),
-                presignRequest.contentType(),
-                presignRequest.fileSize(),
-                normalizeUploadType(presignRequest.uploadType()),
-                isPremium
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            normalizeUploadType(presignRequest.uploadType()),
+            isPremium
         );
 
         if (!validation.valid()) {
@@ -101,12 +105,12 @@ public class PublicMediaController {
 
         try {
             PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-                    server,
-                    normalizeUploadType(presignRequest.uploadType()),
-                    presignRequest.fileName(),
-                    presignRequest.contentType(),
-                    presignRequest.fileSize(),
-                    normalizedEntityId
+                server,
+                normalizeUploadType(presignRequest.uploadType()),
+                presignRequest.fileName(),
+                presignRequest.contentType(),
+                presignRequest.fileSize(),
+                normalizedEntityId
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
@@ -114,10 +118,22 @@ public class PublicMediaController {
         }
     }
 
+    private String normalizeUploadType(String uploadType) {
+        return "tickets".equals(uploadType) ? "ticket" : uploadType;
+    }
+
+    private ResponseEntity<?> toResponse(MediaAccessService.AccessResult result) {
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.notFound().build();
+            case DENIED -> ResponseEntity.status(403).body(Map.of("error", result.error()));
+            case ALLOWED -> throw new IllegalStateException("Should not convert an allowed result to a response");
+        };
+    }
+
     @PostMapping("/confirm")
     public ResponseEntity<?> confirmUpload(
-            @RequestBody @Valid ConfirmUploadRequest confirmRequest,
-            HttpServletRequest request
+        @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String key = confirmRequest.key();
@@ -130,7 +146,7 @@ public class PublicMediaController {
         String entityId = extractEntityId(key);
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(uploadType)) {
             return ResponseEntity.status(403).body(Map.of(
-                    "error", "Upload type not allowed for public confirmation"
+                "error", "Upload type not allowed for public confirmation"
             ));
         }
         if (entityId == null || entityId.isBlank()) {
@@ -138,10 +154,10 @@ public class PublicMediaController {
         }
 
         MediaAccessService.AccessResult accessResult = mediaAccessService.validatePublicUploadAccess(
-                server,
-                uploadType,
-                entityId,
-                confirmRequest.accessToken()
+            server,
+            uploadType,
+            entityId,
+            confirmRequest.accessToken()
         );
         if (!accessResult.isAllowed()) {
             return toResponse(accessResult);
@@ -150,8 +166,8 @@ public class PublicMediaController {
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
         if (uploadDetails == null) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Upload not found",
-                    "message", "The file was not uploaded or the presigned URL expired"
+                "error", "Upload not found",
+                "message", "The file was not uploaded or the presigned URL expired"
             ));
         }
 
@@ -166,17 +182,5 @@ public class PublicMediaController {
     private String extractEntityId(String key) {
         String[] parts = key.split("/");
         return parts.length >= 4 ? parts[2] : null;
-    }
-
-    private String normalizeUploadType(String uploadType) {
-        return "tickets".equals(uploadType) ? "ticket" : uploadType;
-    }
-
-    private ResponseEntity<?> toResponse(MediaAccessService.AccessResult result) {
-        return switch (result.status()) {
-            case NOT_FOUND -> ResponseEntity.notFound().build();
-            case DENIED -> ResponseEntity.status(403).body(Map.of("error", result.error()));
-            case ALLOWED -> throw new IllegalStateException("Should not convert an allowed result to a response");
-        };
     }
 }

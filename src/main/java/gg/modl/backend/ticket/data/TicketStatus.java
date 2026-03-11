@@ -36,19 +36,6 @@ public enum TicketStatus {
         this.displayName = displayName;
     }
 
-    @JsonValue
-    public String getId() {
-        return id;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public boolean isTerminal() {
-        return this == CLOSED;
-    }
-
     @JsonCreator
     public static TicketStatus fromValue(String value) {
         return fromCanonicalId(value);
@@ -67,12 +54,25 @@ public enum TicketStatus {
             return "";
         }
         return value.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "_")
-                .replaceAll("^_+|_+$", "");
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
     }
 
     private static void registerAlias(TicketStatus status, String alias) {
         BY_CANONICAL_ID.put(normalize(alias), status);
+    }
+
+    @JsonValue
+    public String getId() {
+        return id;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public boolean isTerminal() {
+        return this == CLOSED;
     }
 }

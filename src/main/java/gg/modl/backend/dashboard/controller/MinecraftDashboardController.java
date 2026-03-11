@@ -6,13 +6,12 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_DASHBOARD)
@@ -26,8 +25,8 @@ public class MinecraftDashboardController {
         MinecraftDashboardStatsResponse stats = dashboardService.getMinecraftStats(server);
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "stats", stats
+            "status", 200,
+            "stats", stats
         ));
     }
 }

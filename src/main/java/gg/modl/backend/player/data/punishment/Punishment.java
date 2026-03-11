@@ -3,16 +3,15 @@ package gg.modl.backend.player.data.punishment;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.mapping.Field;
-
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
@@ -20,10 +19,10 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @AllArgsConstructor
 @GenerateMongoFields
 @MongoFieldAliases({
-        @MongoFieldAlias(name = "DATA_LINKED_BAN_ID", path = "data.linkedBanId"),
-        @MongoFieldAlias(name = "DATA_STATUS", path = "data.status"),
-        @MongoFieldAlias(name = "DATA_REASON", path = "data.reason"),
-        @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
+    @MongoFieldAlias(name = "DATA_LINKED_BAN_ID", path = "data.linkedBanId"),
+    @MongoFieldAlias(name = "DATA_STATUS", path = "data.status"),
+    @MongoFieldAlias(name = "DATA_REASON", path = "data.reason"),
+    @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
 })
 public class Punishment {
     @NotNull

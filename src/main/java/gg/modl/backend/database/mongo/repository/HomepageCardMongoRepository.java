@@ -7,15 +7,14 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.HomepageCardFields;
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.server.data.Server;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
 
 @Repository
 public class HomepageCardMongoRepository extends AbstractServerMongoRepository<HomepageCard> {
@@ -29,7 +28,7 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
 
     public List<HomepageCard> findVisibleOrdered(Server server) {
         Query query = Query.query(MongoQueries.where(HomepageCardFields.IS_ENABLED).is(true))
-                .with(MongoQueries.sort(Sort.Direction.ASC, HomepageCardFields.ORDINAL));
+            .with(MongoQueries.sort(Sort.Direction.ASC, HomepageCardFields.ORDINAL));
         return find(server, query);
     }
 
@@ -39,27 +38,27 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
 
     public int findMaxOrdinal(Server server) {
         Query query = new Query()
-                .with(MongoQueries.sort(Sort.Direction.DESC, HomepageCardFields.ORDINAL))
-                .limit(1);
+            .with(MongoQueries.sort(Sort.Direction.DESC, HomepageCardFields.ORDINAL))
+            .limit(1);
         return findOne(server, query)
-                .map(HomepageCard::getOrdinal)
-                .orElse(-1);
+            .map(HomepageCard::getOrdinal)
+            .orElse(-1);
     }
 
     public Optional<HomepageCard> updateCard(
-            Server server,
-            String id,
-            String title,
-            String description,
-            String icon,
-            String iconColor,
-            String actionType,
-            String actionUrl,
-            String actionButtonText,
-            String categoryId,
-            String backgroundColor,
-            Boolean isEnabled,
-            Date updatedAt
+        Server server,
+        String id,
+        String title,
+        String description,
+        String icon,
+        String iconColor,
+        String actionType,
+        String actionUrl,
+        String actionButtonText,
+        String categoryId,
+        String backgroundColor,
+        Boolean isEnabled,
+        Date updatedAt
     ) {
         Update update = new Update().set(HomepageCardFields.UPDATED_AT, updatedAt);
         if (title != null) {
@@ -94,10 +93,10 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
         }
 
         HomepageCard updated = findAndModify(
-                server,
-                Query.query(MongoQueries.where(HomepageCardFields.ID).is(id)),
-                update,
-                FindAndModifyOptions.options().returnNew(true)
+            server,
+            Query.query(MongoQueries.where(HomepageCardFields.ID).is(id)),
+            update,
+            FindAndModifyOptions.options().returnNew(true)
         );
         return Optional.ofNullable(updated);
     }
@@ -109,9 +108,9 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
     public void reorderCards(Server server, List<String> ids) {
         for (int index = 0; index < ids.size(); index++) {
             updateFirst(
-                    server,
-                    Query.query(MongoQueries.where(HomepageCardFields.ID).is(ids.get(index))),
-                    new Update().set(HomepageCardFields.ORDINAL, index)
+                server,
+                Query.query(MongoQueries.where(HomepageCardFields.ID).is(ids.get(index))),
+                new Update().set(HomepageCardFields.ORDINAL, index)
             );
         }
     }

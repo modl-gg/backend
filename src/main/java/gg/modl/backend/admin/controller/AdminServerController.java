@@ -8,15 +8,22 @@ import gg.modl.backend.util.PaginationHelper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_SERVERS)
@@ -27,13 +34,13 @@ public class AdminServerController {
 
     @GetMapping
     public ResponseEntity<?> getServers(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int limit,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) String plan,
-            @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "createdAt") String sort,
-            @RequestParam(defaultValue = "desc") String order) {
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "20") int limit,
+        @RequestParam(required = false) String search,
+        @RequestParam(required = false) String plan,
+        @RequestParam(required = false) String status,
+        @RequestParam(defaultValue = "createdAt") String sort,
+        @RequestParam(defaultValue = "desc") String order) {
 
         int pageNum = PaginationHelper.normalizePage(page);
         int limitNum = PaginationHelper.normalizeLimit(limit, 50);
@@ -43,16 +50,16 @@ public class AdminServerController {
         long total = serverService.countServers(search, plan, status);
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of(
-                        "servers", servers,
-                        "pagination", Map.of(
-                                "page", pageNum,
-                                "limit", limitNum,
-                                "total", total,
-                                "pages", (int) Math.ceil((double) total / limitNum)
-                        )
+            "success", true,
+            "data", Map.of(
+                "servers", servers,
+                "pagination", Map.of(
+                    "page", pageNum,
+                    "limit", limitNum,
+                    "total", total,
+                    "pages", (int) Math.ceil((double) total / limitNum)
                 )
+            )
         ));
     }
 
@@ -70,26 +77,26 @@ public class AdminServerController {
         Map<String, AdminServerService.UsageSummary> usage = serverService.getUsageStatsForServerIds(request.serverIds(), forceRefresh);
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of("usage", usage)
+            "success", true,
+            "data", Map.of("usage", usage)
         ));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getServer(@PathVariable String id) {
         return serverService.findById(id)
-                .map(server -> ResponseEntity.ok(Map.of("success", true, "data", server)))
-                .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> ResponseEntity.ok(Map.of("success", true, "data", server)))
+            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
     }
 
     @GetMapping("/{id}/stats")
     public ResponseEntity<?> getServerStats(@PathVariable String id) {
         return serverService.findById(id)
-                .map(server -> {
-                    Map<String, Object> stats = serverService.getServerStats(server);
-                    return ResponseEntity.ok(Map.of("success", true, "data", stats));
-                })
-                .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> {
+                Map<String, Object> stats = serverService.getServerStats(server);
+                return ResponseEntity.ok(Map.of("success", true, "data", stats));
+            })
+            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
     }
 
     @PostMapping
@@ -97,9 +104,9 @@ public class AdminServerController {
         try {
             Server saved = serverService.createServer(request.serverName(), request.customDomain(), request.adminEmail(), request.plan());
             return ResponseEntity.status(201).body(Map.of(
-                    "success", true,
-                    "data", saved,
-                    "message", "Server created successfully"
+                "success", true,
+                "data", saved,
+                "message", "Server created successfully"
             ));
         } catch (Exception e) {
             if (e.getMessage() != null && e.getMessage().contains("duplicate")) {
@@ -116,13 +123,27 @@ public class AdminServerController {
         }
 
         Map<String, Object> updateData = new HashMap<>();
-        if (request.adminEmail() != null) updateData.put("adminEmail", request.adminEmail());
-        if (request.emailVerified() != null) updateData.put("emailVerified", request.emailVerified());
-        if (request.provisioningStatus() != null) updateData.put("provisioningStatus", request.provisioningStatus());
-        if (request.provisioningNotes() != null) updateData.put("provisioningNotes", request.provisioningNotes());
-        if (request.plan() != null) updateData.put("plan", request.plan());
-        if (request.subscriptionStatus() != null) updateData.put("subscriptionStatus", request.subscriptionStatus());
-        if (request.lastActivityAt() != null) updateData.put("lastActivityAt", request.lastActivityAt());
+        if (request.adminEmail() != null) {
+            updateData.put("adminEmail", request.adminEmail());
+        }
+        if (request.emailVerified() != null) {
+            updateData.put("emailVerified", request.emailVerified());
+        }
+        if (request.provisioningStatus() != null) {
+            updateData.put("provisioningStatus", request.provisioningStatus());
+        }
+        if (request.provisioningNotes() != null) {
+            updateData.put("provisioningNotes", request.provisioningNotes());
+        }
+        if (request.plan() != null) {
+            updateData.put("plan", request.plan());
+        }
+        if (request.subscriptionStatus() != null) {
+            updateData.put("subscriptionStatus", request.subscriptionStatus());
+        }
+        if (request.lastActivityAt() != null) {
+            updateData.put("lastActivityAt", request.lastActivityAt());
+        }
         updateData.put("updatedAt", new Date());
 
         Server updated = serverService.updateById(id, updateData);
@@ -183,34 +204,34 @@ public class AdminServerController {
         }
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of("action", request.action(), "affectedCount", affectedCount, "serverIds", request.serverIds()),
-                "message", "Bulk operation '" + request.action() + "' completed successfully"
+            "success", true,
+            "data", Map.of("action", request.action(), "affectedCount", affectedCount, "serverIds", request.serverIds()),
+            "message", "Bulk operation '" + request.action() + "' completed successfully"
         ));
     }
 
     @PostMapping("/{id}/reset-database")
     public ResponseEntity<?> resetDatabase(@PathVariable String id) {
         return serverService.findById(id)
-                .map(server -> {
-                    serverService.resetServerDatabase(server);
-                    log.info("Server {} reset to provisioning state by admin", server.getServerName());
-                    return ResponseEntity.ok(Map.of(
-                            "success", true,
-                            "message", "Server reset to provisioning state. The provisioning system will reinitialize the database."
-                    ));
-                })
-                .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> {
+                serverService.resetServerDatabase(server);
+                log.info("Server {} reset to provisioning state by admin", server.getServerName());
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Server reset to provisioning state. The provisioning system will reinitialize the database."
+                ));
+            })
+            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
     }
 
     @PostMapping("/{id}/export-data")
     public ResponseEntity<?> exportData(@PathVariable String id) {
         return serverService.findById(id)
-                .map(server -> ResponseEntity.ok(Map.of(
-                        "success", true,
-                        "message", "Data export initiated. You will receive an email with the download link."
-                )))
-                .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Data export initiated. You will receive an email with the download link."
+            )))
+            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
     }
 
     @PostMapping("/search")
@@ -225,11 +246,11 @@ public class AdminServerController {
         long total = serverService.countServers(query, plan, status);
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of(
-                        "servers", servers,
-                        "total", total
-                )
+            "success", true,
+            "data", Map.of(
+                "servers", servers,
+                "total", total
+            )
         ));
     }
 
@@ -243,32 +264,35 @@ public class AdminServerController {
 
         if ("csv".equalsIgnoreCase(format)) {
             return ResponseEntity.ok()
-                    .header("Content-Type", "text/csv")
-                    .header("Content-Disposition", "attachment; filename=servers-export.csv")
-                    .body(serverService.exportServersCsv(plan, status));
+                .header("Content-Type", "text/csv")
+                .header("Content-Disposition", "attachment; filename=servers-export.csv")
+                .body(serverService.exportServersCsv(plan, status));
         }
 
         List<Server> servers = serverService.findServers(null, plan, status, "createdAt", "desc", 0, 10000);
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", Map.of(
-                        "servers", servers,
-                        "exportedAt", new Date(),
-                        "format", format,
-                        "count", servers.size()
-                )
+            "success", true,
+            "data", Map.of(
+                "servers", servers,
+                "exportedAt", new Date(),
+                "format", format,
+                "count", servers.size()
+            )
         ));
     }
 
     // Request records
     public record SearchRequest(String query, Map<String, Object> filters) {}
+
     public record ExportRequest(String format, Map<String, Object> filters) {}
+
     public record UsageBatchRequest(List<String> serverIds, Boolean forceRefresh) {}
+
     public record CreateServerRequest(
-            @NotBlank String serverName,
-            @NotBlank String customDomain,
-            @Email @NotBlank String adminEmail,
-            String plan
+        @NotBlank String serverName,
+        @NotBlank String customDomain,
+        @Email @NotBlank String adminEmail,
+        String plan
     ) {}
 
     public record UpdateStatsRequest(Integer userCount, Integer ticketCount, Date lastActivityAt) {}

@@ -20,7 +20,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import java.io.UnsupportedEncodingException;
+import java.text.SimpleDateFormat;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.TimeZone;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -30,15 +38,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.io.UnsupportedEncodingException;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.TimeZone;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH)
@@ -54,8 +53,8 @@ public class PanelAuthController {
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
-            HttpServletRequest request,
-            @RequestBody @Valid SendEmailCodeRequest requestData) {
+        HttpServletRequest request,
+        @RequestBody @Valid SendEmailCodeRequest requestData) {
 
         Server server = RequestUtil.getRequestServer(request);
 
@@ -69,17 +68,24 @@ public class PanelAuthController {
         } catch (MessagingException | UnsupportedEncodingException e) {
             log.error("Failed to send login code email to {}", requestData.email(), e);
             return ResponseEntity.internalServerError()
-                    .body(new AuthResponse(false, AuthResponseMessage.EMAIL_SEND_ERROR));
+                .body(new AuthResponse(false, AuthResponseMessage.EMAIL_SEND_ERROR));
         }
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
     }
 
+    private boolean isAuthorizedEmail(Server server, String email) {
+        if (permissionService.isSuperAdmin(server, email)) {
+            return true;
+        }
+        return staffService.getStaffByEmail(server, email).isPresent();
+    }
+
     @PostMapping("/verify-email-code")
     public ResponseEntity<AuthResponse> verifyEmailCode(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            @RequestBody @Valid VerifyCodeRequest requestData) {
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @RequestBody @Valid VerifyCodeRequest requestData) {
 
         Server server = RequestUtil.getRequestServer(request);
 
@@ -124,10 +130,23 @@ public class PanelAuthController {
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
     }
 
+    private Set<String> extractSessionIds(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Set.of();
+        }
+
+        return Arrays.stream(cookies)
+            .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
+            .map(Cookie::getValue)
+            .filter(value -> value != null && !value.isBlank())
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
     @PatchMapping("/profile")
     public ResponseEntity<?> updateProfile(
-            HttpServletRequest request,
-            @RequestBody @Valid UpdateProfileRequest requestData) {
+        HttpServletRequest request,
+        @RequestBody @Valid UpdateProfileRequest requestData) {
 
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
@@ -138,16 +157,18 @@ public class PanelAuthController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
         try {
-            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(), requestData.dateFormat());
+            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(),
+                requestData.dateFormat());
             if (result.isEmpty()) {
                 return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
             }
             Staff staff = result.get();
             String role = isSuperAdmin ? "Super Admin" : staff.getRole();
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
-                ? staff.getAssignedMinecraftUsername()
-                : staff.getUsername();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
+                                       ? staff.getAssignedMinecraftUsername()
+                                       : staff.getUsername();
+            return ResponseEntity.ok(
+                new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
         }
@@ -155,9 +176,9 @@ public class PanelAuthController {
 
     @PatchMapping("/email")
     public ResponseEntity<?> updateEmail(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            @RequestBody @Valid UpdateEmailRequest requestData) {
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @RequestBody @Valid UpdateEmailRequest requestData) {
 
         String currentEmail = RequestUtil.getSessionEmail(request);
         if (currentEmail == null) {
@@ -207,9 +228,10 @@ public class PanelAuthController {
             String role = isSuperAdmin ? "Super Admin" : staff.getRole();
             // Include Minecraft username if assigned, fall back to panel username
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
-                ? staff.getAssignedMinecraftUsername()
-                : staff.getUsername();
-            return ResponseEntity.ok(new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
+                                       ? staff.getAssignedMinecraftUsername()
+                                       : staff.getUsername();
+            return ResponseEntity.ok(
+                new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         }
 
         // Super Admin without a staff record - return default username
@@ -237,15 +259,15 @@ public class PanelAuthController {
         isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
 
         List<SessionInfoResponse> result = sessions.stream()
-                .map(s -> new SessionInfoResponse(
-                        s.getId(),
-                        s.getIpAddress(),
-                        s.getUserAgent(),
-                        s.getCreatedAt() != null ? isoFormat.format(s.getCreatedAt()) : null,
-                        s.getExpiresAt() != null ? isoFormat.format(s.getExpiresAt()) : null,
-                        s.getId().equals(currentSessionId)
-                ))
-                .toList();
+            .map(s -> new SessionInfoResponse(
+                s.getId(),
+                s.getIpAddress(),
+                s.getUserAgent(),
+                s.getCreatedAt() != null ? isoFormat.format(s.getCreatedAt()) : null,
+                s.getExpiresAt() != null ? isoFormat.format(s.getExpiresAt()) : null,
+                s.getId().equals(currentSessionId)
+            ))
+            .toList();
 
         return ResponseEntity.ok(result);
     }
@@ -275,27 +297,6 @@ public class PanelAuthController {
 
         return roleOpt.map(staffRole -> ResponseEntity.ok(staffRole.getPermissions()))
             .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));
-    }
-
-    private Set<String> extractSessionIds(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return Set.of();
-        }
-
-        return Arrays.stream(cookies)
-                .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .filter(value -> value != null && !value.isBlank())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-    }
-
-
-    private boolean isAuthorizedEmail(Server server, String email) {
-        if (permissionService.isSuperAdmin(server, email)) {
-            return true;
-        }
-        return staffService.getStaffByEmail(server, email).isPresent();
     }
 
     public record AuthResponse(boolean success, String message) {}

@@ -4,34 +4,32 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Label;
 import gg.modl.backend.settings.data.TicketLabelSettings;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class TicketLabelSettingsService {
+    private final SettingsDocumentService settingsDocumentService;
+    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_TICKET_LABELS = "ticketLabels";
     private static final int MAX_LABELS = 100;
     private static final int MAX_LABEL_ID_LENGTH = 64;
     private static final int MAX_LABEL_NAME_LENGTH = 64;
     private static final int MAX_LABEL_DESCRIPTION_LENGTH = 512;
     private static final Pattern HEX_COLOR_PATTERN = Pattern.compile("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
-
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
 
     public TicketLabelSettings getTicketLabelSettings(Server server) {
         return getTicketLabelSettingsState(server).data();
@@ -44,25 +42,25 @@ public class TicketLabelSettingsService {
     }
 
     public VersionedSettings<TicketLabelSettings> patchTicketLabelSettings(
-            Server server,
-            long expectedVersion,
-            List<Label> labels
+        Server server,
+        long expectedVersion,
+        List<Label> labels
     ) {
         SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_LABELS);
         Map<String, Object> data = new LinkedHashMap<>(current.data());
 
         if (labels != null) {
             List<Map<String, Object>> normalizedLabels = normalizeLabels(labels).stream()
-                    .map(this::labelToMap)
-                    .collect(Collectors.toCollection(ArrayList::new));
+                .map(this::labelToMap)
+                .collect(Collectors.toCollection(ArrayList::new));
             data.put("labels", normalizedLabels);
         }
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_TICKET_LABELS,
-                expectedVersion,
-                data
+            server,
+            SETTINGS_TYPE_TICKET_LABELS,
+            expectedVersion,
+            data
         );
         return new VersionedSettings<>(mapToTicketLabelSettings(updated.data()), updated.version(), updated.updatedAt());
     }
@@ -92,8 +90,8 @@ public class TicketLabelSettingsService {
         }
 
         return TicketLabelSettings.builder()
-                .labels(normalizeLabels(labels))
-                .build();
+            .labels(normalizeLabels(labels))
+            .build();
     }
 
     private List<Label> normalizeLabels(List<Label> labels) {
@@ -102,10 +100,10 @@ public class TicketLabelSettingsService {
         }
 
         List<Label> normalized = labels.stream()
-                .filter(Objects::nonNull)
-                .map(this::normalizeLabel)
-                .filter(label -> label.getName() != null && !label.getName().isBlank())
-                .collect(Collectors.toCollection(ArrayList::new));
+            .filter(Objects::nonNull)
+            .map(this::normalizeLabel)
+            .filter(label -> label.getName() != null && !label.getName().isBlank())
+            .collect(Collectors.toCollection(ArrayList::new));
 
         LinkedHashSet<String> seenNames = new LinkedHashSet<>();
         List<Label> deduped = new ArrayList<>();
@@ -128,11 +126,11 @@ public class TicketLabelSettingsService {
             seenIds.add(resolvedId);
 
             normalizedIds.add(Label.builder()
-                    .id(resolvedId)
-                    .name(label.getName())
-                    .color(label.getColor())
-                    .description(label.getDescription())
-                    .build());
+                .id(resolvedId)
+                .name(label.getName())
+                .color(label.getColor())
+                .description(label.getDescription())
+                .build());
         }
 
         if (normalizedIds.size() > MAX_LABELS) {
@@ -149,8 +147,8 @@ public class TicketLabelSettingsService {
         }
 
         String normalizedColor = label.getColor() != null && !label.getColor().isBlank()
-                ? label.getColor().trim()
-                : "#6b7280";
+                                 ? label.getColor().trim()
+                                 : "#6b7280";
         if (!HEX_COLOR_PATTERN.matcher(normalizedColor).matches()) {
             normalizedColor = "#6b7280";
         }
@@ -158,15 +156,15 @@ public class TicketLabelSettingsService {
 
         String normalizedName = truncate(label.getName() != null ? label.getName().trim() : "", MAX_LABEL_NAME_LENGTH);
         String normalizedDescription = label.getDescription() != null
-                ? truncate(label.getDescription().trim(), MAX_LABEL_DESCRIPTION_LENGTH)
-                : null;
+                                       ? truncate(label.getDescription().trim(), MAX_LABEL_DESCRIPTION_LENGTH)
+                                       : null;
 
         return Label.builder()
-                .id(normalizedId)
-                .name(normalizedName)
-                .color(normalizedColor)
-                .description(normalizedDescription)
-                .build();
+            .id(normalizedId)
+            .name(normalizedName)
+            .color(normalizedColor)
+            .description(normalizedDescription)
+            .build();
     }
 
     private String sanitizeId(String value) {
@@ -188,11 +186,11 @@ public class TicketLabelSettingsService {
 
     private Label mapToLabel(Map<String, Object> map) {
         return normalizeLabel(Label.builder()
-                .id(map.get("id") != null ? map.get("id").toString() : null)
-                .name(map.get("name") != null ? map.get("name").toString() : "")
-                .color(map.get("color") != null ? map.get("color").toString() : "#6b7280")
-                .description(map.get("description") != null ? map.get("description").toString() : null)
-                .build());
+            .id(map.get("id") != null ? map.get("id").toString() : null)
+            .name(map.get("name") != null ? map.get("name").toString() : "")
+            .color(map.get("color") != null ? map.get("color").toString() : "#6b7280")
+            .description(map.get("description") != null ? map.get("description").toString() : null)
+            .build());
     }
 
     private Map<String, Object> labelToMap(Label label) {

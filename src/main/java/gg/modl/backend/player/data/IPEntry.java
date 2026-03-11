@@ -1,15 +1,14 @@
 package gg.modl.backend.player.data;
 
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 
 @Data
 @NoArgsConstructor

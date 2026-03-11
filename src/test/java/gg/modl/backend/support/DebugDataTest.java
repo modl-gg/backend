@@ -1,10 +1,9 @@
 package gg.modl.backend.support;
 
+import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
 
 class DebugDataTest {
 

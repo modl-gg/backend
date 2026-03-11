@@ -6,13 +6,12 @@ import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.MetricSnapshotFields;
+import java.util.Date;
+import java.util.List;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.Date;
-import java.util.List;
 
 @Repository
 public class MetricSnapshotMongoRepository extends AbstractGlobalMongoRepository<MetricSnapshot> {
@@ -28,11 +27,11 @@ public class MetricSnapshotMongoRepository extends AbstractGlobalMongoRepository
 
     public void upsertSnapshot(Date date, long activeServers, long totalServers, long totalPlayers, long onlinePlayers, Date createdAt) {
         Update update = new Update()
-                .set(MetricSnapshotFields.ACTIVE_SERVERS, activeServers)
-                .set(MetricSnapshotFields.TOTAL_SERVERS, totalServers)
-                .set(MetricSnapshotFields.TOTAL_PLAYERS, totalPlayers)
-                .set(MetricSnapshotFields.ONLINE_PLAYERS, onlinePlayers)
-                .setOnInsert(MetricSnapshotFields.CREATED_AT, createdAt);
+            .set(MetricSnapshotFields.ACTIVE_SERVERS, activeServers)
+            .set(MetricSnapshotFields.TOTAL_SERVERS, totalServers)
+            .set(MetricSnapshotFields.TOTAL_PLAYERS, totalPlayers)
+            .set(MetricSnapshotFields.ONLINE_PLAYERS, onlinePlayers)
+            .setOnInsert(MetricSnapshotFields.CREATED_AT, createdAt);
         upsert(Query.query(MongoQueries.where(MetricSnapshotFields.DATE).is(date)), update);
     }
 

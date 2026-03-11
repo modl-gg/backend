@@ -8,11 +8,14 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_MIGRATION)
@@ -29,8 +32,8 @@ public class PanelMigrationController {
 
     @PostMapping("/start")
     public ResponseEntity<?> startMigration(
-            @RequestBody @Valid StartMigrationRequest startRequest,
-            HttpServletRequest request
+        @RequestBody @Valid StartMigrationRequest startRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Map<String, Object> result = migrationService.startMigration(server, startRequest.migrationType());

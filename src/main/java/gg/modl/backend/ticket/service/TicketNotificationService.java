@@ -9,16 +9,15 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
@@ -65,22 +64,35 @@ public class TicketNotificationService {
             String ticketUrl = buildTicketUrl(server, ticketId);
 
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_REPLY_TEMPLATE.build(
-                    serverName,
-                    playerName,
-                    true,
-                    ticketType,
-                    ticketId,
-                    ticketSubject,
-                    replyAuthor,
-                    replyContent,
-                    ticketUrl
+                serverName,
+                playerName,
+                true,
+                ticketType,
+                ticketId,
+                ticketSubject,
+                replyAuthor,
+                replyContent,
+                ticketUrl
             );
 
             emailService.send(toEmail, email);
         } catch (Exception exception) {
             log.error("Failed to send ticket reply email to {} for ticket {}: {}",
-                    toEmail, ticket.getId(), exception.getMessage());
+                toEmail, ticket.getId(), exception.getMessage());
         }
+    }
+
+    private String buildTicketUrl(Server server, String ticketId) {
+        String domain = server.getCustomDomainOverride();
+        if (domain == null || domain.isBlank()) {
+            domain = server.getServerName() + "." + modlDomain;
+        }
+        return "https://" + domain + "/ticket/" + ticketId;
+    }
+
+    private String resolveTicketLabel(Ticket ticket) {
+        TicketCategory category = ticket.getType();
+        return category != null ? category.getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 
     private void createInGameNotification(Server server, Ticket ticket, TicketReply reply, String playerUuid) {
@@ -106,8 +118,53 @@ public class TicketNotificationService {
             appendNotification(server, player, notification);
         } catch (Exception exception) {
             log.error("Failed to create in-game notification for player {} for ticket {}: {}",
-                    playerUuid, ticket.getId(), exception.getMessage());
+                playerUuid, ticket.getId(), exception.getMessage());
         }
+    }
+
+    private Player findPlayer(Server server, String playerUuid) {
+        return playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
+    }
+
+    private void appendNotification(Server server, Player player, Map<String, Object> notification) {
+        Map<String, Object> data = player.getData();
+        if (data == null) {
+            data = new LinkedHashMap<>();
+            player.setData(data);
+        }
+
+        Object rawPendingNotifications = data.get("pendingNotifications");
+        List<Object> pendingNotifications = rawPendingNotifications instanceof List<?> existing
+                                            ? new ArrayList<>(existing)
+                                            : new ArrayList<>();
+        pendingNotifications.add(notification);
+        data.put("pendingNotifications", pendingNotifications);
+        playerRepository.saveEntity(server, player);
+    }
+
+    private String buildNotificationMessage(Ticket ticket, TicketReply reply) {
+        String replyAuthor = reply.getName() != null ? reply.getName() : "Staff";
+        return String.format("%s replied to your ticket #%s", replyAuthor, ticket.getId());
+    }
+
+    private String getCreatorEmail(Ticket ticket) {
+        if (ticket.getData() == null) {
+            return null;
+        }
+        Object email = ticket.getData().get("creatorEmail");
+        if (email == null) {
+            return null;
+        }
+
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email.toString());
+        if (normalizedEmail == null) {
+            log.warn("Skipping ticket email notification for {} due to invalid creator email: {}",
+                ticket.getId(),
+                email);
+            return null;
+        }
+
+        return normalizedEmail;
     }
 
     @Async
@@ -142,25 +199,25 @@ public class TicketNotificationService {
                     String roleLabel = reply.isStaff() ? " (Staff)" : "";
 
                     messagesHtml.append("""
-                            <div style=\"border: 1px solid #e9ecef; border-radius: 4px; padding: 12px; margin: 10px 0;\">
-                              <div style=\"margin-bottom: 8px;\">
-                                <strong style=\"color: #333;\">%s%s</strong>
-                                <span style=\"color: #888; font-size: 12px; margin-left: 8px;\">%s</span>
-                              </div>
-                              <div style=\"color: #555; font-size: 14px;\">%s</div>
-                            </div>
-                            """.formatted(author, roleLabel, date, content));
+                        <div style=\"border: 1px solid #e9ecef; border-radius: 4px; padding: 12px; margin: 10px 0;\">
+                          <div style=\"margin-bottom: 8px;\">
+                            <strong style=\"color: #333;\">%s%s</strong>
+                            <span style=\"color: #888; font-size: 12px; margin-left: 8px;\">%s</span>
+                          </div>
+                          <div style=\"color: #555; font-size: 14px;\">%s</div>
+                        </div>
+                        """.formatted(author, roleLabel, date, content));
                 }
             }
 
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_TRANSCRIPT_TEMPLATE.build(
-                    serverName, playerName, ticketType, ticketId, ticketSubject, messagesHtml.toString(), ticketUrl
+                serverName, playerName, ticketType, ticketId, ticketSubject, messagesHtml.toString(), ticketUrl
             );
 
             emailService.send(toEmail, email);
         } catch (Exception exception) {
             log.error("Failed to send ticket transcript email to {} for ticket {}: {}",
-                    toEmail, ticket.getId(), exception.getMessage());
+                toEmail, ticket.getId(), exception.getMessage());
         }
     }
 
@@ -185,65 +242,7 @@ public class TicketNotificationService {
             appendNotification(server, player, notification);
         } catch (Exception exception) {
             log.error("Failed to create in-game closed notification for player {} for ticket {}: {}",
-                    playerUuid, ticket.getId(), exception.getMessage());
+                playerUuid, ticket.getId(), exception.getMessage());
         }
-    }
-
-    private Player findPlayer(Server server, String playerUuid) {
-        return playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
-    }
-
-    private void appendNotification(Server server, Player player, Map<String, Object> notification) {
-        Map<String, Object> data = player.getData();
-        if (data == null) {
-            data = new LinkedHashMap<>();
-            player.setData(data);
-        }
-
-        Object rawPendingNotifications = data.get("pendingNotifications");
-        List<Object> pendingNotifications = rawPendingNotifications instanceof List<?> existing
-                ? new ArrayList<>(existing)
-                : new ArrayList<>();
-        pendingNotifications.add(notification);
-        data.put("pendingNotifications", pendingNotifications);
-        playerRepository.saveEntity(server, player);
-    }
-
-    private String getCreatorEmail(Ticket ticket) {
-        if (ticket.getData() == null) {
-            return null;
-        }
-        Object email = ticket.getData().get("creatorEmail");
-        if (email == null) {
-            return null;
-        }
-
-        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email.toString());
-        if (normalizedEmail == null) {
-            log.warn("Skipping ticket email notification for {} due to invalid creator email: {}",
-                    ticket.getId(),
-                    email);
-            return null;
-        }
-
-        return normalizedEmail;
-    }
-
-    private String buildTicketUrl(Server server, String ticketId) {
-        String domain = server.getCustomDomainOverride();
-        if (domain == null || domain.isBlank()) {
-            domain = server.getServerName() + "." + modlDomain;
-        }
-        return "https://" + domain + "/ticket/" + ticketId;
-    }
-
-    private String buildNotificationMessage(Ticket ticket, TicketReply reply) {
-        String replyAuthor = reply.getName() != null ? reply.getName() : "Staff";
-        return String.format("%s replied to your ticket #%s", replyAuthor, ticket.getId());
-    }
-
-    private String resolveTicketLabel(Ticket ticket) {
-        TicketCategory category = ticket.getType();
-        return category != null ? category.getDisplayName() : TicketCategory.SUPPORT.getDisplayName();
     }
 }

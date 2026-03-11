@@ -4,9 +4,26 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.migration.validation.MigrationValidator;
-import gg.modl.backend.player.data.*;
-import gg.modl.backend.player.data.punishment.*;
+import gg.modl.backend.player.data.IPEntry;
+import gg.modl.backend.player.data.NoteEntry;
+import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.UsernameEntry;
+import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentEvidence;
+import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.server.data.Server;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
@@ -16,11 +33,6 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -49,9 +61,9 @@ public class MigrationProcessor {
 
         try {
             migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "processing_data",
-                    "Reading and validating migration file...",
-                    0, 0, null
+                "processing_data",
+                "Reading and validating migration file...",
+                0, 0, null
             ));
 
             Map<String, Object> migrationData = objectMapper.readValue(filePath.toFile(), Map.class);
@@ -59,9 +71,9 @@ public class MigrationProcessor {
             MigrationValidator.ValidationResult validation = validator.validateMigrationData(migrationData);
             if (!validation.valid()) {
                 migrationService.updateProgress(server, new UpdateProgressRequest(
-                        "failed",
-                        validation.error(),
-                        0, 0, null
+                    "failed",
+                    validation.error(),
+                    0, 0, null
                 ));
                 return;
             }
@@ -70,9 +82,9 @@ public class MigrationProcessor {
             List<?> players = (List<?>) migrationData.get("players");
 
             migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "processing_data",
-                    "Processing " + totalRecords + " player records...",
-                    0, 0, totalRecords
+                "processing_data",
+                "Processing " + totalRecords + " player records...",
+                0, 0, totalRecords
             ));
 
             List<Map<?, ?>> batch = new ArrayList<>();
@@ -96,26 +108,26 @@ public class MigrationProcessor {
 
                     if (recordsProcessed % PROGRESS_UPDATE_INTERVAL == 0 || i == players.size() - 1) {
                         migrationService.updateProgress(server, new UpdateProgressRequest(
-                                "processing_data",
-                                "Processing player records... (" + recordsProcessed + "/" + totalRecords + ")",
-                                recordsProcessed, recordsSkipped, totalRecords
+                            "processing_data",
+                            "Processing player records... (" + recordsProcessed + "/" + totalRecords + ")",
+                            recordsProcessed, recordsSkipped, totalRecords
                         ));
                     }
                 }
             }
 
             migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "completed",
-                    "Migration completed successfully",
-                    recordsProcessed, recordsSkipped, totalRecords
+                "completed",
+                "Migration completed successfully",
+                recordsProcessed, recordsSkipped, totalRecords
             ));
 
         } catch (Exception e) {
             log.error("Error processing migration file", e);
             migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "failed",
-                    "Migration failed: " + e.getMessage(),
-                    recordsProcessed, recordsSkipped, null
+                "failed",
+                "Migration failed: " + e.getMessage(),
+                recordsProcessed, recordsSkipped, null
             ));
         } finally {
             try {
@@ -155,7 +167,7 @@ public class MigrationProcessor {
         }
 
         List<Player> existingPlayers = playerRepository.findByMinecraftUuids(server,
-                uuids.stream().map(UUID::fromString).toList());
+            uuids.stream().map(UUID::fromString).toList());
         Map<String, Player> existingMap = new HashMap<>();
         for (Player p : existingPlayers) {
             existingMap.put(p.getMinecraftUuid().toString(), p);
@@ -174,8 +186,8 @@ public class MigrationProcessor {
                     Update update = buildMergeUpdate(existing, playerMap);
                     if (update != null) {
                         bulkOps.updateOne(
-                                Query.query(Criteria.where("minecraftUuid").is(UUID.fromString(uuid))),
-                                update
+                            Query.query(Criteria.where("minecraftUuid").is(UUID.fromString(uuid))),
+                            update
                         );
                         hasUpdates = true;
                     }
@@ -206,20 +218,82 @@ public class MigrationProcessor {
     private Player buildNewPlayer(String uuid, Map<?, ?> data) {
         try {
             Player player = Player.builder()
-                    .id(UUID.randomUUID().toString())
-                    .minecraftUuid(UUID.fromString(uuid))
-                    .usernames(parseUsernames(data.get("usernames")))
-                    .notes(parseNotes(data.get("notes")))
-                    .ipAddresses(parseIpAddresses(data.get("ipAddresses")))
-                    .punishments(parsePunishments(data.get("punishments")))
-                    .data(parseData(data.get("data")))
-                    .build();
+                .id(UUID.randomUUID().toString())
+                .minecraftUuid(UUID.fromString(uuid))
+                .usernames(parseUsernames(data.get("usernames")))
+                .notes(parseNotes(data.get("notes")))
+                .ipAddresses(parseIpAddresses(data.get("ipAddresses")))
+                .punishments(parsePunishments(data.get("punishments")))
+                .data(parseData(data.get("data")))
+                .build();
 
             return player;
         } catch (Exception e) {
             log.warn("Error building new player for UUID {}: {}", uuid, e.getMessage());
             return null;
         }
+    }
+
+    private List<IPEntry> parseIpAddresses(Object data) {
+        List<IPEntry> result = new ArrayList<>();
+        if (!(data instanceof List<?>)) {
+            return result;
+        }
+
+        for (Object item : (List<?>) data) {
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
+            Map<?, ?> map = (Map<?, ?>) item;
+
+            String ipAddress = (String) map.get("ipAddress");
+            if (!validator.isValidIpAddress(ipAddress)) {
+                continue;
+            }
+
+            Date firstLogin = validator.parseDate(map.get("firstLogin"));
+            if (firstLogin == null) {
+                firstLogin = new Date();
+            }
+
+            List<Date> logins = new ArrayList<>();
+            Object loginsObj = map.get("logins");
+            if (loginsObj instanceof List<?>) {
+                for (Object loginObj : (List<?>) loginsObj) {
+                    Date login = validator.parseDate(loginObj);
+                    if (login != null) {
+                        logins.add(login);
+                    }
+                }
+            }
+
+            result.add(IPEntry.builder()
+                .ipAddress(ipAddress)
+                .country(validator.sanitizeString((String) map.get("country"), 100))
+                .region(validator.sanitizeString((String) map.get("region"), 100))
+                .asn(validator.sanitizeString((String) map.get("asn"), 100))
+                .proxy(Boolean.TRUE.equals(map.get("proxy")))
+                .hosting(Boolean.TRUE.equals(map.get("hosting")))
+                .firstLogin(firstLogin)
+                .logins(logins)
+                .build());
+        }
+
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> parseData(Object data) {
+        if (data instanceof Map<?, ?>) {
+            Map<String, Object> result = new HashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) data).entrySet()) {
+                if (entry.getKey() instanceof String) {
+                    result.put((String) entry.getKey(), entry.getValue());
+                }
+            }
+            return result;
+        }
+        return new HashMap<>();
     }
 
     private Update buildMergeUpdate(Player existing, Map<?, ?> newData) {
@@ -272,7 +346,9 @@ public class MigrationProcessor {
         }
 
         for (Object item : (List<?>) data) {
-            if (!(item instanceof Map<?, ?>)) continue;
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
             Map<?, ?> map = (Map<?, ?>) item;
 
             String username = validator.sanitizeString((String) map.get("username"), 100);
@@ -293,7 +369,9 @@ public class MigrationProcessor {
         }
 
         for (Object item : (List<?>) data) {
-            if (!(item instanceof Map<?, ?>)) continue;
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
             Map<?, ?> map = (Map<?, ?>) item;
 
             String text = validator.sanitizeString((String) map.get("text"), 5000);
@@ -302,57 +380,13 @@ public class MigrationProcessor {
 
             if (text != null && date != null && issuerName != null) {
                 result.add(new NoteEntry(
-                        UUID.randomUUID().toString(),
-                        text,
-                        date,
-                        issuerName,
-                        null
+                    UUID.randomUUID().toString(),
+                    text,
+                    date,
+                    issuerName,
+                    null
                 ));
             }
-        }
-
-        return result;
-    }
-
-    private List<IPEntry> parseIpAddresses(Object data) {
-        List<IPEntry> result = new ArrayList<>();
-        if (!(data instanceof List<?>)) {
-            return result;
-        }
-
-        for (Object item : (List<?>) data) {
-            if (!(item instanceof Map<?, ?>)) continue;
-            Map<?, ?> map = (Map<?, ?>) item;
-
-            String ipAddress = (String) map.get("ipAddress");
-            if (!validator.isValidIpAddress(ipAddress)) continue;
-
-            Date firstLogin = validator.parseDate(map.get("firstLogin"));
-            if (firstLogin == null) {
-                firstLogin = new Date();
-            }
-
-            List<Date> logins = new ArrayList<>();
-            Object loginsObj = map.get("logins");
-            if (loginsObj instanceof List<?>) {
-                for (Object loginObj : (List<?>) loginsObj) {
-                    Date login = validator.parseDate(loginObj);
-                    if (login != null) {
-                        logins.add(login);
-                    }
-                }
-            }
-
-            result.add(IPEntry.builder()
-                    .ipAddress(ipAddress)
-                    .country(validator.sanitizeString((String) map.get("country"), 100))
-                    .region(validator.sanitizeString((String) map.get("region"), 100))
-                    .asn(validator.sanitizeString((String) map.get("asn"), 100))
-                    .proxy(Boolean.TRUE.equals(map.get("proxy")))
-                    .hosting(Boolean.TRUE.equals(map.get("hosting")))
-                    .firstLogin(firstLogin)
-                    .logins(logins)
-                    .build());
         }
 
         return result;
@@ -365,7 +399,9 @@ public class MigrationProcessor {
         }
 
         for (Object item : (List<?>) data) {
-            if (!(item instanceof Map<?, ?>)) continue;
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
             Map<?, ?> map = (Map<?, ?>) item;
 
             String id = (String) map.get("id");
@@ -449,36 +485,22 @@ public class MigrationProcessor {
             Date started = validator.parseDate(map.get("started"));
 
             Punishment punishment = new Punishment(
-                    id,
-                    typeOrdinal,
-                    issuerName,
-                    null,
-                    issued,
-                    started,
-                    modifications,
-                    notes,
-                    evidence,
-                    attachedTicketIds,
-                    punishmentData.isEmpty() ? null : punishmentData
+                id,
+                typeOrdinal,
+                issuerName,
+                null,
+                issued,
+                started,
+                modifications,
+                notes,
+                evidence,
+                attachedTicketIds,
+                punishmentData.isEmpty() ? null : punishmentData
             );
 
             result.add(punishment);
         }
 
         return result;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> parseData(Object data) {
-        if (data instanceof Map<?, ?>) {
-            Map<String, Object> result = new HashMap<>();
-            for (Map.Entry<?, ?> entry : ((Map<?, ?>) data).entrySet()) {
-                if (entry.getKey() instanceof String) {
-                    result.put((String) entry.getKey(), entry.getValue());
-                }
-            }
-            return result;
-        }
-        return new HashMap<>();
     }
 }

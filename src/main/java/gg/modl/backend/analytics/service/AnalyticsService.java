@@ -13,28 +13,35 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.util.DateRangeUtil;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
-import org.springframework.stereotype.Service;
-
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TimeZone;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
-    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
-
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
+    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
 
     public OverviewResponse getOverview(Server server) {
         long now = System.currentTimeMillis();
@@ -44,17 +51,17 @@ public class AnalyticsService {
         AnalyticsMongoRepository.OverviewStats stats = analyticsRepository.loadOverviewStats(server, thirtyDaysAgo, sixtyDaysAgo);
 
         int ticketChange = stats.previousTickets() > 0
-                ? (int) Math.round(((double) (stats.recentTickets() - stats.previousTickets()) / stats.previousTickets()) * 100)
-                : 0;
+                           ? (int) Math.round(((double) (stats.recentTickets() - stats.previousTickets()) / stats.previousTickets()) * 100)
+                           : 0;
         int playerChange = 0;
 
         return new OverviewResponse(
-                stats.totalTickets(),
-                stats.totalPlayers(),
-                stats.totalStaff(),
-                stats.activeTickets(),
-                ticketChange,
-                playerChange
+            stats.totalTickets(),
+            stats.totalPlayers(),
+            stats.totalStaff(),
+            stats.activeTickets(),
+            ticketChange,
+            playerChange
         );
     }
 
@@ -62,25 +69,68 @@ public class AnalyticsService {
         Date startDate = DateRangeUtil.getStartDate(period);
         List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
         List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
-                .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
-                .toList();
+            .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
+            .toList();
 
         List<Document> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
         List<TicketAnalyticsResponse.CategoryCount> byCategory = categoryResults.stream()
-                .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
-                .toList();
+            .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
+            .toList();
 
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
-        List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate).stream()
-                .map(doc -> new TicketAnalyticsResponse.DailyTicket(
-                        formatDateLabel(doc.getString("_id"), dateFormatter),
-                        toInt(doc.get("count"))
-                ))
-                .toList();
+        List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate)
+            .stream()
+            .map(doc -> new TicketAnalyticsResponse.DailyTicket(
+                formatDateLabel(doc.getString("_id"), dateFormatter),
+                toInt(doc.get("count"))
+            ))
+            .toList();
 
         List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
+    }
+
+    private int toInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    private String formatDateLabel(String dateKey, DateTimeFormatter formatter) {
+        if (dateKey == null || dateKey.isBlank()) {
+            return "Unknown";
+        }
+
+        try {
+            return LocalDate.parse(dateKey).format(formatter);
+        } catch (Exception ignored) {
+            return dateKey;
+        }
+    }
+
+    private String normalizeCategory(String category) {
+        try {
+            return TicketCategory.fromCanonicalId(category).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return "Other";
+        }
+    }
+
+    private String normalizeStatus(String status) {
+        try {
+            return TicketStatus.fromCanonicalId(status).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return "Other";
+        }
     }
 
     public PunishmentAnalyticsResponse getPunishmentAnalytics(Server server, String period) {
@@ -92,16 +142,16 @@ public class AnalyticsService {
         Map<Integer, String> punishmentTypeNames = resolvePunishmentTypeNames(server);
 
         List<PunishmentAnalyticsResponse.TypeCount> byType = toDocumentList(facetResults.get("byType")).stream()
-                .map(doc -> {
-                    Object rawTypeOrdinal = doc.get("_id");
-                    Integer typeOrdinal = rawTypeOrdinal instanceof Number number ? number.intValue() : null;
-                    String typeName = typeOrdinal != null
-                            ? punishmentTypeNames.getOrDefault(typeOrdinal, "Unknown")
-                            : "Unknown";
-                    return new PunishmentAnalyticsResponse.TypeCount(typeName, toInt(doc.get("count")));
-                })
-                .sorted((a, b) -> Integer.compare(b.count(), a.count()))
-                .toList();
+            .map(doc -> {
+                Object rawTypeOrdinal = doc.get("_id");
+                Integer typeOrdinal = rawTypeOrdinal instanceof Number number ? number.intValue() : null;
+                String typeName = typeOrdinal != null
+                                  ? punishmentTypeNames.getOrDefault(typeOrdinal, "Unknown")
+                                  : "Unknown";
+                return new PunishmentAnalyticsResponse.TypeCount(typeName, toInt(doc.get("count")));
+            })
+            .sorted((a, b) -> Integer.compare(b.count(), a.count()))
+            .toList();
 
         // Collect potential staff IDs for batch resolution
         List<Document> byStaffDocs = toDocumentList(facetResults.get("byStaff"));
@@ -125,33 +175,78 @@ public class AnalyticsService {
             }
             staffCountMap.merge(staffName, toInt(document.get("count")), Integer::sum);
         }
-        List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet().stream()
-                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
-                .limit(20)
-                .map(entry -> new PunishmentAnalyticsResponse.StaffPunishment(entry.getKey(), entry.getValue()))
-                .toList();
+        List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet()
+            .stream()
+            .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+            .limit(20)
+            .map(entry -> new PunishmentAnalyticsResponse.StaffPunishment(entry.getKey(), entry.getValue()))
+            .toList();
 
         Map<String, Integer> dailyPunishmentMap = new LinkedHashMap<>();
         for (Document document : toDocumentList(facetResults.get("daily"))) {
             String dayLabel = formatPunishmentDay(document.getString("_id"));
             dailyPunishmentMap.merge(dayLabel, toInt(document.get("count")), Integer::sum);
         }
-        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyPunishmentMap.entrySet().stream()
-                .map(entry -> new PunishmentAnalyticsResponse.DailyPunishment(entry.getKey(), entry.getValue()))
-                .toList();
+        List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyPunishmentMap.entrySet()
+            .stream()
+            .map(entry -> new PunishmentAnalyticsResponse.DailyPunishment(entry.getKey(), entry.getValue()))
+            .toList();
 
         return new PunishmentAnalyticsResponse(byType, List.of(), dailyPunishments, byStaff);
+    }
+
+    private Map<Integer, String> resolvePunishmentTypeNames(Server server) {
+        Map<Integer, String> typeNames = new HashMap<>();
+        punishmentTypeService.getPunishmentTypes(server).forEach(type ->
+            typeNames.put(type.getOrdinal(), type.getName())
+        );
+        return typeNames;
+    }
+
+    private List<Document> toDocumentList(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return List.of();
+        }
+
+        List<Document> documents = new ArrayList<>();
+        for (Object item : rawList) {
+            if (item instanceof Document document) {
+                documents.add(document);
+            }
+        }
+        return documents;
+    }
+
+    private String normalizeStaffName(Object rawStaffName) {
+        if (rawStaffName == null) {
+            return "Unknown";
+        }
+
+        String normalized = rawStaffName.toString().trim();
+        return normalized.isBlank() ? "Unknown" : normalized;
+    }
+
+    private String formatPunishmentDay(String dateKey) {
+        if (dateKey == null || dateKey.isBlank()) {
+            return "Unknown";
+        }
+
+        try {
+            return LocalDate.parse(dateKey).format(DateTimeFormatter.ofPattern("MMM dd"));
+        } catch (Exception ignored) {
+            return dateKey;
+        }
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
         List<Document> levelResults = analyticsRepository.aggregateAuditLogLevelCounts(server, startDate);
         List<AuditLogsAnalyticsResponse.LevelCount> byLevel = levelResults.stream()
-                .map(doc -> new AuditLogsAnalyticsResponse.LevelCount(
-                        doc.getString("_id") != null ? doc.getString("_id") : "unknown",
-                        doc.getInteger("count", 0)
-                ))
-                .toList();
+            .map(doc -> new AuditLogsAnalyticsResponse.LevelCount(
+                doc.getString("_id") != null ? doc.getString("_id") : "unknown",
+                doc.getInteger("count", 0)
+            ))
+            .toList();
 
         long now = System.currentTimeMillis();
         long twentyFourHoursMs = 24 * 60 * 60 * 1000L;
@@ -191,22 +286,22 @@ public class AnalyticsService {
         Document facetResults = analyticsRepository.aggregatePlayerActivity(server, startDate, ANALYTICS_TIME_ZONE);
         if (facetResults == null) {
             return new PlayerActivityResponse(List.of(), List.of(),
-                    new PlayerActivityResponse.SuspiciousActivity(0, 0));
+                new PlayerActivityResponse.SuspiciousActivity(0, 0));
         }
 
         DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
 
         List<PlayerActivityResponse.DailyCount> newPlayersTrend = toDocumentList(facetResults.get("newPlayers")).stream()
-                .map(doc -> new PlayerActivityResponse.DailyCount(
-                        formatDateLabel(doc.getString("_id"), dateFormatter),
-                        toInt(doc.get("count"))))
-                .toList();
+            .map(doc -> new PlayerActivityResponse.DailyCount(
+                formatDateLabel(doc.getString("_id"), dateFormatter),
+                toInt(doc.get("count"))))
+            .toList();
 
         List<PlayerActivityResponse.CountryCount> loginsByCountry = toDocumentList(facetResults.get("byCountry")).stream()
-                .map(doc -> new PlayerActivityResponse.CountryCount(
-                        doc.getString("_id"),
-                        toInt(doc.get("count"))))
-                .toList();
+            .map(doc -> new PlayerActivityResponse.CountryCount(
+                doc.getString("_id"),
+                toInt(doc.get("count"))))
+            .toList();
 
         List<Document> suspiciousList = toDocumentList(facetResults.get("suspicious"));
         int proxyCount = 0;
@@ -218,95 +313,10 @@ public class AnalyticsService {
         }
 
         return new PlayerActivityResponse(
-                newPlayersTrend,
-                loginsByCountry,
-                new PlayerActivityResponse.SuspiciousActivity(proxyCount, hostingCount)
+            newPlayersTrend,
+            loginsByCountry,
+            new PlayerActivityResponse.SuspiciousActivity(proxyCount, hostingCount)
         );
-    }
-
-    private Map<Integer, String> resolvePunishmentTypeNames(Server server) {
-        Map<Integer, String> typeNames = new HashMap<>();
-        punishmentTypeService.getPunishmentTypes(server).forEach(type ->
-                typeNames.put(type.getOrdinal(), type.getName())
-        );
-        return typeNames;
-    }
-
-    private List<Document> toDocumentList(Object value) {
-        if (!(value instanceof List<?> rawList)) {
-            return List.of();
-        }
-
-        List<Document> documents = new ArrayList<>();
-        for (Object item : rawList) {
-            if (item instanceof Document document) {
-                documents.add(document);
-            }
-        }
-        return documents;
-    }
-
-    private int toInt(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text) {
-            try {
-                return Integer.parseInt(text);
-            } catch (NumberFormatException ignored) {
-                return 0;
-            }
-        }
-        return 0;
-    }
-
-    private String formatDateLabel(String dateKey, DateTimeFormatter formatter) {
-        if (dateKey == null || dateKey.isBlank()) {
-            return "Unknown";
-        }
-
-        try {
-            return LocalDate.parse(dateKey).format(formatter);
-        } catch (Exception ignored) {
-            return dateKey;
-        }
-    }
-
-    private String normalizeStaffName(Object rawStaffName) {
-        if (rawStaffName == null) {
-            return "Unknown";
-        }
-
-        String normalized = rawStaffName.toString().trim();
-        return normalized.isBlank() ? "Unknown" : normalized;
-    }
-
-    private String formatPunishmentDay(String dateKey) {
-        if (dateKey == null || dateKey.isBlank()) {
-            return "Unknown";
-        }
-
-        try {
-            return LocalDate.parse(dateKey).format(DateTimeFormatter.ofPattern("MMM dd"));
-        } catch (Exception ignored) {
-            return dateKey;
-        }
-    }
-
-    private String normalizeCategory(String category) {
-        try {
-            return TicketCategory.fromCanonicalId(category).getDisplayName();
-        } catch (IllegalArgumentException ignored) {
-            return "Other";
-        }
-    }
-
-    private String normalizeStatus(String status) {
-        try {
-            return TicketStatus.fromCanonicalId(status).getDisplayName();
-        } catch (IllegalArgumentException ignored) {
-            return "Other";
-        }
     }
 
 }

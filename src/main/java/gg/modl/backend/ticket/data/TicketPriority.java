@@ -33,22 +33,8 @@ public enum TicketPriority {
         this.displayName = displayName;
     }
 
-    @JsonValue
-    public String getId() {
-        return id;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
     public static TicketPriority resolveOrDefault(String priority) {
         return priority == null || priority.isBlank() ? NORMAL : fromCanonicalId(priority);
-    }
-
-    @JsonCreator
-    public static TicketPriority fromValue(String value) {
-        return fromCanonicalId(value);
     }
 
     public static TicketPriority fromCanonicalId(String value) {
@@ -64,12 +50,26 @@ public enum TicketPriority {
             return "";
         }
         return value.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "_")
-                .replaceAll("^_+|_+$", "");
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
+    }
+
+    @JsonCreator
+    public static TicketPriority fromValue(String value) {
+        return fromCanonicalId(value);
     }
 
     private static void registerAlias(TicketPriority priority, String alias) {
         BY_CANONICAL_ID.put(normalize(alias), priority);
+    }
+
+    @JsonValue
+    public String getId() {
+        return id;
+    }
+
+    public String getDisplayName() {
+        return displayName;
     }
 }

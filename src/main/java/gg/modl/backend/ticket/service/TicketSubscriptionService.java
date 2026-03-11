@@ -9,26 +9,24 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.SubscriptionUpdateResponse;
 import gg.modl.backend.ticket.dto.response.TicketSubscriptionResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class TicketSubscriptionService {
-    private static final int MAX_UPDATES_LIMIT = 25;
-    private static final int MAX_TICKETS_TO_SCAN = 250;
-
     private final StaffMongoRepository staffRepository;
     private final TicketMongoRepository ticketRepository;
+    private static final int MAX_UPDATES_LIMIT = 25;
+    private static final int MAX_TICKETS_TO_SCAN = 250;
 
     public List<TicketSubscriptionResponse> getSubscriptions(Server server, String staffEmail) {
         Staff staff = staffRepository.findByEmailExact(server, staffEmail).orElse(null);
@@ -46,9 +44,9 @@ public class TicketSubscriptionService {
             if (ticket != null) {
                 String title = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
                 subscriptions.add(new TicketSubscriptionResponse(
-                        subscription.getTicketId(),
-                        title,
-                        subscription.getSubscribedAt()
+                    subscription.getTicketId(),
+                    title,
+                    subscription.getSubscribedAt()
                 ));
             }
         }
@@ -67,54 +65,57 @@ public class TicketSubscriptionService {
             return Collections.emptyList();
         }
 
-        List<String> subscribedTicketIds = staff.getSubscribedTickets().stream()
-                .filter(Staff.TicketSubscription::isActive)
-                .map(Staff.TicketSubscription::getTicketId)
-                .toList();
+        List<String> subscribedTicketIds = staff.getSubscribedTickets()
+            .stream()
+            .filter(Staff.TicketSubscription::isActive)
+            .map(Staff.TicketSubscription::getTicketId)
+            .toList();
         if (subscribedTicketIds.isEmpty()) {
             return Collections.emptyList();
         }
 
         List<Ticket> tickets = ticketRepository.findRecentActiveTicketsWithRepliesByIds(
-                server,
-                subscribedTicketIds,
-                ticketScanLimit(safeLimit)
+            server,
+            subscribedTicketIds,
+            ticketScanLimit(safeLimit)
         );
 
         List<SubscriptionUpdateResponse> updates = new ArrayList<>();
         for (Ticket ticket : tickets) {
-            Staff.TicketSubscription subscription = staff.getSubscribedTickets().stream()
-                    .filter(sub -> sub.getTicketId().equals(ticket.getId()))
-                    .findFirst()
-                    .orElse(null);
+            Staff.TicketSubscription subscription = staff.getSubscribedTickets()
+                .stream()
+                .filter(sub -> sub.getTicketId().equals(ticket.getId()))
+                .findFirst()
+                .orElse(null);
 
             if (subscription == null || ticket.getReplies() == null) {
                 continue;
             }
 
-            List<TicketReply> recentReplies = ticket.getReplies().stream()
-                    .filter(reply -> reply.getCreated() != null && reply.getCreated().after(subscription.getSubscribedAt()))
-                    .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
-                    .toList();
+            List<TicketReply> recentReplies = ticket.getReplies()
+                .stream()
+                .filter(reply -> reply.getCreated() != null && reply.getCreated().after(subscription.getSubscribedAt()))
+                .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
+                .toList();
 
             List<TicketReply> unreadReplies = recentReplies.stream()
-                    .filter(reply -> subscription.getLastReadAt() == null || reply.getCreated().after(subscription.getLastReadAt()))
-                    .toList();
+                .filter(reply -> subscription.getLastReadAt() == null || reply.getCreated().after(subscription.getLastReadAt()))
+                .toList();
 
             if (!unreadReplies.isEmpty()) {
                 TicketReply latestReply = unreadReplies.get(0);
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "::" + latestReply.getId(),
-                        ticket.getId(),
-                        ticketTitle,
-                        latestReply.getContent(),
-                        latestReply.getName(),
-                        latestReply.getCreated(),
-                        latestReply.isStaff(),
-                        false,
-                        unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
+                    ticket.getId() + "::" + latestReply.getId(),
+                    ticket.getId(),
+                    ticketTitle,
+                    latestReply.getContent(),
+                    latestReply.getName(),
+                    latestReply.getCreated(),
+                    latestReply.isStaff(),
+                    false,
+                    unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
                 ));
             }
 
@@ -125,6 +126,14 @@ public class TicketSubscriptionService {
 
         updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
         return updates.stream().limit(safeLimit).toList();
+    }
+
+    private int clampLimit(int limit) {
+        return Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
+    }
+
+    private int ticketScanLimit(int limit) {
+        return Math.min(MAX_TICKETS_TO_SCAN, Math.max(50, limit * 10));
     }
 
     public boolean markAsRead(Server server, String staffEmail, String updateId) {
@@ -141,8 +150,9 @@ public class TicketSubscriptionService {
         }
 
         if (staff.getSubscribedTickets() != null) {
-            boolean alreadySubscribed = staff.getSubscribedTickets().stream()
-                    .anyMatch(sub -> sub.getTicketId().equals(ticketId) && sub.isActive());
+            boolean alreadySubscribed = staff.getSubscribedTickets()
+                .stream()
+                .anyMatch(sub -> sub.getTicketId().equals(ticketId) && sub.isActive());
             if (alreadySubscribed) {
                 return;
             }
@@ -174,9 +184,9 @@ public class TicketSubscriptionService {
         }
 
         List<Ticket> tickets = ticketRepository.findRecentAssignedTicketsWithReplies(
-                server,
-                staffIdentifier,
-                ticketScanLimit(safeLimit)
+            server,
+            staffIdentifier,
+            ticketScanLimit(safeLimit)
         );
 
         List<SubscriptionUpdateResponse> updates = new ArrayList<>();
@@ -195,46 +205,39 @@ public class TicketSubscriptionService {
             }
 
             Date lastSeen = lastSeenMap.get(ticket.getId());
-            List<TicketReply> unreadReplies = ticket.getReplies().stream()
-                    .filter(reply -> reply.getCreated() != null)
-                    .filter(reply -> {
-                        if (!reply.isStaff()) {
-                            return true;
-                        }
-                        String replyName = TicketAssigneeUtil.normalizeSingle(reply.getName());
-                        return !staffIdentifier.equals(replyName);
-                    })
-                    .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
-                    .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
-                    .toList();
+            List<TicketReply> unreadReplies = ticket.getReplies()
+                .stream()
+                .filter(reply -> reply.getCreated() != null)
+                .filter(reply -> {
+                    if (!reply.isStaff()) {
+                        return true;
+                    }
+                    String replyName = TicketAssigneeUtil.normalizeSingle(reply.getName());
+                    return !staffIdentifier.equals(replyName);
+                })
+                .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
+                .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
+                .toList();
 
             if (!unreadReplies.isEmpty()) {
                 TicketReply latestReply = unreadReplies.get(0);
                 String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
 
                 updates.add(new SubscriptionUpdateResponse(
-                        ticket.getId() + "::" + latestReply.getId(),
-                        ticket.getId(),
-                        ticketTitle,
-                        latestReply.getContent(),
-                        latestReply.getName(),
-                        latestReply.getCreated(),
-                        latestReply.isStaff(),
-                        false,
-                        unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
+                    ticket.getId() + "::" + latestReply.getId(),
+                    ticket.getId(),
+                    ticketTitle,
+                    latestReply.getContent(),
+                    latestReply.getName(),
+                    latestReply.getCreated(),
+                    latestReply.isStaff(),
+                    false,
+                    unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
                 ));
             }
         }
 
         updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
         return updates.stream().limit(safeLimit).toList();
-    }
-
-    private int clampLimit(int limit) {
-        return Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
-    }
-
-    private int ticketScanLimit(int limit) {
-        return Math.min(MAX_TICKETS_TO_SCAN, Math.max(50, limit * 10));
     }
 }

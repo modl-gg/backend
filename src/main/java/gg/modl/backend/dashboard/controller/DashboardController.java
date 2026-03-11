@@ -10,12 +10,14 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
@@ -32,8 +34,8 @@ public class DashboardController {
 
     @GetMapping("/recent-tickets")
     public ResponseEntity<List<RecentTicketResponse>> getRecentTickets(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, limit);
@@ -42,8 +44,8 @@ public class DashboardController {
 
     @GetMapping("/recent-punishments")
     public ResponseEntity<List<RecentPunishmentResponse>> getRecentPunishments(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, limit);
@@ -52,9 +54,9 @@ public class DashboardController {
 
     @GetMapping("/activity/recent")
     public ResponseEntity<?> getRecentActivity(
-            @RequestParam(defaultValue = "20") int limit,
-            @RequestParam(defaultValue = "7") int days,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "20") int limit,
+        @RequestParam(defaultValue = "7") int days,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AuthSessionData session = RequestUtil.getSession(request);

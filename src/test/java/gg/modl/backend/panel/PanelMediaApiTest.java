@@ -1,15 +1,15 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelMediaApiTest {
 
@@ -32,10 +32,10 @@ class PanelMediaApiTest {
     @Test
     void presignUpload() throws Exception {
         var response = api.panelPost("/v1/panel/media/presign", Map.of(
-                "fileName", "test-image.png",
-                "contentType", "image/png",
-                "fileSize", 1024,
-                "uploadType", "ticket"
+            "fileName", "test-image.png",
+            "contentType", "image/png",
+            "fileSize", 1024,
+            "uploadType", "ticket"
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -44,7 +44,7 @@ class PanelMediaApiTest {
     void confirmUpload() throws Exception {
         // This requires a valid key from a completed upload, so test with invalid key
         var response = api.panelPost("/v1/panel/media/confirm", Map.of(
-                "key", "nonexistent-key"
+            "key", "nonexistent-key"
         ));
         assertEquals(403, response.statusCode());
     }

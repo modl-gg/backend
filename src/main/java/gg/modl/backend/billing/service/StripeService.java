@@ -12,12 +12,10 @@ import com.stripe.param.billingportal.SessionCreateParams;
 import com.stripe.param.checkout.SessionCreateParams.ConsentCollection;
 import gg.modl.backend.billing.config.StripeConfiguration;
 import gg.modl.backend.server.data.Server;
+import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -31,10 +29,10 @@ public class StripeService {
 
     public String createCustomer(Server server) throws StripeException {
         CustomerCreateParams params = CustomerCreateParams.builder()
-                .setEmail(server.getAdminEmail())
-                .setName(server.getServerName())
-                .putMetadata("serverName", server.getCustomDomain())
-                .build();
+            .setEmail(server.getAdminEmail())
+            .setName(server.getServerName())
+            .putMetadata("serverName", server.getCustomDomain())
+            .build();
 
         Customer customer = Customer.create(params);
         return customer.getId();
@@ -45,23 +43,23 @@ public class StripeService {
         String cancelUrl = String.format("https://%s.%s/panel/settings", subdomain, config.getDomain());
 
         com.stripe.param.checkout.SessionCreateParams params = com.stripe.param.checkout.SessionCreateParams.builder()
-                .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.SUBSCRIPTION)
-                .setAllowPromotionCodes(true)
-                .setConsentCollection(
-                        ConsentCollection.builder()
-                                .setTermsOfService(ConsentCollection.TermsOfService.REQUIRED)
-                                .build()
-                )
-                .addLineItem(
-                        com.stripe.param.checkout.SessionCreateParams.LineItem.builder()
-                                .setPrice(config.getPriceId())
-                                .setQuantity(1L)
-                                .build()
-                )
-                .setCustomer(customerId)
-                .setSuccessUrl(successUrl)
-                .setCancelUrl(cancelUrl)
-                .build();
+            .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.SUBSCRIPTION)
+            .setAllowPromotionCodes(true)
+            .setConsentCollection(
+                ConsentCollection.builder()
+                    .setTermsOfService(ConsentCollection.TermsOfService.REQUIRED)
+                    .build()
+            )
+            .addLineItem(
+                com.stripe.param.checkout.SessionCreateParams.LineItem.builder()
+                    .setPrice(config.getPriceId())
+                    .setQuantity(1L)
+                    .build()
+            )
+            .setCustomer(customerId)
+            .setSuccessUrl(successUrl)
+            .setCancelUrl(cancelUrl)
+            .build();
 
         return com.stripe.model.checkout.Session.create(params);
     }
@@ -70,9 +68,9 @@ public class StripeService {
         String returnUrl = String.format("https://%s.%s/panel/settings", subdomain, config.getDomain());
 
         SessionCreateParams params = SessionCreateParams.builder()
-                .setCustomer(customerId)
-                .setReturnUrl(returnUrl)
-                .build();
+            .setCustomer(customerId)
+            .setReturnUrl(returnUrl)
+            .build();
 
         return Session.create(params);
     }
@@ -80,8 +78,8 @@ public class StripeService {
     public Subscription cancelSubscription(String subscriptionId) throws StripeException {
         Subscription subscription = Subscription.retrieve(subscriptionId);
         SubscriptionUpdateParams params = SubscriptionUpdateParams.builder()
-                .setCancelAtPeriodEnd(true)
-                .build();
+            .setCancelAtPeriodEnd(true)
+            .build();
         return subscription.update(params);
     }
 
@@ -92,20 +90,20 @@ public class StripeService {
     public Subscription reactivateSubscription(String subscriptionId) throws StripeException {
         Subscription subscription = Subscription.retrieve(subscriptionId);
         SubscriptionUpdateParams params = SubscriptionUpdateParams.builder()
-                .setCancelAtPeriodEnd(false)
-                .build();
+            .setCancelAtPeriodEnd(false)
+            .build();
         return subscription.update(params);
     }
 
     public Subscription createSubscription(String customerId) throws StripeException {
         SubscriptionCreateParams params = SubscriptionCreateParams.builder()
-                .setCustomer(customerId)
-                .addItem(
-                        SubscriptionCreateParams.Item.builder()
-                                .setPrice(config.getPriceId())
-                                .build()
-                )
-                .build();
+            .setCustomer(customerId)
+            .addItem(
+                SubscriptionCreateParams.Item.builder()
+                    .setPrice(config.getPriceId())
+                    .build()
+            )
+            .build();
 
         return Subscription.create(params);
     }

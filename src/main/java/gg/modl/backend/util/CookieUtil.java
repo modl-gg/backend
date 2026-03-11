@@ -2,17 +2,24 @@ package gg.modl.backend.util;
 
 import gg.modl.backend.auth.AuthConfiguration;
 import jakarta.servlet.http.Cookie;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
 public class CookieUtil {
 
     private final AuthConfiguration authConfiguration;
+
+    public Cookie createSessionCookie(String sessionId) {
+        return createSessionCookie(
+            authConfiguration.getSessionCookieName(),
+            sessionId,
+            authConfiguration.getSessionDurationSeconds()
+        );
+    }
 
     public Cookie createSessionCookie(String cookieName, String sessionId, long maxAgeSeconds) {
         Cookie cookie = new Cookie(cookieName, sessionId);
@@ -24,12 +31,8 @@ public class CookieUtil {
         return cookie;
     }
 
-    public Cookie createSessionCookie(String sessionId) {
-        return createSessionCookie(
-                authConfiguration.getSessionCookieName(),
-                sessionId,
-                authConfiguration.getSessionDurationSeconds()
-        );
+    public List<Cookie> createExpiredSessionCookies() {
+        return createExpiredSessionCookies(authConfiguration.getSessionCookieName());
     }
 
     public List<Cookie> createExpiredSessionCookies(String cookieName) {
@@ -47,10 +50,6 @@ public class CookieUtil {
         }
 
         return cookies;
-    }
-
-    public List<Cookie> createExpiredSessionCookies() {
-        return createExpiredSessionCookies(authConfiguration.getSessionCookieName());
     }
 
     private Cookie createExpiredCookie(String cookieName, String domain) {

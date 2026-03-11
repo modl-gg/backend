@@ -1,16 +1,15 @@
 package gg.modl.backend.minecraft;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftRoleApiTest {
 
@@ -35,7 +34,9 @@ class MinecraftRoleApiTest {
         // Get a role ID from list
         var listResponse = api.minecraftGet("/v1/minecraft/roles");
         var roles = JsonHelper.parseObject(listResponse.body()).getAsJsonArray("roles");
-        if (roles.isEmpty()) return;
+        if (roles.isEmpty()) {
+            return;
+        }
 
         String roleId = roles.get(0).getAsJsonObject().get("id").getAsString();
         var response = api.minecraftGet("/v1/minecraft/roles/" + roleId);
@@ -49,7 +50,9 @@ class MinecraftRoleApiTest {
         // Get a role to update (idempotent - set same permissions)
         var listResponse = api.minecraftGet("/v1/minecraft/roles");
         var roles = JsonHelper.parseObject(listResponse.body()).getAsJsonArray("roles");
-        if (roles.isEmpty()) return;
+        if (roles.isEmpty()) {
+            return;
+        }
 
         var role = roles.get(0).getAsJsonObject();
         String roleId = role.get("id").getAsString();
@@ -60,7 +63,7 @@ class MinecraftRoleApiTest {
         permissions.forEach(p -> permList.add(p.getAsString()));
 
         var response = api.minecraftPatch("/v1/minecraft/roles/" + roleId + "/permissions", Map.of(
-                "permissions", permList
+            "permissions", permList
         ));
         JsonHelper.assertStatus(response, 200);
     }

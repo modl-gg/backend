@@ -5,10 +5,9 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketService;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -17,10 +16,10 @@ public class MediaAccessService {
     private final TicketEmailVerificationService verificationService;
 
     public AccessResult validatePublicUploadAccess(
-            Server server,
-            String uploadType,
-            String entityId,
-            String accessToken
+        Server server,
+        String uploadType,
+        String entityId,
+        String accessToken
     ) {
         if (entityId == null || entityId.isBlank()) {
             return AccessResult.denied("entityId is required for public uploads");
@@ -52,8 +51,8 @@ public class MediaAccessService {
 
         if (ticket.isEmailAuthEnabled()) {
             boolean validToken = accessToken != null
-                    && !accessToken.isBlank()
-                    && verificationService.validateToken(server, normalizedEntityId, accessToken);
+                                 && !accessToken.isBlank()
+                                 && verificationService.validateToken(server, normalizedEntityId, accessToken);
             if (!validToken) {
                 return AccessResult.denied("Email verification token required for this ticket");
             }
@@ -66,7 +65,11 @@ public class MediaAccessService {
         return "tickets".equals(uploadType) ? "ticket" : uploadType;
     }
 
-    public enum AccessStatus { ALLOWED, DENIED, NOT_FOUND }
+    public enum AccessStatus {
+        ALLOWED,
+        DENIED,
+        NOT_FOUND
+    }
 
     public record AccessResult(AccessStatus status, String error) {
         static AccessResult allowed() {

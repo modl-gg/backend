@@ -2,11 +2,10 @@ package gg.modl.backend.server.service;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
+import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
 
 @Service
 @RequiredArgsConstructor

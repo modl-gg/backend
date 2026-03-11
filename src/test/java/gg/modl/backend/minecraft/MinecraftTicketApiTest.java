@@ -1,20 +1,19 @@
 package gg.modl.backend.minecraft;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
-import gg.modl.backend.support.TestDatabase;
 import gg.modl.backend.support.TestDataProvider;
 import gg.modl.backend.support.TestDataProvider.PlayerInfo;
-import com.google.gson.JsonObject;
-import org.bson.Document;
+import gg.modl.backend.support.TestDatabase;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftTicketApiTest {
 
@@ -36,11 +35,11 @@ class MinecraftTicketApiTest {
     @Test
     void createAndCleanupTicket() throws Exception {
         var createResponse = api.minecraftPost("/v1/minecraft/tickets", Map.of(
-                "creatorUuid", testUuid,
-                "creatorName", testUsername,
-                "type", "bug_report",
-                "subject", "API Test Ticket - auto cleanup",
-                "description", "This ticket was created by an automated API test."
+            "creatorUuid", testUuid,
+            "creatorName", testUsername,
+            "type", "bug_report",
+            "subject", "API Test Ticket - auto cleanup",
+            "description", "This ticket was created by an automated API test."
         ));
         JsonHelper.assertStatus(createResponse, 200);
         var json = JsonHelper.parseObject(createResponse.body());
@@ -56,16 +55,16 @@ class MinecraftTicketApiTest {
 
         // Cleanup: close via panel
         api.panelPatch("/v1/panel/tickets/" + ticketId, Map.of(
-                "status", "closed"
+            "status", "closed"
         ));
     }
 
     @Test
     void createUnfinishedTicket() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/tickets/unfinished", Map.of(
-                "creatorUuid", testUuid,
-                "creatorName", testUsername,
-                "type", "bug_report"
+            "creatorUuid", testUuid,
+            "creatorName", testUsername,
+            "type", "bug_report"
         ));
         JsonHelper.assertStatus(response, 200);
         var json = JsonHelper.parseObject(response.body());
@@ -87,10 +86,10 @@ class MinecraftTicketApiTest {
     @Test
     void getTicketById() throws Exception {
         var createResponse = api.minecraftPost("/v1/minecraft/tickets", Map.of(
-                "creatorUuid", testUuid,
-                "creatorName", testUsername,
-                "type", "bug_report",
-                "subject", "API Test - get by id"
+            "creatorUuid", testUuid,
+            "creatorName", testUsername,
+            "type", "bug_report",
+            "subject", "API Test - get by id"
         ));
         String ticketId = JsonHelper.parseObject(createResponse.body()).get("ticketId").getAsString();
 
@@ -114,16 +113,16 @@ class MinecraftTicketApiTest {
     @Test
     void claimTicket() throws Exception {
         var createResponse = api.minecraftPost("/v1/minecraft/tickets", Map.of(
-                "creatorUuid", testUuid,
-                "creatorName", testUsername,
-                "type", "bug_report",
-                "subject", "API Test - claim"
+            "creatorUuid", testUuid,
+            "creatorName", testUsername,
+            "type", "bug_report",
+            "subject", "API Test - claim"
         ));
         String ticketId = JsonHelper.parseObject(createResponse.body()).get("ticketId").getAsString();
 
         var claimResponse = api.minecraftPost("/v1/minecraft/tickets/" + ticketId + "/claim", Map.of(
-                "playerUuid", testUuid,
-                "playerName", testUsername
+            "playerUuid", testUuid,
+            "playerName", testUsername
         ));
         int claimStatus = claimResponse.statusCode();
         // 200 if claimed, 409 if ticket already linked to a player via creation

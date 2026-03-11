@@ -4,7 +4,11 @@ import gg.modl.backend.admin.service.AdminSecurityService;
 import gg.modl.backend.rest.RESTMappingV1;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_SECURITY)
@@ -14,23 +18,23 @@ public class AdminSecurityController {
 
     @GetMapping("/events")
     public ResponseEntity<?> getSecurityEvents(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "50") int limit,
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String severity,
-            @RequestParam(required = false) String source,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) String startDate,
-            @RequestParam(required = false) String endDate) {
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(required = false) String type,
+        @RequestParam(required = false) String severity,
+        @RequestParam(required = false) String source,
+        @RequestParam(required = false) String search,
+        @RequestParam(required = false) String startDate,
+        @RequestParam(required = false) String endDate) {
         return ResponseEntity.ok(adminSecurityService.getSecurityEvents(
-                page,
-                limit,
-                type,
-                severity,
-                source,
-                search,
-                startDate,
-                endDate
+            page,
+            limit,
+            type,
+            severity,
+            source,
+            search,
+            startDate,
+            endDate
         ));
     }
 

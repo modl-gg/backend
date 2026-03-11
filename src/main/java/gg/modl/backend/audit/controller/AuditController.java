@@ -12,13 +12,18 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUDIT)
@@ -27,26 +32,26 @@ public class AuditController {
     private final AuditService auditService;
 
     private static final Set<String> ALLOWED_TABLES = Set.of(
-            CollectionName.MODL_SERVERS,
-            CollectionName.PLAYERS,
-            CollectionName.SESSIONS,
-            CollectionName.AUTH_CODES,
-            CollectionName.SETTINGS,
-            CollectionName.STAFF,
-            CollectionName.STAFF_ROLES,
-            CollectionName.INVITATIONS,
-            CollectionName.TICKETS,
-            CollectionName.TICKET_VERIFICATIONS,
-            CollectionName.LOGS,
-            CollectionName.KNOWLEDGEBASE_CATEGORIES,
-            CollectionName.KNOWLEDGEBASE_ARTICLES,
-            CollectionName.HOMEPAGE_CARDS
+        CollectionName.MODL_SERVERS,
+        CollectionName.PLAYERS,
+        CollectionName.SESSIONS,
+        CollectionName.AUTH_CODES,
+        CollectionName.SETTINGS,
+        CollectionName.STAFF,
+        CollectionName.STAFF_ROLES,
+        CollectionName.INVITATIONS,
+        CollectionName.TICKETS,
+        CollectionName.TICKET_VERIFICATIONS,
+        CollectionName.LOGS,
+        CollectionName.KNOWLEDGEBASE_CATEGORIES,
+        CollectionName.KNOWLEDGEBASE_ARTICLES,
+        CollectionName.HOMEPAGE_CARDS
     );
 
     @GetMapping("/staff-performance")
     public ResponseEntity<List<StaffPerformanceResponse>> getStaffPerformance(
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "30d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<StaffPerformanceResponse> performance = auditService.getStaffPerformance(server, period);
@@ -55,9 +60,9 @@ public class AuditController {
 
     @GetMapping("/staff/{username}/details")
     public ResponseEntity<StaffDetailsResponse> getStaffDetails(
-            @PathVariable String username,
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
+        @PathVariable String username,
+        @RequestParam(defaultValue = "30d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         StaffDetailsResponse details = auditService.getStaffDetails(server, username, period);
@@ -66,8 +71,8 @@ public class AuditController {
 
     @GetMapping("/punishments/active")
     public ResponseEntity<List<ActivePunishmentResponse>> getActivePunishments(
-            @RequestParam(defaultValue = "active") String status,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "active") String status,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<ActivePunishmentResponse> punishments = auditService.getPunishmentsList(server, status);
@@ -76,9 +81,9 @@ public class AuditController {
 
     @GetMapping("/punishments")
     public ResponseEntity<List<PunishmentAuditResponse>> getPunishments(
-            @RequestParam(defaultValue = "50") int limit,
-            @RequestParam(defaultValue = "false") boolean canRollback,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "false") boolean canRollback,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<PunishmentAuditResponse> punishments = auditService.getPunishments(server, limit, canRollback);
@@ -87,9 +92,9 @@ public class AuditController {
 
     @PostMapping("/punishments/{id}/rollback")
     public ResponseEntity<?> rollbackPunishment(
-            @PathVariable String id,
-            @RequestBody(required = false) RollbackRequest rollbackRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody(required = false) RollbackRequest rollbackRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
@@ -100,8 +105,8 @@ public class AuditController {
 
             if (success) {
                 return ResponseEntity.ok(Map.of(
-                        "success", true,
-                        "message", "Punishment rolled back successfully"
+                    "success", true,
+                    "message", "Punishment rolled back successfully"
                 ));
             }
             return ResponseEntity.notFound().build();
@@ -112,9 +117,9 @@ public class AuditController {
 
     @PostMapping("/staff/{username}/rollback-all")
     public ResponseEntity<?> rollbackAllByStaff(
-            @PathVariable String username,
-            @RequestBody(required = false) RollbackRequest rollbackRequest,
-            HttpServletRequest request
+        @PathVariable String username,
+        @RequestBody(required = false) RollbackRequest rollbackRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
@@ -124,9 +129,9 @@ public class AuditController {
             int count = auditService.rollbackAllPunishmentsByStaff(server, username, reason, performerUsername);
 
             return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "count", count,
-                    "message", "Successfully rolled back " + count + " punishments"
+                "success", true,
+                "count", count,
+                "message", "Successfully rolled back " + count + " punishments"
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -135,9 +140,9 @@ public class AuditController {
 
     @PostMapping("/staff/{username}/rollback-date-range")
     public ResponseEntity<?> rollbackByDateRange(
-            @PathVariable String username,
-            @RequestBody DateRangeRollbackRequest rollbackRequest,
-            HttpServletRequest request
+        @PathVariable String username,
+        @RequestBody DateRangeRollbackRequest rollbackRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
@@ -149,18 +154,18 @@ public class AuditController {
         try {
             String reason = rollbackRequest.reason() != null ? rollbackRequest.reason() : "Bulk rollback by admin";
             int count = auditService.rollbackPunishmentsByDateRange(
-                    server,
-                    username,
-                    rollbackRequest.startDate(),
-                    rollbackRequest.endDate(),
-                    reason,
-                    performerUsername
+                server,
+                username,
+                rollbackRequest.startDate(),
+                rollbackRequest.endDate(),
+                reason,
+                performerUsername
             );
 
             return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "count", count,
-                    "message", "Successfully rolled back " + count + " punishments"
+                "success", true,
+                "count", count,
+                "message", "Successfully rolled back " + count + " punishments"
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
@@ -169,10 +174,10 @@ public class AuditController {
 
     @GetMapping("/database/{table}")
     public ResponseEntity<?> getDatabaseTable(
-            @PathVariable String table,
-            @RequestParam(defaultValue = "100") int limit,
-            @RequestParam(defaultValue = "0") int skip,
-            HttpServletRequest request
+        @PathVariable String table,
+        @RequestParam(defaultValue = "100") int limit,
+        @RequestParam(defaultValue = "0") int skip,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 

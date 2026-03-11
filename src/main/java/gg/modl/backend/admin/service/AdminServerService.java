@@ -7,10 +7,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -18,21 +14,19 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AdminServerService {
-    private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
-    private static final int MAX_USAGE_BATCH_SIZE = 50;
-
     private final ServerMongoRepository serverRepository;
     private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerProvisioningService provisioningService;
-
-    public List<Server> findServers(String search, String plan, String status, String sortField, String sortOrder, int skip, int limit) {
-        return serverRepository.findAdminServers(search, plan, status, sortField, sortOrder, skip, limit);
-    }
+    private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
+    private static final int MAX_USAGE_BATCH_SIZE = 50;
 
     public long countServers(String search, String plan, String status) {
         return serverRepository.countAdminServers(search, plan, status);
@@ -49,18 +43,55 @@ public class AdminServerService {
         }
     }
 
+    private ComputedUsage getOrComputeUsageStats(Server server, Date now, boolean forceRefresh) {
+        long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
+        long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
+
+        if (!forceRefresh && isUsageStatsCacheFresh(server, now)) {
+            return new ComputedUsage(cachedUsers, cachedTickets, server.getLastStatsUpdatedAt(), true);
+        }
+
+        if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
+            persistUsageStats(server.getId(), cachedUsers, cachedTickets, now);
+            return new ComputedUsage(cachedUsers, cachedTickets, now, false);
+        }
+
+        Optional<ServerDatabaseMongoRepository.UsageCounts> usageCounts = serverDatabaseRepository.readUsageCounts(server);
+        if (usageCounts.isPresent()) {
+            persistUsageStats(server.getId(), usageCounts.get().players(), usageCounts.get().tickets(), now);
+            return new ComputedUsage(usageCounts.get().players(), usageCounts.get().tickets(), now, false);
+        }
+
+        log.warn("Failed to refresh usage stats for server {}", server.getServerName());
+        Date updatedAt = server.getLastStatsUpdatedAt() != null ? server.getLastStatsUpdatedAt() : now;
+        return new ComputedUsage(cachedUsers, cachedTickets, updatedAt, true);
+    }
+
+    private boolean isUsageStatsCacheFresh(Server server, Date now) {
+        if (server.getLastStatsUpdatedAt() == null) {
+            return false;
+        }
+
+        long ageMillis = now.getTime() - server.getLastStatsUpdatedAt().getTime();
+        return ageMillis >= 0 && ageMillis <= USAGE_STATS_TTL_MILLIS;
+    }
+
+    private void persistUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
+        serverRepository.updateUsageStats(serverId, userCount, ticketCount, updatedAt);
+    }
+
     public Map<String, UsageSummary> getUsageStatsForServerIds(List<String> serverIds, boolean forceRefresh) {
         if (serverIds == null || serverIds.isEmpty()) {
             return Map.of();
         }
 
         List<String> filteredIds = serverIds.stream()
-                .filter(Objects::nonNull)
-                .map(String::trim)
-                .filter(id -> !id.isEmpty())
-                .distinct()
-                .limit(MAX_USAGE_BATCH_SIZE)
-                .toList();
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(id -> !id.isEmpty())
+            .distinct()
+            .limit(MAX_USAGE_BATCH_SIZE)
+            .toList();
 
         if (filteredIds.isEmpty()) {
             return Map.of();
@@ -73,10 +104,10 @@ public class AdminServerService {
         for (Server server : servers) {
             ComputedUsage usage = getOrComputeUsageStats(server, now, forceRefresh);
             usageByServerId.put(server.getId(), new UsageSummary(
-                    usage.userCount(),
-                    usage.ticketCount(),
-                    usage.updatedAt(),
-                    usage.fromCache()
+                usage.userCount(),
+                usage.ticketCount(),
+                usage.updatedAt(),
+                usage.fromCache()
             ));
         }
 
@@ -100,10 +131,14 @@ public class AdminServerService {
         csv.append("id,serverName,customDomain,adminEmail,plan,provisioningStatus,emailVerified,createdAt\n");
         for (Server s : servers) {
             csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s\n",
-                    s.getId(), s.getServerName(), s.getCustomDomain(), s.getAdminEmail(),
-                    s.getPlan(), s.getProvisioningStatus(), s.getEmailVerified(), s.getCreatedAt()));
+                s.getId(), s.getServerName(), s.getCustomDomain(), s.getAdminEmail(),
+                s.getPlan(), s.getProvisioningStatus(), s.getEmailVerified(), s.getCreatedAt()));
         }
         return csv.toString();
+    }
+
+    public List<Server> findServers(String search, String plan, String status, String sortField, String sortOrder, int skip, int limit) {
+        return serverRepository.findAdminServers(search, plan, status, sortField, sortOrder, skip, limit);
     }
 
     public Optional<Server> findById(String id) {
@@ -201,43 +236,6 @@ public class AdminServerService {
         }
 
         serverRepository.resetAfterDatabaseDrop(server.getId(), new Date());
-    }
-
-    private ComputedUsage getOrComputeUsageStats(Server server, Date now, boolean forceRefresh) {
-        long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
-        long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
-
-        if (!forceRefresh && isUsageStatsCacheFresh(server, now)) {
-            return new ComputedUsage(cachedUsers, cachedTickets, server.getLastStatsUpdatedAt(), true);
-        }
-
-        if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
-            persistUsageStats(server.getId(), cachedUsers, cachedTickets, now);
-            return new ComputedUsage(cachedUsers, cachedTickets, now, false);
-        }
-
-        Optional<ServerDatabaseMongoRepository.UsageCounts> usageCounts = serverDatabaseRepository.readUsageCounts(server);
-        if (usageCounts.isPresent()) {
-            persistUsageStats(server.getId(), usageCounts.get().players(), usageCounts.get().tickets(), now);
-            return new ComputedUsage(usageCounts.get().players(), usageCounts.get().tickets(), now, false);
-        }
-
-        log.warn("Failed to refresh usage stats for server {}", server.getServerName());
-        Date updatedAt = server.getLastStatsUpdatedAt() != null ? server.getLastStatsUpdatedAt() : now;
-        return new ComputedUsage(cachedUsers, cachedTickets, updatedAt, true);
-    }
-
-    private boolean isUsageStatsCacheFresh(Server server, Date now) {
-        if (server.getLastStatsUpdatedAt() == null) {
-            return false;
-        }
-
-        long ageMillis = now.getTime() - server.getLastStatsUpdatedAt().getTime();
-        return ageMillis >= 0 && ageMillis <= USAGE_STATS_TTL_MILLIS;
-    }
-
-    private void persistUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
-        serverRepository.updateUsageStats(serverId, userCount, ticketCount, updatedAt);
     }
 
     private record ComputedUsage(long userCount, long ticketCount, Date updatedAt, boolean fromCache) {}

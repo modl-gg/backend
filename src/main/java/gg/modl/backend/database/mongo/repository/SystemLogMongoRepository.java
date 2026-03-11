@@ -5,6 +5,10 @@ import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SystemLogFields;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -14,11 +18,6 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.regex.Pattern;
 
 @Repository
 public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<SystemLog> {
@@ -52,39 +51,39 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
 
     public long countByLevelSince(String level, Date startDate) {
         return count(Query.query(new Criteria().andOperator(
-                MongoQueries.where(SystemLogFields.LEVEL).is(level),
-                MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
+            MongoQueries.where(SystemLogFields.LEVEL).is(level),
+            MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
         )));
     }
 
     public long countUnresolvedByLevel(String level) {
         return count(Query.query(new Criteria().andOperator(
-                MongoQueries.where(SystemLogFields.LEVEL).is(level),
-                MongoQueries.where(SystemLogFields.RESOLVED).is(false)
+            MongoQueries.where(SystemLogFields.LEVEL).is(level),
+            MongoQueries.where(SystemLogFields.RESOLVED).is(false)
         )));
     }
 
     public long countUnresolvedByLevelSince(String level, Date startDate) {
         return count(Query.query(new Criteria().andOperator(
-                MongoQueries.where(SystemLogFields.LEVEL).is(level),
-                MongoQueries.where(SystemLogFields.RESOLVED).is(false),
-                MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
+            MongoQueries.where(SystemLogFields.LEVEL).is(level),
+            MongoQueries.where(SystemLogFields.RESOLVED).is(false),
+            MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
         )));
     }
 
     public List<SystemLog> findLogs(
-            String level,
-            String source,
-            String serverId,
-            String category,
-            String resolved,
-            String search,
-            Date startDate,
-            Date endDate,
-            String sort,
-            String order,
-            int skip,
-            int limit
+        String level,
+        String source,
+        String serverId,
+        String category,
+        String resolved,
+        String search,
+        Date startDate,
+        Date endDate,
+        String sort,
+        String order,
+        int skip,
+        int limit
     ) {
         Query query = buildLogsQuery(level, source, serverId, category, resolved, search, startDate, endDate);
         query.with(Sort.by(resolveDirection(order), resolveSortField(sort)));
@@ -92,85 +91,15 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         return find(query);
     }
 
-    public long countLogs(
-            String level,
-            String source,
-            String serverId,
-            String category,
-            String resolved,
-            String search,
-            Date startDate,
-            Date endDate
-    ) {
-        return count(buildLogsQuery(level, source, serverId, category, resolved, search, startDate, endDate));
-    }
-
-    public List<String> findDistinctSources() {
-        return globalTemplate().findDistinct(new Query(), SystemLogFields.SOURCE, COLLECTION_NAME, String.class);
-    }
-
-    public List<String> findDistinctCategories() {
-        return globalTemplate().findDistinct(new Query(), SystemLogFields.CATEGORY, COLLECTION_NAME, String.class);
-    }
-
-    public SystemLog resolveById(String id, String resolvedBy, Date resolvedAt) {
-        Query query = Query.query(MongoQueries.where(SystemLogFields.ID).is(id));
-        Update update = new Update()
-                .set(SystemLogFields.RESOLVED, true)
-                .set(SystemLogFields.RESOLVED_BY, resolvedBy)
-                .set(SystemLogFields.RESOLVED_AT, resolvedAt);
-        return findAndModify(query, update, FindAndModifyOptions.options().returnNew(true));
-    }
-
-    public long deleteByIds(List<String> logIds) {
-        return remove(Query.query(MongoQueries.where(SystemLogFields.ID).in(logIds))).getDeletedCount();
-    }
-
-    public long deleteAllLogs() {
-        return remove(new Query()).getDeletedCount();
-    }
-
-    public List<SystemLog> findLogsForExport(
-            String level,
-            String source,
-            String serverId,
-            String category,
-            String resolved,
-            String search,
-            Date startDate,
-            Date endDate,
-            int limit
-    ) {
-        Query query = buildLogsQuery(level, source, serverId, category, resolved, search, startDate, endDate);
-        query.with(Sort.by(Sort.Direction.DESC, SystemLogFields.TIMESTAMP));
-        query.limit(limit);
-        return find(query);
-    }
-
-    public List<Document> findLogTrends(Date startDate) {
-        Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)),
-                Aggregation.project()
-                        .and(DateOperators.DateToString.dateOf(SystemLogFields.TIMESTAMP).toString("%Y-%m-%d")).as(ALIAS_DATE)
-                        .and(SystemLogFields.LEVEL).as(ALIAS_LEVEL),
-                Aggregation.group(ALIAS_DATE, ALIAS_LEVEL).count().as(ALIAS_COUNT),
-                Aggregation.group("_id." + ALIAS_DATE)
-                        .push(new Document(ALIAS_LEVEL, "$_id." + ALIAS_LEVEL).append(ALIAS_COUNT, "$" + ALIAS_COUNT)).as(ALIAS_LEVELS)
-                        .sum(ALIAS_COUNT).as(ALIAS_TOTAL),
-                Aggregation.sort(Sort.Direction.ASC, "_id")
-        );
-        return aggregate(aggregation, Document.class).getMappedResults();
-    }
-
     private Query buildLogsQuery(
-            String level,
-            String source,
-            String serverId,
-            String category,
-            String resolved,
-            String search,
-            Date startDate,
-            Date endDate
+        String level,
+        String source,
+        String serverId,
+        String category,
+        String resolved,
+        String search,
+        Date startDate,
+        Date endDate
     ) {
         Query query = new Query();
         List<Criteria> criteriaList = new ArrayList<>();
@@ -209,6 +138,10 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         return query;
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private Sort.Direction resolveDirection(String order) {
         return ORDER_DESC.equalsIgnoreCase(order) ? Sort.Direction.DESC : Sort.Direction.ASC;
     }
@@ -227,8 +160,74 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         };
     }
 
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
+    public long countLogs(
+        String level,
+        String source,
+        String serverId,
+        String category,
+        String resolved,
+        String search,
+        Date startDate,
+        Date endDate
+    ) {
+        return count(buildLogsQuery(level, source, serverId, category, resolved, search, startDate, endDate));
+    }
+
+    public List<String> findDistinctSources() {
+        return globalTemplate().findDistinct(new Query(), SystemLogFields.SOURCE, COLLECTION_NAME, String.class);
+    }
+
+    public List<String> findDistinctCategories() {
+        return globalTemplate().findDistinct(new Query(), SystemLogFields.CATEGORY, COLLECTION_NAME, String.class);
+    }
+
+    public SystemLog resolveById(String id, String resolvedBy, Date resolvedAt) {
+        Query query = Query.query(MongoQueries.where(SystemLogFields.ID).is(id));
+        Update update = new Update()
+            .set(SystemLogFields.RESOLVED, true)
+            .set(SystemLogFields.RESOLVED_BY, resolvedBy)
+            .set(SystemLogFields.RESOLVED_AT, resolvedAt);
+        return findAndModify(query, update, FindAndModifyOptions.options().returnNew(true));
+    }
+
+    public long deleteByIds(List<String> logIds) {
+        return remove(Query.query(MongoQueries.where(SystemLogFields.ID).in(logIds))).getDeletedCount();
+    }
+
+    public long deleteAllLogs() {
+        return remove(new Query()).getDeletedCount();
+    }
+
+    public List<SystemLog> findLogsForExport(
+        String level,
+        String source,
+        String serverId,
+        String category,
+        String resolved,
+        String search,
+        Date startDate,
+        Date endDate,
+        int limit
+    ) {
+        Query query = buildLogsQuery(level, source, serverId, category, resolved, search, startDate, endDate);
+        query.with(Sort.by(Sort.Direction.DESC, SystemLogFields.TIMESTAMP));
+        query.limit(limit);
+        return find(query);
+    }
+
+    public List<Document> findLogTrends(Date startDate) {
+        Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)),
+            Aggregation.project()
+                .and(DateOperators.DateToString.dateOf(SystemLogFields.TIMESTAMP).toString("%Y-%m-%d")).as(ALIAS_DATE)
+                .and(SystemLogFields.LEVEL).as(ALIAS_LEVEL),
+            Aggregation.group(ALIAS_DATE, ALIAS_LEVEL).count().as(ALIAS_COUNT),
+            Aggregation.group("_id." + ALIAS_DATE)
+                .push(new Document(ALIAS_LEVEL, "$_id." + ALIAS_LEVEL).append(ALIAS_COUNT, "$" + ALIAS_COUNT)).as(ALIAS_LEVELS)
+                .sum(ALIAS_COUNT).as(ALIAS_TOTAL),
+            Aggregation.sort(Sort.Direction.ASC, "_id")
+        );
+        return aggregate(aggregation, Document.class).getMappedResults();
     }
 }
 

@@ -1,16 +1,14 @@
 package gg.modl.backend.analytics.service;
 
-import gg.modl.backend.analytics.data.MetricSnapshot;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -35,16 +33,16 @@ public class MetricSnapshotService {
             long onlinePlayers = serverRepository.sumOnlinePlayersSince(fiveMinutesAgo);
 
             metricSnapshotRepository.upsertSnapshot(
-                    fiveTruncated,
-                    activeServers,
-                    totalServers,
-                    totalPlayers,
-                    onlinePlayers,
-                    now
+                fiveTruncated,
+                activeServers,
+                totalServers,
+                totalPlayers,
+                onlinePlayers,
+                now
             );
 
             log.info("Metric snapshot saved: activeServers={}, totalServers={}, totalPlayers={}, onlinePlayers={}",
-                    activeServers, totalServers, totalPlayers, onlinePlayers);
+                activeServers, totalServers, totalPlayers, onlinePlayers);
         } catch (Exception e) {
             log.error("Failed to take metric snapshot", e);
         }

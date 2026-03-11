@@ -41,27 +41,6 @@ public enum TicketCategory {
         this.ticketPrefix = ticketPrefix;
     }
 
-    @JsonValue
-    public String getId() {
-        return id;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public String getTicketPrefix() {
-        return ticketPrefix;
-    }
-
-    public boolean isReport() {
-        return this == PLAYER || this == CHAT;
-    }
-
-    public boolean isAppeal() {
-        return this == APPEAL;
-    }
-
     public static List<String> reportCategoryIds() {
         return List.of(PLAYER.id, CHAT.id);
     }
@@ -75,6 +54,16 @@ public enum TicketCategory {
             case "support" -> List.of(SUPPORT.id);
             default -> List.of();
         };
+    }
+
+    private static String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim()
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
     }
 
     public static boolean isCanonicalBucket(String value) {
@@ -97,17 +86,28 @@ public enum TicketCategory {
         return category;
     }
 
-    private static String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "_")
-                .replaceAll("^_+|_+$", "");
-    }
-
     private static void registerAlias(TicketCategory category, String alias) {
         BY_CANONICAL_ID.put(normalize(alias), category);
+    }
+
+    @JsonValue
+    public String getId() {
+        return id;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public String getTicketPrefix() {
+        return ticketPrefix;
+    }
+
+    public boolean isReport() {
+        return this == PLAYER || this == CHAT;
+    }
+
+    public boolean isAppeal() {
+        return this == APPEAL;
     }
 }

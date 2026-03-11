@@ -10,9 +10,8 @@ import org.springframework.web.client.RestTemplate;
 @Slf4j
 public class IpGeolocationService {
 
-    private static final String IP_API_URL = "https://pro.ip-api.com/json/%s?fields=status,message,countryCode,regionName,city,as,proxy,hosting";
-
     private final RestTemplate restTemplate;
+    private static final String IP_API_URL = "https://pro.ip-api.com/json/%s?fields=status,message,countryCode,regionName,city,as,proxy,hosting";
 
     public IpGeolocationResult getIpInfo(String ipAddress) {
         try {
@@ -25,11 +24,11 @@ public class IpGeolocationService {
             }
 
             return new IpGeolocationResult(
-                    response.countryCode(),
-                    response.regionName(),
-                    response.as(),
-                    response.proxy(),
-                    response.hosting()
+                response.countryCode(),
+                response.regionName(),
+                response.as(),
+                response.proxy(),
+                response.hosting()
             );
         } catch (Exception e) {
             log.error("Error fetching IP geolocation for {}", ipAddress, e);
@@ -38,11 +37,11 @@ public class IpGeolocationService {
     }
 
     public record IpGeolocationResult(
-            String country,
-            String region,
-            String asn,
-            boolean proxy,
-            boolean hosting
+        String country,
+        String region,
+        String asn,
+        boolean proxy,
+        boolean hosting
     ) {
         public static IpGeolocationResult empty() {
             return new IpGeolocationResult(null, null, null, false, false);
@@ -50,14 +49,14 @@ public class IpGeolocationService {
     }
 
     private record IpApiResponse(
-            String status,
-            String message,
-            String countryCode,
-            String regionName,
-            String city,
-            String as,
-            boolean proxy,
-            boolean hosting
+        String status,
+        String message,
+        String countryCode,
+        String regionName,
+        String city,
+        String as,
+        boolean proxy,
+        boolean hosting
     ) {
     }
 }

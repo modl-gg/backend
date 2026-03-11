@@ -7,29 +7,27 @@ import gg.modl.backend.domain.external.CloudflareClient;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
 public class DomainSettingsService extends AbstractSettingsService {
-    private static final String SETTINGS_TYPE_DOMAIN = "domain";
-
     private final ServerMongoRepository serverRepository;
     private final CloudflareClient cloudflareClient;
     private final DynamicCorsConfigurationSource corsConfigurationSource;
     private final CustomDomainAccessService customDomainAccessService;
+    private static final String SETTINGS_TYPE_DOMAIN = "domain";
 
     public DomainSettingsService(
-            SettingsMongoRepository settingsRepository,
-            ServerMongoRepository serverRepository,
-            CloudflareClient cloudflareClient,
-            DynamicCorsConfigurationSource corsConfigurationSource,
-            CustomDomainAccessService customDomainAccessService
+        SettingsMongoRepository settingsRepository,
+        ServerMongoRepository serverRepository,
+        CloudflareClient cloudflareClient,
+        DynamicCorsConfigurationSource corsConfigurationSource,
+        CustomDomainAccessService customDomainAccessService
     ) {
         super(settingsRepository);
         this.serverRepository = serverRepository;
@@ -46,12 +44,12 @@ public class DomainSettingsService extends AbstractSettingsService {
 
         if (settings == null || settings.getData() == null) {
             return DomainSettings.builder()
-                    .customDomain(null)
-                    .status(null)
-                    .accessingFromCustomDomain(false)
-                    .modlSubdomainUrl(modlSubdomainUrl)
-                    .canManageCustomDomain(canManageCustomDomain)
-                    .build();
+                .customDomain(null)
+                .status(null)
+                .accessingFromCustomDomain(false)
+                .modlSubdomainUrl(modlSubdomainUrl)
+                .canManageCustomDomain(canManageCustomDomain)
+                .build();
         }
 
         @SuppressWarnings("unchecked")
@@ -59,7 +57,7 @@ public class DomainSettingsService extends AbstractSettingsService {
         String customDomain = getStringValue(data, "customDomain");
 
         boolean accessingFromCustomDomain = customDomain != null && !customDomain.isEmpty()
-                && requestHost != null && requestHost.equalsIgnoreCase(customDomain);
+                                            && requestHost != null && requestHost.equalsIgnoreCase(customDomain);
 
         DomainSettings.DomainStatus status = null;
         if (customDomain != null && !customDomain.isEmpty()) {
@@ -67,23 +65,33 @@ public class DomainSettingsService extends AbstractSettingsService {
             Map<String, Object> statusData = (Map<String, Object>) data.get("status");
             if (statusData != null) {
                 status = DomainSettings.DomainStatus.builder()
-                        .domain(getStringValue(statusData, "domain"))
-                        .status(getStringValue(statusData, "status"))
-                        .cnameConfigured(getBooleanValue(statusData, "cnameConfigured"))
-                        .sslStatus(getStringValue(statusData, "sslStatus"))
-                        .lastChecked(getStringValue(statusData, "lastChecked"))
-                        .error(getStringValue(statusData, "error"))
-                        .build();
+                    .domain(getStringValue(statusData, "domain"))
+                    .status(getStringValue(statusData, "status"))
+                    .cnameConfigured(getBooleanValue(statusData, "cnameConfigured"))
+                    .sslStatus(getStringValue(statusData, "sslStatus"))
+                    .lastChecked(getStringValue(statusData, "lastChecked"))
+                    .error(getStringValue(statusData, "error"))
+                    .build();
             }
         }
 
         return DomainSettings.builder()
-                .customDomain(customDomain)
-                .status(status)
-                .accessingFromCustomDomain(accessingFromCustomDomain)
-                .modlSubdomainUrl(modlSubdomainUrl)
-                .canManageCustomDomain(canManageCustomDomain)
-                .build();
+            .customDomain(customDomain)
+            .status(status)
+            .accessingFromCustomDomain(accessingFromCustomDomain)
+            .modlSubdomainUrl(modlSubdomainUrl)
+            .canManageCustomDomain(canManageCustomDomain)
+            .build();
+    }
+
+    private String getStringValue(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        return value instanceof String ? (String) value : null;
+    }
+
+    private boolean getBooleanValue(Map<String, Object> data, String key) {
+        Object value = data.get(key);
+        return value instanceof Boolean ? (Boolean) value : false;
     }
 
     public DomainSettings configureDomain(Server server, String customDomain) {
@@ -123,13 +131,13 @@ public class DomainSettingsService extends AbstractSettingsService {
         }
 
         DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
-                .domain(customDomain)
-                .status(initialStatus)
-                .cnameConfigured(false)
-                .sslStatus(sslStatus)
-                .lastChecked(Instant.now().toString())
-                .error(error)
-                .build();
+            .domain(customDomain)
+            .status(initialStatus)
+            .cnameConfigured(false)
+            .sslStatus(sslStatus)
+            .lastChecked(Instant.now().toString())
+            .error(error)
+            .build();
 
         Map<String, Object> data = new HashMap<>();
         data.put("customDomain", customDomain);
@@ -144,10 +152,58 @@ public class DomainSettingsService extends AbstractSettingsService {
     }
 
     private void updateServerDocument(String serverId, String customDomain, String status,
-                                       String cloudflareHostnameId, String error) {
+                                      String cloudflareHostnameId, String error) {
         serverRepository.updateCustomDomain(serverId, customDomain, status, cloudflareHostnameId, error);
         corsConfigurationSource.invalidateCache(customDomain);
         log.debug("Invalidated CORS cache for domain: {}", customDomain);
+    }
+
+    private String extractCurrentDomain(Server server) {
+        String currentDomain = server.getCustomDomainOverride();
+        if (currentDomain == null) {
+            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+            if (existingSettings != null && existingSettings.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
+                currentDomain = getStringValue(data, "customDomain");
+            }
+        }
+        return currentDomain;
+    }
+
+    private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
+        Map<String, Object> statusMap = new HashMap<>();
+        statusMap.put("domain", status.getDomain());
+        statusMap.put("status", status.getStatus());
+        statusMap.put("cnameConfigured", status.isCnameConfigured());
+        statusMap.put("sslStatus", status.getSslStatus());
+        statusMap.put("lastChecked", status.getLastChecked());
+        statusMap.put("error", status.getError());
+        return statusMap;
+    }
+
+    private DomainSettings buildDomainSettingsResponse(Server server, String customDomain,
+                                                       DomainSettings.DomainStatus status) {
+        return DomainSettings.builder()
+            .customDomain(customDomain)
+            .status(status)
+            .accessingFromCustomDomain(false)
+            .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
+            .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
+            .build();
+    }
+
+    private String mapCloudflareStatus(String cfStatus) {
+        if (cfStatus == null) {
+            return "pending";
+        }
+        return switch (cfStatus.toLowerCase()) {
+            case "active" -> "active";
+            case "pending", "pending_validation", "pending_issuance", "pending_deployment", "initializing" -> "pending";
+            case "pending_deletion", "deleted" -> "pending";
+            case "blocked", "moved" -> "error";
+            default -> "pending";
+        };
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
@@ -201,13 +257,13 @@ public class DomainSettingsService extends AbstractSettingsService {
         }
 
         DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
-                .domain(domain)
-                .status(verifiedStatus)
-                .cnameConfigured(cnameConfigured)
-                .sslStatus(sslStatus)
-                .lastChecked(Instant.now().toString())
-                .error(error)
-                .build();
+            .domain(domain)
+            .status(verifiedStatus)
+            .cnameConfigured(cnameConfigured)
+            .sslStatus(sslStatus)
+            .lastChecked(Instant.now().toString())
+            .error(error)
+            .build();
 
         data.put("status", buildDomainStatusMap(status));
         if (cloudflareHostnameId != null) {
@@ -259,65 +315,7 @@ public class DomainSettingsService extends AbstractSettingsService {
         }
     }
 
-    private String extractCurrentDomain(Server server) {
-        String currentDomain = server.getCustomDomainOverride();
-        if (currentDomain == null) {
-            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-            if (existingSettings != null && existingSettings.getData() != null) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
-                currentDomain = getStringValue(data, "customDomain");
-            }
-        }
-        return currentDomain;
-    }
-
-    private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
-        Map<String, Object> statusMap = new HashMap<>();
-        statusMap.put("domain", status.getDomain());
-        statusMap.put("status", status.getStatus());
-        statusMap.put("cnameConfigured", status.isCnameConfigured());
-        statusMap.put("sslStatus", status.getSslStatus());
-        statusMap.put("lastChecked", status.getLastChecked());
-        statusMap.put("error", status.getError());
-        return statusMap;
-    }
-
-    private DomainSettings buildDomainSettingsResponse(Server server, String customDomain,
-                                                        DomainSettings.DomainStatus status) {
-        return DomainSettings.builder()
-                .customDomain(customDomain)
-                .status(status)
-                .accessingFromCustomDomain(false)
-                .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
-                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
-                .build();
-    }
-
     private void clearServerDomainFields(String serverId) {
         serverRepository.clearCustomDomain(serverId);
-    }
-
-    private String mapCloudflareStatus(String cfStatus) {
-        if (cfStatus == null) {
-            return "pending";
-        }
-        return switch (cfStatus.toLowerCase()) {
-            case "active" -> "active";
-            case "pending", "pending_validation", "pending_issuance", "pending_deployment", "initializing" -> "pending";
-            case "pending_deletion", "deleted" -> "pending";
-            case "blocked", "moved" -> "error";
-            default -> "pending";
-        };
-    }
-
-    private String getStringValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        return value instanceof String ? (String) value : null;
-    }
-
-    private boolean getBooleanValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        return value instanceof Boolean ? (Boolean) value : false;
     }
 }

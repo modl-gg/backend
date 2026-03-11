@@ -6,14 +6,14 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 public record EvidencePresignUploadRequest(
-        @NotBlank(message = "File name is required")
-        @Size(max = RequestValidationLimits.FILE_NAME_MAX_LENGTH)
-        String fileName,
+    @NotBlank(message = "File name is required")
+    @Size(max = RequestValidationLimits.FILE_NAME_MAX_LENGTH)
+    String fileName,
 
-        @NotBlank(message = "Content type is required")
-        @Size(max = RequestValidationLimits.CONTENT_TYPE_MAX_LENGTH)
-        String contentType,
+    @NotBlank(message = "Content type is required")
+    @Size(max = RequestValidationLimits.CONTENT_TYPE_MAX_LENGTH)
+    String contentType,
 
-        @Positive(message = "File size must be positive")
-        long fileSize
+    @Positive(message = "File size must be positive")
+    long fileSize
 ) {}

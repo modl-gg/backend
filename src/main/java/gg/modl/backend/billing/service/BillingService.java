@@ -12,12 +12,11 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.util.ServerMutationHelper;
+import java.util.Date;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -69,9 +68,9 @@ public class BillingService {
         });
 
         return new CancelResponse(
-                true,
-                "Subscription cancelled successfully. Access will continue until the end of your current billing period.",
-                periodEndDate
+            true,
+            "Subscription cancelled successfully. Access will continue until the end of your current billing period.",
+            periodEndDate
         );
     }
 
@@ -81,8 +80,8 @@ public class BillingService {
         Date currentPeriodStart = server.getCurrentPeriodStart();
 
         if (server.getStripeSubscriptionId() != null
-                && (currentStatus == null || currentStatus == SubscriptionStatus.ACTIVE || currentStatus == SubscriptionStatus.CANCELED)
-                && stripeService.isConfigured()) {
+            && (currentStatus == null || currentStatus == SubscriptionStatus.ACTIVE || currentStatus == SubscriptionStatus.CANCELED)
+            && stripeService.isConfigured()) {
             try {
                 Subscription subscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
                 String effectiveStatus = stripeService.getEffectiveStatus(subscription);
@@ -91,8 +90,10 @@ public class BillingService {
                 Date periodEndDate = stripeService.extractPeriodEnd(subscription);
 
                 boolean needsUpdate = effectiveSubscriptionStatus != currentStatus
-                        || (periodEndDate != null && (currentPeriodEnd == null || Math.abs(currentPeriodEnd.getTime() - periodEndDate.getTime()) > 1000))
-                        || (periodStartDate != null && (currentPeriodStart == null || Math.abs(currentPeriodStart.getTime() - periodStartDate.getTime()) > 1000));
+                                      || (periodEndDate != null && (currentPeriodEnd == null || Math.abs(
+                    currentPeriodEnd.getTime() - periodEndDate.getTime()) > 1000))
+                                      || (periodStartDate != null && (currentPeriodStart == null || Math.abs(
+                    currentPeriodStart.getTime() - periodStartDate.getTime()) > 1000));
 
                 if (needsUpdate) {
                     Date finalPeriodStartDate = periodStartDate;
@@ -121,14 +122,23 @@ public class BillingService {
         }
 
         return new BillingStatusResponse(
-                server.getPlan() != null ? server.getPlan().name() : null,
-                currentStatus != null ? currentStatus.name() : null,
-                currentPeriodStart,
-                currentPeriodEnd,
-                server.getCustomDomainGrandfathered(),
-                server.getMaxStorageLimitBytes(),
-                server.getMaxAiOverageRequests()
+            server.getPlan() != null ? server.getPlan().name() : null,
+            currentStatus != null ? currentStatus.name() : null,
+            currentPeriodStart,
+            currentPeriodEnd,
+            server.getCustomDomainGrandfathered(),
+            server.getMaxStorageLimitBytes(),
+            server.getMaxAiOverageRequests()
         );
+    }
+
+    private SubscriptionStatus parseSubscriptionStatus(String status) {
+        try {
+            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
+            return SubscriptionStatus.INACTIVE;
+        }
     }
 
     public ResubscribeResponse resubscribe(Server server) throws StripeException {
@@ -178,13 +188,13 @@ public class BillingService {
         });
 
         return new ResubscribeResponse(
-                true,
-                "Subscription reactivated successfully! Your premium features are now active.",
-                new ResubscribeResponse.SubscriptionInfo(
-                        subscriptionResult.getId(),
-                        subscriptionResult.getStatus(),
-                        periodEndDate
-                )
+            true,
+            "Subscription reactivated successfully! Your premium features are now active.",
+            new ResubscribeResponse.SubscriptionInfo(
+                subscriptionResult.getId(),
+                subscriptionResult.getStatus(),
+                periodEndDate
+            )
         );
     }
 
@@ -193,14 +203,5 @@ public class BillingService {
             throw new IllegalStateException("No Stripe customer ID found. Cannot create subscription.");
         }
         return stripeService.createSubscription(server.getStripeCustomerId());
-    }
-
-    private SubscriptionStatus parseSubscriptionStatus(String status) {
-        try {
-            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
-            return SubscriptionStatus.INACTIVE;
-        }
     }
 }

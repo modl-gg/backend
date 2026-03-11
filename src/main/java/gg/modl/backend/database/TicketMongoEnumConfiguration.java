@@ -17,14 +17,14 @@ public class TicketMongoEnumConfiguration {
     @Bean
     MongoCustomConversions ticketMongoCustomConversions() {
         return new MongoCustomConversions(List.of(
-                new TicketCategoryWriteConverter(),
-                new TicketCategoryReadConverter(),
-                new TicketPriorityWriteConverter(),
-                new TicketPriorityReadConverter(),
-                new TicketStatusWriteConverter(),
-                new TicketStatusReadConverter(),
-                new AppealWorkflowStatusWriteConverter(),
-                new AppealWorkflowStatusReadConverter()
+            new TicketCategoryWriteConverter(),
+            new TicketCategoryReadConverter(),
+            new TicketPriorityWriteConverter(),
+            new TicketPriorityReadConverter(),
+            new TicketStatusWriteConverter(),
+            new TicketStatusReadConverter(),
+            new AppealWorkflowStatusWriteConverter(),
+            new AppealWorkflowStatusReadConverter()
         ));
     }
 

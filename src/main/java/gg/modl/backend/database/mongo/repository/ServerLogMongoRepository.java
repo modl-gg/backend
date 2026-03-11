@@ -7,11 +7,10 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerLogFields;
 import gg.modl.backend.log.data.SystemLog;
 import gg.modl.backend.server.data.Server;
+import java.util.List;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
-
-import java.util.List;
 
 @Repository
 public class ServerLogMongoRepository extends AbstractServerMongoRepository<SystemLog> {
@@ -21,8 +20,8 @@ public class ServerLogMongoRepository extends AbstractServerMongoRepository<Syst
 
     public List<SystemLog> findRecent(Server server, int limit) {
         Query query = new Query()
-                .with(MongoQueries.sort(Sort.Direction.DESC, ServerLogFields.CREATED))
-                .limit(limit);
+            .with(MongoQueries.sort(Sort.Direction.DESC, ServerLogFields.CREATED))
+            .limit(limit);
         return find(server, query);
     }
 }

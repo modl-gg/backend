@@ -5,8 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record AssignReportRequest(
-        @NotBlank
-        @Size(max = RequestValidationLimits.REPORT_ASSIGNEE_MAX_LENGTH)
-        String assignee
+    @NotBlank
+    @Size(max = RequestValidationLimits.REPORT_ASSIGNEE_MAX_LENGTH)
+    String assignee
 ) {
 }

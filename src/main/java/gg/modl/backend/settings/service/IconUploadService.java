@@ -3,25 +3,23 @@ package gg.modl.backend.settings.service;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
+import java.io.IOException;
+import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.util.Map;
-import java.util.Set;
-
 @Service
 @RequiredArgsConstructor
 public class IconUploadService {
-    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
-            "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
-    );
-    private static final long MAX_ICON_SIZE = 2 * 1024 * 1024;
-
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
+    private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
+        "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
+    );
+    private static final long MAX_ICON_SIZE = 2 * 1024 * 1024;
 
     public ResponseEntity<?> uploadIcon(Server server, MultipartFile file, String iconType) {
         ResponseEntity<?> validationError = validateUpload(server, file, iconType);
@@ -32,11 +30,11 @@ public class IconUploadService {
         try {
             String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "icon";
             String url = s3StorageService.uploadFile(
-                    server,
-                    "icons/" + iconType,
-                    fileName,
-                    file.getContentType(),
-                    file.getBytes()
+                server,
+                "icons/" + iconType,
+                fileName,
+                file.getContentType(),
+                file.getBytes()
             );
             return ResponseEntity.ok(Map.of("url", url));
         } catch (IOException e) {

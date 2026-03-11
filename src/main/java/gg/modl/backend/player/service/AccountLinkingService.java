@@ -7,10 +7,6 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.dto.response.LinkedAccountResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -20,16 +16,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AccountLinkingService {
-    private static final long SIX_HOURS_MS = 6 * 60 * 60 * 1000;
-
     private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private static final long SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
     public List<LinkedAccountResponse> getLinkedAccounts(Server server, UUID playerUuid) {
         Player player = findPlayerByUuid(server, playerUuid);
@@ -49,16 +47,16 @@ public class AccountLinkingService {
         }
 
         List<String> validUuids = linkedUuids.stream()
-                .filter(uuid -> {
-                    try {
-                        UUID.fromString(uuid);
-                        return true;
-                    } catch (IllegalArgumentException exception) {
-                        log.warn("Invalid UUID in linked accounts: {}", uuid);
-                        return false;
-                    }
-                })
-                .toList();
+            .filter(uuid -> {
+                try {
+                    UUID.fromString(uuid);
+                    return true;
+                } catch (IllegalArgumentException exception) {
+                    log.warn("Invalid UUID in linked accounts: {}", uuid);
+                    return false;
+                }
+            })
+            .toList();
 
         if (validUuids.isEmpty()) {
             return new ArrayList<>();
@@ -67,8 +65,47 @@ public class AccountLinkingService {
         List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, validUuids);
 
         return linkedPlayers.stream()
-                .map(playerEntry -> buildLinkedAccountResponse(server, playerEntry))
-                .toList();
+            .map(playerEntry -> buildLinkedAccountResponse(server, playerEntry))
+            .toList();
+    }
+
+    private Player findPlayerByUuid(Server server, UUID uuid) {
+        return playerRepository.findByMinecraftUuid(server, uuid).orElse(null);
+    }
+
+    private LinkedAccountResponse buildLinkedAccountResponse(Server server, Player player) {
+        String username = player.getUsernames().isEmpty() ? "Unknown"
+                                                          : player.getUsernames().get(player.getUsernames().size() - 1).username();
+
+        int activeBans = 0;
+        int activeMutes = 0;
+        for (Punishment punishment : player.getPunishments()) {
+            if (statusCalculator.isPunishmentActive(punishment)) {
+                var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
+                String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.getData());
+                if ("BAN".equals(category)) {
+                    activeBans++;
+                } else if ("MUTE".equals(category)) {
+                    activeMutes++;
+                }
+            }
+        }
+
+        Date lastLinkedUpdate = null;
+        if (player.getData() != null) {
+            Object lastUpdate = player.getData().get("lastLinkedUpdate");
+            if (lastUpdate instanceof Date date) {
+                lastLinkedUpdate = date;
+            }
+        }
+
+        return new LinkedAccountResponse(
+            player.getMinecraftUuid().toString(),
+            username,
+            activeBans,
+            activeMutes,
+            lastLinkedUpdate
+        );
     }
 
     public LinkingResult findAndLinkAccounts(Server server, UUID playerUuid) {
@@ -141,45 +178,6 @@ public class AccountLinkingService {
         return new LinkingResult(true, "Linking complete", linkedUuids.size());
     }
 
-    private Player findPlayerByUuid(Server server, UUID uuid) {
-        return playerRepository.findByMinecraftUuid(server, uuid).orElse(null);
-    }
-
-    private LinkedAccountResponse buildLinkedAccountResponse(Server server, Player player) {
-        String username = player.getUsernames().isEmpty() ? "Unknown"
-                : player.getUsernames().get(player.getUsernames().size() - 1).username();
-
-        int activeBans = 0;
-        int activeMutes = 0;
-        for (Punishment punishment : player.getPunishments()) {
-            if (statusCalculator.isPunishmentActive(punishment)) {
-                var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
-                String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.getData());
-                if ("BAN".equals(category)) {
-                    activeBans++;
-                } else if ("MUTE".equals(category)) {
-                    activeMutes++;
-                }
-            }
-        }
-
-        Date lastLinkedUpdate = null;
-        if (player.getData() != null) {
-            Object lastUpdate = player.getData().get("lastLinkedUpdate");
-            if (lastUpdate instanceof Date date) {
-                lastLinkedUpdate = date;
-            }
-        }
-
-        return new LinkedAccountResponse(
-                player.getMinecraftUuid().toString(),
-                username,
-                activeBans,
-                activeMutes,
-                lastLinkedUpdate
-        );
-    }
-
     private boolean hasRecentLogin(IPEntry ipEntry) {
         if (ipEntry.getLogins() == null || ipEntry.getLogins().isEmpty()) {
             return false;
@@ -189,12 +187,14 @@ public class AccountLinkingService {
     }
 
     private boolean hasRecentMatchingLogin(Player player1, Player player2, String ipAddress) {
-        Optional<IPEntry> ip1 = player1.getIpAddresses().stream()
-                .filter(ip -> ip.getIpAddress().equals(ipAddress))
-                .findFirst();
-        Optional<IPEntry> ip2 = player2.getIpAddresses().stream()
-                .filter(ip -> ip.getIpAddress().equals(ipAddress))
-                .findFirst();
+        Optional<IPEntry> ip1 = player1.getIpAddresses()
+            .stream()
+            .filter(ip -> ip.getIpAddress().equals(ipAddress))
+            .findFirst();
+        Optional<IPEntry> ip2 = player2.getIpAddresses()
+            .stream()
+            .filter(ip -> ip.getIpAddress().equals(ipAddress))
+            .findFirst();
 
         if (ip1.isEmpty() || ip2.isEmpty()) {
             return false;

@@ -98,6 +98,10 @@ public class PunishmentType {
         return 0L;
     }
 
+    public boolean isSingleSeverityPunishment() {
+        return singleSeverityPunishment != null && singleSeverityPunishment;
+    }
+
     public DurationDetail getDurationDetail(String severity, String offenseLevel) {
         if (isSingleSeverityPunishment() && singleSeverityDurations != null) {
             return singleSeverityDurations.getForOffenseLevel(offenseLevel);
@@ -110,10 +114,6 @@ public class PunishmentType {
 
     public boolean isCustomizable() {
         return customizable != null && customizable;
-    }
-
-    public boolean isSingleSeverityPunishment() {
-        return singleSeverityPunishment != null && singleSeverityPunishment;
     }
 
     public boolean isCanBeAltBlocking() {

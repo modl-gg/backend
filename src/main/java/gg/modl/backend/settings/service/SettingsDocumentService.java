@@ -7,6 +7,10 @@ import gg.modl.backend.database.mongo.fields.SettingsFields;
 import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -15,23 +19,12 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SettingsDocumentService {
-    private static final long INITIAL_VERSION = 0L;
-
     private final SettingsMongoRepository settingsRepository;
-
-    public RawSettingsState getRawState(Server server, String type) {
-        Settings settings = findLatestSettingsDocument(server, type);
-        return toRawState(settings);
-    }
+    private static final long INITIAL_VERSION = 0L;
 
     public RawSettingsState saveRawState(Server server, String type, long expectedVersion, Map<String, Object> data) {
         Settings current = findLatestSettingsDocument(server, type);
@@ -42,8 +35,8 @@ public class SettingsDocumentService {
         }
 
         Map<String, Object> normalizedData = data == null
-                ? new LinkedHashMap<>()
-                : new LinkedHashMap<>(data);
+                                             ? new LinkedHashMap<>()
+                                             : new LinkedHashMap<>(data);
         Date now = new Date();
 
         if (!currentState.exists()) {
@@ -61,7 +54,7 @@ public class SettingsDocumentService {
         }
 
         Query updateQuery = Query.query(MongoQueries.where(SettingsFields.ID).is(current.getId())
-                .andOperator(versionCriteria(expectedVersion)));
+            .andOperator(versionCriteria(expectedVersion)));
         Update update = new Update();
         MongoUpdates.set(update, SettingsFields.TYPE, type);
         MongoUpdates.set(update, SettingsFields.DATA, normalizedData);
@@ -76,27 +69,32 @@ public class SettingsDocumentService {
         return new RawSettingsState(normalizedData, expectedVersion + 1, now, true);
     }
 
+    public RawSettingsState getRawState(Server server, String type) {
+        Settings settings = findLatestSettingsDocument(server, type);
+        return toRawState(settings);
+    }
+
     private void throwConflict(long currentVersion) {
         throw new SettingsConflictException(
-                "Settings were modified by another user. Reload and retry.",
-                currentVersion
+            "Settings were modified by another user. Reload and retry.",
+            currentVersion
         );
     }
 
     private Settings findLatestSettingsDocument(Server server, String type) {
         Query query = Query.query(MongoQueries.where(SettingsFields.TYPE).is(type))
-                .with(Sort.by(
-                        Sort.Order.desc(SettingsFields.VERSION),
-                        Sort.Order.desc(SettingsFields.UPDATED_AT),
-                        Sort.Order.desc(SettingsFields.ID)
-                ))
-                .limit(2);
+            .with(Sort.by(
+                Sort.Order.desc(SettingsFields.VERSION),
+                Sort.Order.desc(SettingsFields.UPDATED_AT),
+                Sort.Order.desc(SettingsFields.ID)
+            ))
+            .limit(2);
         List<Settings> matches = settingsRepository.find(server, query);
         if (matches.size() > 1) {
             log.warn(
-                    "Detected duplicate settings documents for type '{}'. Using latest id '{}'.",
-                    type,
-                    matches.get(0).getId()
+                "Detected duplicate settings documents for type '{}'. Using latest id '{}'.",
+                type,
+                matches.get(0).getId()
             );
         }
         return matches.isEmpty() ? null : matches.get(0);
@@ -105,9 +103,9 @@ public class SettingsDocumentService {
     private Criteria versionCriteria(long expectedVersion) {
         if (expectedVersion == INITIAL_VERSION) {
             return new Criteria().orOperator(
-                    MongoQueries.where(SettingsFields.VERSION).is(INITIAL_VERSION),
-                    MongoQueries.where(SettingsFields.VERSION).exists(false),
-                    MongoQueries.where(SettingsFields.VERSION).is(null)
+                MongoQueries.where(SettingsFields.VERSION).is(INITIAL_VERSION),
+                MongoQueries.where(SettingsFields.VERSION).exists(false),
+                MongoQueries.where(SettingsFields.VERSION).is(null)
             );
         }
         return MongoQueries.where(SettingsFields.VERSION).is(expectedVersion);
@@ -129,10 +127,10 @@ public class SettingsDocumentService {
     }
 
     public record RawSettingsState(
-            Map<String, Object> data,
-            long version,
-            Date updatedAt,
-            boolean exists
+        Map<String, Object> data,
+        long version,
+        Date updatedAt,
+        boolean exists
     ) {
     }
 }

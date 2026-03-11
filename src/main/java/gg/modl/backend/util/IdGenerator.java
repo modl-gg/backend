@@ -1,9 +1,8 @@
 package gg.modl.backend.util;
 
-import org.springframework.stereotype.Component;
-
 import java.security.SecureRandom;
 import java.util.Base64;
+import org.springframework.stereotype.Component;
 
 @Component
 public class IdGenerator {

@@ -17,13 +17,12 @@ import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
+import java.net.URI;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
-import java.net.URI;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -43,17 +42,17 @@ public class EvidenceUploadService {
         }
 
         Player player = playerRepository.findOne(uploadToken.serverDatabaseName(),
-                        Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uploadToken.playerUuid())))
-                .orElse(null);
+                Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uploadToken.playerUuid())))
+            .orElse(null);
         String playerName = "Unknown";
         if (player != null && player.getUsernames() != null && !player.getUsernames().isEmpty()) {
             playerName = player.getUsernames().get(player.getUsernames().size() - 1).username();
         }
 
         return TokenValidationResult.valid(new TokenInfo(
-                uploadToken.punishmentId(),
-                playerName,
-                uploadToken.issuerName()
+            uploadToken.punishmentId(),
+            playerName,
+            uploadToken.issuerName()
         ));
     }
 
@@ -74,11 +73,11 @@ public class EvidenceUploadService {
 
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-                request.fileName(),
-                request.contentType(),
-                request.fileSize(),
-                "evidence",
-                isPremium
+            request.fileName(),
+            request.contentType(),
+            request.fileSize(),
+            "evidence",
+            isPremium
         );
         if (!validation.valid()) {
             return PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED, validation.error(), null);
@@ -86,17 +85,17 @@ public class EvidenceUploadService {
 
         if (!quotaService.canUpload(server, request.fileSize())) {
             return PresignUploadResult.of(PresignUploadStatus.QUOTA_EXCEEDED,
-                    "Storage quota exceeded. Please contact the server administrator.",
-                    null);
+                "Storage quota exceeded. Please contact the server administrator.",
+                null);
         }
 
         PresignUploadResponse presignedUpload = s3StorageService.createPresignedUploadUrl(
-                server,
-                "evidence",
-                request.fileName(),
-                request.contentType(),
-                request.fileSize(),
-                uploadToken.punishmentId()
+            server,
+            "evidence",
+            request.fileName(),
+            request.contentType(),
+            request.fileSize(),
+            uploadToken.punishmentId()
         );
 
         return PresignUploadResult.of(PresignUploadStatus.SUCCESS, null, presignedUpload);
@@ -138,21 +137,22 @@ public class EvidenceUploadService {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
         }
 
-        List<UploadedEvidenceItem> evidenceItems = request.evidence().stream()
-                .map(item -> new UploadedEvidenceItem(
-                        item.url(),
-                        item.fileName(),
-                        item.fileType(),
-                        item.fileSize()
-                ))
-                .toList();
+        List<UploadedEvidenceItem> evidenceItems = request.evidence()
+            .stream()
+            .map(item -> new UploadedEvidenceItem(
+                item.url(),
+                item.fileName(),
+                item.fileType(),
+                item.fileSize()
+            ))
+            .toList();
 
         PunishmentOperationResult result = punishmentEvidenceService.addUploadedEvidence(
-                server,
-                uploadToken.punishmentId(),
-                uploadToken.issuerName(),
-                null,
-                evidenceItems
+            server,
+            uploadToken.punishmentId(),
+            uploadToken.issuerName(),
+            null,
+            evidenceItems
         );
         if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.PUNISHMENT_NOT_FOUND, result.message());
@@ -187,6 +187,30 @@ public class EvidenceUploadService {
         }
     }
 
+    public enum PresignUploadStatus {
+        SUCCESS,
+        INVALID_TOKEN,
+        STORAGE_NOT_CONFIGURED,
+        SERVER_NOT_FOUND,
+        VALIDATION_FAILED,
+        QUOTA_EXCEEDED
+    }
+
+    public enum ConfirmUploadStatus {
+        SUCCESS,
+        INVALID_TOKEN,
+        INVALID_KEY,
+        UPLOAD_NOT_FOUND
+    }
+
+    public enum SubmitEvidenceStatus {
+        SUCCESS,
+        INVALID_TOKEN,
+        SERVER_NOT_FOUND,
+        INVALID_URL,
+        PUNISHMENT_NOT_FOUND
+    }
+
     public record TokenValidationResult(boolean valid, TokenInfo info) {
         private static TokenValidationResult invalid() {
             return new TokenValidationResult(false, null);
@@ -206,26 +230,10 @@ public class EvidenceUploadService {
         }
     }
 
-    public enum PresignUploadStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        STORAGE_NOT_CONFIGURED,
-        SERVER_NOT_FOUND,
-        VALIDATION_FAILED,
-        QUOTA_EXCEEDED
-    }
-
     public record ConfirmUploadResult(ConfirmUploadStatus status, UploadResponse upload) {
         private static ConfirmUploadResult of(ConfirmUploadStatus status, UploadResponse upload) {
             return new ConfirmUploadResult(status, upload);
         }
-    }
-
-    public enum ConfirmUploadStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        INVALID_KEY,
-        UPLOAD_NOT_FOUND
     }
 
     public record SubmitEvidenceResult(SubmitEvidenceStatus status, String message) {
@@ -240,13 +248,5 @@ public class EvidenceUploadService {
                 case INVALID_URL -> HttpStatus.BAD_REQUEST;
             };
         }
-    }
-
-    public enum SubmitEvidenceStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        SERVER_NOT_FOUND,
-        INVALID_URL,
-        PUNISHMENT_NOT_FOUND
     }
 }

@@ -19,10 +19,6 @@ public class TicketIdGenerator {
         return generateWithPrefix(server, prefix);
     }
 
-    public String generateAppealId(Server server) {
-        return generateWithPrefix(server, "APPEAL");
-    }
-
     private String generateWithPrefix(Server server, String prefix) {
         String id;
         int attempts = 0;
@@ -32,5 +28,9 @@ public class TicketIdGenerator {
             attempts++;
         } while (ticketRepository.existsByTicketId(server, id) && attempts < 10);
         return id;
+    }
+
+    public String generateAppealId(Server server) {
+        return generateWithPrefix(server, "APPEAL");
     }
 }

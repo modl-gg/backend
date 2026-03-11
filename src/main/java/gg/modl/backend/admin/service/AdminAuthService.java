@@ -2,12 +2,11 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.AdminUser;
 import gg.modl.backend.database.mongo.repository.AdminUserMongoRepository;
+import java.util.Date;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor

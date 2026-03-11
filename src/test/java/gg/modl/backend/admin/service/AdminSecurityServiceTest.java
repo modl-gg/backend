@@ -1,20 +1,19 @@
 package gg.modl.backend.admin.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AdminSecurityServiceTest {
@@ -35,28 +34,28 @@ class AdminSecurityServiceTest {
         event.setType("login_attempt");
         event.setTimestamp(new Date());
         when(securityEventRepository.findSecurityEvents(
-                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
+            "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
         )).thenReturn(List.of(event));
         when(securityEventRepository.countSecurityEvents(
-                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
+            "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
         )).thenReturn(1L);
 
         Map<String, Object> response = adminSecurityService.getSecurityEvents(
-                2,
-                25,
-                "login_attempt",
-                "high",
-                "gateway",
-                "blocked",
-                "1000",
-                "2000"
+            2,
+            25,
+            "login_attempt",
+            "high",
+            "gateway",
+            "blocked",
+            "1000",
+            "2000"
         );
 
         verify(securityEventRepository).findSecurityEvents(
-                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
+            "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L), 25, 25
         );
         verify(securityEventRepository).countSecurityEvents(
-                "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
+            "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
         );
 
         @SuppressWarnings("unchecked")

@@ -14,29 +14,31 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_AUTH)
 @RequiredArgsConstructor
 @Slf4j
 public class AdminAuthController {
-    private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
-    private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
-
     private final AdminAuthService adminAuthService;
     private final AuthService authService;
     private final SessionService sessionService;
     private final CookieUtil cookieUtil;
+    private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
+    private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
 
     @PostMapping("/request-code")
     public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) {
@@ -55,9 +57,9 @@ public class AdminAuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            @RequestBody @Valid LoginRequest loginRequest) {
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @RequestBody @Valid LoginRequest loginRequest) {
 
         // Always verify code regardless of user existence to prevent timing-based enumeration
         boolean codeValid = authService.verifyAdminCode(loginRequest.email(), loginRequest.code());
@@ -76,7 +78,7 @@ public class AdminAuthController {
         response.addCookie(cookieUtil.createSessionCookie(ADMIN_SESSION_COOKIE, session.getId(), SESSION_MAX_AGE));
 
         return ResponseEntity.ok(new LoginResponse(true, "Login successful",
-                new UserData(admin.getEmail(), admin.getLastActivityAt())));
+            new UserData(admin.getEmail(), admin.getLastActivityAt())));
     }
 
     @PostMapping("/logout")
@@ -85,8 +87,8 @@ public class AdminAuthController {
 
         for (String sessionId : extractSessionIds(request)) {
             sessionService.findValidAdminSession(sessionId)
-                    .map(AuthSessionData::getEmail)
-                    .ifPresent(sessionEmails::add);
+                .map(AuthSessionData::getEmail)
+                .ifPresent(sessionEmails::add);
             sessionService.invalidateAdminSession(sessionId);
         }
 
@@ -99,6 +101,19 @@ public class AdminAuthController {
         }
 
         return ResponseEntity.ok(new ApiResponse(true, "Logout successful"));
+    }
+
+    private Set<String> extractSessionIds(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Set.of();
+        }
+
+        return Arrays.stream(cookies)
+            .filter(cookie -> ADMIN_SESSION_COOKIE.equals(cookie.getName()))
+            .map(Cookie::getValue)
+            .filter(value -> value != null && !value.isBlank())
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
     @GetMapping("/session")
@@ -122,7 +137,20 @@ public class AdminAuthController {
 
         AdminUser admin = adminOpt.get();
         return ResponseEntity.ok(new SessionResponse(true,
-                new SessionData(admin.getEmail(), admin.getLastActivityAt(), admin.getLoggedInIps(), true)));
+            new SessionData(admin.getEmail(), admin.getLastActivityAt(), admin.getLoggedInIps(), true)));
+    }
+
+    private String extractSessionId(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
     }
 
     // Helper to check if request is authenticated (for use by other admin controllers)
@@ -139,40 +167,23 @@ public class AdminAuthController {
 
         AuthSessionData session = sessionOpt.get();
         return adminAuthService.findByEmail(session.getEmail())
-                .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
-    }
-
-    private String extractSessionId(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) return null;
-        for (Cookie cookie : cookies) {
-            if (ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
-    }
-
-    private Set<String> extractSessionIds(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return Set.of();
-        }
-
-        return Arrays.stream(cookies)
-                .filter(cookie -> ADMIN_SESSION_COOKIE.equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .filter(value -> value != null && !value.isBlank())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
     }
 
     // Request/Response records
     public record RequestCodeRequest(@Email @NotBlank String email) {}
+
     public record LoginRequest(@Email @NotBlank String email, @NotBlank String code) {}
+
     public record ApiResponse(boolean success, String message) {}
+
     public record LoginResponse(boolean success, String message, UserData data) {}
+
     public record UserData(String email, java.util.Date lastActivityAt) {}
+
     public record SessionResponse(boolean success, SessionData data) {}
+
     public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
+
     public record AdminSession(String adminId, String email, Date createdAt) {}
 }

@@ -1,29 +1,28 @@
 package gg.modl.backend.player.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class AccountLinkingServiceTest {
@@ -52,25 +51,25 @@ class AccountLinkingServiceTest {
         Date now = new Date();
 
         Player player = Player.builder()
-                .id("player-1")
-                .minecraftUuid(playerUuid)
-                .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
-                        .ipAddress("1.1.1.1")
-                        .proxy(false)
-                        .firstLogin(now)
-                        .logins(new ArrayList<>(List.of(now)))
-                        .build())))
-                .build();
+            .id("player-1")
+            .minecraftUuid(playerUuid)
+            .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
+                .ipAddress("1.1.1.1")
+                .proxy(false)
+                .firstLogin(now)
+                .logins(new ArrayList<>(List.of(now)))
+                .build())))
+            .build();
         Player linkedPlayer = Player.builder()
-                .id("player-2")
-                .minecraftUuid(linkedUuid)
-                .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
-                        .ipAddress("1.1.1.1")
-                        .proxy(false)
-                        .firstLogin(now)
-                        .logins(new ArrayList<>(List.of(now)))
-                        .build())))
-                .build();
+            .id("player-2")
+            .minecraftUuid(linkedUuid)
+            .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
+                .ipAddress("1.1.1.1")
+                .proxy(false)
+                .firstLogin(now)
+                .logins(new ArrayList<>(List.of(now)))
+                .build())))
+            .build();
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
         when(playerRepository.findByMinecraftUuid(server, linkedUuid)).thenReturn(Optional.of(linkedPlayer));

@@ -11,14 +11,13 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
 import gg.modl.backend.server.data.Server;
-import lombok.RequiredArgsConstructor;
-import org.bson.types.ObjectId;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.bson.types.ObjectId;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -36,26 +35,48 @@ public class PunishmentEvidenceService {
         Date now = new Date();
         ensurePunishmentCollections(context.punishment());
         context.punishment().getEvidence().add(new PunishmentEvidence(
-                null,
-                evidenceUrl,
-                "url",
-                resolvedIssuerName,
-                issuerId,
-                now,
-                null,
-                null,
-                null
+            null,
+            evidenceUrl,
+            "url",
+            resolvedIssuerName,
+            issuerId,
+            now,
+            null,
+            null,
+            null
         ));
         context.punishment().getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
-                "added evidence",
-                now,
-                resolvedIssuerName,
-                issuerId
+            new ObjectId().toHexString(),
+            "added evidence",
+            now,
+            resolvedIssuerName,
+            issuerId
         ));
         persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
+    }
+
+    private void ensurePunishmentCollections(Punishment punishment) {
+        if (punishment.getModifications() == null) {
+            punishment.setModifications(new ArrayList<>());
+        }
+        if (punishment.getNotes() == null) {
+            punishment.setNotes(new ArrayList<>());
+        }
+        if (punishment.getEvidence() == null) {
+            punishment.setEvidence(new ArrayList<>());
+        }
+        if (punishment.getAttachedTicketIds() == null) {
+            punishment.setAttachedTicketIds(new ArrayList<>());
+        }
+    }
+
+    private void persistPlayerPunishments(Server server, Player player) {
+        if (player.getPunishments() == null) {
+            player.setPunishments(new ArrayList<>());
+        }
+        playerRepository.replacePunishments(server, player);
     }
 
     public Player addEvidence(Server server, UUID playerUuid, String punishmentId, AddEvidenceRequest request) {
@@ -74,19 +95,30 @@ public class PunishmentEvidenceService {
 
         ensurePunishmentCollections(punishment);
         punishment.getEvidence().add(new PunishmentEvidence(
-                request.text(),
-                request.url(),
-                request.type(),
-                evIssuerName,
-                evIssuerId,
-                new Date(),
-                request.fileName(),
-                request.fileType(),
-                request.fileSize()
+            request.text(),
+            request.url(),
+            request.type(),
+            evIssuerName,
+            evIssuerId,
+            new Date(),
+            request.fileName(),
+            request.fileType(),
+            request.fileSize()
         ));
 
         persistPlayerPunishments(server, player);
         return player;
+    }
+
+    private Punishment findPunishment(Player player, String punishmentId) {
+        if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
+            return null;
+        }
+        return player.getPunishments()
+            .stream()
+            .filter(punishment -> punishmentId.equals(punishment.getId()))
+            .findFirst()
+            .orElse(null);
     }
 
     public PunishmentOperationResult addUploadedEvidence(Server server, String punishmentId, String issuerName, String issuerId, List<UploadedEvidenceItem> evidenceItems) {
@@ -100,23 +132,23 @@ public class PunishmentEvidenceService {
         ensurePunishmentCollections(context.punishment());
         for (UploadedEvidenceItem evidenceItem : evidenceItems) {
             context.punishment().getEvidence().add(new PunishmentEvidence(
-                    null,
-                    evidenceItem.url(),
-                    "file",
-                    resolvedIssuerName,
-                    issuerId,
-                    now,
-                    evidenceItem.fileName(),
-                    evidenceItem.fileType(),
-                    evidenceItem.fileSize()
+                null,
+                evidenceItem.url(),
+                "file",
+                resolvedIssuerName,
+                issuerId,
+                now,
+                evidenceItem.fileName(),
+                evidenceItem.fileType(),
+                evidenceItem.fileSize()
             ));
         }
         context.punishment().getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
-                "uploaded " + evidenceItems.size() + " evidence file(s)",
-                now,
-                resolvedIssuerName,
-                issuerId
+            new ObjectId().toHexString(),
+            "uploaded " + evidenceItems.size() + " evidence file(s)",
+            now,
+            resolvedIssuerName,
+            issuerId
         ));
         persistPlayerPunishments(server, context.player());
 
@@ -153,37 +185,5 @@ public class PunishmentEvidenceService {
         punishment.getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
         persistPlayerPunishments(server, player);
         return player;
-    }
-
-    private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
-            return null;
-        }
-        return player.getPunishments().stream()
-                .filter(punishment -> punishmentId.equals(punishment.getId()))
-                .findFirst()
-                .orElse(null);
-    }
-
-    private void ensurePunishmentCollections(Punishment punishment) {
-        if (punishment.getModifications() == null) {
-            punishment.setModifications(new ArrayList<>());
-        }
-        if (punishment.getNotes() == null) {
-            punishment.setNotes(new ArrayList<>());
-        }
-        if (punishment.getEvidence() == null) {
-            punishment.setEvidence(new ArrayList<>());
-        }
-        if (punishment.getAttachedTicketIds() == null) {
-            punishment.setAttachedTicketIds(new ArrayList<>());
-        }
-    }
-
-    private void persistPlayerPunishments(Server server, Player player) {
-        if (player.getPunishments() == null) {
-            player.setPunishments(new ArrayList<>());
-        }
-        playerRepository.replacePunishments(server, player);
     }
 }

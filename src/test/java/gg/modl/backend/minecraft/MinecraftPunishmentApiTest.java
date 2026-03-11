@@ -1,22 +1,20 @@
 package gg.modl.backend.minecraft;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
-import gg.modl.backend.support.TestDatabase;
 import gg.modl.backend.support.TestDataProvider;
 import gg.modl.backend.support.TestDataProvider.PlayerInfo;
-import gg.modl.backend.support.TestDataProvider.PunishmentTypeInfo;
-import com.google.gson.JsonObject;
+import gg.modl.backend.support.TestDatabase;
+import java.util.Map;
 import org.bson.Document;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftPunishmentApiTest {
 
@@ -41,13 +39,13 @@ class MinecraftPunishmentApiTest {
     void createAndPardonPunishment() throws Exception {
         // Create
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - auto cleanup",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - auto cleanup",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         var createJson = JsonHelper.parseObject(createResponse.body());
@@ -63,8 +61,8 @@ class MinecraftPunishmentApiTest {
 
         // Cleanup: pardon it
         var pardonResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
         JsonHelper.assertStatus(pardonResponse, 200);
 
@@ -84,21 +82,21 @@ class MinecraftPunishmentApiTest {
     @Test
     void createWithLegacyEndpoint() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/punishments/create", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test legacy - auto cleanup",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test legacy - auto cleanup",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(response, 200);
 
         // Pardon via player pardon endpoint to clean up
         api.minecraftPost("/v1/minecraft/players/pardon", Map.of(
-                "playerName", testUsername,
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "playerName", testUsername,
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -106,13 +104,13 @@ class MinecraftPunishmentApiTest {
     void getPunishmentById() throws Exception {
         // Create one first
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - get by id",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - get by id",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
@@ -125,8 +123,8 @@ class MinecraftPunishmentApiTest {
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -134,19 +132,19 @@ class MinecraftPunishmentApiTest {
     void getUploadToken() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - upload token",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - upload token",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var tokenResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/upload-token", Map.of(
-                "issuerName", "TestBot"
+            "issuerName", "TestBot"
         ));
         JsonHelper.assertStatus(tokenResponse, 200);
         var json = JsonHelper.parseObject(tokenResponse.body());
@@ -154,8 +152,8 @@ class MinecraftPunishmentApiTest {
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -179,29 +177,29 @@ class MinecraftPunishmentApiTest {
     void acknowledgePunishment() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - acknowledge",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - acknowledge",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var ackResponse = api.minecraftPost("/v1/minecraft/punishments/acknowledge", Map.of(
-                "punishmentId", punishmentId,
-                "playerUuid", testUuid,
-                "executedAt", "2025-01-01T00:00:00Z",
-                "success", true
+            "punishmentId", punishmentId,
+            "playerUuid", testUuid,
+            "executedAt", "2025-01-01T00:00:00Z",
+            "success", true
         ));
         JsonHelper.assertStatus(ackResponse, 200);
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -209,20 +207,20 @@ class MinecraftPunishmentApiTest {
     void addNoteToPunishment() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - add note",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - add note",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var noteResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/note", Map.of(
-                "issuerName", "TestBot",
-                "note", "API test note"
+            "issuerName", "TestBot",
+            "note", "API test note"
         ));
         JsonHelper.assertStatus(noteResponse, 200);
 
@@ -233,14 +231,14 @@ class MinecraftPunishmentApiTest {
             var notes = dbPunishment.getList("notes", Document.class);
             assertNotNull(notes, "Notes list should exist");
             assertTrue(notes.stream().anyMatch(n -> "API test note".equals(n.getString("note"))
-                            || "API test note".equals(n.getString("text"))),
-                    "Should contain the test note");
+                                                    || "API test note".equals(n.getString("text"))),
+                "Should contain the test note");
         }
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -248,20 +246,20 @@ class MinecraftPunishmentApiTest {
     void addEvidenceToPunishment() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - add evidence",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - add evidence",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var evidenceResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/evidence", Map.of(
-                "issuerName", "TestBot",
-                "evidenceUrl", "https://example.com/evidence.png"
+            "issuerName", "TestBot",
+            "evidenceUrl", "https://example.com/evidence.png"
         ));
         JsonHelper.assertStatus(evidenceResponse, 200);
 
@@ -272,15 +270,15 @@ class MinecraftPunishmentApiTest {
             var evidence = dbPunishment.getList("evidence", Document.class);
             assertNotNull(evidence, "Evidence list should exist");
             assertTrue(evidence.stream().anyMatch(e ->
-                            "https://example.com/evidence.png".equals(e.getString("url"))
-                                    || "https://example.com/evidence.png".equals(e.getString("evidenceUrl"))),
-                    "Should contain the test evidence URL");
+                    "https://example.com/evidence.png".equals(e.getString("url"))
+                    || "https://example.com/evidence.png".equals(e.getString("evidenceUrl"))),
+                "Should contain the test evidence URL");
         }
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -288,20 +286,20 @@ class MinecraftPunishmentApiTest {
     void updatePunishmentDuration() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - duration update",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - duration update",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var durationResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/duration", Map.of(
-                "issuerName", "TestBot",
-                "newDuration", 120
+            "issuerName", "TestBot",
+            "newDuration", 120
         ));
         JsonHelper.assertStatus(durationResponse, 200);
 
@@ -319,8 +317,8 @@ class MinecraftPunishmentApiTest {
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -328,28 +326,28 @@ class MinecraftPunishmentApiTest {
     void togglePunishmentOption() throws Exception {
         // Create punishment
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "API Test - toggle option",
-                "duration", 60,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "API Test - toggle option",
+            "duration", 60,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
         JsonHelper.assertStatus(createResponse, 200);
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var toggleResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/toggle", Map.of(
-                "issuerName", "TestBot",
-                "option", "ALT_BLOCKING",
-                "enabled", true
+            "issuerName", "TestBot",
+            "option", "ALT_BLOCKING",
+            "enabled", true
         ));
         JsonHelper.assertStatus(toggleResponse, 200);
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "API test cleanup"
+            "issuerName", "TestBot",
+            "reason", "API test cleanup"
         ));
     }
 
@@ -358,13 +356,13 @@ class MinecraftPunishmentApiTest {
         var types = TestDataProvider.getPunishmentTypes();
         for (var type : types) {
             var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                    "targetUuid", testUuid,
-                    "issuerName", "TestBot",
-                    "type_ordinal", type.ordinal(),
-                    "reason", "API Test - type " + type.name(),
-                    "duration", 60,
-                    "severity", "LOW",
-                    "status", "ACTIVE"
+                "targetUuid", testUuid,
+                "issuerName", "TestBot",
+                "type_ordinal", type.ordinal(),
+                "reason", "API Test - type " + type.name(),
+                "duration", 60,
+                "severity", "LOW",
+                "status", "ACTIVE"
             ));
             JsonHelper.assertStatus(createResponse, 200);
             String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
@@ -377,8 +375,8 @@ class MinecraftPunishmentApiTest {
 
             // Cleanup
             api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                    "issuerName", "TestBot",
-                    "reason", "API test cleanup"
+                "issuerName", "TestBot",
+                "reason", "API test cleanup"
             ));
         }
     }
@@ -388,13 +386,13 @@ class MinecraftPunishmentApiTest {
         var players = TestDataProvider.getPlayers();
         for (var player : players) {
             var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                    "targetUuid", player.uuid(),
-                    "issuerName", "TestBot",
-                    "type_ordinal", testTypeOrdinal,
-                    "reason", "API Test - player " + player.username(),
-                    "duration", 60,
-                    "severity", "LOW",
-                    "status", "ACTIVE"
+                "targetUuid", player.uuid(),
+                "issuerName", "TestBot",
+                "type_ordinal", testTypeOrdinal,
+                "reason", "API Test - player " + player.username(),
+                "duration", 60,
+                "severity", "LOW",
+                "status", "ACTIVE"
             ));
             JsonHelper.assertStatus(createResponse, 200);
             String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
@@ -407,8 +405,8 @@ class MinecraftPunishmentApiTest {
 
             // Cleanup
             api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                    "issuerName", "TestBot",
-                    "reason", "API test cleanup"
+                "issuerName", "TestBot",
+                "reason", "API test cleanup"
             ));
         }
     }

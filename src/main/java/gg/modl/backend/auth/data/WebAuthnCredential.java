@@ -2,14 +2,13 @@ package gg.modl.backend.auth.data;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import java.util.Date;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-
-import java.util.Date;
 
 @Document(collection = CollectionName.WEBAUTHN_CREDENTIALS)
 @GenerateMongoFields

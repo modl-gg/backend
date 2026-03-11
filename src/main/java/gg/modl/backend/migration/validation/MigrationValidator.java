@@ -1,17 +1,15 @@
 package gg.modl.backend.migration.validation;
 
 import gg.modl.backend.validation.RegExpConstants;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.net.InetAddress;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
@@ -112,10 +110,10 @@ public class MigrationValidator {
         }
 
         return cleaned.substring(0, 8) + "-" +
-                cleaned.substring(8, 12) + "-" +
-                cleaned.substring(12, 16) + "-" +
-                cleaned.substring(16, 20) + "-" +
-                cleaned.substring(20);
+               cleaned.substring(8, 12) + "-" +
+               cleaned.substring(12, 16) + "-" +
+               cleaned.substring(16, 20) + "-" +
+               cleaned.substring(20);
     }
 
     public String sanitizeString(String input, int maxLength) {
@@ -129,8 +127,8 @@ public class MigrationValidator {
         }
 
         return trimmed
-                .replace("\u0000", "")
-                .replace("\r", "");
+            .replace("\u0000", "")
+            .replace("\r", "");
     }
 
     public Date parseDate(Object dateObj) {

@@ -11,22 +11,20 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import lombok.extern.slf4j.Slf4j;
-
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 @Slf4j
 @Component
@@ -70,15 +68,15 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
         request.setAttribute(RequestAttribute.SESSION, session);
 
         List<SimpleGrantedAuthority> authorities = List.of(
-                new SimpleGrantedAuthority(RESTSecurityRole.USER)
+            new SimpleGrantedAuthority(RESTSecurityRole.USER)
         );
 
         UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken(
-                        session.getEmail(),
-                        null,
-                        authorities
-                );
+            new UsernamePasswordAuthenticationToken(
+                session.getEmail(),
+                null,
+                authorities
+            );
 
         authentication.setDetails(session);
         SecurityContextHolder.getContext().setAuthentication(authentication);
@@ -117,9 +115,9 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
         }
 
         return Arrays.stream(cookies)
-                .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
-                .map(Cookie::getValue)
-                .filter(value -> value != null && !value.isBlank())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
+            .map(Cookie::getValue)
+            .filter(value -> value != null && !value.isBlank())
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 }

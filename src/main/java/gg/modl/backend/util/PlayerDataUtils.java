@@ -2,11 +2,10 @@ package gg.modl.backend.util;
 
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.player.data.UsernameEntry;
-import lombok.experimental.UtilityClass;
-import org.bson.Document;
-
 import java.util.List;
 import java.util.Map;
+import lombok.experimental.UtilityClass;
+import org.bson.Document;
 
 @UtilityClass
 public class PlayerDataUtils {

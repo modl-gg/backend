@@ -5,11 +5,6 @@ import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
-import org.springframework.stereotype.Service;
-
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
@@ -17,6 +12,10 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
@@ -44,8 +43,8 @@ public class AdminAnalyticsService {
         long currentPeriodServers = serverRepository.countCreatedSince(startDate);
         long previousPeriodServers = serverRepository.countCreatedBetween(previousStartDate, startDate);
         double serverGrowthRate = previousPeriodServers > 0
-                ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
-                : (currentPeriodServers > 0 ? 100 : 0);
+                                  ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
+                                  : (currentPeriodServers > 0 ? 100 : 0);
 
         List<Document> planResults = serverRepository.aggregatePlanCounts();
         List<Document> statusResults = serverRepository.aggregateProvisioningStatusCounts();
@@ -59,103 +58,31 @@ public class AdminAnalyticsService {
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("data", Map.of(
-                "overview", Map.of(
-                        "totalServers", totalServers,
-                        "activeServers", activeServers,
-                        "totalUsers", totalUsers,
-                        "totalTickets", totalTickets,
-                        "serverGrowthRate", String.format("%.2f", serverGrowthRate),
-                        "userGrowthRate", "0.00",
-                        "avgPlayersPerServer", String.format("%.1f", avgPlayersPerServer),
-                        "avgTicketsPerServer", String.format("%.1f", avgTicketsPerServer)
-                ),
-                "serverMetrics", Map.of(
-                        "byPlan", planResults,
-                        "byStatus", statusResults,
-                        "registrationTrend", registrationTrend
-                ),
-                "usageStatistics", Map.of(
-                        "topServersByUsers", topServers,
-                        "serverActivity", Collections.emptyList(),
-                        "geographicDistribution", Collections.emptyList(),
-                        "playerGrowth", Collections.emptyList(),
-                        "ticketVolume", Collections.emptyList()
-                ),
-                "systemHealth", Map.of("errorRates", Collections.emptyList())
+            "overview", Map.of(
+                "totalServers", totalServers,
+                "activeServers", activeServers,
+                "totalUsers", totalUsers,
+                "totalTickets", totalTickets,
+                "serverGrowthRate", String.format("%.2f", serverGrowthRate),
+                "userGrowthRate", "0.00",
+                "avgPlayersPerServer", String.format("%.1f", avgPlayersPerServer),
+                "avgTicketsPerServer", String.format("%.1f", avgTicketsPerServer)
+            ),
+            "serverMetrics", Map.of(
+                "byPlan", planResults,
+                "byStatus", statusResults,
+                "registrationTrend", registrationTrend
+            ),
+            "usageStatistics", Map.of(
+                "topServersByUsers", topServers,
+                "serverActivity", Collections.emptyList(),
+                "geographicDistribution", Collections.emptyList(),
+                "playerGrowth", Collections.emptyList(),
+                "ticketVolume", Collections.emptyList()
+            ),
+            "systemHealth", Map.of("errorRates", Collections.emptyList())
         ));
         return response;
-    }
-
-    public Map<String, Object> getActivity(String range) {
-        int days = resolveRangeDays(range);
-        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-
-        List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
-
-        List<Map<String, Object>> data = snapshots.stream().map(s -> Map.<String, Object>of(
-                "date", s.getDate().toInstant().toString(),
-                "activeServers", s.getActiveServers(),
-                "totalPlayers", s.getTotalPlayers(),
-                "onlinePlayers", s.getOnlinePlayers(),
-                "totalServers", s.getTotalServers()
-        )).toList();
-
-        return Map.of("success", true, "data", data);
-    }
-
-    public Map<String, Object> getUsage() {
-        Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
-
-        long activeServers = serverRepository.countActiveSince(thirtyDaysAgo);
-        long totalServers = serverRepository.countAll();
-        long storageSize = globalMongoAdminRepository.getStorageSize();
-
-        return Map.of(
-                "success", true,
-                "data", Map.of(
-                        "userEngagement", Map.of("monthlyActiveServers", activeServers),
-                        "resourceUtilization", Map.of(
-                                "storage", storageSize,
-                                "storagePercent", totalServers > 0 ? (storageSize / (totalServers * 104857600.0)) * 100 : 0,
-                                "apiCalls", 0,
-                                "databaseQueries", 0
-                        )
-                )
-        );
-    }
-
-    public Map<String, Object> getHistorical(String metric, String range) {
-        if (metric == null || (!metric.equals("servers") && !metric.equals("users") && !metric.equals("tickets"))) {
-            return Map.of("success", false, "error", "Invalid metric type");
-        }
-
-        int days = resolveRangeDays(range);
-        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-        List<Document> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
-
-        return Map.of(
-                "success", true,
-                "data", Map.of(
-                        "metric", metric,
-                        "range", normalizeRange(range),
-                        "data", results
-                )
-        );
-    }
-
-    public Object exportAnalytics(String type, String range) {
-        String normalizedType = type != null ? type : "json";
-        String normalizedRange = normalizeRange(range);
-
-        if ("csv".equals(normalizedType)) {
-            return "Date,Servers,Users,Tickets\n2024-01-01,100,1500,820";
-        }
-
-        return Map.of(
-                "exportDate", new java.util.Date().toString(),
-                "range", normalizedRange,
-                "data", Map.of("servers", 100, "users", 1500, "tickets", 820)
-        );
     }
 
     private int resolveRangeDays(String range) {
@@ -169,5 +96,77 @@ public class AdminAnalyticsService {
 
     private String normalizeRange(String range) {
         return range == null || range.isBlank() ? "30d" : range;
+    }
+
+    public Map<String, Object> getActivity(String range) {
+        int days = resolveRangeDays(range);
+        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
+
+        List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
+
+        List<Map<String, Object>> data = snapshots.stream().map(s -> Map.<String, Object>of(
+            "date", s.getDate().toInstant().toString(),
+            "activeServers", s.getActiveServers(),
+            "totalPlayers", s.getTotalPlayers(),
+            "onlinePlayers", s.getOnlinePlayers(),
+            "totalServers", s.getTotalServers()
+        )).toList();
+
+        return Map.of("success", true, "data", data);
+    }
+
+    public Map<String, Object> getUsage() {
+        Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
+
+        long activeServers = serverRepository.countActiveSince(thirtyDaysAgo);
+        long totalServers = serverRepository.countAll();
+        long storageSize = globalMongoAdminRepository.getStorageSize();
+
+        return Map.of(
+            "success", true,
+            "data", Map.of(
+                "userEngagement", Map.of("monthlyActiveServers", activeServers),
+                "resourceUtilization", Map.of(
+                    "storage", storageSize,
+                    "storagePercent", totalServers > 0 ? (storageSize / (totalServers * 104857600.0)) * 100 : 0,
+                    "apiCalls", 0,
+                    "databaseQueries", 0
+                )
+            )
+        );
+    }
+
+    public Map<String, Object> getHistorical(String metric, String range) {
+        if (metric == null || (!metric.equals("servers") && !metric.equals("users") && !metric.equals("tickets"))) {
+            return Map.of("success", false, "error", "Invalid metric type");
+        }
+
+        int days = resolveRangeDays(range);
+        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
+        List<Document> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
+
+        return Map.of(
+            "success", true,
+            "data", Map.of(
+                "metric", metric,
+                "range", normalizeRange(range),
+                "data", results
+            )
+        );
+    }
+
+    public Object exportAnalytics(String type, String range) {
+        String normalizedType = type != null ? type : "json";
+        String normalizedRange = normalizeRange(range);
+
+        if ("csv".equals(normalizedType)) {
+            return "Date,Servers,Users,Tickets\n2024-01-01,100,1500,820";
+        }
+
+        return Map.of(
+            "exportDate", new java.util.Date().toString(),
+            "range", normalizedRange,
+            "data", Map.of("servers", 100, "users", 1500, "tickets", 820)
+        );
     }
 }

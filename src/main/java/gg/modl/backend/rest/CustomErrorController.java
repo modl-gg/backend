@@ -17,10 +17,10 @@ public class CustomErrorController implements ErrorController {
         Object status = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
 
         int statusCode = status != null ? Integer.parseInt(status.toString()) : 500;
-        
+
         String errorMessage;
         String error;
-        
+
         if (statusCode == HttpStatus.NOT_FOUND.value()) {
             error = "Not Found";
             errorMessage = "The requested resource was not found.";
@@ -37,12 +37,12 @@ public class CustomErrorController implements ErrorController {
             error = "Error";
             errorMessage = "Your request could not be processed.";
         }
-        
+
         ErrorResponse errorResponse = new ErrorResponse(
-                statusCode,
-                error,
-                errorMessage);
-        
+            statusCode,
+            error,
+            errorMessage);
+
         return new ResponseEntity<>(errorResponse, HttpStatus.valueOf(statusCode));
     }
 

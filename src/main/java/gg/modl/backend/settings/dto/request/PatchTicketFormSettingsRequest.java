@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 
 public record PatchTicketFormSettingsRequest(
-        @NotNull @Min(0) Long expectedVersion,
-        @NotNull @Valid TicketFormSettings settings
+    @NotNull @Min(0) Long expectedVersion,
+    @NotNull @Valid TicketFormSettings settings
 ) {
 }

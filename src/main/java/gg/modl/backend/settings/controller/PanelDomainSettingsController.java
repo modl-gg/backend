@@ -10,6 +10,7 @@ import gg.modl.backend.settings.service.CustomDomainAccessService;
 import gg.modl.backend.settings.service.DomainSettingsService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,8 +19,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS + "/domain")
@@ -38,8 +37,8 @@ public class PanelDomainSettingsController {
 
     @PostMapping
     public ResponseEntity<?> configureDomain(
-            @RequestBody @Valid ConfigureDomainRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid ConfigureDomainRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
@@ -55,10 +54,20 @@ public class PanelDomainSettingsController {
         }
     }
 
+    private ResponseEntity<?> requireCustomDomainWriteAccess(Server server) {
+        if (customDomainAccessService.canManageCustomDomain(server)) {
+            return null;
+        }
+
+        return ResponseEntity.status(403).body(Map.of(
+            "message", "Custom domains require Premium unless your server is grandfathered."
+        ));
+    }
+
     @PostMapping("/verify")
     public ResponseEntity<?> verifyDomain(
-            @RequestBody @Valid VerifyDomainRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid VerifyDomainRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
@@ -72,17 +81,17 @@ public class PanelDomainSettingsController {
 
             String message = switch (status.getStatus()) {
                 case "active" -> status.getSslStatus().equals("active")
-                        ? "Domain verified successfully with active SSL!"
-                        : "Domain verified! SSL certificate is being provisioned.";
+                                 ? "Domain verified successfully with active SSL!"
+                                 : "Domain verified! SSL certificate is being provisioned.";
                 case "error" -> status.getError() != null
-                        ? status.getError()
-                        : "Domain verification failed";
+                                ? status.getError()
+                                : "Domain verification failed";
                 default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
             };
 
             return ResponseEntity.ok(Map.of(
-                    "status", status,
-                    "message", message
+                "status", status,
+                "message", message
             ));
         } catch (IllegalStateException | IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
@@ -103,15 +112,5 @@ public class PanelDomainSettingsController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
-    }
-
-    private ResponseEntity<?> requireCustomDomainWriteAccess(Server server) {
-        if (customDomainAccessService.canManageCustomDomain(server)) {
-            return null;
-        }
-
-        return ResponseEntity.status(403).body(Map.of(
-                "message", "Custom domains require Premium unless your server is grandfathered."
-        ));
     }
 }

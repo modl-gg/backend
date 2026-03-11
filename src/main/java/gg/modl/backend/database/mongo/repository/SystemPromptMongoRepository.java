@@ -4,15 +4,14 @@ import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.SystemPromptFields;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.SystemPromptFields;
+import java.util.Date;
+import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.Date;
-import java.util.Optional;
 
 @Repository
 public class SystemPromptMongoRepository extends AbstractGlobalMongoRepository<SystemPrompt> {
@@ -28,8 +27,8 @@ public class SystemPromptMongoRepository extends AbstractGlobalMongoRepository<S
 
     public Optional<SystemPrompt> findActiveByStrictnessLevel(String strictnessLevel) {
         return findOne(Query.query(
-                MongoQueries.where(SystemPromptFields.STRICTNESS_LEVEL).is(strictnessLevel)
-                        .and(SystemPromptFields.IS_ACTIVE).is(true)
+            MongoQueries.where(SystemPromptFields.STRICTNESS_LEVEL).is(strictnessLevel)
+                .and(SystemPromptFields.IS_ACTIVE).is(true)
         ));
     }
 

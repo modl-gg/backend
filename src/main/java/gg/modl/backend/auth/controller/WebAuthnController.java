@@ -1,29 +1,34 @@
 package gg.modl.backend.auth.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.util.CookieUtil;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import gg.modl.backend.rest.RequestAttribute;
-
-import java.util.List;
-import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH + "/webauthn")
@@ -57,10 +62,16 @@ public class WebAuthnController {
         }
     }
 
+    private String getRequestDomain(HttpServletRequest request) {
+        return (String) request.getAttribute(RequestAttribute.SERVER_DOMAIN);
+    }
+
+    // --- Credential management (requires session) ---
+
     @PostMapping("/register/verify")
     public ResponseEntity<?> registerVerify(
-            HttpServletRequest request,
-            @RequestBody @Valid RegisterVerifyRequest body) {
+        HttpServletRequest request,
+        @RequestBody @Valid RegisterVerifyRequest body) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
@@ -78,8 +89,6 @@ public class WebAuthnController {
         }
     }
 
-    // --- Credential management (requires session) ---
-
     @GetMapping("/credentials")
     public ResponseEntity<?> listCredentials(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
@@ -94,9 +103,9 @@ public class WebAuthnController {
 
     @PatchMapping("/credentials/{id}")
     public ResponseEntity<?> renameCredential(
-            HttpServletRequest request,
-            @PathVariable String id,
-            @RequestBody @Valid RenameCredentialRequest body) {
+        HttpServletRequest request,
+        @PathVariable String id,
+        @RequestBody @Valid RenameCredentialRequest body) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
@@ -110,10 +119,12 @@ public class WebAuthnController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    // --- Login (no session required) ---
+
     @DeleteMapping("/credentials/{id}")
     public ResponseEntity<?> deleteCredential(
-            HttpServletRequest request,
-            @PathVariable String id) {
+        HttpServletRequest request,
+        @PathVariable String id) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
             return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
@@ -126,8 +137,6 @@ public class WebAuthnController {
         }
         return ResponseEntity.ok(Map.of("success", true));
     }
-
-    // --- Login (no session required) ---
 
     @PostMapping("/login/start")
     public ResponseEntity<?> loginStart(HttpServletRequest request) {
@@ -144,8 +153,8 @@ public class WebAuthnController {
 
     @PostMapping("/login/options")
     public ResponseEntity<?> loginOptions(
-            HttpServletRequest request,
-            @RequestBody @Valid LoginOptionsRequest body) {
+        HttpServletRequest request,
+        @RequestBody @Valid LoginOptionsRequest body) {
         Server server = RequestUtil.getRequestServer(request);
 
         // Prevent email enumeration: check if email is authorized first
@@ -162,9 +171,9 @@ public class WebAuthnController {
             WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, getRequestDomain(request), body.email());
             Object options = objectMapper.readValue(result.optionsJson(), Object.class);
             return ResponseEntity.ok(Map.of(
-                    "hasPasskeys", true,
-                    "challengeId", result.challengeId(),
-                    "options", options
+                "hasPasskeys", true,
+                "challengeId", result.challengeId(),
+                "options", options
             ));
         } catch (Exception e) {
             log.error("Failed to start WebAuthn authentication for {}", body.email(), e);
@@ -172,11 +181,20 @@ public class WebAuthnController {
         }
     }
 
+    // --- Helpers ---
+
+    private boolean isAuthorizedEmail(Server server, String email) {
+        if (permissionService.isSuperAdmin(server, email)) {
+            return true;
+        }
+        return staffService.getStaffByEmail(server, email).isPresent();
+    }
+
     @PostMapping("/login/verify")
     public ResponseEntity<?> loginVerify(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            @RequestBody @Valid LoginVerifyRequest body) {
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @RequestBody @Valid LoginVerifyRequest body) {
         Server server = RequestUtil.getRequestServer(request);
 
         try {
@@ -200,23 +218,13 @@ public class WebAuthnController {
         }
     }
 
-    // --- Helpers ---
-
-    private String getRequestDomain(HttpServletRequest request) {
-        return (String) request.getAttribute(RequestAttribute.SERVER_DOMAIN);
-    }
-
-    private boolean isAuthorizedEmail(Server server, String email) {
-        if (permissionService.isSuperAdmin(server, email)) {
-            return true;
-        }
-        return staffService.getStaffByEmail(server, email).isPresent();
-    }
-
     // --- Request DTOs ---
 
     public record RegisterVerifyRequest(@NotBlank String challengeId, @NotBlank String response, String name) {}
+
     public record RenameCredentialRequest(@NotBlank String name) {}
+
     public record LoginOptionsRequest(@Email @NotBlank String email) {}
+
     public record LoginVerifyRequest(@NotBlank String challengeId, @NotBlank String response) {}
 }

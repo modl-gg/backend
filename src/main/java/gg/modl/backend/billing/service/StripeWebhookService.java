@@ -9,12 +9,11 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.util.ServerMutationHelper;
+import java.util.Date;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -67,6 +66,10 @@ public class StripeWebhookService {
         }
     }
 
+    private Server findServerByCustomerId(String customerId) {
+        return serverRepository.findByStripeCustomerId(customerId).orElse(null);
+    }
+
     private void handleSubscriptionCreated(Event event) {
         StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
         if (!(stripeObject instanceof Subscription subscription)) {
@@ -85,6 +88,26 @@ public class StripeWebhookService {
             current.setCurrentPeriodStart(stripeService.extractPeriodStart(subscription));
             current.setCurrentPeriodEnd(stripeService.extractPeriodEnd(subscription));
         });
+    }
+
+    private ServerPlan planForSubscriptionStatus(String status) {
+        return isFreeStatus(status) ? ServerPlan.FREE : ServerPlan.PREMIUM;
+    }
+
+    private boolean isFreeStatus(String status) {
+        return "past_due".equals(status)
+               || "unpaid".equals(status)
+               || "incomplete".equals(status)
+               || "incomplete_expired".equals(status);
+    }
+
+    private SubscriptionStatus parseSubscriptionStatus(String status) {
+        try {
+            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
+            return SubscriptionStatus.INACTIVE;
+        }
     }
 
     private void handleSubscriptionUpdated(Event event) {
@@ -117,6 +140,14 @@ public class StripeWebhookService {
                 current.setCurrentPeriodEnd(periodEndDate);
             }
         });
+    }
+
+    private Server findServerBySubscriptionId(String subscriptionId) {
+        return serverRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
+    }
+
+    private boolean isPremiumStatus(String status) {
+        return "active".equals(status) || "trialing".equals(status) || "paused".equals(status);
     }
 
     private void handleSubscriptionDeleted(Event event) {
@@ -170,37 +201,5 @@ public class StripeWebhookService {
             current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
             current.setPlan(ServerPlan.PREMIUM);
         });
-    }
-
-    private Server findServerByCustomerId(String customerId) {
-        return serverRepository.findByStripeCustomerId(customerId).orElse(null);
-    }
-
-    private Server findServerBySubscriptionId(String subscriptionId) {
-        return serverRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
-    }
-
-    private ServerPlan planForSubscriptionStatus(String status) {
-        return isFreeStatus(status) ? ServerPlan.FREE : ServerPlan.PREMIUM;
-    }
-
-    private boolean isPremiumStatus(String status) {
-        return "active".equals(status) || "trialing".equals(status) || "paused".equals(status);
-    }
-
-    private boolean isFreeStatus(String status) {
-        return "past_due".equals(status)
-                || "unpaid".equals(status)
-                || "incomplete".equals(status)
-                || "incomplete_expired".equals(status);
-    }
-
-    private SubscriptionStatus parseSubscriptionStatus(String status) {
-        try {
-            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
-            return SubscriptionStatus.INACTIVE;
-        }
     }
 }

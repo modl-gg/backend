@@ -1,5 +1,9 @@
 package gg.modl.backend.player.service;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
+
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
@@ -9,18 +13,13 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MinecraftSyncServiceTest {
@@ -63,17 +62,17 @@ class MinecraftSyncServiceTest {
     @BeforeEach
     void setUp() {
         minecraftSyncService = new MinecraftSyncService(
-                playerRepository,
-                staffRepository,
-                staffRoleRepository,
-                ticketRepository,
-                serverRepository,
-                migrationRepository,
-                statusCalculator,
-                punishmentTypeService,
-                punishmentLifecycleService,
-                minecraftChatLogService,
-                issuerNameResolver
+            playerRepository,
+            staffRepository,
+            staffRoleRepository,
+            ticketRepository,
+            serverRepository,
+            migrationRepository,
+            statusCalculator,
+            punishmentTypeService,
+            punishmentLifecycleService,
+            minecraftChatLogService,
+            issuerNameResolver
         );
     }
 
@@ -85,12 +84,12 @@ class MinecraftSyncServiceTest {
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
 
         Map<String, Object> response = minecraftSyncService.sync(
-                server,
-                "2025-01-01T00:00:00Z",
-                List.of(),
-                "lobby",
-                List.of(),
-                List.of()
+            server,
+            "2025-01-01T00:00:00Z",
+            List.of(),
+            "lobby",
+            List.of(),
+            List.of()
         );
 
         assertNotNull(response.get("timestamp"));

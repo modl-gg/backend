@@ -10,12 +10,17 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_STORAGE)
@@ -33,8 +38,8 @@ public class PanelStorageController {
 
     @GetMapping("/files")
     public ResponseEntity<Map<String, Object>> getFiles(
-            @RequestParam(required = false) String prefix,
-            HttpServletRequest request
+        @RequestParam(required = false) String prefix,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<StorageFileResponse> files = s3StorageService.listFiles(server, prefix);
@@ -43,8 +48,8 @@ public class PanelStorageController {
 
     @PostMapping("/bulk-delete")
     public ResponseEntity<?> bulkDelete(
-            @RequestBody @Valid BulkDeleteRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid BulkDeleteRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<String> keys = body.keys();
@@ -62,8 +67,8 @@ public class PanelStorageController {
 
     @GetMapping("/download/{*key}")
     public ResponseEntity<?> getDownloadUrl(
-            @PathVariable String key,
-            HttpServletRequest request
+        @PathVariable String key,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 

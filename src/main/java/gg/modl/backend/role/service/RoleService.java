@@ -10,10 +10,16 @@ import gg.modl.backend.role.dto.request.UpdateRoleRequest;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -30,8 +36,35 @@ public class RoleService {
         Map<String, Integer> roleCounts = staffRepository.countByRoleName(server);
 
         return roles.stream()
-                .map(role -> toRoleResponse(role, roleCounts.getOrDefault(role.getName(), 0)))
-                .toList();
+            .map(role -> toRoleResponse(role, roleCounts.getOrDefault(role.getName(), 0)))
+            .toList();
+    }
+
+    private void fixCustomRoleOrdering(Server server) {
+        List<StaffRole> problematicRoles = staffRoleRepository.findCustomRolesWithOrderZero(server);
+
+        if (!problematicRoles.isEmpty()) {
+            StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
+            int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
+
+            for (StaffRole role : problematicRoles) {
+                staffRoleRepository.updateOrder(server, role.getId(), nextOrder++);
+            }
+        }
+    }
+
+    private RoleResponse toRoleResponse(StaffRole role, int userCount) {
+        return new RoleResponse(
+            role.getId(),
+            role.getName(),
+            role.getDescription(),
+            role.getPermissions(),
+            role.isDefault(),
+            role.getOrder(),
+            userCount,
+            role.getCreatedAt(),
+            role.getUpdatedAt()
+        );
     }
 
     public Optional<RoleResponse> getRoleById(Server server, String id) {
@@ -43,6 +76,10 @@ public class RoleService {
 
         int staffCount = getStaffCountForRole(server, role.getName());
         return Optional.of(toRoleResponse(role, staffCount));
+    }
+
+    private int getStaffCountForRole(Server server, String roleName) {
+        return staffRepository.countByRoleName(server, roleName);
     }
 
     public boolean updateRolePermissions(Server server, String id, List<String> permissions) {
@@ -64,9 +101,10 @@ public class RoleService {
 
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
-        List<String> filteredPermissions = request.permissions().stream()
-                .filter(validPermissions::contains)
-                .toList();
+        List<String> filteredPermissions = request.permissions()
+            .stream()
+            .filter(validPermissions::contains)
+            .toList();
 
         // Filter permissions to only those the performer can grant
         if (!isSuperAdmin) {
@@ -82,19 +120,72 @@ public class RoleService {
         int nextOrder = highestRole != null ? highestRole.getOrder() + 1 : 4;
 
         StaffRole newRole = StaffRole.builder()
-                .id(id)
-                .name(roleName)
-                .description(request.description())
-                .permissions(new ArrayList<>(filteredPermissions))
-                .isDefault(false)
-                .order(nextOrder)
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
+            .id(id)
+            .name(roleName)
+            .description(request.description())
+            .permissions(new ArrayList<>(filteredPermissions))
+            .isDefault(false)
+            .order(nextOrder)
+            .createdAt(new Date())
+            .updatedAt(new Date())
+            .build();
 
         staffRoleRepository.saveEntity(server, newRole);
 
         return toRoleResponse(newRole, 0);
+    }
+
+    private StaffRole resolvePerformerRole(Server server, String roleName, boolean isSuperAdmin) {
+        if (isSuperAdmin) {
+            // Synthetic super-admin role with order 0 and all permissions
+            return StaffRole.builder()
+                .id("super-admin")
+                .name("Super Admin")
+                .permissions(new ArrayList<>(permissionService.getAllPermissionIds(server)))
+                .order(0)
+                .build();
+        }
+        if (roleName == null || roleName.isBlank()) {
+            throw new IllegalArgumentException("You do not have authority to perform this action");
+        }
+        return permissionService.getRoleByName(server, roleName)
+            .orElseThrow(() -> new IllegalArgumentException("You do not have authority to perform this action"));
+    }
+
+    // --- Authorization helpers ---
+
+    private List<String> filterToGrantablePermissions(StaffRole performerRole, List<String> permissions) {
+        return permissions.stream()
+            .filter(p -> performerHasPermission(performerRole, p))
+            .toList();
+    }
+
+    private boolean performerHasPermission(StaffRole performerRole, String permission) {
+        if ("super-admin".equals(performerRole.getId()) || "Super Admin".equals(performerRole.getName())) {
+            return true;
+        }
+        for (String perm : performerRole.getPermissions()) {
+            if (perm.equals(permission)) {
+                return true;
+            }
+            if (permission.startsWith(perm + ".")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void ensureRoleNameAvailable(Server server, String roleName, String excludeRoleId) {
+        if (roleName == null || roleName.isBlank()) {
+            throw new IllegalArgumentException("Role name cannot be empty");
+        }
+
+        boolean exists = excludeRoleId != null && !excludeRoleId.isBlank()
+                         ? staffRoleRepository.existsByNameIgnoreCaseExcludingId(server, roleName, excludeRoleId)
+                         : staffRoleRepository.existsByNameIgnoreCase(server, roleName);
+        if (exists) {
+            throw new IllegalArgumentException("A role with this name already exists");
+        }
     }
 
     public Optional<RoleResponse> updateRole(Server server, String id, UpdateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
@@ -117,9 +208,10 @@ public class RoleService {
 
         // Filter out any invalid permissions (e.g. from deleted punishment types)
         Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
-        List<String> filteredPermissions = request.permissions().stream()
-                .filter(validPermissions::contains)
-                .toList();
+        List<String> filteredPermissions = request.permissions()
+            .stream()
+            .filter(validPermissions::contains)
+            .toList();
 
         // Filter permissions to only those the performer can grant
         if (!isSuperAdmin) {
@@ -143,6 +235,12 @@ public class RoleService {
 
         int staffCount = getStaffCountForRole(server, updated.getName());
         return Optional.of(toRoleResponse(updated, staffCount));
+    }
+
+    private void assertHigherAuthority(StaffRole performerRole, StaffRole targetRole) {
+        if (performerRole.getOrder() >= targetRole.getOrder()) {
+            throw new IllegalArgumentException("You do not have authority to modify a role at or above your own level");
+        }
     }
 
     public boolean deleteRole(Server server, String id, String performerRoleName, boolean isSuperAdmin) {
@@ -181,7 +279,9 @@ public class RoleService {
                 // Look up the role being reordered
                 StaffRole targetRole = staffRoleRepository.findById(server, item.id()).orElse(null);
 
-                if (targetRole == null) continue;
+                if (targetRole == null) {
+                    continue;
+                }
 
                 // Performer cannot reorder roles at or above their own authority level
                 if (targetRole.getOrder() <= performerOrder) {
@@ -201,164 +301,79 @@ public class RoleService {
     }
 
     public void createDefaultRoles(Server server) {
-        List<String> allPunishmentPerms = permissionService.getPunishmentPermissions(server).stream()
-                .map(Permission::id)
-                .toList();
+        List<String> allPunishmentPerms = permissionService.getPunishmentPermissions(server)
+            .stream()
+            .map(Permission::id)
+            .toList();
         List<String> moderatorPunishmentPerms = allPunishmentPerms.stream()
-                .filter(p -> !p.contains("blacklist"))
-                .toList();
+            .filter(p -> !p.contains("blacklist"))
+            .toList();
 
         List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
 
         List<String> adminPerms = new ArrayList<>(List.of(
-                "admin.settings.view", "admin.staff.manage", "admin.audit.view",
-                "punishment.modify",
-                "ticket.view.all", "ticket.reply.all", "ticket.close.all",
-                "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
-                "staff.maintenance", "staff.modactions",
-                "staff.intercept", "staff.chatlogs", "staff.commandlogs"
+            "admin.settings.view", "admin.staff.manage", "admin.audit.view",
+            "punishment.modify",
+            "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+            "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
+            "staff.maintenance", "staff.modactions",
+            "staff.intercept", "staff.chatlogs", "staff.commandlogs"
         ));
         adminPerms.addAll(allPunishmentPerms);
 
         List<String> moderatorPerms = new ArrayList<>(List.of(
-                "punishment.modify",
-                "ticket.view.all", "ticket.reply.all", "ticket.close.all",
-                "staff.modactions",
-                "staff.chatlogs", "staff.commandlogs"
+            "punishment.modify",
+            "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+            "staff.modactions",
+            "staff.chatlogs", "staff.commandlogs"
         ));
         moderatorPerms.addAll(moderatorPunishmentPerms);
 
         List<StaffRole> defaultRoles = List.of(
-                StaffRole.builder()
-                        .id("super-admin")
-                        .name("Super Admin")
-                        .description("Full access to all features and settings")
-                        .permissions(superAdminPerms)
-                        .isDefault(true)
-                        .order(0)
-                        .createdAt(new Date())
-                        .updatedAt(new Date())
-                        .build(),
-                StaffRole.builder()
-                        .id("admin")
-                        .name("Admin")
-                        .description("Administrative access with some restrictions")
-                        .permissions(adminPerms)
-                        .isDefault(true)
-                        .order(1)
-                        .createdAt(new Date())
-                        .updatedAt(new Date())
-                        .build(),
-                StaffRole.builder()
-                        .id("moderator")
-                        .name("Moderator")
-                        .description("Moderation permissions for punishments and tickets")
-                        .permissions(moderatorPerms)
-                        .isDefault(true)
-                        .order(2)
-                        .createdAt(new Date())
-                        .updatedAt(new Date())
-                        .build(),
-                StaffRole.builder()
-                        .id("helper")
-                        .name("Helper")
-                        .description("Basic support permissions")
-                        .permissions(new ArrayList<>(List.of("ticket.view.all", "ticket.reply.all")))
-                        .isDefault(true)
-                        .order(3)
-                        .createdAt(new Date())
-                        .updatedAt(new Date())
-                        .build()
+            StaffRole.builder()
+                .id("super-admin")
+                .name("Super Admin")
+                .description("Full access to all features and settings")
+                .permissions(superAdminPerms)
+                .isDefault(true)
+                .order(0)
+                .createdAt(new Date())
+                .updatedAt(new Date())
+                .build(),
+            StaffRole.builder()
+                .id("admin")
+                .name("Admin")
+                .description("Administrative access with some restrictions")
+                .permissions(adminPerms)
+                .isDefault(true)
+                .order(1)
+                .createdAt(new Date())
+                .updatedAt(new Date())
+                .build(),
+            StaffRole.builder()
+                .id("moderator")
+                .name("Moderator")
+                .description("Moderation permissions for punishments and tickets")
+                .permissions(moderatorPerms)
+                .isDefault(true)
+                .order(2)
+                .createdAt(new Date())
+                .updatedAt(new Date())
+                .build(),
+            StaffRole.builder()
+                .id("helper")
+                .name("Helper")
+                .description("Basic support permissions")
+                .permissions(new ArrayList<>(List.of("ticket.view.all", "ticket.reply.all")))
+                .isDefault(true)
+                .order(3)
+                .createdAt(new Date())
+                .updatedAt(new Date())
+                .build()
         );
 
         for (StaffRole role : defaultRoles) {
             staffRoleRepository.upsertRole(server, role);
-        }
-    }
-
-    // --- Authorization helpers ---
-
-    private StaffRole resolvePerformerRole(Server server, String roleName, boolean isSuperAdmin) {
-        if (isSuperAdmin) {
-            // Synthetic super-admin role with order 0 and all permissions
-            return StaffRole.builder()
-                    .id("super-admin")
-                    .name("Super Admin")
-                    .permissions(new ArrayList<>(permissionService.getAllPermissionIds(server)))
-                    .order(0)
-                    .build();
-        }
-        if (roleName == null || roleName.isBlank()) {
-            throw new IllegalArgumentException("You do not have authority to perform this action");
-        }
-        return permissionService.getRoleByName(server, roleName)
-                .orElseThrow(() -> new IllegalArgumentException("You do not have authority to perform this action"));
-    }
-
-    private boolean performerHasPermission(StaffRole performerRole, String permission) {
-        if ("super-admin".equals(performerRole.getId()) || "Super Admin".equals(performerRole.getName())) {
-            return true;
-        }
-        for (String perm : performerRole.getPermissions()) {
-            if (perm.equals(permission)) return true;
-            if (permission.startsWith(perm + ".")) return true;
-        }
-        return false;
-    }
-
-    private List<String> filterToGrantablePermissions(StaffRole performerRole, List<String> permissions) {
-        return permissions.stream()
-                .filter(p -> performerHasPermission(performerRole, p))
-                .toList();
-    }
-
-    private void assertHigherAuthority(StaffRole performerRole, StaffRole targetRole) {
-        if (performerRole.getOrder() >= targetRole.getOrder()) {
-            throw new IllegalArgumentException("You do not have authority to modify a role at or above your own level");
-        }
-    }
-
-    private void fixCustomRoleOrdering(Server server) {
-        List<StaffRole> problematicRoles = staffRoleRepository.findCustomRolesWithOrderZero(server);
-
-        if (!problematicRoles.isEmpty()) {
-            StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
-            int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
-
-            for (StaffRole role : problematicRoles) {
-                staffRoleRepository.updateOrder(server, role.getId(), nextOrder++);
-            }
-        }
-    }
-
-    private int getStaffCountForRole(Server server, String roleName) {
-        return staffRepository.countByRoleName(server, roleName);
-    }
-
-    private RoleResponse toRoleResponse(StaffRole role, int userCount) {
-        return new RoleResponse(
-                role.getId(),
-                role.getName(),
-                role.getDescription(),
-                role.getPermissions(),
-                role.isDefault(),
-                role.getOrder(),
-                userCount,
-                role.getCreatedAt(),
-                role.getUpdatedAt()
-        );
-    }
-
-    private void ensureRoleNameAvailable(Server server, String roleName, String excludeRoleId) {
-        if (roleName == null || roleName.isBlank()) {
-            throw new IllegalArgumentException("Role name cannot be empty");
-        }
-
-        boolean exists = excludeRoleId != null && !excludeRoleId.isBlank()
-                ? staffRoleRepository.existsByNameIgnoreCaseExcludingId(server, roleName, excludeRoleId)
-                : staffRoleRepository.existsByNameIgnoreCase(server, roleName);
-        if (exists) {
-            throw new IllegalArgumentException("A role with this name already exists");
         }
     }
 }

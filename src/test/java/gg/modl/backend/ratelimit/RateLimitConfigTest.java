@@ -1,8 +1,8 @@
 package gg.modl.backend.ratelimit;
 
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import org.junit.jupiter.api.Test;
 
 class RateLimitConfigTest {
 
@@ -11,28 +11,28 @@ class RateLimitConfigTest {
     @Test
     void publicMediaPostUsesDedicatedTier() {
         assertEquals(
-                RateLimitConfig.RateLimitTier.PUBLIC_MEDIA_UPLOAD,
-                config.getTierForPath("/v1/public/media/presign", "POST")
+            RateLimitConfig.RateLimitTier.PUBLIC_MEDIA_UPLOAD,
+            config.getTierForPath("/v1/public/media/presign", "POST")
         );
         assertEquals(
-                RateLimitConfig.RateLimitTier.PUBLIC_MEDIA_UPLOAD,
-                config.getTierForPath("/v1/public/media/confirm", "POST")
+            RateLimitConfig.RateLimitTier.PUBLIC_MEDIA_UPLOAD,
+            config.getTierForPath("/v1/public/media/confirm", "POST")
         );
     }
 
     @Test
     void publicMediaReadRemainsStandardTier() {
         assertEquals(
-                RateLimitConfig.RateLimitTier.PUBLIC_STANDARD,
-                config.getTierForPath("/v1/public/media/config", "GET")
+            RateLimitConfig.RateLimitTier.PUBLIC_STANDARD,
+            config.getTierForPath("/v1/public/media/config", "GET")
         );
     }
 
     @Test
     void publicTicketCreateTierUnchanged() {
         assertEquals(
-                RateLimitConfig.RateLimitTier.PUBLIC_TICKET_CREATE,
-                config.getTierForPath("/v1/public/tickets", "POST")
+            RateLimitConfig.RateLimitTier.PUBLIC_TICKET_CREATE,
+            config.getTierForPath("/v1/public/tickets", "POST")
         );
     }
 }

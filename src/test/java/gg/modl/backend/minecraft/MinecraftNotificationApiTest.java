@@ -3,14 +3,11 @@ package gg.modl.backend.minecraft;
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftNotificationApiTest {
 
@@ -27,8 +24,8 @@ class MinecraftNotificationApiTest {
     @Test
     void acknowledgeNotifications() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/notifications/acknowledge", Map.of(
-                "playerUuid", TEST_UUID,
-                "notificationIds", List.of("nonexistent-id")
+            "playerUuid", TEST_UUID,
+            "notificationIds", List.of("nonexistent-id")
         ));
         JsonHelper.assertStatus(response, 200);
     }

@@ -3,39 +3,27 @@ package gg.modl.backend.settings.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.TicketFormSettings;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class TicketFormSettingsService {
-    private static final String SETTINGS_TYPE_TICKET_FORMS = "ticketForms";
-
     private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
-
-    public TicketFormSettings getTicketFormSettings(Server server) {
-        return getTicketFormSettingsState(server).data();
-    }
-
-    public VersionedSettings<TicketFormSettings> getTicketFormSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_FORMS);
-        TicketFormSettings settings = mapToTicketFormSettings(state.data());
-        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
-    }
+    private static final String SETTINGS_TYPE_TICKET_FORMS = "ticketForms";
 
     public VersionedSettings<TicketFormSettings> patchTicketFormSettings(
-            Server server,
-            long expectedVersion,
-            TicketFormSettings newSettings
+        Server server,
+        long expectedVersion,
+        TicketFormSettings newSettings
     ) {
         TicketFormSettings merged = newSettings != null ? newSettings : getDefaultTicketFormSettings();
         ensureFormDefaults(merged);
@@ -43,10 +31,10 @@ public class TicketFormSettingsService {
         Map<String, Object> data = objectMapper.convertValue(merged, Map.class);
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_TICKET_FORMS,
-                expectedVersion,
-                new LinkedHashMap<>(data)
+            server,
+            SETTINGS_TYPE_TICKET_FORMS,
+            expectedVersion,
+            new LinkedHashMap<>(data)
         );
 
         return new VersionedSettings<>(mapToTicketFormSettings(updated.data()), updated.version(), updated.updatedAt());
@@ -70,21 +58,14 @@ public class TicketFormSettingsService {
         };
     }
 
-    public TicketFormSettings updateFormByType(Server server, String formType, TicketFormSettings.TicketForm form) {
-        TicketFormSettings settings = getTicketFormSettings(server);
+    public TicketFormSettings getTicketFormSettings(Server server) {
+        return getTicketFormSettingsState(server).data();
+    }
 
-        switch (formType.toLowerCase()) {
-            case "bug" -> settings.setBug(form);
-            case "support" -> settings.setSupport(form);
-            case "application", "staff" -> settings.setApplication(form);
-            case "player" -> settings.setPlayer(form);
-            case "chat" -> settings.setChat(form);
-            default -> {
-                // no-op for unknown form type
-            }
-        }
-
-        return updateTicketFormSettings(server, settings);
+    public VersionedSettings<TicketFormSettings> getTicketFormSettingsState(Server server) {
+        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_FORMS);
+        TicketFormSettings settings = mapToTicketFormSettings(state.data());
+        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
     }
 
     private TicketFormSettings mapToTicketFormSettings(Map<String, Object> data) {
@@ -103,15 +84,25 @@ public class TicketFormSettingsService {
     }
 
     private void ensureFormDefaults(TicketFormSettings settings) {
-        if (settings.getBug() == null) settings.setBug(emptyForm());
-        if (settings.getSupport() == null) settings.setSupport(emptyForm());
-        if (settings.getApplication() == null) settings.setApplication(emptyForm());
-        if (settings.getPlayer() == null) settings.setPlayer(emptyForm());
-        if (settings.getChat() == null) settings.setChat(emptyForm());
+        if (settings.getBug() == null) {
+            settings.setBug(emptyForm());
+        }
+        if (settings.getSupport() == null) {
+            settings.setSupport(emptyForm());
+        }
+        if (settings.getApplication() == null) {
+            settings.setApplication(emptyForm());
+        }
+        if (settings.getPlayer() == null) {
+            settings.setPlayer(emptyForm());
+        }
+        if (settings.getChat() == null) {
+            settings.setChat(emptyForm());
+        }
 
         for (TicketFormSettings.TicketForm form : List.of(
-                settings.getBug(), settings.getSupport(), settings.getApplication(),
-                settings.getPlayer(), settings.getChat()
+            settings.getBug(), settings.getSupport(), settings.getApplication(),
+            settings.getPlayer(), settings.getChat()
         )) {
             sanitizeForm(form);
         }
@@ -128,12 +119,36 @@ public class TicketFormSettingsService {
 
     private TicketFormSettings getDefaultTicketFormSettings() {
         return TicketFormSettings.builder()
-                .bug(emptyForm())
-                .support(emptyForm())
-                .application(emptyForm())
-                .player(emptyForm())
-                .chat(emptyForm())
-                .build();
+            .bug(emptyForm())
+            .support(emptyForm())
+            .application(emptyForm())
+            .player(emptyForm())
+            .chat(emptyForm())
+            .build();
+    }
+
+    private TicketFormSettings.TicketForm emptyForm() {
+        return TicketFormSettings.TicketForm.builder()
+            .fields(new ArrayList<>())
+            .sections(new ArrayList<>())
+            .build();
+    }
+
+    public TicketFormSettings updateFormByType(Server server, String formType, TicketFormSettings.TicketForm form) {
+        TicketFormSettings settings = getTicketFormSettings(server);
+
+        switch (formType.toLowerCase()) {
+            case "bug" -> settings.setBug(form);
+            case "support" -> settings.setSupport(form);
+            case "application", "staff" -> settings.setApplication(form);
+            case "player" -> settings.setPlayer(form);
+            case "chat" -> settings.setChat(form);
+            default -> {
+                // no-op for unknown form type
+            }
+        }
+
+        return updateTicketFormSettings(server, settings);
     }
 
     public Map<String, Object> buildTicketFormsResponse(TicketFormSettings ticketForms) {
@@ -150,12 +165,5 @@ public class TicketFormSettingsService {
         if (form != null) {
             forms.put(key, form);
         }
-    }
-
-    private TicketFormSettings.TicketForm emptyForm() {
-        return TicketFormSettings.TicketForm.builder()
-                .fields(new ArrayList<>())
-                .sections(new ArrayList<>())
-                .build();
     }
 }

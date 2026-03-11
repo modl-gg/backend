@@ -9,14 +9,6 @@ import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
-import org.bson.Document;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.aggregation.AggregationResults;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Repository;
-
 import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -25,6 +17,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.bson.Document;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.stereotype.Repository;
 
 @Repository
 public class PlayerMongoRepository extends AbstractServerMongoRepository<Player> {
@@ -73,7 +72,7 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff, int limit) {
         Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
-                Criteria.where("issued").gte(cutoff)
+            Criteria.where("issued").gte(cutoff)
         ));
         query.limit(limit);
         return find(server, query);
@@ -109,8 +108,8 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         }
 
         Query query = Query.query(new Criteria().andOperator(
-                MongoQueries.where(PlayerFields.IP_ADDRESS).in(ipAddresses),
-                MongoQueries.where(PlayerFields.MINECRAFT_UUID).ne(excludedUuid)
+            MongoQueries.where(PlayerFields.IP_ADDRESS).in(ipAddresses),
+            MongoQueries.where(PlayerFields.MINECRAFT_UUID).ne(excludedUuid)
         ));
         query.limit(limit);
         return find(server, query);
@@ -129,16 +128,28 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return find(server, linkedBanQuery(parentPunishmentId));
     }
 
+    private Query linkedBanQuery(String parentPunishmentId) {
+        return Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+            Criteria.where(PunishmentFields.TYPE_ORDINAL).is(4)
+                .and(PunishmentFields.DATA_LINKED_BAN_ID).is(parentPunishmentId)
+        ));
+    }
+
     public List<Player> findByLinkedBanId(String databaseName, String parentPunishmentId) {
         return find(databaseName, linkedBanQuery(parentPunishmentId));
     }
 
     public void updateLoginState(Server server, Player player) {
         Update update = new Update()
-                .set(PlayerFields.USERNAMES, player.getUsernames())
-                .set(PlayerFields.IP_ADDRESSES, player.getIpAddresses())
-                .set(PlayerFields.DATA, player.getData());
+            .set(PlayerFields.USERNAMES, player.getUsernames())
+            .set(PlayerFields.IP_ADDRESSES, player.getIpAddresses())
+            .set(PlayerFields.DATA, player.getData());
         updateById(server, player.getId(), update);
+    }
+
+    private void updateById(Server server, String playerId, Update update) {
+        Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId));
+        updateFirst(server, query, update);
     }
 
     public void replaceUsernames(Server server, Player player) {
@@ -190,8 +201,8 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
     public boolean markDisconnected(Server server, String minecraftUuid, long sessionDurationMs) {
         Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
         Update update = new Update()
-                .set(PlayerFields.DATA_IS_ONLINE, false)
-                .set(PlayerFields.DATA_LAST_LOGOUT, new Date());
+            .set(PlayerFields.DATA_IS_ONLINE, false)
+            .set(PlayerFields.DATA_LAST_LOGOUT, new Date());
 
         if (sessionDurationMs > 0) {
             update.inc(PlayerFields.DATA_TOTAL_PLAYTIME_SECONDS, sessionDurationMs / 1000);
@@ -209,8 +220,8 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
     public void markStalePlayersOffline(Server server, Criteria staleOnlineCriteria, Date logoutTime) {
         Query query = Query.query(staleOnlineCriteria);
         Update update = new Update()
-                .set(PlayerFields.DATA_IS_ONLINE, false)
-                .set(PlayerFields.DATA_LAST_LOGOUT, logoutTime);
+            .set(PlayerFields.DATA_IS_ONLINE, false)
+            .set(PlayerFields.DATA_LAST_LOGOUT, logoutTime);
         updateMulti(server, query, update);
     }
 
@@ -228,9 +239,9 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public org.springframework.data.mongodb.core.BulkOperations bulkOps(Server server) {
         return serverTemplate(server).bulkOps(
-                org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
-                Player.class,
-                CollectionName.PLAYERS
+            org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
+            Player.class,
+            CollectionName.PLAYERS
         );
     }
 
@@ -240,8 +251,8 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public Map<String, Integer> countPunishmentsByIssuerName(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.unwind(PlayerFields.PUNISHMENTS),
-                Aggregation.group(PlayerFields.PUNISHMENT_ISSUER_NAME).count().as("count")
+            Aggregation.unwind(PlayerFields.PUNISHMENTS),
+            Aggregation.group(PlayerFields.PUNISHMENT_ISSUER_NAME).count().as("count")
         );
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
         Map<String, Integer> punishmentCounts = new LinkedHashMap<>();
@@ -256,21 +267,9 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public void updatePunishmentField(Server server, String playerUuid, String punishmentId, Update update) {
         Query query = Query.query(
-                Criteria.where("minecraftUuid").is(playerUuid)
-                        .and("punishments.id").is(punishmentId)
+            Criteria.where("minecraftUuid").is(playerUuid)
+                .and("punishments.id").is(punishmentId)
         );
         updateFirst(server, query, update);
-    }
-
-    private void updateById(Server server, String playerId, Update update) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId));
-        updateFirst(server, query, update);
-    }
-
-    private Query linkedBanQuery(String parentPunishmentId) {
-        return Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
-                Criteria.where(PunishmentFields.TYPE_ORDINAL).is(4)
-                        .and(PunishmentFields.DATA_LINKED_BAN_ID).is(parentPunishmentId)
-        ));
     }
 }

@@ -2,8 +2,20 @@ package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
-import gg.modl.backend.player.dto.request.*;
-import gg.modl.backend.player.dto.response.*;
+import gg.modl.backend.player.dto.request.AddEvidenceRequest;
+import gg.modl.backend.player.dto.request.AddIpRequest;
+import gg.modl.backend.player.dto.request.AddModificationRequest;
+import gg.modl.backend.player.dto.request.AddNoteRequest;
+import gg.modl.backend.player.dto.request.AddPunishmentNoteRequest;
+import gg.modl.backend.player.dto.request.AddUsernameRequest;
+import gg.modl.backend.player.dto.request.CreatePlayerRequest;
+import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
+import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
+import gg.modl.backend.player.dto.response.LinkedAccountResponse;
+import gg.modl.backend.player.dto.response.PlayerDetailResponse;
+import gg.modl.backend.player.dto.response.PlayerSearchResult;
+import gg.modl.backend.player.dto.response.PunishmentResponse;
+import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.player.service.AccountLinkingService;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
@@ -17,16 +29,21 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_PLAYERS)
@@ -41,8 +58,8 @@ public class PanelPlayerController {
 
     @GetMapping
     public ResponseEntity<List<PlayerSearchResult>> searchPlayers(
-            @RequestParam @Size(min = 2) String search,
-            HttpServletRequest request
+        @RequestParam @Size(min = 2) String search,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<PlayerSearchResult> results = playerService.searchPlayers(server, search);
@@ -52,26 +69,26 @@ public class PanelPlayerController {
 
     @GetMapping("/{uuid}")
     public ResponseEntity<PlayerDetailResponse> getPlayer(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return playerService.getPlayerDetails(server, UUID.fromString(uuid))
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public ResponseEntity<SimpleResponse> createPlayer(
-            @RequestBody @Valid CreatePlayerRequest createRequest,
-            HttpServletRequest request
+        @RequestBody @Valid CreatePlayerRequest createRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         playerService.createPlayer(
-                server,
-                UUID.fromString(createRequest.minecraftUuid()),
-                createRequest.username()
+            server,
+            UUID.fromString(createRequest.minecraftUuid()),
+            createRequest.username()
         );
 
         return ResponseEntity.status(HttpStatus.CREATED).body(new SimpleResponse(true));
@@ -79,9 +96,9 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/usernames")
     public ResponseEntity<SimpleResponse> addUsername(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @RequestBody @Valid AddUsernameRequest addRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @RequestBody @Valid AddUsernameRequest addRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = playerService.addUsername(server, UUID.fromString(uuid), addRequest.username());
@@ -94,17 +111,17 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/notes")
     public ResponseEntity<SimpleResponse> addNote(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @RequestBody @Valid AddNoteRequest addRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @RequestBody @Valid AddNoteRequest addRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = playerService.addNote(
-                server,
-                UUID.fromString(uuid),
-                addRequest.text(),
-                addRequest.issuerName(),
-                addRequest.issuerId()
+            server,
+            UUID.fromString(uuid),
+            addRequest.text(),
+            addRequest.issuerName(),
+            addRequest.issuerId()
         );
         if (player == null) {
             return ResponseEntity.notFound().build();
@@ -115,9 +132,9 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/ips")
     public ResponseEntity<SimpleResponse> addIp(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @RequestBody @Valid AddIpRequest addRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @RequestBody @Valid AddIpRequest addRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = playerService.addIp(server, UUID.fromString(uuid), addRequest.ipAddress());
@@ -130,9 +147,9 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/punishments")
     public ResponseEntity<SimpleResponse> createPunishment(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @RequestBody @Valid CreatePunishmentRequest createRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @RequestBody @Valid CreatePunishmentRequest createRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         try {
@@ -146,17 +163,17 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/punishments/{punishmentId}/modifications")
     public ResponseEntity<SimpleResponse> addModification(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @PathVariable String punishmentId,
-            @RequestBody @Valid AddModificationRequest modRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @PathVariable String punishmentId,
+        @RequestBody @Valid AddModificationRequest modRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = punishmentMutationService.addModification(
-                server,
-                UUID.fromString(uuid),
-                punishmentId,
-                modRequest
+            server,
+            UUID.fromString(uuid),
+            punishmentId,
+            modRequest
         );
         if (player == null) {
             return ResponseEntity.notFound().build();
@@ -167,13 +184,13 @@ public class PanelPlayerController {
 
     @GetMapping("/{uuid}/punishments/active")
     public ResponseEntity<List<PunishmentResponse>> getActivePunishments(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<PunishmentResponse> punishments = punishmentQueryService.getActivePunishments(
-                server,
-                UUID.fromString(uuid)
+            server,
+            UUID.fromString(uuid)
         );
 
         return ResponseEntity.ok(punishments);
@@ -181,21 +198,21 @@ public class PanelPlayerController {
 
     @GetMapping("/punishments/{punishmentId}")
     public ResponseEntity<PunishmentResponse> getPunishmentById(
-            @PathVariable String punishmentId,
-            HttpServletRequest request
+        @PathVariable String punishmentId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return punishmentQueryService.getPunishmentById(server, punishmentId)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/punishments/search")
     public ResponseEntity<List<PunishmentSearchResult>> searchPunishments(
-            @RequestParam @Size(min = 2) String q,
-            @RequestParam(defaultValue = "false") boolean activeOnly,
-            HttpServletRequest request
+        @RequestParam @Size(min = 2) String q,
+        @RequestParam(defaultValue = "false") boolean activeOnly,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<PunishmentSearchResult> results = punishmentQueryService.searchPunishments(server, q, activeOnly);
@@ -204,19 +221,19 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/punishments/{punishmentId}/notes")
     public ResponseEntity<SimpleResponse> addPunishmentNote(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @PathVariable String punishmentId,
-            @RequestBody @Valid AddPunishmentNoteRequest noteRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @PathVariable String punishmentId,
+        @RequestBody @Valid AddPunishmentNoteRequest noteRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = punishmentEvidenceService.addPunishmentNote(
-                server,
-                UUID.fromString(uuid),
-                punishmentId,
-                noteRequest.text(),
-                noteRequest.issuerName(),
-                noteRequest.issuerId()
+            server,
+            UUID.fromString(uuid),
+            punishmentId,
+            noteRequest.text(),
+            noteRequest.issuerName(),
+            noteRequest.issuerId()
         );
         if (player == null) {
             return ResponseEntity.notFound().build();
@@ -227,17 +244,17 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/punishments/{punishmentId}/evidence")
     public ResponseEntity<SimpleResponse> addEvidence(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @PathVariable String punishmentId,
-            @RequestBody @Valid AddEvidenceRequest evidenceRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @PathVariable String punishmentId,
+        @RequestBody @Valid AddEvidenceRequest evidenceRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = punishmentEvidenceService.addEvidence(
-                server,
-                UUID.fromString(uuid),
-                punishmentId,
-                evidenceRequest
+            server,
+            UUID.fromString(uuid),
+            punishmentId,
+            evidenceRequest
         );
         if (player == null) {
             return ResponseEntity.notFound().build();
@@ -248,17 +265,17 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/punishments/{punishmentId}/tickets")
     public ResponseEntity<SimpleResponse> modifyPunishmentTickets(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            @PathVariable String punishmentId,
-            @RequestBody @Valid ModifyPunishmentTicketsRequest ticketRequest,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @PathVariable String punishmentId,
+        @RequestBody @Valid ModifyPunishmentTicketsRequest ticketRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Player player = punishmentMutationService.modifyPunishmentTickets(
-                server,
-                UUID.fromString(uuid),
-                punishmentId,
-                ticketRequest
+            server,
+            UUID.fromString(uuid),
+            punishmentId,
+            ticketRequest
         );
         if (player == null) {
             return ResponseEntity.notFound().build();
@@ -269,13 +286,13 @@ public class PanelPlayerController {
 
     @GetMapping("/{uuid}/linked")
     public ResponseEntity<Map<String, Object>> getLinkedAccounts(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<LinkedAccountResponse> linkedAccounts = accountLinkingService.getLinkedAccounts(
-                server,
-                UUID.fromString(uuid)
+            server,
+            UUID.fromString(uuid)
         );
 
         return ResponseEntity.ok(Map.of("linkedAccounts", linkedAccounts));
@@ -283,8 +300,8 @@ public class PanelPlayerController {
 
     @GetMapping("/punishments/{punishmentId}/linked-bans")
     public ResponseEntity<List<Map<String, Object>>> getLinkedBans(
-            @PathVariable String punishmentId,
-            HttpServletRequest request
+        @PathVariable String punishmentId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<Map<String, Object>> linkedBans = punishmentQueryService.getLinkedBansForParent(server, punishmentId);
@@ -293,19 +310,19 @@ public class PanelPlayerController {
 
     @PostMapping("/{uuid}/find-linked")
     public ResponseEntity<Map<String, Object>> findAndLinkAccounts(
-            @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-            HttpServletRequest request
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AccountLinkingService.LinkingResult result = accountLinkingService.findAndLinkAccounts(
-                server,
-                UUID.fromString(uuid)
+            server,
+            UUID.fromString(uuid)
         );
 
         return ResponseEntity.ok(Map.of(
-                "success", result.success(),
-                "message", result.message(),
-                "linkedAccountsFound", result.linkedAccountsFound()
+            "success", result.success(),
+            "message", result.message(),
+            "linkedAccountsFound", result.linkedAccountsFound()
         ));
     }
 

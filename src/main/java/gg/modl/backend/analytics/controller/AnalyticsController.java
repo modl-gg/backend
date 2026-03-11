@@ -10,11 +10,13 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_ANALYTICS)
@@ -31,8 +33,8 @@ public class AnalyticsController {
 
     @GetMapping("/tickets")
     public ResponseEntity<TicketAnalyticsResponse> getTicketAnalytics(
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "30d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         TicketAnalyticsResponse analytics = analyticsService.getTicketAnalytics(server, period);
@@ -41,8 +43,8 @@ public class AnalyticsController {
 
     @GetMapping("/punishments")
     public ResponseEntity<PunishmentAnalyticsResponse> getPunishmentAnalytics(
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "30d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentAnalyticsResponse analytics = analyticsService.getPunishmentAnalytics(server, period);
@@ -51,8 +53,8 @@ public class AnalyticsController {
 
     @GetMapping("/audit-logs")
     public ResponseEntity<AuditLogsAnalyticsResponse> getAuditLogsAnalytics(
-            @RequestParam(defaultValue = "7d") String period,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "7d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AuditLogsAnalyticsResponse analytics = analyticsService.getAuditLogsAnalytics(server, period);
@@ -61,8 +63,8 @@ public class AnalyticsController {
 
     @GetMapping("/player-activity")
     public ResponseEntity<PlayerActivityResponse> getPlayerActivityAnalytics(
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "30d") String period,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PlayerActivityResponse analytics = analyticsService.getPlayerActivityAnalytics(server, period);

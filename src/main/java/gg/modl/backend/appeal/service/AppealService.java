@@ -19,13 +19,18 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.TicketIdGenerator;
 import gg.modl.backend.util.PlayerDataUtils;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
-
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -40,13 +45,40 @@ public class AppealService {
 
     public List<TicketResponse> getAppealsByPunishment(Server server, String punishmentId) {
         return ticketRepository.findAppealsByPunishmentId(server, punishmentId)
-                .stream().map(this::toTicketResponse).toList();
+            .stream().map(this::toTicketResponse).toList();
+    }
+
+    private TicketResponse toTicketResponse(Ticket ticket) {
+        return new TicketResponse(
+            ticket.getId(),
+            TicketCategory.APPEAL.getId(),
+            TicketCategory.APPEAL.getDisplayName(),
+            ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
+            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+            ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : AppealWorkflowStatus.OPEN.getId(),
+            ticket.getCreatorName(),
+            ticket.getCreatorUuid(),
+            ticket.getCreatorName(),
+            ticket.getReportedPlayer(),
+            ticket.getReportedPlayerUuid(),
+            ticket.getCreated(),
+            ticket.isLocked(),
+            ticket.getReplies(),
+            ticket.getNotes(),
+            ticket.getTags(),
+            ticket.getFormData(),
+            ticket.getData(),
+            ticket.getChatMessages(),
+            ticket.getAiAnalysis(),
+            ticket.isEmailAuthEnabled(),
+            ticket.isHidden()
+        );
     }
 
     public Optional<TicketResponse> getAppealById(Server server, String appealId) {
         return ticketRepository.findByTicketId(server, appealId)
-                .filter(t -> t.getType() == TicketCategory.APPEAL)
-                .map(this::toTicketResponse);
+            .filter(t -> t.getType() == TicketCategory.APPEAL)
+            .map(this::toTicketResponse);
     }
 
     public TicketResponse createAppeal(Server server, CreateAppealRequest request) {
@@ -55,10 +87,11 @@ public class AppealService {
             throw new IllegalArgumentException("Punishment not found for the specified player");
         }
 
-        Punishment punishment = player.getPunishments().stream()
-                .filter(p -> p.getId().equals(request.punishmentId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Punishment details not found"));
+        Punishment punishment = player.getPunishments()
+            .stream()
+            .filter(p -> p.getId().equals(request.punishmentId()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Punishment details not found"));
 
         if (ticketRepository.existsAppealForPunishment(server, request.punishmentId())) {
             throw new IllegalStateException("An appeal already exists for this punishment");
@@ -80,37 +113,110 @@ public class AppealService {
         String initialContent = buildInitialContent(request);
 
         TicketReply initialReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(username)
-                .content(initialContent)
-                .type("player")
-                .created(new Date())
-                .staff(false)
-                .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
-                .build();
+            .id(UUID.randomUUID().toString())
+            .name(username)
+            .content(initialContent)
+            .type("player")
+            .created(new Date())
+            .staff(false)
+            .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
+            .build();
 
         Ticket appeal = Ticket.builder()
-                .id(appealId)
-                .type(TicketCategory.APPEAL)
-                .status(TicketStatus.OPEN)
-                .appealWorkflowStatus(AppealWorkflowStatus.OPEN)
-                .subject("Appeal for Punishment: " + request.punishmentId())
-                .tags(new ArrayList<>())
-                .creatorName(username)
-                .creatorUuid(request.playerUuid())
-                .notes(new ArrayList<>())
-                .replies(new ArrayList<>(List.of(initialReply)))
-                .data(data)
-                .locked(false)
-                .created(new Date())
-                .updatedAt(new Date())
-                .build();
+            .id(appealId)
+            .type(TicketCategory.APPEAL)
+            .status(TicketStatus.OPEN)
+            .appealWorkflowStatus(AppealWorkflowStatus.OPEN)
+            .subject("Appeal for Punishment: " + request.punishmentId())
+            .tags(new ArrayList<>())
+            .creatorName(username)
+            .creatorUuid(request.playerUuid())
+            .notes(new ArrayList<>())
+            .replies(new ArrayList<>(List.of(initialReply)))
+            .data(data)
+            .locked(false)
+            .created(new Date())
+            .updatedAt(new Date())
+            .build();
 
         ticketRepository.saveAppeal(server, appeal);
 
         linkAppealToPunishment(server, request.playerUuid(), request.punishmentId(), appealId);
 
         return toTicketResponse(appeal);
+    }
+
+    private Player findPlayerWithPunishment(Server server, String playerUuid, String punishmentId) {
+        return playerRepository.findByMinecraftUuid(server, playerUuid)
+            .filter(p -> p.getPunishments() != null && p.getPunishments()
+                .stream()
+                .anyMatch(pun -> pun.getId().equals(punishmentId)))
+            .orElse(null);
+    }
+
+    private void linkAppealToPunishment(Server server, String playerUuid, String punishmentId, String appealId) {
+        PunishmentNote appealOpenedNote = new PunishmentNote(
+            new ObjectId().toHexString(),
+            "opened appeal (#" + appealId + ")",
+            new Date(),
+            "System",
+            null
+        );
+
+        Update update = new Update()
+            .push("punishments.$.attachedTicketIds", appealId)
+            .push("punishments.$.notes", appealOpenedNote);
+        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
+    }
+
+    private String buildInitialContent(CreateAppealRequest request) {
+        StringBuilder content = new StringBuilder();
+
+        if (request.reason() != null && !request.reason().isBlank()) {
+            content.append("Appeal Reason: ").append(request.reason()).append("\n");
+        }
+
+        if (request.evidence() != null && !request.evidence().isBlank()) {
+            content.append("Evidence: ").append(request.evidence()).append("\n");
+        }
+
+        if (request.additionalData() != null && !request.additionalData().isEmpty()) {
+            content.append("\nAdditional Information:\n");
+            for (Map.Entry<String, Object> entry : request.additionalData().entrySet()) {
+                Object value = entry.getValue();
+                if (value != null) {
+                    String fieldLabel = request.fieldLabels() != null && request.fieldLabels().containsKey(entry.getKey())
+                                        ? request.fieldLabels().get(entry.getKey())
+                                        : formatFieldLabel(entry.getKey());
+
+                    if (value instanceof List<?> list) {
+                        if (!list.isEmpty()) {
+                            content.append(fieldLabel).append(":\n");
+                            for (Object item : list) {
+                                content.append("  - ").append(item).append("\n");
+                            }
+                        }
+                    } else if (value instanceof Boolean bool) {
+                        content.append(fieldLabel).append(": ").append(bool ? "Yes" : "No").append("\n");
+                    } else {
+                        content.append(fieldLabel).append(": ").append(value).append("\n");
+                    }
+                }
+            }
+        }
+
+        content.append("\nContact Email: ").append(request.email());
+
+        if (content.toString().trim().equals("Contact Email: " + request.email())) {
+            return "Appeal submitted for punishment " + request.punishmentId() + ".\n\nContact Email: " + request.email();
+        }
+
+        return content.toString();
+    }
+
+    private String formatFieldLabel(String key) {
+        return key.replaceAll("([A-Z])", " $1")
+            .replaceFirst("^.", String.valueOf(Character.toUpperCase(key.charAt(0))));
     }
 
     public Optional<TicketReply> addReply(Server server, String appealId, AddAppealReplyRequest request) {
@@ -127,16 +233,16 @@ public class AppealService {
         }
 
         TicketReply newReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(request.name())
-                .content(request.content())
-                .type(request.type())
-                .created(new Date())
-                .staff(request.staff())
-                .action(request.action())
-                .avatar(request.avatar())
-                .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
-                .build();
+            .id(UUID.randomUUID().toString())
+            .name(request.name())
+            .content(request.content())
+            .type(request.type())
+            .created(new Date())
+            .staff(request.staff())
+            .action(request.action())
+            .avatar(request.avatar())
+            .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
+            .build();
 
         ticketRepository.pushReply(server, appealId, newReply);
 
@@ -172,9 +278,9 @@ public class AppealService {
             statusChanged = true;
 
             systemReplies.add(createSystemReply(
-                    request.staffUsername(),
-                    "Appeal status changed to " + requestedWorkflowStatus.getDisplayName() + ".",
-                    "APPEAL_STATUS_" + requestedWorkflowStatus.name()
+                request.staffUsername(),
+                "Appeal status changed to " + requestedWorkflowStatus.getDisplayName() + ".",
+                "APPEAL_STATUS_" + requestedWorkflowStatus.name()
             ));
         }
 
@@ -186,9 +292,9 @@ public class AppealService {
                 appeal.setData(data);
 
                 systemReplies.add(createSystemReply(
-                        request.staffUsername(),
-                        "Resolution set to " + request.resolution() + ".",
-                        "RESOLUTION_" + request.resolution().toUpperCase().replace(" ", "_")
+                    request.staffUsername(),
+                    "Resolution set to " + request.resolution() + ".",
+                    "RESOLUTION_" + request.resolution().toUpperCase().replace(" ", "_")
                 ));
             }
         }
@@ -201,9 +307,9 @@ public class AppealService {
             appeal.setStatus(lifecycleStatus);
 
             systemReplies.add(createSystemReply(
-                    request.staffUsername(),
-                    "Ticket " + (request.locked() ? "locked" : "unlocked") + ".",
-                    request.locked() ? "LOCKED" : "UNLOCKED"
+                request.staffUsername(),
+                "Ticket " + (request.locked() ? "locked" : "unlocked") + ".",
+                request.locked() ? "LOCKED" : "UNLOCKED"
             ));
         }
 
@@ -229,28 +335,32 @@ public class AppealService {
 
     private void addAppealRejectedNote(Server server, Ticket appeal, String staffUsername) {
         Map<String, Object> data = appeal.getData();
-        if (data == null) return;
+        if (data == null) {
+            return;
+        }
 
         String punishmentId = (String) data.get("punishmentId");
         String playerUuid = (String) data.get("playerUuid");
 
-        if (punishmentId == null || playerUuid == null) return;
+        if (punishmentId == null || playerUuid == null) {
+            return;
+        }
 
         Date now = new Date();
         String staffName = staffUsername != null ? staffUsername : "System";
 
         PunishmentNote appealRejectedNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "rejected appeal (#" + appeal.getId() + ")",
-                now,
-                staffName,
-                null
+            new ObjectId().toHexString(),
+            "rejected appeal (#" + appeal.getId() + ")",
+            now,
+            staffName,
+            null
         );
 
         Update update = new Update()
-                .push("punishments.$.notes", appealRejectedNote)
-                .set("punishments.$.data.appealOutcome", "Rejected")
-                .set("punishments.$.data.appealTicketId", appeal.getId());
+            .push("punishments.$.notes", appealRejectedNote)
+            .set("punishments.$.data.appealOutcome", "Rejected")
+            .set("punishments.$.data.appealTicketId", appeal.getId());
 
         playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
     }
@@ -261,165 +371,71 @@ public class AppealService {
 
     private void pardonPunishment(Server server, Ticket appeal, String staffUsername) {
         Map<String, Object> data = appeal.getData();
-        if (data == null) return;
+        if (data == null) {
+            return;
+        }
 
         String punishmentId = (String) data.get("punishmentId");
         String playerUuid = (String) data.get("playerUuid");
 
-        if (punishmentId == null || playerUuid == null) return;
+        if (punishmentId == null || playerUuid == null) {
+            return;
+        }
 
         Date now = new Date();
         String staffName = staffUsername != null ? staffUsername : "System";
 
         PunishmentModification modification = new PunishmentModification(
-                new ObjectId().toHexString(),
-                "APPEAL_ACCEPT",
-                now,
-                staffName,
-                null,
-                "Appeal approved",
-                null,
-                appeal.getId(),
-                null
+            new ObjectId().toHexString(),
+            "APPEAL_ACCEPT",
+            now,
+            staffName,
+            null,
+            "Appeal approved",
+            null,
+            appeal.getId(),
+            null
         );
 
         PunishmentNote appealAcceptedNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "accepted appeal (#" + appeal.getId() + ")",
-                now,
-                staffName,
-                null
+            new ObjectId().toHexString(),
+            "accepted appeal (#" + appeal.getId() + ")",
+            now,
+            staffName,
+            null
         );
 
         Update update = new Update()
-                .push("punishments.$.modifications", modification)
-                .push("punishments.$.notes", appealAcceptedNote)
-                .set("punishments.$.data.appealOutcome", "Approved")
-                .set("punishments.$.data.appealTicketId", appeal.getId());
+            .push("punishments.$.modifications", modification)
+            .push("punishments.$.notes", appealAcceptedNote)
+            .set("punishments.$.data.appealOutcome", "Approved")
+            .set("punishments.$.data.appealTicketId", appeal.getId());
 
         playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
 
         playerRepository.findByMinecraftUuid(server, playerUuid)
-                .ifPresent(player -> {
-                    Punishment appealedPunishment = player.getPunishments().stream()
-                            .filter(p -> punishmentId.equals(p.getId()))
-                            .findFirst()
-                            .orElse(null);
-                    if (appealedPunishment != null && appealedPunishment.getData() != null
-                            && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
-                        punishmentLifecycleService.cascadePardonLinkedBans(server.getDatabaseName(), punishmentId);
-                    }
-                });
+            .ifPresent(player -> {
+                Punishment appealedPunishment = player.getPunishments()
+                    .stream()
+                    .filter(p -> punishmentId.equals(p.getId()))
+                    .findFirst()
+                    .orElse(null);
+                if (appealedPunishment != null && appealedPunishment.getData() != null
+                    && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
+                    punishmentLifecycleService.cascadePardonLinkedBans(server.getDatabaseName(), punishmentId);
+                }
+            });
     }
 
     private TicketReply createSystemReply(String staffUsername, String content, String action) {
         return TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(staffUsername != null ? staffUsername : "System")
-                .content(content)
-                .type("system")
-                .created(new Date())
-                .staff(true)
-                .action(action)
-                .build();
-    }
-
-    private Player findPlayerWithPunishment(Server server, String playerUuid, String punishmentId) {
-        return playerRepository.findByMinecraftUuid(server, playerUuid)
-                .filter(p -> p.getPunishments() != null && p.getPunishments().stream()
-                        .anyMatch(pun -> pun.getId().equals(punishmentId)))
-                .orElse(null);
-    }
-
-    private void linkAppealToPunishment(Server server, String playerUuid, String punishmentId, String appealId) {
-        PunishmentNote appealOpenedNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "opened appeal (#" + appealId + ")",
-                new Date(),
-                "System",
-                null
-        );
-
-        Update update = new Update()
-                .push("punishments.$.attachedTicketIds", appealId)
-                .push("punishments.$.notes", appealOpenedNote);
-        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
-    }
-
-    private String buildInitialContent(CreateAppealRequest request) {
-        StringBuilder content = new StringBuilder();
-
-        if (request.reason() != null && !request.reason().isBlank()) {
-            content.append("Appeal Reason: ").append(request.reason()).append("\n");
-        }
-
-        if (request.evidence() != null && !request.evidence().isBlank()) {
-            content.append("Evidence: ").append(request.evidence()).append("\n");
-        }
-
-        if (request.additionalData() != null && !request.additionalData().isEmpty()) {
-            content.append("\nAdditional Information:\n");
-            for (Map.Entry<String, Object> entry : request.additionalData().entrySet()) {
-                Object value = entry.getValue();
-                if (value != null) {
-                    String fieldLabel = request.fieldLabels() != null && request.fieldLabels().containsKey(entry.getKey())
-                            ? request.fieldLabels().get(entry.getKey())
-                            : formatFieldLabel(entry.getKey());
-
-                    if (value instanceof List<?> list) {
-                        if (!list.isEmpty()) {
-                            content.append(fieldLabel).append(":\n");
-                            for (Object item : list) {
-                                content.append("  - ").append(item).append("\n");
-                            }
-                        }
-                    } else if (value instanceof Boolean bool) {
-                        content.append(fieldLabel).append(": ").append(bool ? "Yes" : "No").append("\n");
-                    } else {
-                        content.append(fieldLabel).append(": ").append(value).append("\n");
-                    }
-                }
-            }
-        }
-
-        content.append("\nContact Email: ").append(request.email());
-
-        if (content.toString().trim().equals("Contact Email: " + request.email())) {
-            return "Appeal submitted for punishment " + request.punishmentId() + ".\n\nContact Email: " + request.email();
-        }
-
-        return content.toString();
-    }
-
-    private String formatFieldLabel(String key) {
-        return key.replaceAll("([A-Z])", " $1")
-                .replaceFirst("^.", String.valueOf(Character.toUpperCase(key.charAt(0))));
-    }
-
-    private TicketResponse toTicketResponse(Ticket ticket) {
-        return new TicketResponse(
-                ticket.getId(),
-                TicketCategory.APPEAL.getId(),
-                TicketCategory.APPEAL.getDisplayName(),
-                ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-                ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
-                ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : AppealWorkflowStatus.OPEN.getId(),
-                ticket.getCreatorName(),
-                ticket.getCreatorUuid(),
-                ticket.getCreatorName(),
-                ticket.getReportedPlayer(),
-                ticket.getReportedPlayerUuid(),
-                ticket.getCreated(),
-                ticket.isLocked(),
-                ticket.getReplies(),
-                ticket.getNotes(),
-                ticket.getTags(),
-                ticket.getFormData(),
-                ticket.getData(),
-                ticket.getChatMessages(),
-                ticket.getAiAnalysis(),
-                ticket.isEmailAuthEnabled(),
-                ticket.isHidden()
-        );
+            .id(UUID.randomUUID().toString())
+            .name(staffUsername != null ? staffUsername : "System")
+            .content(content)
+            .type("system")
+            .created(new Date())
+            .staff(true)
+            .action(action)
+            .build();
     }
 }

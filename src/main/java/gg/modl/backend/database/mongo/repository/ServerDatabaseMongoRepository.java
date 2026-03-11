@@ -3,12 +3,11 @@ package gg.modl.backend.database.mongo.repository;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.server.data.Server;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
-
-import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -29,6 +28,11 @@ public class ServerDatabaseMongoRepository {
         }
     }
 
+    private long extractLong(Document document, String fieldName) {
+        Object value = document.get(fieldName);
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
     public Optional<UsageCounts> readUsageCounts(Server server) {
         try {
             var template = tenantMongoAccess.forServer(server);
@@ -47,11 +51,6 @@ public class ServerDatabaseMongoRepository {
         } catch (Exception ignored) {
             return false;
         }
-    }
-
-    private long extractLong(Document document, String fieldName) {
-        Object value = document.get(fieldName);
-        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     public record UsageCounts(long players, long tickets) {}

@@ -11,16 +11,15 @@ import gg.modl.backend.staff.dto.request.InviteStaffRequest;
 import gg.modl.backend.staff.dto.response.InviteResultResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.util.IdGenerator;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
-
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -52,10 +51,10 @@ public class InvitationService {
         }
 
         List<String> normalizedEmailsToInvite = emailsToInvite.stream()
-                .filter(email -> email != null && !email.isBlank())
-                .map(email -> email.trim().toLowerCase(Locale.ROOT))
-                .distinct()
-                .toList();
+            .filter(email -> email != null && !email.isBlank())
+            .map(email -> email.trim().toLowerCase(Locale.ROOT))
+            .distinct()
+            .toList();
 
         if (normalizedEmailsToInvite.isEmpty()) {
             throw new IllegalArgumentException("No valid emails provided");
@@ -69,17 +68,17 @@ public class InvitationService {
         if (totalCurrentMembers >= staffLimit) {
             String planName = server.getPlan() == ServerPlan.PREMIUM ? "Premium" : "Free";
             throw new IllegalStateException(
-                    String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
-                            "Please upgrade your plan or remove existing staff members to invite new ones.",
-                            planName, staffLimit)
+                String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
+                              "Please upgrade your plan or remove existing staff members to invite new ones.",
+                    planName, staffLimit)
             );
         }
 
         int availableSlots = (int) (staffLimit - totalCurrentMembers);
         if (normalizedEmailsToInvite.size() > availableSlots) {
             throw new IllegalStateException(
-                    String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
-                            normalizedEmailsToInvite.size(), availableSlots)
+                String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
+                    normalizedEmailsToInvite.size(), availableSlots)
             );
         }
 
@@ -103,7 +102,7 @@ public class InvitationService {
             message = "No invitations were sent successfully.";
         } else if (failed.isEmpty()) {
             message = success.size() == 1 ? "Invitation sent successfully." :
-                    success.size() + " invitations sent successfully.";
+                      success.size() + " invitations sent successfully.";
         } else {
             message = success.size() + " invitation(s) sent successfully, " + failed.size() + " failed.";
         }
@@ -134,25 +133,25 @@ public class InvitationService {
         Date expiresAt = new Date(System.currentTimeMillis() + INVITATION_EXPIRY_MS);
 
         Invitation invitation = Invitation.builder()
-                .email(normalizedEmail)
-                .role(role)
-                .token(token)
-                .expiresAt(expiresAt)
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
+            .email(normalizedEmail)
+            .role(role)
+            .token(token)
+            .expiresAt(expiresAt)
+            .createdAt(new Date())
+            .updatedAt(new Date())
+            .build();
 
         invitationRepository.saveEntity(server, invitation);
 
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
-                server.getCustomDomain(), appDomain, token);
+            server.getCustomDomain(), appDomain, token);
 
         try {
             emailService.sendStaffInviteEmail(
-                    normalizedEmail,
-                    server.getServerName(),
-                    role,
-                    invitationLink
+                normalizedEmail,
+                server.getServerName(),
+                role,
+                invitationLink
             );
         } catch (Exception e) {
             log.error("Failed to send invitation email to {}: {}", normalizedEmail, e.getMessage());
@@ -174,13 +173,13 @@ public class InvitationService {
         invitationRepository.refreshToken(server, invitationId, newToken, newExpiry, new Date());
 
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
-                server.getCustomDomain(), appDomain, newToken);
+            server.getCustomDomain(), appDomain, newToken);
 
         emailService.sendStaffInviteEmail(
-                invitation.getEmail(),
-                server.getServerName(),
-                invitation.getRole(),
-                invitationLink
+            invitation.getEmail(),
+            server.getServerName(),
+            invitation.getRole(),
+            invitationLink
         );
 
         return true;
@@ -206,26 +205,26 @@ public class InvitationService {
 
         Date now = new Date();
         Staff newStaff = Staff.builder()
-                .email(invitation.getEmail())
-                .username(uniqueUsername)
-                .role(invitation.getRole())
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+            .email(invitation.getEmail())
+            .username(uniqueUsername)
+            .role(invitation.getRole())
+            .createdAt(now)
+            .updatedAt(now)
+            .build();
 
         staffRepository.saveEntity(server, newStaff);
 
         invitationRepository.deleteById(server, invitation.getId());
 
         return new StaffResponse(
-                newStaff.getId(),
-                newStaff.getEmail(),
-                newStaff.getUsername(),
-                newStaff.getRole(),
-                "active",
-                newStaff.getAssignedMinecraftUuid(),
-                newStaff.getAssignedMinecraftUsername(),
-                newStaff.getCreatedAt()
+            newStaff.getId(),
+            newStaff.getEmail(),
+            newStaff.getUsername(),
+            newStaff.getRole(),
+            "active",
+            newStaff.getAssignedMinecraftUuid(),
+            newStaff.getAssignedMinecraftUsername(),
+            newStaff.getCreatedAt()
         );
     }
 

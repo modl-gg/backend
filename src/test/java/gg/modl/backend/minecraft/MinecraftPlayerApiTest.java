@@ -1,21 +1,21 @@
 package gg.modl.backend.minecraft;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
-import gg.modl.backend.support.TestDatabase;
 import gg.modl.backend.support.TestDataProvider;
 import gg.modl.backend.support.TestDataProvider.PlayerInfo;
-import com.google.gson.JsonObject;
+import gg.modl.backend.support.TestDatabase;
+import java.util.List;
+import java.util.Map;
 import org.bson.Document;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftPlayerApiTest {
 
@@ -37,10 +37,10 @@ class MinecraftPlayerApiTest {
     @Test
     void login() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/login", Map.of(
-                "minecraftUUID", testUuid,
-                "username", testUsername,
-                "ip", "127.0.0.1",
-                "serverName", "lobby"
+            "minecraftUUID", testUuid,
+            "username", testUsername,
+            "ip", "127.0.0.1",
+            "serverName", "lobby"
         ));
         JsonHelper.assertStatus(response, 200);
         var json = JsonHelper.parseObject(response.body());
@@ -54,16 +54,16 @@ class MinecraftPlayerApiTest {
             var usernames = dbPlayer.getList("usernames", Document.class);
             assertNotNull(usernames, "Usernames list should exist");
             assertTrue(usernames.stream().anyMatch(u ->
-                            testUsername.equals(u.getString("username"))),
-                    "Usernames should contain " + testUsername);
+                    testUsername.equals(u.getString("username"))),
+                "Usernames should contain " + testUsername);
         }
     }
 
     @Test
     void disconnect() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/disconnect", Map.of(
-                "minecraftUuid", testUuid,
-                "sessionDurationMs", 5000
+            "minecraftUuid", testUuid,
+            "sessionDurationMs", 5000
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -71,8 +71,8 @@ class MinecraftPlayerApiTest {
     @Test
     void updateServer() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/update-server", Map.of(
-                "minecraftUuid", testUuid,
-                "serverName", "lobby"
+            "minecraftUuid", testUuid,
+            "serverName", "lobby"
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -100,8 +100,8 @@ class MinecraftPlayerApiTest {
     @Test
     void lookupPost() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/lookup", Map.of(
-                "query", testUsername,
-                "shouldQueryMojang", false
+            "query", testUsername,
+            "shouldQueryMojang", false
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -109,8 +109,8 @@ class MinecraftPlayerApiTest {
     @Test
     void addNote() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/" + testUuid + "/notes", Map.of(
-                "text", "API test note - safe to ignore",
-                "issuerName", "TestBot"
+            "text", "API test note - safe to ignore",
+            "issuerName", "TestBot"
         ));
         JsonHelper.assertStatus(response, 200);
 
@@ -136,8 +136,8 @@ class MinecraftPlayerApiTest {
     void getLinkedAccounts() throws Exception {
         var response = api.minecraftGet("/v1/minecraft/players/" + testUuid + "/linked-accounts");
         Assumptions.assumeTrue(
-                response.statusCode() != 500,
-                "Minecraft linked-accounts endpoint is currently failing in the configured environment"
+            response.statusCode() != 500,
+            "Minecraft linked-accounts endpoint is currently failing in the configured environment"
         );
         JsonHelper.assertStatus(response, 200);
         var json = JsonHelper.parseObject(response.body());
@@ -155,13 +155,13 @@ class MinecraftPlayerApiTest {
     @Test
     void submitIpInfo() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/players/submit-ip-info", Map.of(
-                "minecraftUUID", testUuid,
-                "ip", "127.0.0.1",
-                "country", "US",
-                "region", "CA",
-                "asn", "AS0",
-                "proxy", false,
-                "hosting", false
+            "minecraftUUID", testUuid,
+            "ip", "127.0.0.1",
+            "country", "US",
+            "region", "CA",
+            "asn", "AS0",
+            "proxy", false,
+            "hosting", false
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -170,8 +170,8 @@ class MinecraftPlayerApiTest {
     void pardonByName() throws Exception {
         // This may or may not find active punishments, both 200 outcomes are fine
         var response = api.minecraftPost("/v1/minecraft/players/pardon", Map.of(
-                "playerName", testUsername,
-                "issuerName", "TestBot"
+            "playerName", testUsername,
+            "issuerName", "TestBot"
         ));
         JsonHelper.assertStatus(response, 200);
     }

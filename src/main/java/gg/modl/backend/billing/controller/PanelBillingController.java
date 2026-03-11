@@ -4,7 +4,13 @@ import com.stripe.exception.StripeException;
 import gg.modl.backend.billing.dto.request.UpdateOverageLimitsRequest;
 import gg.modl.backend.billing.dto.request.UpdateStorageLimitRequest;
 import gg.modl.backend.billing.dto.request.UsageBillingSettingsRequest;
-import gg.modl.backend.billing.dto.response.*;
+import gg.modl.backend.billing.dto.response.BillingStatusResponse;
+import gg.modl.backend.billing.dto.response.CancelResponse;
+import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
+import gg.modl.backend.billing.dto.response.PortalSessionResponse;
+import gg.modl.backend.billing.dto.response.ResubscribeResponse;
+import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
+import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.billing.service.BillingService;
 import gg.modl.backend.billing.service.StripeService;
 import gg.modl.backend.billing.service.UsageTrackingService;
@@ -16,12 +22,15 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_BILLING)
@@ -36,11 +45,15 @@ public class PanelBillingController {
     @PostMapping("/checkout-session")
     public ResponseEntity<?> createCheckoutSession(HttpServletRequest request) {
         ResponseEntity<?> stripeCheck = requireStripeConfigured();
-        if (stripeCheck != null) return stripeCheck;
+        if (stripeCheck != null) {
+            return stripeCheck;
+        }
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             CheckoutSessionResponse response = billingService.createCheckoutSession(server);
@@ -51,14 +64,33 @@ public class PanelBillingController {
         }
     }
 
+    private ResponseEntity<?> requireStripeConfigured() {
+        if (!stripeService.isConfigured()) {
+            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
+        }
+        return null;
+    }
+
+    private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null || !permissionService.isSuperAdmin(server, email)) {
+            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
+        }
+        return null;
+    }
+
     @PostMapping("/portal-session")
     public ResponseEntity<?> createPortalSession(HttpServletRequest request) {
         ResponseEntity<?> stripeCheck = requireStripeConfigured();
-        if (stripeCheck != null) return stripeCheck;
+        if (stripeCheck != null) {
+            return stripeCheck;
+        }
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             PortalSessionResponse response = billingService.createPortalSession(server);
@@ -74,11 +106,15 @@ public class PanelBillingController {
     @PostMapping("/cancel")
     public ResponseEntity<?> cancelSubscription(HttpServletRequest request) {
         ResponseEntity<?> stripeCheck = requireStripeConfigured();
-        if (stripeCheck != null) return stripeCheck;
+        if (stripeCheck != null) {
+            return stripeCheck;
+        }
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             CancelResponse response = billingService.cancelSubscription(server);
@@ -94,11 +130,15 @@ public class PanelBillingController {
     @PostMapping("/resubscribe")
     public ResponseEntity<?> resubscribe(HttpServletRequest request) {
         ResponseEntity<?> stripeCheck = requireStripeConfigured();
-        if (stripeCheck != null) return stripeCheck;
+        if (stripeCheck != null) {
+            return stripeCheck;
+        }
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             ResubscribeResponse response = billingService.resubscribe(server);
@@ -108,8 +148,8 @@ public class PanelBillingController {
         } catch (StripeException e) {
             log.error("Error resubscribing", e);
             return ResponseEntity.internalServerError().body(Map.of(
-                    "error", "Failed to reactivate subscription. Please try again or contact support.",
-                    "details", e.getMessage()
+                "error", "Failed to reactivate subscription. Please try again or contact support.",
+                "details", e.getMessage()
             ));
         }
     }
@@ -135,15 +175,19 @@ public class PanelBillingController {
 
     @PostMapping("/usage-settings")
     public ResponseEntity<?> updateUsageBillingSettings(
-            @RequestBody UsageBillingSettingsRequest settingsRequest,
-            HttpServletRequest request
+        @RequestBody UsageBillingSettingsRequest settingsRequest,
+        HttpServletRequest request
     ) {
         ResponseEntity<?> stripeCheck = requireStripeConfigured();
-        if (stripeCheck != null) return stripeCheck;
+        if (stripeCheck != null) {
+            return stripeCheck;
+        }
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         try {
             UsageBillingSettingsResponse response = usageTrackingService.updateUsageBillingSettings(server, settingsRequest.enabled());
@@ -155,12 +199,14 @@ public class PanelBillingController {
 
     @PostMapping("/storage-limit")
     public ResponseEntity<?> updateStorageLimit(
-            @RequestBody @Valid UpdateStorageLimitRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid UpdateStorageLimitRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         if (server.getPlan() != ServerPlan.PREMIUM) {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage limit configuration is only available for premium servers"));
@@ -173,19 +219,21 @@ public class PanelBillingController {
         usageTrackingService.updateStorageLimit(server, body.maxStorageLimitBytes());
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "maxStorageLimitBytes", body.maxStorageLimitBytes()
+            "success", true,
+            "maxStorageLimitBytes", body.maxStorageLimitBytes()
         ));
     }
 
     @PostMapping("/overage-limits")
     public ResponseEntity<?> updateOverageLimits(
-            @RequestBody @Valid UpdateOverageLimitsRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid UpdateOverageLimitsRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
-        if (denied != null) return denied;
+        if (denied != null) {
+            return denied;
+        }
 
         if (server.getPlan() != ServerPlan.PREMIUM) {
             return ResponseEntity.badRequest().body(Map.of("error", "Overage limits configuration is only available for premium servers"));
@@ -195,24 +243,9 @@ public class PanelBillingController {
         usageTrackingService.updateOverageLimits(server, maxStorageLimitBytes, body.maxAiOverageRequests());
 
         return ResponseEntity.ok(Map.of(
-                "success", true,
-                "maxStorageLimitBytes", maxStorageLimitBytes,
-                "maxAiOverageRequests", body.maxAiOverageRequests()
+            "success", true,
+            "maxStorageLimitBytes", maxStorageLimitBytes,
+            "maxAiOverageRequests", body.maxAiOverageRequests()
         ));
-    }
-
-    private ResponseEntity<?> requireStripeConfigured() {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
-        return null;
-    }
-
-    private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null || !permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.status(403).body(Map.of("error", "Only the super admin can manage billing"));
-        }
-        return null;
     }
 }

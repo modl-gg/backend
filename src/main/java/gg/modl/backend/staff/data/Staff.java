@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -11,10 +14,6 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
-
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 
 @Document
 @Data
@@ -24,10 +23,10 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 @GenerateMongoFields
 @MongoFieldAliases({
-        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_TICKET_ID", path = "subscribedTickets.ticketId"),
-        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_ACTIVE", path = "subscribedTickets.active"),
-        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_ACTIVE", path = "subscribedTickets.$.active"),
-        @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_LAST_READ_AT", path = "subscribedTickets.$.lastReadAt")
+    @MongoFieldAlias(name = "SUBSCRIBED_TICKET_TICKET_ID", path = "subscribedTickets.ticketId"),
+    @MongoFieldAlias(name = "SUBSCRIBED_TICKET_ACTIVE", path = "subscribedTickets.active"),
+    @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_ACTIVE", path = "subscribedTickets.$.active"),
+    @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_LAST_READ_AT", path = "subscribedTickets.$.lastReadAt")
 })
 public class Staff {
     @Id
@@ -59,23 +58,35 @@ public class Staff {
 
     // --- Staff 2FA ---
 
-    /** Current pending 2FA verification token (cleared after verification). */
+    /**
+     * Current pending 2FA verification token (cleared after verification).
+     */
     private String twoFactorToken;
 
-    /** IP address associated with the pending token. */
+    /**
+     * IP address associated with the pending token.
+     */
     private String twoFactorTokenIp;
 
-    /** Timestamp (epoch millis) when the pending token was created. */
+    /**
+     * Timestamp (epoch millis) when the pending token was created.
+     */
     private Long twoFactorTokenCreatedAt;
 
-    /** True when a verification has completed but the plugin hasn't been notified yet. */
+    /**
+     * True when a verification has completed but the plugin hasn't been notified yet.
+     */
     @Builder.Default
     private boolean twoFactorPendingDelivery = false;
 
-    /** IP address the session is bound to (set on verification). */
+    /**
+     * IP address the session is bound to (set on verification).
+     */
     private String twoFactorSessionIp;
 
-    /** Epoch millis when the current 2FA session expires (7-day TTL set on verification). */
+    /**
+     * Epoch millis when the current 2FA session expires (7-day TTL set on verification).
+     */
     private Long twoFactorSessionExpiresAt;
 
     private Date lastSeen;

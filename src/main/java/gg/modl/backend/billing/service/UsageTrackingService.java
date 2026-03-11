@@ -6,24 +6,22 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.util.ServerMutationHelper;
+import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class UsageTrackingService {
+    private final ServerMongoRepository serverRepository;
+    private final ServerMutationHelper serverMutationHelper;
     private static final double FREE_CDN_LIMIT_GB = 1.0;
     private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
     private static final long AI_BASE_LIMIT_REQUESTS = 1000L;
     private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.02;
-
-    private final ServerMongoRepository serverRepository;
-    private final ServerMutationHelper serverMutationHelper;
 
     public UsageResponse getUsage(Server server) {
         Server freshServer = getFreshServer(server.getId());
@@ -49,34 +47,59 @@ public class UsageTrackingService {
         double cdnOverageGB = Math.max(0, cdnUsageGB - cdnLimitGB);
         long aiLimitRequests = getAiRequestLimit(freshServer);
         long aiOverageRequests = usageBillingEnabled
-                ? Math.max(0, aiRequestsUsed - getAiBaseLimitRequests())
-                : 0L;
+                                 ? Math.max(0, aiRequestsUsed - getAiBaseLimitRequests())
+                                 : 0L;
 
         double cdnOverageCost = usageBillingEnabled ? cdnOverageGB * CDN_OVERAGE_RATE : 0.0;
         double aiOverageCost = usageBillingEnabled ? aiOverageRequests * AI_OVERAGE_RATE : 0.0;
         double totalOverageCost = cdnOverageCost + aiOverageCost;
 
         return new UsageResponse(
-                new UsageResponse.Period(currentPeriodStart, currentPeriodEnd),
-                new UsageResponse.UsageMetric(
-                        cdnUsageGB,
-                        cdnLimitGB,
-                        cdnOverageGB,
-                        CDN_OVERAGE_RATE,
-                        cdnOverageCost,
-                        Math.min(100, cdnLimitGB > 0 ? (cdnUsageGB / cdnLimitGB) * 100 : 0)
-                ),
-                new UsageResponse.UsageMetric(
-                        aiRequestsUsed,
-                        aiLimitRequests,
-                        aiOverageRequests,
-                        AI_OVERAGE_RATE,
-                        aiOverageCost,
-                        Math.min(100, aiLimitRequests > 0 ? ((double) aiRequestsUsed / aiLimitRequests) * 100 : 0)
-                ),
-                totalOverageCost,
-                usageBillingEnabled
+            new UsageResponse.Period(currentPeriodStart, currentPeriodEnd),
+            new UsageResponse.UsageMetric(
+                cdnUsageGB,
+                cdnLimitGB,
+                cdnOverageGB,
+                CDN_OVERAGE_RATE,
+                cdnOverageCost,
+                Math.min(100, cdnLimitGB > 0 ? (cdnUsageGB / cdnLimitGB) * 100 : 0)
+            ),
+            new UsageResponse.UsageMetric(
+                aiRequestsUsed,
+                aiLimitRequests,
+                aiOverageRequests,
+                AI_OVERAGE_RATE,
+                aiOverageCost,
+                Math.min(100, aiLimitRequests > 0 ? ((double) aiRequestsUsed / aiLimitRequests) * 100 : 0)
+            ),
+            totalOverageCost,
+            usageBillingEnabled
         );
+    }
+
+    public double getCdnLimitGB(Server server) {
+        if (server.getPlan() == ServerPlan.PREMIUM) {
+            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
+                return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
+            }
+            return DEFAULT_PREMIUM_CDN_LIMIT_GB;
+        }
+        return FREE_CDN_LIMIT_GB;
+    }
+
+    public long getAiRequestLimit(Server server) {
+        long overageCap = server.getMaxAiOverageRequests() != null
+                          ? Math.max(0, server.getMaxAiOverageRequests())
+                          : 0L;
+        return AI_BASE_LIMIT_REQUESTS + overageCap;
+    }
+
+    public long getAiBaseLimitRequests() {
+        return AI_BASE_LIMIT_REQUESTS;
+    }
+
+    private Server getFreshServer(String serverId) {
+        return serverRepository.findById(serverId).orElse(null);
     }
 
     public UsageBillingSettingsResponse updateUsageBillingSettings(Server server, boolean enabled) {
@@ -90,8 +113,8 @@ public class UsageTrackingService {
         });
 
         String message = enabled
-                ? "Usage billing has been enabled. You will be charged for overages at the end of each billing period."
-                : "Usage billing has been disabled. Overages will not be charged.";
+                         ? "Usage billing has been enabled. You will be charged for overages at the end of each billing period."
+                         : "Usage billing has been disabled. Overages will not be charged.";
 
         return new UsageBillingSettingsResponse(true, message, enabled);
     }
@@ -108,16 +131,6 @@ public class UsageTrackingService {
         serverRepository.resetUsageCounters(serverId);
     }
 
-    public double getCdnLimitGB(Server server) {
-        if (server.getPlan() == ServerPlan.PREMIUM) {
-            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
-            }
-            return DEFAULT_PREMIUM_CDN_LIMIT_GB;
-        }
-        return FREE_CDN_LIMIT_GB;
-    }
-
     public void updateStorageLimit(Server server, long bytes) {
         serverMutationHelper.mutate(server, current -> current.setMaxStorageLimitBytes(bytes));
     }
@@ -127,21 +140,6 @@ public class UsageTrackingService {
             current.setMaxStorageLimitBytes(maxStorageLimitBytes);
             current.setMaxAiOverageRequests(maxAiOverageRequests);
         });
-    }
-
-    public long getAiRequestLimit(Server server) {
-        long overageCap = server.getMaxAiOverageRequests() != null
-                ? Math.max(0, server.getMaxAiOverageRequests())
-                : 0L;
-        return AI_BASE_LIMIT_REQUESTS + overageCap;
-    }
-
-    public long getAiBaseLimitRequests() {
-        return AI_BASE_LIMIT_REQUESTS;
-    }
-
-    private Server getFreshServer(String serverId) {
-        return serverRepository.findById(serverId).orElse(null);
     }
 
 }

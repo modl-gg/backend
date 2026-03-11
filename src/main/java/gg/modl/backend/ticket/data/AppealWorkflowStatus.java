@@ -38,23 +38,6 @@ public enum AppealWorkflowStatus {
         this.displayName = displayName;
     }
 
-    @JsonValue
-    public String getId() {
-        return id;
-    }
-
-    public String getDisplayName() {
-        return displayName;
-    }
-
-    public boolean isTerminal() {
-        return this == APPROVED || this == REJECTED;
-    }
-
-    public TicketStatus toTicketStatus() {
-        return isTerminal() ? TicketStatus.CLOSED : TicketStatus.OPEN;
-    }
-
     @JsonCreator
     public static AppealWorkflowStatus fromValue(String value) {
         return fromCanonicalId(value);
@@ -73,12 +56,29 @@ public enum AppealWorkflowStatus {
             return "";
         }
         return value.trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "_")
-                .replaceAll("^_+|_+$", "");
+            .toLowerCase(Locale.ROOT)
+            .replaceAll("[^a-z0-9]+", "_")
+            .replaceAll("^_+|_+$", "");
     }
 
     private static void registerAlias(AppealWorkflowStatus status, String alias) {
         BY_CANONICAL_ID.put(normalize(alias), status);
+    }
+
+    @JsonValue
+    public String getId() {
+        return id;
+    }
+
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public TicketStatus toTicketStatus() {
+        return isTerminal() ? TicketStatus.CLOSED : TicketStatus.OPEN;
+    }
+
+    public boolean isTerminal() {
+        return this == APPROVED || this == REJECTED;
     }
 }

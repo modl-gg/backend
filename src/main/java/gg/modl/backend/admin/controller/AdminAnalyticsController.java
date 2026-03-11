@@ -5,11 +5,15 @@ import gg.modl.backend.admin.dto.request.GenerateReportRequest;
 import gg.modl.backend.admin.service.AdminAnalyticsService;
 import gg.modl.backend.rest.RESTMappingV1;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_ANALYTICS)
@@ -34,8 +38,8 @@ public class AdminAnalyticsController {
 
     @GetMapping("/historical")
     public ResponseEntity<?> getHistorical(
-            @RequestParam(required = false) String metric,
-            @RequestParam(defaultValue = "30d") String range) {
+        @RequestParam(required = false) String metric,
+        @RequestParam(defaultValue = "30d") String range) {
         Map<String, Object> response = adminAnalyticsService.getHistorical(metric, range);
         if (Boolean.FALSE.equals(response.get("success"))) {
             return ResponseEntity.badRequest().body(response);
@@ -52,9 +56,9 @@ public class AdminAnalyticsController {
 
         if ("csv".equals(type)) {
             return ResponseEntity.ok()
-                    .header("Content-Type", "text/csv")
-                    .header("Content-Disposition", "attachment; filename=\"modl-analytics-" + range + ".csv\"")
-                    .body(result);
+                .header("Content-Type", "text/csv")
+                .header("Content-Disposition", "attachment; filename=\"modl-analytics-" + range + ".csv\"")
+                .body(result);
         } else if ("json".equals(type)) {
             return ResponseEntity.ok(result);
         }

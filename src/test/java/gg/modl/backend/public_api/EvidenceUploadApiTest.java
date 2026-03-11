@@ -1,17 +1,17 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
 import gg.modl.backend.support.TestDataProvider;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class EvidenceUploadApiTest {
 
@@ -40,23 +40,25 @@ class EvidenceUploadApiTest {
     void validateTokenWithRealToken() throws Exception {
         // Create a punishment and get an upload token
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "Evidence upload test",
-                "duration", 300,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "Evidence upload test",
+            "duration", 300,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
-        if (createResponse.statusCode() != 200) return;
+        if (createResponse.statusCode() != 200) {
+            return;
+        }
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var tokenResponse = api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/upload-token", Map.of(
-                "issuerName", "TestBot"
+            "issuerName", "TestBot"
         ));
         if (tokenResponse.statusCode() != 200) {
             api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                    "issuerName", "TestBot", "reason", "cleanup"
+                "issuerName", "TestBot", "reason", "cleanup"
             ));
             return;
         }
@@ -70,16 +72,16 @@ class EvidenceUploadApiTest {
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot", "reason", "cleanup"
+            "issuerName", "TestBot", "reason", "cleanup"
         ));
     }
 
     @Test
     void presignUpload() throws Exception {
         var response = api.publicPost("/v1/public/evidence-upload/invalid-token/presign", Map.of(
-                "fileName", "test.png",
-                "contentType", "image/png",
-                "fileSize", 1024
+            "fileName", "test.png",
+            "contentType", "image/png",
+            "fileSize", 1024
         ));
         assertEquals(404, response.statusCode());
     }
@@ -87,7 +89,7 @@ class EvidenceUploadApiTest {
     @Test
     void confirmUpload() throws Exception {
         var response = api.publicPost("/v1/public/evidence-upload/invalid-token/confirm", Map.of(
-                "key", "nonexistent-key"
+            "key", "nonexistent-key"
         ));
         assertEquals(404, response.statusCode());
     }
@@ -95,12 +97,12 @@ class EvidenceUploadApiTest {
     @Test
     void submitEvidence() throws Exception {
         var response = api.publicPost("/v1/public/evidence-upload/invalid-token/submit", Map.of(
-                "evidence", List.of(Map.of(
-                        "url", "https://example.com/evidence.png",
-                        "fileName", "evidence.png",
-                        "fileType", "image/png",
-                        "fileSize", 1024
-                ))
+            "evidence", List.of(Map.of(
+                "url", "https://example.com/evidence.png",
+                "fileName", "evidence.png",
+                "fileType", "image/png",
+                "fileSize", 1024
+            ))
         ));
         assertEquals(404, response.statusCode());
     }

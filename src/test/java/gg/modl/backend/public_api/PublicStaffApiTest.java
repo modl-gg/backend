@@ -1,14 +1,13 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PublicStaffApiTest {
 

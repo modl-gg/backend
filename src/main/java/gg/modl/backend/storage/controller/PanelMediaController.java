@@ -51,8 +51,8 @@ public class PanelMediaController {
 
     @DeleteMapping("/{*key}")
     public ResponseEntity<?> deleteFile(
-            @PathVariable String key,
-            HttpServletRequest request
+        @PathVariable String key,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
@@ -69,18 +69,18 @@ public class PanelMediaController {
 
     @PostMapping("/presign")
     public ResponseEntity<?> getPresignedUploadUrl(
-            @RequestBody @Valid PresignUploadRequest presignRequest,
-            HttpServletRequest request
+        @RequestBody @Valid PresignUploadRequest presignRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-                presignRequest.fileName(),
-                presignRequest.contentType(),
-                presignRequest.fileSize(),
-                presignRequest.uploadType(),
-                isPremium
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            presignRequest.uploadType(),
+            isPremium
         );
 
         if (!validation.valid()) {
@@ -93,12 +93,12 @@ public class PanelMediaController {
 
         try {
             PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-                    server,
-                    presignRequest.uploadType(),
-                    presignRequest.fileName(),
-                    presignRequest.contentType(),
-                    presignRequest.fileSize(),
-                    presignRequest.entityId()
+                server,
+                presignRequest.uploadType(),
+                presignRequest.fileName(),
+                presignRequest.contentType(),
+                presignRequest.fileSize(),
+                presignRequest.entityId()
             );
             return ResponseEntity.ok(response);
         } catch (IllegalStateException e) {
@@ -108,8 +108,8 @@ public class PanelMediaController {
 
     @PostMapping("/confirm")
     public ResponseEntity<?> confirmUpload(
-            @RequestBody @Valid ConfirmUploadRequest confirmRequest,
-            HttpServletRequest request
+        @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
@@ -122,8 +122,8 @@ public class PanelMediaController {
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
         if (uploadDetails == null) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Upload not found",
-                    "message", "The file was not uploaded or the presigned URL expired"
+                "error", "Upload not found",
+                "message", "The file was not uploaded or the presigned URL expired"
             ));
         }
 

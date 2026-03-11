@@ -46,7 +46,7 @@ class PublicPunishmentControllerTest {
 
         when(request.getAttribute(RequestAttribute.SERVER)).thenReturn(server);
         when(punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, "punishment-1"))
-                .thenReturn(Optional.of(serviceResult));
+            .thenReturn(Optional.of(serviceResult));
 
         ResponseEntity<?> response = controller.getAppealInfo("punishment-1", request);
 

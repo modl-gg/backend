@@ -1,17 +1,18 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
 import gg.modl.backend.support.TestDatabase;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelRoleApiTest {
 
@@ -43,7 +44,9 @@ class PanelRoleApiTest {
     void getRoleById() throws Exception {
         var listResponse = api.panelGet("/v1/panel/roles");
         var roles = JsonHelper.parseObject(listResponse.body()).getAsJsonArray("roles");
-        if (roles.isEmpty()) return;
+        if (roles.isEmpty()) {
+            return;
+        }
 
         String roleId = roles.get(0).getAsJsonObject().get("id").getAsString();
         var response = api.panelGet("/v1/panel/roles/" + roleId);
@@ -54,9 +57,9 @@ class PanelRoleApiTest {
     void createAndDeleteRole() throws Exception {
         String roleName = "API Test Role " + System.currentTimeMillis();
         var createResponse = api.panelPost("/v1/panel/roles", Map.of(
-                "name", roleName,
-                "description", "Created by automated API test",
-                "permissions", List.of()
+            "name", roleName,
+            "description", "Created by automated API test",
+            "permissions", List.of()
         ));
         int status = createResponse.statusCode();
         assertTrue(status == 200 || status == 201, "Expected 200 or 201 but got " + status);
@@ -92,22 +95,26 @@ class PanelRoleApiTest {
     void updateRole() throws Exception {
         // Create a role to update
         var createResponse = api.panelPost("/v1/panel/roles", Map.of(
-                "name", "API Test Update " + System.currentTimeMillis(),
-                "description", "Will be updated",
-                "permissions", List.of()
+            "name", "API Test Update " + System.currentTimeMillis(),
+            "description", "Will be updated",
+            "permissions", List.of()
         ));
-        if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) return;
+        if (createResponse.statusCode() != 200 && createResponse.statusCode() != 201) {
+            return;
+        }
 
         var json = JsonHelper.parseObject(createResponse.body());
         String roleId = json.has("role") ?
-                json.getAsJsonObject("role").get("id").getAsString() :
-                json.has("id") ? json.get("id").getAsString() : null;
-        if (roleId == null) return;
+                        json.getAsJsonObject("role").get("id").getAsString() :
+                        json.has("id") ? json.get("id").getAsString() : null;
+        if (roleId == null) {
+            return;
+        }
 
         var updateResponse = api.panelPut("/v1/panel/roles/" + roleId, Map.of(
-                "name", "API Test Updated " + System.currentTimeMillis(),
-                "description", "Updated by test",
-                "permissions", List.of()
+            "name", "API Test Updated " + System.currentTimeMillis(),
+            "description", "Updated by test",
+            "permissions", List.of()
         ));
         JsonHelper.assertStatus(updateResponse, 200);
 
@@ -119,7 +126,9 @@ class PanelRoleApiTest {
     void reorderRoles() throws Exception {
         var listResponse = api.panelGet("/v1/panel/roles");
         var roles = JsonHelper.parseObject(listResponse.body()).getAsJsonArray("roles");
-        if (roles.size() < 2) return;
+        if (roles.size() < 2) {
+            return;
+        }
 
         // Build roleOrder with id and order pairs
         List<Map<String, Object>> roleOrder = new java.util.ArrayList<>();

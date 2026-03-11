@@ -39,6 +39,14 @@ public class PunishmentPreviewResponse {
     private final boolean canBeStatWiping;
     private final String category;
 
+    public static PunishmentPreviewResponse error(String message) {
+        return PunishmentPreviewResponse.builder()
+            .status(400)
+            .success(false)
+            .message(message)
+            .build();
+    }
+
     @Data
     @Builder
     public static class SeverityPreview {
@@ -54,13 +62,5 @@ public class PunishmentPreviewResponse {
         private final String newGameplayStatus;
         private final int newSocialPoints;
         private final int newGameplayPoints;
-    }
-
-    public static PunishmentPreviewResponse error(String message) {
-        return PunishmentPreviewResponse.builder()
-                .status(400)
-                .success(false)
-                .message(message)
-                .build();
     }
 }

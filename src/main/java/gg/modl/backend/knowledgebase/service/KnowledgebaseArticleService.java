@@ -6,32 +6,31 @@ import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.knowledgebase.dto.request.CreateArticleRequest;
 import gg.modl.backend.knowledgebase.dto.request.UpdateArticleRequest;
 import gg.modl.backend.server.data.Server;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class KnowledgebaseArticleService {
-    private static final int MAX_SEARCH_RESULTS = 20;
-
     private final KnowledgebaseArticleMongoRepository articleRepository;
     private final Slugify slugify = Slugify.builder().build();
+    private static final int MAX_SEARCH_RESULTS = 20;
 
     public List<KnowledgebaseArticle> getArticlesByCategory(Server server, String categoryId) {
         return articleRepository.findByCategoryOrdered(server, categoryId);
     }
 
     public Map<String, List<KnowledgebaseArticle>> getAllArticlesGroupedByCategory(Server server) {
-        return articleRepository.findAll(server).stream()
-                .collect(Collectors.groupingBy(KnowledgebaseArticle::getCategoryId));
+        return articleRepository.findAll(server)
+            .stream()
+            .collect(Collectors.groupingBy(KnowledgebaseArticle::getCategoryId));
     }
 
     public List<KnowledgebaseArticle> getVisibleArticlesByCategory(Server server, String categoryId) {
@@ -48,32 +47,44 @@ public class KnowledgebaseArticleService {
 
     public KnowledgebaseArticle createArticle(Server server, String categoryId, CreateArticleRequest request) {
         KnowledgebaseArticle article = KnowledgebaseArticle.builder()
-                .title(request.title())
-                .slug(generateUniqueSlug(server, slugify.slugify(request.title()), null))
-                .content(request.content())
-                .categoryId(categoryId)
-                .ordinal(articleRepository.findMaxOrdinalInCategory(server, categoryId) + 1)
-                .isVisible(request.isVisible() != null ? request.isVisible() : true)
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
+            .title(request.title())
+            .slug(generateUniqueSlug(server, slugify.slugify(request.title()), null))
+            .content(request.content())
+            .categoryId(categoryId)
+            .ordinal(articleRepository.findMaxOrdinalInCategory(server, categoryId) + 1)
+            .isVisible(request.isVisible() != null ? request.isVisible() : true)
+            .createdAt(new Date())
+            .updatedAt(new Date())
+            .build();
 
         return articleRepository.saveEntity(server, article);
     }
 
+    private String generateUniqueSlug(Server server, String baseSlug, String excludeId) {
+        String slug = baseSlug;
+        int suffix = 1;
+
+        while (articleRepository.existsBySlug(server, slug, excludeId)) {
+            slug = baseSlug + "-" + suffix;
+            suffix++;
+        }
+
+        return slug;
+    }
+
     public Optional<KnowledgebaseArticle> updateArticle(Server server, String id, UpdateArticleRequest request) {
         String uniqueSlug = request.title() != null
-                ? generateUniqueSlug(server, slugify.slugify(request.title()), id)
-                : null;
+                            ? generateUniqueSlug(server, slugify.slugify(request.title()), id)
+                            : null;
 
         return articleRepository.updateArticle(
-                server,
-                id,
-                request.title(),
-                uniqueSlug,
-                request.content(),
-                request.isVisible(),
-                new Date()
+            server,
+            id,
+            request.title(),
+            uniqueSlug,
+            request.content(),
+            request.isVisible(),
+            new Date()
         );
     }
 
@@ -87,17 +98,5 @@ public class KnowledgebaseArticleService {
 
     public void reorderArticles(Server server, String categoryId, List<String> ids) {
         articleRepository.reorderArticles(server, categoryId, ids);
-    }
-
-    private String generateUniqueSlug(Server server, String baseSlug, String excludeId) {
-        String slug = baseSlug;
-        int suffix = 1;
-
-        while (articleRepository.existsBySlug(server, slug, excludeId)) {
-            slug = baseSlug + "-" + suffix;
-            suffix++;
-        }
-
-        return slug;
     }
 }

@@ -26,10 +26,10 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @Document
 @GenerateMongoFields
 @MongoFieldAliases({
-        @MongoFieldAlias(name = "REPLY_NAME", path = "replies.name"),
-        @MongoFieldAlias(name = "REPLY_CONTENT", path = "replies.content"),
-        @MongoFieldAlias(name = "REPLY_CREATED", path = "replies.created"),
-        @MongoFieldAlias(name = "REPLY_STAFF", path = "replies.staff")
+    @MongoFieldAlias(name = "REPLY_NAME", path = "replies.name"),
+    @MongoFieldAlias(name = "REPLY_CONTENT", path = "replies.content"),
+    @MongoFieldAlias(name = "REPLY_CREATED", path = "replies.created"),
+    @MongoFieldAlias(name = "REPLY_STAFF", path = "replies.staff")
 })
 public class Ticket {
     @Id
@@ -68,7 +68,7 @@ public class Ticket {
 
     @Nullable
     private Map<String, Object> formData;
-    
+
     @Nullable
     private Map<String, Object> data;
 

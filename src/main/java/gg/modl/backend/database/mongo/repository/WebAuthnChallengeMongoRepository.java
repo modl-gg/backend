@@ -21,8 +21,8 @@ public class WebAuthnChallengeMongoRepository extends AbstractServerMongoReposit
 
     public Optional<WebAuthnChallenge> consumeActiveChallenge(Server server, String challengeId, Date now) {
         Query query = Query.query(new Criteria().andOperator(
-                MongoQueries.where(WebAuthnChallengeFields.ID).is(challengeId),
-                MongoQueries.where(WebAuthnChallengeFields.EXPIRES_AT).gt(now)
+            MongoQueries.where(WebAuthnChallengeFields.ID).is(challengeId),
+            MongoQueries.where(WebAuthnChallengeFields.EXPIRES_AT).gt(now)
         ));
         return Optional.ofNullable(findAndRemove(server, query));
     }

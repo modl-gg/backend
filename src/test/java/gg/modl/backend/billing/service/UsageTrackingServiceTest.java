@@ -1,23 +1,20 @@
 package gg.modl.backend.billing.service;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.util.ServerMutationHelper;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.function.Consumer;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
+
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.util.ServerMutationHelper;
+import java.util.function.Consumer;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class UsageTrackingServiceTest {

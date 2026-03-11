@@ -11,12 +11,13 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_HOMEPAGE_CARDS)
@@ -30,30 +31,30 @@ public class PublicHomepageCardController {
     public ResponseEntity<List<HomepageCardResponse>> getCards(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<HomepageCard> cards = cardService.getVisibleCards(server);
-        
+
         List<HomepageCardResponse> enrichedCards = cards.stream()
-                .map(card -> enrichCard(server, card))
-                .toList();
-        
+            .map(card -> enrichCard(server, card))
+            .toList();
+
         return ResponseEntity.ok(enrichedCards);
     }
-    
+
     private HomepageCardResponse enrichCard(Server server, HomepageCard card) {
         if (!"category_dropdown".equals(card.getActionType()) || card.getCategoryId() == null) {
             return HomepageCardResponse.from(card);
         }
-        
+
         Optional<KnowledgebaseCategory> categoryOpt = categoryService.getCategoryById(server, card.getCategoryId());
         if (categoryOpt.isEmpty()) {
             return HomepageCardResponse.from(card);
         }
-        
+
         KnowledgebaseCategory category = categoryOpt.get();
         List<KnowledgebaseArticle> articles = articleService.getVisibleArticlesByCategory(server, category.getId());
-        
-        HomepageCardResponse.EmbeddedCategory embeddedCategory = 
-                HomepageCardResponse.EmbeddedCategory.from(category, articles);
-        
+
+        HomepageCardResponse.EmbeddedCategory embeddedCategory =
+            HomepageCardResponse.EmbeddedCategory.from(category, articles);
+
         return HomepageCardResponse.from(card, embeddedCategory);
     }
 }

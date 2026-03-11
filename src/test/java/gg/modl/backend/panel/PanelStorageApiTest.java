@@ -1,5 +1,7 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
@@ -7,8 +9,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelStorageApiTest {
 
@@ -47,7 +47,9 @@ class PanelStorageApiTest {
         var listResponse = api.panelGet("/v1/panel/storage/files");
         var json = JsonHelper.parseObject(listResponse.body());
         var files = json.getAsJsonArray("files");
-        if (files.isEmpty()) return;
+        if (files.isEmpty()) {
+            return;
+        }
 
         String key = files.get(0).getAsJsonObject().get("key").getAsString();
         var response = api.panelGet("/v1/panel/storage/download/" + key);

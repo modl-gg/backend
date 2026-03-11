@@ -1,16 +1,12 @@
 package gg.modl.backend.validation;
 
 public final class RequestValidationLimits {
-    private RequestValidationLimits() {}
-
     public static final int EMAIL_MAX_LENGTH = 254;
-
     public static final int SYSTEM_LOG_MESSAGE_MAX_LENGTH = 4_000;
     public static final int SYSTEM_LOG_SOURCE_MAX_LENGTH = 64;
     public static final int SYSTEM_LOG_CATEGORY_MAX_LENGTH = 64;
     public static final int SYSTEM_LOG_METADATA_MAX_ENTRIES = 50;
     public static final int SYSTEM_LOG_METADATA_KEY_MAX_LENGTH = 64;
-
     public static final int ADMIN_SYSTEM_NAME_MAX_LENGTH = 100;
     public static final int TIMEZONE_MAX_LENGTH = 64;
     public static final int MAINTENANCE_MESSAGE_MAX_LENGTH = 500;
@@ -19,12 +15,10 @@ public final class RequestValidationLimits {
     public static final int IP_WHITELIST_ENTRY_MAX_LENGTH = 64;
     public static final int CORS_ORIGIN_MAX_ENTRIES = 50;
     public static final int CORS_ORIGIN_MAX_LENGTH = 255;
-
     public static final int LOG_RETENTION_DAYS_MIN = 1;
     public static final int LOG_RETENTION_DAYS_MAX = 3_650;
     public static final int MAX_LOG_SIZE_PER_DAY_MIN = 1_024;
     public static final int MAX_LOG_SIZE_PER_DAY_MAX = 100_000_000;
-
     public static final int SESSION_TIMEOUT_MINUTES_MIN = 5;
     public static final int SESSION_TIMEOUT_MINUTES_MAX = 1_440;
     public static final int MAX_LOGIN_ATTEMPTS_MIN = 1;
@@ -33,7 +27,6 @@ public final class RequestValidationLimits {
     public static final int LOCKOUT_DURATION_MINUTES_MAX = 1_440;
     public static final int PASSWORD_MIN_LENGTH_MIN = 8;
     public static final int PASSWORD_MIN_LENGTH_MAX = 128;
-
     public static final int CACHE_TTL_SECONDS_MIN = 0;
     public static final int CACHE_TTL_SECONDS_MAX = 86_400;
     public static final int RATE_LIMIT_REQUESTS_MIN = 1;
@@ -42,41 +35,35 @@ public final class RequestValidationLimits {
     public static final int RATE_LIMIT_WINDOW_SECONDS_MAX = 86_400;
     public static final int DATABASE_CONNECTION_POOL_MIN = 1;
     public static final int DATABASE_CONNECTION_POOL_MAX = 200;
-
     public static final int PUNISHMENT_TYPE_NAME_MIN_LENGTH = 2;
     public static final int PUNISHMENT_TYPE_NAME_MAX_LENGTH = 64;
     public static final int PUNISHMENT_DESCRIPTION_MAX_LENGTH = 500;
     public static final int PUNISHMENT_POINTS_MIN = 0;
     public static final int PUNISHMENT_POINTS_MAX = 1_000;
-
     public static final int AI_PUNISHMENT_CONFIGS_MAX_ENTRIES = 64;
     public static final int AI_PUNISHMENT_NAME_MAX_LENGTH = 64;
     public static final int AI_PUNISHMENT_DESCRIPTION_MAX_LENGTH = 500;
-
     public static final int DISCORD_BOT_NAME_MAX_LENGTH = 80;
     public static final int EMBED_FIELDS_MAX_ENTRIES = 25;
     public static final int EMBED_TITLE_MAX_LENGTH = 256;
     public static final int EMBED_DESCRIPTION_MAX_LENGTH = 4_096;
     public static final int EMBED_FIELD_NAME_MAX_LENGTH = 256;
     public static final int EMBED_FIELD_VALUE_MAX_LENGTH = 1_024;
-
     public static final int REPORT_STAFF_NAME_MAX_LENGTH = 64;
     public static final int REPORT_REASON_MAX_LENGTH = 500;
     public static final int REPORT_ASSIGNEE_MAX_LENGTH = 256;
     public static final int REPORT_PUNISHMENT_ID_MAX_LENGTH = 32;
-
     public static final int NOTIFICATION_ACK_MAX_IDS = 100;
     public static final int NOTIFICATION_ID_MAX_LENGTH = 64;
     public static final int ACK_TIMESTAMP_MAX_LENGTH = 64;
-
     public static final int CHAT_LOG_BATCH_MAX_ENTRIES = 500;
     public static final int CHAT_LOG_MESSAGE_MAX_LENGTH = 512;
     public static final int COMMAND_LOG_MAX_LENGTH = 512;
     public static final int LOG_USERNAME_MAX_LENGTH = 16;
     public static final int LOG_SERVER_NAME_MAX_LENGTH = 64;
-
     public static final int EVIDENCE_MAX_ITEMS = 10;
     public static final int EVIDENCE_URL_MAX_LENGTH = 2_048;
     public static final int FILE_NAME_MAX_LENGTH = 255;
     public static final int CONTENT_TYPE_MAX_LENGTH = 128;
+    private RequestValidationLimits() {}
 }

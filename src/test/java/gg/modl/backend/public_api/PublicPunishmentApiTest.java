@@ -1,15 +1,14 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PublicPunishmentApiTest {
 
@@ -27,15 +26,17 @@ class PublicPunishmentApiTest {
     void getAppealInfo() throws Exception {
         // Create a punishment to query appeal info for
         var createResponse = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", TEST_UUID,
-                "issuerName", "TestBot",
-                "type_ordinal", 14,
-                "reason", "Public appeal info test",
-                "duration", 300,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", TEST_UUID,
+            "issuerName", "TestBot",
+            "type_ordinal", 14,
+            "reason", "Public appeal info test",
+            "duration", 300,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
-        if (createResponse.statusCode() != 200) return;
+        if (createResponse.statusCode() != 200) {
+            return;
+        }
         String punishmentId = JsonHelper.parseObject(createResponse.body()).get("punishmentId").getAsString();
 
         var response = api.publicGet("/v1/public/punishment/" + punishmentId + "/appeal-info");
@@ -45,8 +46,8 @@ class PublicPunishmentApiTest {
 
         // Cleanup
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "cleanup"
+            "issuerName", "TestBot",
+            "reason", "cleanup"
         ));
     }
 }

@@ -7,14 +7,13 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_NOTIFICATIONS)
@@ -24,8 +23,8 @@ public class MinecraftNotificationController {
 
     @PostMapping("/acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgeNotifications(
-            @RequestBody @Valid AcknowledgeNotificationsRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid AcknowledgeNotificationsRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(server, request);

@@ -1,8 +1,7 @@
 package gg.modl.backend.util;
 
-import lombok.experimental.UtilityClass;
-
 import java.util.Date;
+import lombok.experimental.UtilityClass;
 
 @UtilityClass
 public class DateRangeUtil {

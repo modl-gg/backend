@@ -7,6 +7,7 @@ import gg.modl.backend.billing.config.StripeConfiguration;
 import gg.modl.backend.billing.service.StripeService;
 import gg.modl.backend.billing.service.StripeWebhookService;
 import gg.modl.backend.rest.RESTMappingV1;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -15,8 +16,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.WEBHOOKS_STRIPE)
@@ -29,8 +28,8 @@ public class StripeWebhookController {
 
     @PostMapping
     public ResponseEntity<?> handleWebhook(
-            @RequestBody String payload,
-            @RequestHeader("Stripe-Signature") String sigHeader
+        @RequestBody String payload,
+        @RequestHeader("Stripe-Signature") String sigHeader
     ) {
         if (!stripeService.isConfigured()) {
             log.warn("Stripe not configured, ignoring webhook");

@@ -5,11 +5,11 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 public record DismissReportRequest(
-        @Size(max = RequestValidationLimits.REPORT_STAFF_NAME_MAX_LENGTH)
-        @NotBlank
-        String dismissedBy,
+    @Size(max = RequestValidationLimits.REPORT_STAFF_NAME_MAX_LENGTH)
+    @NotBlank
+    String dismissedBy,
 
-        @Size(max = RequestValidationLimits.REPORT_REASON_MAX_LENGTH)
-        String reason
+    @Size(max = RequestValidationLimits.REPORT_REASON_MAX_LENGTH)
+    String reason
 ) {
 }

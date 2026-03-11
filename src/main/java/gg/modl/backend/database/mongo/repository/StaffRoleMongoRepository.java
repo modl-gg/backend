@@ -4,21 +4,19 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
-
-import java.util.Collection;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Repository
 public class StaffRoleMongoRepository extends AbstractServerMongoRepository<StaffRole> {
@@ -28,9 +26,9 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
 
     public List<StaffRole> findAllOrdered(Server server) {
         Query query = new Query().with(Sort.by(
-                Sort.Direction.ASC,
-                StaffRoleFields.ORDER,
-                StaffRoleFields.CREATED_AT
+            Sort.Direction.ASC,
+            StaffRoleFields.ORDER,
+            StaffRoleFields.CREATED_AT
         ));
         return find(server, query);
     }
@@ -42,14 +40,14 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
 
     public boolean existsByNameIgnoreCase(Server server, String roleName) {
         return exists(server, Query.query(
-                MongoQueries.where(StaffRoleFields.NAME).regex("^" + Pattern.quote(roleName) + "$", "i")
+            MongoQueries.where(StaffRoleFields.NAME).regex("^" + Pattern.quote(roleName) + "$", "i")
         ));
     }
 
     public boolean existsByNameIgnoreCaseExcludingId(Server server, String roleName, String excludedRoleId) {
         Criteria criteria = MongoQueries.where(StaffRoleFields.NAME)
-                .regex("^" + Pattern.quote(roleName) + "$", "i")
-                .and(StaffRoleFields.ID).ne(excludedRoleId);
+            .regex("^" + Pattern.quote(roleName) + "$", "i")
+            .and(StaffRoleFields.ID).ne(excludedRoleId);
         return exists(server, Query.query(criteria));
     }
 
@@ -78,7 +76,7 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
 
     public List<StaffRole> findCustomRolesWithOrderZero(Server server) {
         Query query = Query.query(MongoQueries.where(StaffRoleFields.IS_DEFAULT).is(false)
-                .and(StaffRoleFields.ORDER).is(0));
+            .and(StaffRoleFields.ORDER).is(0));
         return find(server, query);
     }
 

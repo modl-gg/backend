@@ -1,11 +1,11 @@
 package gg.modl.backend.settings.service;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CustomDomainAccessServiceTest {
 

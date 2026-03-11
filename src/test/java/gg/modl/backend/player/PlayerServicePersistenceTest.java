@@ -1,5 +1,12 @@
 package gg.modl.backend.player;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
@@ -7,12 +14,6 @@ import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -20,13 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class PlayerServicePersistenceTest {
@@ -54,25 +53,25 @@ class PlayerServicePersistenceTest {
     void loginPlayerMutatesAggregateAndPersistsThroughRepository() {
         UUID playerUuid = UUID.randomUUID();
         Player player = Player.builder()
-                .id("player-1")
-                .minecraftUuid(playerUuid)
-                .usernames(new ArrayList<>(List.of(new UsernameEntry("OldName", new Date(1_000L)))))
-                .ipAddresses(new ArrayList<>())
-                .notes(new ArrayList<>())
-                .punishments(new ArrayList<>())
-                .data(new HashMap<>())
-                .build();
+            .id("player-1")
+            .minecraftUuid(playerUuid)
+            .usernames(new ArrayList<>(List.of(new UsernameEntry("OldName", new Date(1_000L)))))
+            .ipAddresses(new ArrayList<>())
+            .notes(new ArrayList<>())
+            .punishments(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
 
         Player updated = playerService.loginPlayer(
-                server,
-                playerUuid,
-                "NewName",
-                "127.0.0.1",
-                Map.of("country", "US", "region", "Virginia", "asn", "AS123", "proxy", true, "hosting", false),
-                "skin-hash",
-                "hub"
+            server,
+            playerUuid,
+            "NewName",
+            "127.0.0.1",
+            Map.of("country", "US", "region", "Virginia", "asn", "AS123", "proxy", true, "hosting", false),
+            "skin-hash",
+            "hub"
         );
 
         assertNotNull(updated);
@@ -97,26 +96,26 @@ class PlayerServicePersistenceTest {
     @Test
     void updateIpGeoDataMutatesExistingIpEntryAndPersistsThroughRepository() {
         Player player = Player.builder()
-                .id("player-1")
-                .minecraftUuid(UUID.randomUUID())
-                .usernames(new ArrayList<>())
-                .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
-                        .ipAddress("127.0.0.1")
-                        .firstLogin(new Date())
-                        .logins(new ArrayList<>())
-                        .build())))
-                .notes(new ArrayList<>())
-                .punishments(new ArrayList<>())
-                .data(new HashMap<>())
-                .build();
+            .id("player-1")
+            .minecraftUuid(UUID.randomUUID())
+            .usernames(new ArrayList<>())
+            .ipAddresses(new ArrayList<>(List.of(IPEntry.builder()
+                .ipAddress("127.0.0.1")
+                .firstLogin(new Date())
+                .logins(new ArrayList<>())
+                .build())))
+            .notes(new ArrayList<>())
+            .punishments(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
 
         when(playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString())).thenReturn(Optional.of(player));
 
         playerService.updateIpGeoData(
-                server,
-                player.getMinecraftUuid().toString(),
-                "127.0.0.1",
-                Map.of("country", "CA", "region", "Ontario", "asn", "AS456", "proxy", false, "hosting", true)
+            server,
+            player.getMinecraftUuid().toString(),
+            "127.0.0.1",
+            Map.of("country", "CA", "region", "Ontario", "asn", "AS456", "proxy", false, "hosting", true)
         );
 
         verify(playerRepository).replaceIpAddresses(eq(server), eq(player));
