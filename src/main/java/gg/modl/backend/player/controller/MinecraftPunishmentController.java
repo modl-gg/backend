@@ -24,7 +24,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,7 +44,7 @@ public class MinecraftPunishmentController {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         try {
-            createPunishmentInternal(server, request);
+            punishmentLifecycleService.createMinecraftPunishment(server, request);
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                     "status", 404,
@@ -62,7 +61,7 @@ public class MinecraftPunishmentController {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         try {
-            String punishmentId = createPunishmentInternal(server, request);
+            String punishmentId = punishmentLifecycleService.createMinecraftPunishment(server, request);
             return ResponseEntity.ok(Map.of(
                     "status", 200,
                     "message", "Punishment created",
@@ -387,36 +386,6 @@ public class MinecraftPunishmentController {
                 "success", true,
                 "message", result.message()
         ));
-    }
-
-    private String createPunishmentInternal(Server server, MinecraftCreatePunishmentRequest request) {
-        UUID playerUuid = UUID.fromString(request.targetUuid());
-
-        List<gg.modl.backend.player.dto.request.CreateNoteRequest> noteRequests = null;
-        if (request.notes() != null) {
-            noteRequests = request.notes().stream()
-                    .map(text -> new gg.modl.backend.player.dto.request.CreateNoteRequest(text, request.issuerName(), request.issuerId(), null))
-                    .toList();
-        }
-
-        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
-        data.put("pendingAcknowledgement", true);
-
-        CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
-                request.issuerName(),
-                request.issuerId(),
-                request.typeOrdinal(),
-                noteRequests,
-                null,
-                request.attachedTicketIds(),
-                request.severity(),
-                request.status(),
-                data,
-                request.reason(),
-                request.duration()
-        );
-
-        return punishmentLifecycleService.createPunishment(server, playerUuid, serviceRequest);
     }
 
     public record MinecraftCreatePunishmentRequest(

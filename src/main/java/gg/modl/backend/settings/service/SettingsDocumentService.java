@@ -38,10 +38,7 @@ public class SettingsDocumentService {
         RawSettingsState currentState = toRawState(current);
 
         if (currentState.version() != expectedVersion) {
-            throw new SettingsConflictException(
-                    "Settings were modified by another user. Reload and retry.",
-                    currentState.version()
-            );
+            throwConflict(currentState.version());
         }
 
         Map<String, Object> normalizedData = data == null
@@ -55,11 +52,7 @@ public class SettingsDocumentService {
                 settingsRepository.saveEntity(server, inserted);
                 return new RawSettingsState(normalizedData, expectedVersion + 1, now, true);
             } catch (org.springframework.dao.DuplicateKeyException duplicateKeyException) {
-                RawSettingsState latest = getRawState(server, type);
-                throw new SettingsConflictException(
-                        "Settings were modified by another user. Reload and retry.",
-                        latest.version()
-                );
+                throwConflict(getRawState(server, type).version());
             }
         }
 
@@ -77,14 +70,17 @@ public class SettingsDocumentService {
 
         UpdateResult result = settingsRepository.updateFirst(server, updateQuery, update);
         if (result.getModifiedCount() == 0) {
-            RawSettingsState latest = getRawState(server, type);
-            throw new SettingsConflictException(
-                    "Settings were modified by another user. Reload and retry.",
-                    latest.version()
-            );
+            throwConflict(getRawState(server, type).version());
         }
 
         return new RawSettingsState(normalizedData, expectedVersion + 1, now, true);
+    }
+
+    private void throwConflict(long currentVersion) {
+        throw new SettingsConflictException(
+                "Settings were modified by another user. Reload and retry.",
+                currentVersion
+        );
     }
 
     private Settings findLatestSettingsDocument(Server server, String type) {

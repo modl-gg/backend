@@ -3,10 +3,8 @@ package gg.modl.backend.admin.controller;
 import gg.modl.backend.admin.dto.request.UpdateServerRequest;
 import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.util.PaginationHelper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -18,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 @RestController
@@ -38,9 +35,9 @@ public class AdminServerController {
             @RequestParam(defaultValue = "createdAt") String sort,
             @RequestParam(defaultValue = "desc") String order) {
 
-        int pageNum = Math.max(1, page);
-        int limitNum = Math.min(50, Math.max(1, limit));
-        int skip = (pageNum - 1) * limitNum;
+        int pageNum = PaginationHelper.normalizePage(page);
+        int limitNum = PaginationHelper.normalizeLimit(limit, 50);
+        int skip = PaginationHelper.calculateSkip(page, limitNum);
 
         List<Server> servers = serverService.findServers(search, plan, status, sort, order, skip, limitNum);
         long total = serverService.countServers(search, plan, status);
@@ -97,22 +94,8 @@ public class AdminServerController {
 
     @PostMapping
     public ResponseEntity<?> createServer(@RequestBody @Valid CreateServerRequest request) {
-        Date now = new Date();
-        Server server = new Server(
-                request.serverName(),
-                request.customDomain(),
-                "server_" + request.customDomain(),
-                request.adminEmail(),
-                false,
-                request.plan() != null ? ServerPlan.valueOf(request.plan().trim().toUpperCase(Locale.ROOT)) : ServerPlan.FREE
-        );
-        server.setProvisioningStatus(ProvisioningStatus.PENDING);
-        server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
-        server.setCreatedAt(now);
-        server.setUpdatedAt(now);
-
         try {
-            Server saved = serverService.save(server);
+            Server saved = serverService.createServer(request.serverName(), request.customDomain(), request.adminEmail(), request.plan());
             return ResponseEntity.status(201).body(Map.of(
                     "success", true,
                     "data", saved,
@@ -122,8 +105,7 @@ public class AdminServerController {
             if (e.getMessage() != null && e.getMessage().contains("duplicate")) {
                 return ResponseEntity.status(409).body(Map.of("success", false, "error", "Server name or domain already exists"));
             }
-            log.error("Failed to create server", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to create server"));
+            throw e;
         }
     }
 
@@ -259,22 +241,14 @@ public class AdminServerController {
         String plan = filters.get("plan") != null ? filters.get("plan").toString() : null;
         String status = filters.get("status") != null ? filters.get("status").toString() : null;
 
-        List<Server> servers = serverService.findServers(null, plan, status, "createdAt", "desc", 0, 10000);
-
         if ("csv".equalsIgnoreCase(format)) {
-            StringBuilder csv = new StringBuilder();
-            csv.append("id,serverName,customDomain,adminEmail,plan,provisioningStatus,emailVerified,createdAt\n");
-            for (Server s : servers) {
-                csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s\n",
-                        s.getId(), s.getServerName(), s.getCustomDomain(), s.getAdminEmail(),
-                        s.getPlan(), s.getProvisioningStatus(), s.getEmailVerified(), s.getCreatedAt()));
-            }
             return ResponseEntity.ok()
                     .header("Content-Type", "text/csv")
                     .header("Content-Disposition", "attachment; filename=servers-export.csv")
-                    .body(csv.toString());
+                    .body(serverService.exportServersCsv(plan, status));
         }
 
+        List<Server> servers = serverService.findServers(null, plan, status, "createdAt", "desc", 0, 10000);
         return ResponseEntity.ok(Map.of(
                 "success", true,
                 "data", Map.of(

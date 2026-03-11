@@ -1,6 +1,7 @@
 package gg.modl.backend.rest;
 
 import gg.modl.backend.settings.service.SettingsConflictException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -12,6 +13,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import java.util.Map;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
     private static final String INVALID_DATA_MESSAGE = "Invalid data provided.";
 
@@ -30,12 +32,29 @@ public class GlobalExceptionHandler {
         return invalidDataResponse();
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of(
+                "status", 400,
+                "error", ex.getMessage() != null ? ex.getMessage() : "Invalid argument"
+        ));
+    }
+
     @ExceptionHandler(SettingsConflictException.class)
     public ResponseEntity<Map<String, Object>> handleSettingsConflict(SettingsConflictException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                 "status", 409,
                 "error", ex.getMessage(),
                 "currentVersion", ex.getCurrentVersion()
+        ));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleGenericException(Exception ex) {
+        log.error("Unhandled exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                "success", false,
+                "error", "An internal error occurred"
         ));
     }
 

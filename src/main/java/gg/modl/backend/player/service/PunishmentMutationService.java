@@ -1,7 +1,7 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -36,7 +36,7 @@ public class PunishmentMutationService {
     private final PlayerMongoRepository playerRepository;
     private final TicketMongoRepository ticketRepository;
     private final IssuerNameResolver issuerNameResolver;
-    private final TenantMongoAccess tenantMongoAccess;
+    private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
     private final PunishmentLifecycleService punishmentLifecycleService;
 
@@ -235,7 +235,7 @@ public class PunishmentMutationService {
         persistPlayerPunishments(server, player);
 
         if (request.modifyAssociatedTickets()) {
-            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), tenantMongoAccess.forServer(server));
+            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server, staffRepository);
             if (request.addTicketIds() != null && !request.addTicketIds().isEmpty()) {
                 closeAttachedTickets(server, request.addTicketIds(), ticketIssuerName);
             }

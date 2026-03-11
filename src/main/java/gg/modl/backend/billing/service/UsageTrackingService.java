@@ -5,12 +5,12 @@ import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.util.ServerMutationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
-import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +23,7 @@ public class UsageTrackingService {
     private static final double AI_OVERAGE_RATE = 0.02;
 
     private final ServerMongoRepository serverRepository;
+    private final ServerMutationHelper serverMutationHelper;
 
     public UsageResponse getUsage(Server server) {
         Server freshServer = getFreshServer(server.getId());
@@ -83,7 +84,7 @@ public class UsageTrackingService {
             throw new IllegalStateException("No Stripe customer ID found. Please ensure you have an active subscription.");
         }
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setUsageBillingEnabled(enabled);
             current.setUsageBillingUpdatedAt(new Date());
         });
@@ -118,11 +119,11 @@ public class UsageTrackingService {
     }
 
     public void updateStorageLimit(Server server, long bytes) {
-        mutateServer(server, current -> current.setMaxStorageLimitBytes(bytes));
+        serverMutationHelper.mutate(server, current -> current.setMaxStorageLimitBytes(bytes));
     }
 
     public void updateOverageLimits(Server server, long maxStorageLimitBytes, long maxAiOverageRequests) {
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setMaxStorageLimitBytes(maxStorageLimitBytes);
             current.setMaxAiOverageRequests(maxAiOverageRequests);
         });
@@ -143,8 +144,4 @@ public class UsageTrackingService {
         return serverRepository.findById(serverId).orElse(null);
     }
 
-    private void mutateServer(Server server, Consumer<Server> mutator) {
-        mutator.accept(server);
-        serverRepository.saveEntity(server);
-    }
 }

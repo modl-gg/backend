@@ -2,6 +2,7 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.player.controller.MinecraftPunishmentController.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
@@ -18,8 +19,8 @@ import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -47,8 +48,38 @@ public class PunishmentLifecycleService {
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final IssuerNameResolver issuerNameResolver;
-    private final TenantMongoAccess tenantMongoAccess;
+    private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
+
+    public String createMinecraftPunishment(Server server, MinecraftCreatePunishmentRequest request) {
+        UUID playerUuid = UUID.fromString(request.targetUuid());
+
+        List<CreateNoteRequest> noteRequests = null;
+        if (request.notes() != null) {
+            noteRequests = request.notes().stream()
+                    .map(text -> new CreateNoteRequest(text, request.issuerName(), request.issuerId(), null))
+                    .toList();
+        }
+
+        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
+        data.put("pendingAcknowledgement", true);
+
+        CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
+                request.issuerName(),
+                request.issuerId(),
+                request.typeOrdinal(),
+                noteRequests,
+                null,
+                request.attachedTicketIds(),
+                request.severity(),
+                request.status(),
+                data,
+                request.reason(),
+                request.duration()
+        );
+
+        return createPunishment(server, playerUuid, serviceRequest);
+    }
 
     public String createPunishment(Server server, UUID playerUuid, CreatePunishmentRequest request) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -245,7 +276,7 @@ public class PunishmentLifecycleService {
         persistPlayerPunishments(server, player);
 
         if (request.attachedTicketIds() != null && !request.attachedTicketIds().isEmpty()) {
-            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), tenantMongoAccess.forServer(server));
+            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server, staffRepository);
             closeAttachedTickets(server, request.attachedTicketIds(), ticketIssuerName);
         }
 

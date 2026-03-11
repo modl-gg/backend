@@ -5,7 +5,7 @@ import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.ApiKeyService;
+import gg.modl.backend.settings.service.ApiKeySettingsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,7 +24,7 @@ import java.util.List;
 @Component
 @RequiredArgsConstructor
 public class ApiKeyFilter extends OncePerRequestFilter {
-    private final ApiKeyService apiKeyService;
+    private final ApiKeySettingsService apiKeyService;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {

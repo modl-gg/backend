@@ -35,6 +35,14 @@ public class PlayerService {
     private static final int SEARCH_RESULT_LIMIT = 20;
     private static final int SEARCH_CANDIDATE_LIMIT = 100;
 
+    private static final int RANK_EXACT_CURRENT_USERNAME = 0;
+    private static final int RANK_EXACT_PAST_USERNAME = 1;
+    private static final int RANK_PREFIX_CURRENT_USERNAME = 2;
+    private static final int RANK_PREFIX_PAST_USERNAME = 3;
+    private static final int RANK_CONTAINS_CURRENT_USERNAME = 4;
+    private static final int RANK_CONTAINS_PAST_USERNAME = 5;
+    private static final int RANK_NO_MATCH = Integer.MAX_VALUE;
+
     private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
@@ -89,41 +97,41 @@ public class PlayerService {
     private int computeMatchRank(Player player, String normalizedSearchLower) {
         List<UsernameEntry> usernames = player.getUsernames();
         if (usernames == null || usernames.isEmpty()) {
-            return 6;
+            return RANK_NO_MATCH;
         }
 
         String currentUsername = usernames.get(usernames.size() - 1).username();
         if (equalsIgnoreCase(currentUsername, normalizedSearchLower)) {
-            return 0;
+            return RANK_EXACT_CURRENT_USERNAME;
         }
 
         for (int i = 0; i < usernames.size() - 1; i++) {
             if (equalsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
-                return 1;
+                return RANK_EXACT_PAST_USERNAME;
             }
         }
 
         if (startsWithIgnoreCase(currentUsername, normalizedSearchLower)) {
-            return 2;
+            return RANK_PREFIX_CURRENT_USERNAME;
         }
 
         for (int i = 0; i < usernames.size() - 1; i++) {
             if (startsWithIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
-                return 3;
+                return RANK_PREFIX_PAST_USERNAME;
             }
         }
 
         if (containsIgnoreCase(currentUsername, normalizedSearchLower)) {
-            return 4;
+            return RANK_CONTAINS_CURRENT_USERNAME;
         }
 
         for (int i = 0; i < usernames.size() - 1; i++) {
             if (containsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
-                return 5;
+                return RANK_CONTAINS_PAST_USERNAME;
             }
         }
 
-        return 6;
+        return RANK_NO_MATCH;
     }
 
     private long getLastLoginMillis(Player player) {
@@ -379,7 +387,6 @@ public class PlayerService {
                 .map(p -> toPunishmentResponse(server, p))
                 .toList();
 
-        // Strip raw IP addresses from response — only keep metadata (country, region, etc.)
         List<IPEntry> sanitizedIps = (player.getIpAddresses() != null ? player.getIpAddresses() : List.<IPEntry>of()).stream()
                 .map(ip -> IPEntry.builder()
                         .ipAddress(null)
@@ -428,7 +435,6 @@ public class PlayerService {
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
         int ordinal = punishment.getTypeOrdinal();
 
-        // Compute effective category (BAN, MUTE, or null) using the uniform calculation
         PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal).orElse(null);
         String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
 
@@ -497,4 +503,3 @@ public class PlayerService {
         }
     }
 }
-

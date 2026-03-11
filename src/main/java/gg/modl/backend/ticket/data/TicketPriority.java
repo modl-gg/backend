@@ -42,6 +42,10 @@ public enum TicketPriority {
         return displayName;
     }
 
+    public static TicketPriority resolveOrDefault(String priority) {
+        return priority == null || priority.isBlank() ? NORMAL : fromCanonicalId(priority);
+    }
+
     @JsonCreator
     public static TicketPriority fromValue(String value) {
         return fromCanonicalId(value);

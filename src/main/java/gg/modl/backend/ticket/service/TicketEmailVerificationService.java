@@ -56,7 +56,7 @@ public class TicketEmailVerificationService {
             emailService.send(email, emailContent);
         } catch (Exception e) {
             log.error("Failed to send verification code email for ticket {}: {}", ticket.getId(), e.getMessage());
-            throw new RuntimeException("Failed to send verification email");
+            throw new RuntimeException("Failed to send verification email", e);
         }
 
         return EmailAddressUtil.mask(email);

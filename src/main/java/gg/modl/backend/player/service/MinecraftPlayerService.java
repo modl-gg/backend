@@ -1,12 +1,13 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.util.PaginationHelper;
 import gg.modl.backend.util.PlayerDataUtils;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
 import gg.modl.backend.server.data.Server;
@@ -41,7 +42,7 @@ public class MinecraftPlayerService {
     private final AccountLinkingService accountLinkingService;
     private final MojangApiService mojangApiService;
     private final IssuerNameResolver issuerNameResolver;
-    private final TenantMongoAccess tenantMongoAccess;
+    private final StaffMongoRepository staffRepository;
 
     public MinecraftPlayerService(
             PlayerService playerService,
@@ -53,7 +54,7 @@ public class MinecraftPlayerService {
             AccountLinkingService accountLinkingService,
             MojangApiService mojangApiService,
             IssuerNameResolver issuerNameResolver,
-            TenantMongoAccess tenantMongoAccess
+            StaffMongoRepository staffRepository
     ) {
         this.playerService = playerService;
         this.playerRepository = playerRepository;
@@ -64,7 +65,7 @@ public class MinecraftPlayerService {
         this.accountLinkingService = accountLinkingService;
         this.mojangApiService = mojangApiService;
         this.issuerNameResolver = issuerNameResolver;
-        this.tenantMongoAccess = tenantMongoAccess;
+        this.staffRepository = staffRepository;
     }
 
     public ServiceResponse login(
@@ -81,16 +82,31 @@ public class MinecraftPlayerService {
 
         player = findPlayerByUuid(server, playerUuid.toString()).orElse(player);
 
+        player = promotePunishments(server, player, playerUuid, username, skinHash);
+
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
+        List<Map<String, Object>> activePunishments = collectActivePunishments(player, punishmentTypes, resolvedIssuers);
+
+        return buildLoginResponse(server, player, playerUuid, ip, username, activePunishments);
+    }
+
+    private Player promotePunishments(Server server, Player player, UUID playerUuid, String username, String skinHash) {
         List<String> promoted = punishmentLifecycleService.promoteUnstartedPunishments(server, player);
         List<String> autoPardoned = punishmentLifecycleService.checkRestrictionAutoPardons(server, player, username, skinHash);
         List<String> linkedBans = punishmentLifecycleService.enforceAltBlockingBans(server, player);
 
         if (!promoted.isEmpty() || !autoPardoned.isEmpty() || !linkedBans.isEmpty()) {
-            player = findPlayerByUuid(server, playerUuid.toString()).orElse(player);
+            return findPlayerByUuid(server, playerUuid.toString()).orElse(player);
         }
+        return player;
+    }
 
-        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
+    private List<Map<String, Object>> collectActivePunishments(
+            Player player,
+            List<PunishmentType> punishmentTypes,
+            Map<String, String> resolvedIssuers
+    ) {
         List<Map<String, Object>> activePunishments = new ArrayList<>();
 
         for (Punishment punishment : player.getPunishments()) {
@@ -116,8 +132,17 @@ public class MinecraftPlayerService {
             activePunishments.add(PunishmentMapper.toSimplePunishment(punishment, punishmentTypes, statusCalculator, resolvedIssuers));
         }
 
-        activePunishments = deduplicateActivePunishments(activePunishments);
+        return deduplicateActivePunishments(activePunishments);
+    }
 
+    private ServiceResponse buildLoginResponse(
+            Server server,
+            Player player,
+            UUID playerUuid,
+            String ip,
+            String username,
+            List<Map<String, Object>> activePunishments
+    ) {
         List<Map<String, Object>> pendingNotifications = extractPendingNotifications(player);
 
         List<String> pendingIpLookups = new ArrayList<>();
@@ -386,19 +411,14 @@ public class MinecraftPlayerService {
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> allAccounts = (List<Map<String, Object>>) fullResponse.body().get("linkedAccounts");
-        int totalCount = allAccounts.size();
-        int skip = (page - 1) * limit;
-        List<Map<String, Object>> paged = skip >= totalCount
-                ? List.of()
-                : allAccounts.subList(skip, Math.min(skip + limit, totalCount));
-        boolean hasMore = skip + limit < totalCount;
+        PaginationHelper.PageResult<Map<String, Object>> result = PaginationHelper.paginate(allAccounts, page, limit);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", 200);
-        response.put("linkedAccounts", paged);
-        response.put("totalCount", totalCount);
-        response.put("page", page);
-        response.put("hasMore", hasMore);
+        response.put("linkedAccounts", result.items());
+        response.put("totalCount", result.totalCount());
+        response.put("page", result.page());
+        response.put("hasMore", result.hasMore());
         return ok(response);
     }
 
@@ -458,19 +478,14 @@ public class MinecraftPlayerService {
                 .map(p -> PunishmentMapper.toPunishmentMap(p, punishmentTypes, resolvedIssuers))
                 .toList();
 
-        int totalCount = allPunishments.size();
-        int skip = (page - 1) * limit;
-        List<Map<String, Object>> paged = skip >= totalCount
-                ? List.of()
-                : allPunishments.subList(skip, Math.min(skip + limit, totalCount));
-        boolean hasMore = skip + limit < totalCount;
+        PaginationHelper.PageResult<Map<String, Object>> result = PaginationHelper.paginate(allPunishments, page, limit);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", 200);
-        response.put("punishments", paged);
-        response.put("totalCount", totalCount);
-        response.put("page", page);
-        response.put("hasMore", hasMore);
+        response.put("punishments", result.items());
+        response.put("totalCount", result.totalCount());
+        response.put("page", result.page());
+        response.put("hasMore", result.hasMore());
         return ok(response);
     }
 
@@ -493,19 +508,14 @@ public class MinecraftPlayerService {
                 })
                 .toList();
 
-        int totalCount = allNotes.size();
-        int skip = (page - 1) * limit;
-        List<Map<String, Object>> paged = skip >= totalCount
-                ? List.of()
-                : allNotes.subList(skip, Math.min(skip + limit, totalCount));
-        boolean hasMore = skip + limit < totalCount;
+        PaginationHelper.PageResult<Map<String, Object>> result = PaginationHelper.paginate(allNotes, page, limit);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", 200);
-        response.put("notes", paged);
-        response.put("totalCount", totalCount);
-        response.put("page", page);
-        response.put("hasMore", hasMore);
+        response.put("notes", result.items());
+        response.put("totalCount", result.totalCount());
+        response.put("page", result.page());
+        response.put("hasMore", result.hasMore());
         return ok(response);
     }
 
@@ -849,19 +859,10 @@ public class MinecraftPlayerService {
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
         Set<String> ids = new HashSet<>();
         for (Punishment p : safePunishments(player)) {
-            if (p.getIssuerId() != null) ids.add(p.getIssuerId());
-            for (var m : p.getModifications() != null ? p.getModifications() : List.<gg.modl.backend.player.data.punishment.PunishmentModification>of()) {
-                if (m.issuerId() != null) ids.add(m.issuerId());
-            }
-            for (var n : p.getNotes() != null ? p.getNotes() : List.<gg.modl.backend.player.data.punishment.PunishmentNote>of()) {
-                if (n.issuerId() != null) ids.add(n.issuerId());
-            }
-            for (var e : p.getEvidence() != null ? p.getEvidence() : List.<gg.modl.backend.player.data.punishment.PunishmentEvidence>of()) {
-                if (e.uploadedById() != null) ids.add(e.uploadedById());
-            }
+            ids.addAll(PunishmentQueryService.collectIssuerIds(p));
         }
         if (ids.isEmpty()) return Map.of();
-        return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+        return issuerNameResolver.batchResolve(ids, server, staffRepository);
     }
 
     private List<gg.modl.backend.player.data.UsernameEntry> safeUsernames(Player player) {

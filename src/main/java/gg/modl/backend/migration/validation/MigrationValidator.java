@@ -1,5 +1,6 @@
 package gg.modl.backend.migration.validation;
 
+import gg.modl.backend.validation.RegExpConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -15,16 +16,8 @@ import java.util.regex.Pattern;
 @Component
 @Slf4j
 public class MigrationValidator {
-    private static final Pattern UUID_PATTERN = Pattern.compile(
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-    );
-
-    private static final Pattern UUID_NO_DASHES_PATTERN = Pattern.compile(
-            "^[0-9a-fA-F]{32}$"
-    );
-
-    private static final int MAX_STRING_LENGTH = 10000;
-    private static final int MAX_ARRAY_LENGTH = 100000;
+    private static final Pattern UUID_PATTERN = Pattern.compile(RegExpConstants.UUID);
+    private static final Pattern UUID_NO_DASHES_PATTERN = Pattern.compile("^[0-9a-fA-F]{32}$");
 
     public ValidationResult validateMigrationData(Map<String, Object> data) {
         if (data == null) {

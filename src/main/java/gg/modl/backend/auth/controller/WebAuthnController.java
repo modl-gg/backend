@@ -1,6 +1,5 @@
 package gg.modl.backend.auth.controller;
 
-import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
@@ -9,8 +8,8 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.util.CookieUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -33,10 +32,10 @@ import java.util.Map;
 public class WebAuthnController {
     private final WebAuthnService webAuthnService;
     private final SessionService sessionService;
-    private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
     private final ObjectMapper objectMapper;
+    private final CookieUtil cookieUtil;
 
     // --- Registration (requires session) ---
 
@@ -190,8 +189,7 @@ public class WebAuthnController {
 
             // Create session (same as email code login)
             AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
-            Cookie sessionCookie = createSessionCookie(session.getId());
-            response.addCookie(sessionCookie);
+            response.addCookie(cookieUtil.createSessionCookie(session.getId()));
 
             return ResponseEntity.ok(Map.of("success", true));
         } catch (IllegalStateException e) {
@@ -213,20 +211,6 @@ public class WebAuthnController {
             return true;
         }
         return staffService.getStaffByEmail(server, email).isPresent();
-    }
-
-    private Cookie createSessionCookie(String sessionId) {
-        Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), sessionId);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(authConfiguration.isCookieSecure());
-        cookie.setPath("/");
-        cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-        if (authConfiguration.isDevelopmentMode()) {
-            cookie.setAttribute("SameSite", "Lax");
-        } else {
-            cookie.setAttribute("SameSite", "Strict");
-        }
-        return cookie;
     }
 
     // --- Request DTOs ---

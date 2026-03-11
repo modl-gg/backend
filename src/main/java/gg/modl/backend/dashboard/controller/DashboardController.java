@@ -21,8 +21,6 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
 @RequiredArgsConstructor
 public class DashboardController {
-    private static final int MAX_RECENT_ITEMS_LIMIT = 20;
-
     private final DashboardService dashboardService;
 
     @GetMapping("/metrics")
@@ -38,8 +36,7 @@ public class DashboardController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
-        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, safeLimit);
+        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, limit);
         return ResponseEntity.ok(tickets);
     }
 
@@ -49,8 +46,7 @@ public class DashboardController {
             HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
-        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, safeLimit);
+        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, limit);
         return ResponseEntity.ok(punishments);
     }
 

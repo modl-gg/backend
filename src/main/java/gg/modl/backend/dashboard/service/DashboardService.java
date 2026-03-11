@@ -76,6 +76,25 @@ public class DashboardService {
         ));
         long unresolvedTickets = ticketRepository.count(server, unresolvedTicketsQuery);
 
+        long onlineStaff = countActiveStaff(server);
+        long onlinePlayers = playerRepository.count(server, Query.query(MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)));
+        long totalPlayers = playerRepository.count(server, new Query());
+
+        ActivePunishmentCounts punishmentCounts = countActivePunishments(server);
+
+        return new MinecraftDashboardStatsResponse(
+                unresolvedReports,
+                unresolvedTickets,
+                onlineStaff,
+                onlinePlayers,
+                punishmentCounts.bans,
+                punishmentCounts.mutes,
+                punishmentCounts.total,
+                totalPlayers
+        );
+    }
+
+    private long countActiveStaff(Server server) {
         Query assignedStaffQuery = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne(""));
         MongoQueries.include(assignedStaffQuery, StaffFields.ASSIGNED_MINECRAFT_UUID);
         List<String> assignedUuids = staffRepository.find(server, assignedStaffQuery).stream()
@@ -84,18 +103,18 @@ public class DashboardService {
                 .distinct()
                 .toList();
 
-        long onlineStaff = 0;
-        if (!assignedUuids.isEmpty()) {
-            Query onlineStaffQuery = Query.query(new Criteria().andOperator(
-                    MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids),
-                    MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-            ));
-            onlineStaff = playerRepository.count(server, onlineStaffQuery);
+        if (assignedUuids.isEmpty()) {
+            return 0;
         }
 
-        long onlinePlayers = playerRepository.count(server, Query.query(MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)));
-        long totalPlayers = playerRepository.count(server, new Query());
+        Query onlineStaffQuery = Query.query(new Criteria().andOperator(
+                MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids),
+                MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
+        ));
+        return playerRepository.count(server, onlineStaffQuery);
+    }
 
+    private ActivePunishmentCounts countActivePunishments(Server server) {
         Query punishmentsQuery = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true));
         MongoQueries.include(punishmentsQuery, PlayerFields.PUNISHMENTS);
 
@@ -129,17 +148,10 @@ public class DashboardService {
             }
         }
 
-        return new MinecraftDashboardStatsResponse(
-                unresolvedReports,
-                unresolvedTickets,
-                onlineStaff,
-                onlinePlayers,
-                activeBans,
-                activeMutes,
-                totalPunishments,
-                totalPlayers
-        );
+        return new ActivePunishmentCounts(activeBans, activeMutes, totalPunishments);
     }
+
+    private record ActivePunishmentCounts(long bans, long mutes, long total) {}
 
     public DashboardMetricsResponse getMetrics(Server server) {
         long now = System.currentTimeMillis();
@@ -275,10 +287,24 @@ public class DashboardService {
             return activities;
         }
 
-        String normalizedStaffUsername = TicketAssigneeUtil.normalizeSingle(staffUsername);
         Date cutoffDate = new Date(System.currentTimeMillis() - (long) safeDays * 24 * 60 * 60 * 1000);
 
+        fetchTicketActivities(server, staffUsername, cutoffDate, activities);
+        fetchPunishmentActivities(server, staffUsername, cutoffDate, activities);
+
+        activities.sort((left, right) -> right.time().compareTo(left.time()));
+
+        if (activities.size() > safeLimit) {
+            return activities.subList(0, safeLimit);
+        }
+
+        return activities;
+    }
+
+    private void fetchTicketActivities(Server server, String staffUsername, Date cutoffDate, List<ActivityItemResponse> activities) {
         try {
+            String normalizedStaffUsername = TicketAssigneeUtil.normalizeSingle(staffUsername);
+
             List<Criteria> staffMatchCriteria = new ArrayList<>();
             staffMatchCriteria.add(MongoQueries.where(TicketFields.CREATOR_NAME).is(staffUsername));
             if (normalizedStaffUsername != null) {
@@ -348,7 +374,9 @@ public class DashboardService {
         } catch (Exception exception) {
             log.error("Error fetching ticket activities", exception);
         }
+    }
 
+    private void fetchPunishmentActivities(Server server, String staffUsername, Date cutoffDate, List<ActivityItemResponse> activities) {
         try {
             Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
             Criteria punishmentCriteria = MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_NAME).is(staffUsername)
@@ -380,14 +408,6 @@ public class DashboardService {
         } catch (Exception exception) {
             log.error("Error fetching punishment activities", exception);
         }
-
-        activities.sort((left, right) -> right.time().compareTo(left.time()));
-
-        if (activities.size() > safeLimit) {
-            return activities.subList(0, safeLimit);
-        }
-
-        return activities;
     }
 
     private List<Document> fetchRecentPunishmentRows(Server server, Criteria punishmentCriteria, int limit) {
@@ -417,20 +437,19 @@ public class DashboardService {
         }
     }
 
-    private Map<Integer, String> buildPunishmentTypeNameByOrdinal(Server server) {
-        Map<Integer, String> names = new HashMap<>();
-        for (PunishmentType punishmentType : punishmentTypeService.getPunishmentTypes(server)) {
-            names.put(punishmentType.getOrdinal(), punishmentType.getName());
-        }
-        return names;
-    }
-
     private Map<Integer, PunishmentType> buildPunishmentTypeByOrdinal(Server server) {
         Map<Integer, PunishmentType> punishmentTypes = new LinkedHashMap<>();
         for (PunishmentType punishmentType : punishmentTypeService.getPunishmentTypes(server)) {
             punishmentTypes.put(punishmentType.getOrdinal(), punishmentType);
         }
         return punishmentTypes;
+    }
+
+    private Map<Integer, String> buildPunishmentTypeNameByOrdinal(Server server) {
+        Map<Integer, String> names = new HashMap<>();
+        buildPunishmentTypeByOrdinal(server).forEach((ordinal, type) ->
+                names.put(ordinal, type.getName()));
+        return names;
     }
 
     private void normalizePunishmentCollections(Punishment punishment) {

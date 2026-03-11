@@ -8,13 +8,13 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.util.ServerMutationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.Locale;
-import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +23,7 @@ public class StripeWebhookService {
     private final StripeService stripeService;
     private final ServerMongoRepository serverRepository;
     private final UsageTrackingService usageTrackingService;
+    private final ServerMutationHelper serverMutationHelper;
 
     public void processEvent(Event event) {
         switch (event.getType()) {
@@ -54,7 +55,7 @@ public class StripeWebhookService {
 
         try {
             Subscription subscription = stripeService.retrieveSubscription(session.getSubscription());
-            mutateServer(server, current -> {
+            serverMutationHelper.mutate(server, current -> {
                 current.setStripeSubscriptionId(session.getSubscription());
                 current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
                 current.setPlan(ServerPlan.PREMIUM);
@@ -77,7 +78,7 @@ public class StripeWebhookService {
             return;
         }
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setStripeSubscriptionId(subscription.getId());
             current.setSubscriptionStatus(parseSubscriptionStatus(subscription.getStatus()));
             current.setPlan(planForSubscriptionStatus(subscription.getStatus()));
@@ -99,7 +100,7 @@ public class StripeWebhookService {
         }
 
         String effectiveStatus = stripeService.getEffectiveStatus(subscription);
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setSubscriptionStatus(parseSubscriptionStatus(effectiveStatus));
             if (isPremiumStatus(effectiveStatus)) {
                 current.setPlan(ServerPlan.PREMIUM);
@@ -129,7 +130,7 @@ public class StripeWebhookService {
             return;
         }
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
             current.setPlan(ServerPlan.FREE);
             current.setCurrentPeriodEnd(null);
@@ -148,7 +149,7 @@ public class StripeWebhookService {
             return;
         }
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setSubscriptionStatus(SubscriptionStatus.PAST_DUE);
             current.setPlan(ServerPlan.FREE);
         });
@@ -165,7 +166,7 @@ public class StripeWebhookService {
             return;
         }
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
             current.setPlan(ServerPlan.PREMIUM);
         });
@@ -177,11 +178,6 @@ public class StripeWebhookService {
 
     private Server findServerBySubscriptionId(String subscriptionId) {
         return serverRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
-    }
-
-    private void mutateServer(Server server, Consumer<Server> mutator) {
-        mutator.accept(server);
-        serverRepository.saveEntity(server);
     }
 
     private ServerPlan planForSubscriptionStatus(String status) {

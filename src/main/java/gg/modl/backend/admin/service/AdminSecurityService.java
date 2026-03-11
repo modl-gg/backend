@@ -2,6 +2,7 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
+import gg.modl.backend.util.PaginationHelper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -27,9 +28,9 @@ public class AdminSecurityService {
             String startDate,
             String endDate
     ) {
-        int pageNum = Math.max(1, page);
-        int limitNum = Math.min(100, Math.max(1, limit));
-        int skip = (pageNum - 1) * limitNum;
+        int pageNum = PaginationHelper.normalizePage(page);
+        int limitNum = PaginationHelper.normalizeLimit(limit, 100);
+        int skip = PaginationHelper.calculateSkip(page, limitNum);
         Date start = parseEpochMillis(startDate);
         Date end = parseEpochMillis(endDate);
 

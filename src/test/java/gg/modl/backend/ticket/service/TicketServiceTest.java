@@ -16,7 +16,6 @@ import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
-import gg.modl.backend.util.IdGenerator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,21 +49,21 @@ class TicketServiceTest {
     private TicketNotificationService notificationService;
 
     @Mock
-    private IdGenerator idGenerator;
+    private TicketIdGenerator ticketIdGenerator;
 
     private TicketService ticketService;
     private MinecraftTicketService minecraftTicketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, quickResponseSettingsService, notificationService, idGenerator);
-        minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, idGenerator);
+        ticketService = new TicketService(ticketRepository, quickResponseSettingsService, notificationService, ticketIdGenerator);
+        minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 
     @Test
     void createMinecraftTicketMapsPluginTypeAndPersistsReply() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketRepository.existsByTicketId(any(Server.class), any())).thenReturn(false);
+        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("CHAT-123456");
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 
@@ -92,7 +91,7 @@ class TicketServiceTest {
     @Test
     void createTicketAcceptsLegacyTypeSpacingAndPriorityAliases() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketRepository.existsByTicketId(any(Server.class), any())).thenReturn(false);
+        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("STAFF-123456");
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
                 .thenAnswer(invocation -> invocation.getArgument(1));
 

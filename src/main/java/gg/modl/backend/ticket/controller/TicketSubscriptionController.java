@@ -18,8 +18,6 @@ import java.util.Map;
 @RequestMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)
 @RequiredArgsConstructor
 public class TicketSubscriptionController {
-    private static final int MAX_UPDATES_LIMIT = 25;
-
     private final TicketSubscriptionService subscriptionService;
 
     @GetMapping
@@ -66,8 +64,7 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, safeLimit);
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, limit);
         return ResponseEntity.ok(updates);
     }
 
@@ -115,8 +112,7 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, safeLimit);
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, limit);
         return ResponseEntity.ok(updates);
     }
 }

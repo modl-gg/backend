@@ -27,94 +27,56 @@ public class AdminSystemController {
 
     @GetMapping("/config")
     public ResponseEntity<?> getConfig() {
-        try {
-            SystemConfig config = globalSystemService.getOrCreateConfig();
-            return ResponseEntity.ok(Map.of("success", true, "data", config));
-        } catch (Exception e) {
-            log.error("Get config error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch configuration"));
-        }
+        SystemConfig config = globalSystemService.getOrCreateConfig();
+        return ResponseEntity.ok(Map.of("success", true, "data", config));
     }
 
     @PutMapping("/config")
     public ResponseEntity<?> updateConfig(@RequestBody @Valid UpdateSystemConfigRequest request) {
-        try {
-            SystemConfig saved = globalSystemService.updateConfig(request);
-            log.info("Configuration updated by admin");
-
-            return ResponseEntity.ok(Map.of("success", true, "data", saved, "message", "Configuration updated successfully"));
-        } catch (Exception e) {
-            log.error("Update config error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update configuration"));
-        }
+        SystemConfig saved = globalSystemService.updateConfig(request);
+        log.info("Configuration updated by admin");
+        return ResponseEntity.ok(Map.of("success", true, "data", saved, "message", "Configuration updated successfully"));
     }
 
     @GetMapping("/maintenance")
     public ResponseEntity<?> getMaintenanceStatus() {
-        try {
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "data", globalSystemService.getMaintenanceStatus()
-            ));
-        } catch (Exception e) {
-            log.error("Get maintenance status error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch maintenance status"));
-        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", globalSystemService.getMaintenanceStatus()
+        ));
     }
 
     @PostMapping("/maintenance/toggle")
     public ResponseEntity<?> toggleMaintenance(@RequestBody @Valid ToggleMaintenanceRequest request) {
-        try {
-            boolean enabled = request.enabled();
-            Map<String, Object> data = globalSystemService.toggleMaintenance(request);
-            log.info("Maintenance mode {} by admin", enabled ? "enabled" : "disabled");
-
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "data", data,
-                    "message", "Maintenance mode " + (enabled ? "enabled" : "disabled")
-            ));
-        } catch (Exception e) {
-            log.error("Toggle maintenance error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to toggle maintenance mode"));
-        }
+        boolean enabled = request.enabled();
+        Map<String, Object> data = globalSystemService.toggleMaintenance(request);
+        log.info("Maintenance mode {} by admin", enabled ? "enabled" : "disabled");
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", data,
+                "message", "Maintenance mode " + (enabled ? "enabled" : "disabled")
+        ));
     }
 
     @GetMapping("/rate-limits")
     public ResponseEntity<?> getRateLimits() {
-        try {
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "data", globalSystemService.getRateLimitStatus()
-            ));
-        } catch (Exception e) {
-            log.error("Get rate limits error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch rate limit status"));
-        }
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", globalSystemService.getRateLimitStatus()
+        ));
     }
 
     @PutMapping("/rate-limits")
     public ResponseEntity<?> updateRateLimits(@RequestBody @Valid UpdateRateLimitsRequest request) {
-        try {
-            SystemConfig.PerformanceConfig performanceConfig = globalSystemService.updateRateLimits(request);
-            log.info("Rate limits updated by admin");
-
-            return ResponseEntity.ok(Map.of("success", true, "data", performanceConfig, "message", "Rate limits updated successfully"));
-        } catch (Exception e) {
-            log.error("Update rate limits error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update rate limits"));
-        }
+        SystemConfig.PerformanceConfig performanceConfig = globalSystemService.updateRateLimits(request);
+        log.info("Rate limits updated by admin");
+        return ResponseEntity.ok(Map.of("success", true, "data", performanceConfig, "message", "Rate limits updated successfully"));
     }
 
     @GetMapping("/prompts")
     public ResponseEntity<?> getPrompts() {
-        try {
-            List<SystemPrompt> prompts = globalSystemService.getPrompts();
-            return ResponseEntity.ok(Map.of("success", true, "data", prompts));
-        } catch (Exception e) {
-            log.error("Error fetching system prompts", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch system prompts"));
-        }
+        List<SystemPrompt> prompts = globalSystemService.getPrompts();
+        return ResponseEntity.ok(Map.of("success", true, "data", prompts));
     }
 
     @PutMapping("/prompts/{strictnessLevel}")
@@ -128,9 +90,6 @@ public class AdminSystemController {
             return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt for " + updated.getStrictnessLevel() + " level updated successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Error updating system prompt", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update system prompt"));
         }
     }
 
@@ -145,37 +104,29 @@ public class AdminSystemController {
             return ResponseEntity.ok(Map.of("success", true, "data", reset, "message", "System prompt for " + reset.getStrictnessLevel() + " level reset to default"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Error resetting system prompt", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to reset system prompt"));
         }
     }
 
     @PostMapping("/services/{service}/restart")
     public ResponseEntity<?> restartService(@PathVariable String service) {
-        try {
-            List<String> allowedServices = List.of("api", "worker", "scheduler", "cache", "database");
-            if (!allowedServices.contains(service)) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "success", false,
-                        "error", "Invalid service name. Allowed: " + String.join(", ", allowedServices)
-                ));
-            }
-
-            log.info("Service restart requested for: {} by admin", service);
-
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "data", Map.of(
-                            "service", service,
-                            "status", "restarting",
-                            "requestedAt", new Date()
-                    ),
-                    "message", "Service " + service + " restart initiated"
+        List<String> allowedServices = List.of("api", "worker", "scheduler", "cache", "database");
+        if (!allowedServices.contains(service)) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Invalid service name. Allowed: " + String.join(", ", allowedServices)
             ));
-        } catch (Exception e) {
-            log.error("Service restart error for {}", service, e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to restart service"));
         }
+
+        log.info("Service restart requested for: {} by admin", service);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "data", Map.of(
+                        "service", service,
+                        "status", "restarting",
+                        "requestedAt", new Date()
+                ),
+                "message", "Service " + service + " restart initiated"
+        ));
     }
 }

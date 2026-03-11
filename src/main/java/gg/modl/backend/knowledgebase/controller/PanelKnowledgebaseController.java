@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,7 @@ public class PanelKnowledgebaseController {
     public ResponseEntity<List<CategoryWithArticlesResponse>> getCategories(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<KnowledgebaseCategory> categories = categoryService.getAllCategories(server);
+        Map<String, List<KnowledgebaseArticle>> articlesByCategory = articleService.getAllArticlesGroupedByCategory(server);
 
         List<CategoryWithArticlesResponse> response = categories.stream()
                 .map(category -> new CategoryWithArticlesResponse(
@@ -61,7 +63,7 @@ public class PanelKnowledgebaseController {
                         category.getDescription(),
                         category.getOrdinal(),
                         category.isVisible(),
-                        articleService.getArticlesByCategory(server, category.getId())
+                        articlesByCategory.getOrDefault(category.getId(), Collections.emptyList())
                                 .stream()
                                 .map(this::toArticleResponse)
                                 .toList()

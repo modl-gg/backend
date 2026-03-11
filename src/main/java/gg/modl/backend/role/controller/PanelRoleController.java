@@ -12,6 +12,7 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -30,6 +31,11 @@ public class PanelRoleController {
     private final RoleService roleService;
     private final PermissionService permissionService;
     private final StaffService staffService;
+
+    private String getStaffRole(Server server, String email) {
+        return staffService.getStaffByEmail(server, email)
+                .map(Staff::getRole).orElse(null);
+    }
 
     @GetMapping
     public ResponseEntity<RoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -66,8 +72,7 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
-                .map(staff -> staff.getRole()).orElse(null);
+        String performerRoleName = getStaffRole(server, performerEmail);
 
         try {
             RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
@@ -92,8 +97,7 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
-                .map(staff -> staff.getRole()).orElse(null);
+        String performerRoleName = getStaffRole(server, performerEmail);
 
         try {
             return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
@@ -118,8 +122,7 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
-                .map(staff -> staff.getRole()).orElse(null);
+        String performerRoleName = getStaffRole(server, performerEmail);
 
         try {
             boolean deleted = roleService.deleteRole(server, id, performerRoleName, isSuperAdmin);
@@ -146,8 +149,7 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = staffService.getStaffByEmail(server, performerEmail)
-                .map(staff -> staff.getRole()).orElse(null);
+        String performerRoleName = getStaffRole(server, performerEmail);
 
         try {
             roleService.reorderRoles(server, reorderRequest, performerRoleName, isSuperAdmin);

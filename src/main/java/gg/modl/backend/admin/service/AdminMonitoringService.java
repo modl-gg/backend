@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.util.PaginationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -110,9 +111,9 @@ public class AdminMonitoringService {
             String sort,
             String order
     ) {
-        int pageNum = Math.max(1, page);
-        int limitNum = Math.min(100, Math.max(1, limit));
-        int skip = (pageNum - 1) * limitNum;
+        int pageNum = PaginationHelper.normalizePage(page);
+        int limitNum = PaginationHelper.normalizeLimit(limit, 100);
+        int skip = PaginationHelper.calculateSkip(page, limitNum);
         Date start = parseEpochMillis(startDate);
         Date end = parseEpochMillis(endDate);
 

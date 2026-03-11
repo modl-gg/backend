@@ -17,13 +17,11 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.ticket.service.TicketIdGenerator;
 import gg.modl.backend.util.PlayerDataUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
@@ -36,7 +34,7 @@ public class AppealService {
     private final TicketMongoRepository ticketRepository;
     private final PlayerMongoRepository playerRepository;
     private final PunishmentLifecycleService punishmentLifecycleService;
-    private final IdGenerator idGenerator;
+    private final TicketIdGenerator ticketIdGenerator;
 
     private static final String APPEAL_TYPE = TicketCategory.APPEAL.getId();
 
@@ -66,7 +64,7 @@ public class AppealService {
             throw new IllegalStateException("An appeal already exists for this punishment");
         }
 
-        String appealId = generateAppealId(server);
+        String appealId = ticketIdGenerator.generateAppealId(server);
 
         Map<String, Object> data = new HashMap<>();
         data.put("punishmentId", request.punishmentId());
@@ -238,11 +236,6 @@ public class AppealService {
 
         if (punishmentId == null || playerUuid == null) return;
 
-        Query playerQuery = Query.query(
-                Criteria.where("minecraftUuid").is(playerUuid)
-                        .and("punishments.id").is(punishmentId)
-        );
-
         Date now = new Date();
         String staffName = staffUsername != null ? staffUsername : "System";
 
@@ -259,7 +252,7 @@ public class AppealService {
                 .set("punishments.$.data.appealOutcome", "Rejected")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 
-        playerRepository.updateFirst(server, playerQuery, update);
+        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
     }
 
     private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
@@ -274,11 +267,6 @@ public class AppealService {
         String playerUuid = (String) data.get("playerUuid");
 
         if (punishmentId == null || playerUuid == null) return;
-
-        Query playerQuery = Query.query(
-                Criteria.where("minecraftUuid").is(playerUuid)
-                        .and("punishments.id").is(punishmentId)
-        );
 
         Date now = new Date();
         String staffName = staffUsername != null ? staffUsername : "System";
@@ -309,9 +297,9 @@ public class AppealService {
                 .set("punishments.$.data.appealOutcome", "Approved")
                 .set("punishments.$.data.appealTicketId", appeal.getId());
 
-        playerRepository.updateFirst(server, playerQuery, update);
+        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
 
-        playerRepository.findOne(server, Query.query(Criteria.where("minecraftUuid").is(playerUuid)))
+        playerRepository.findByMinecraftUuid(server, playerUuid)
                 .ifPresent(player -> {
                     Punishment appealedPunishment = player.getPunishments().stream()
                             .filter(p -> punishmentId.equals(p.getId()))
@@ -336,33 +324,14 @@ public class AppealService {
                 .build();
     }
 
-    private String generateAppealId(Server server) {
-        String appealId;
-        int attempts = 0;
-
-        do {
-            int randomId = idGenerator.nextSixDigitInt();
-            appealId = "APPEAL-" + randomId;
-            attempts++;
-        } while (ticketRepository.existsByTicketId(server, appealId) && attempts < 10);
-
-        return appealId;
-    }
-
     private Player findPlayerWithPunishment(Server server, String playerUuid, String punishmentId) {
-        Query query = Query.query(
-                Criteria.where("minecraftUuid").is(playerUuid)
-                        .and("punishments.id").is(punishmentId)
-        );
-        return playerRepository.findOne(server, query).orElse(null);
+        return playerRepository.findByMinecraftUuid(server, playerUuid)
+                .filter(p -> p.getPunishments() != null && p.getPunishments().stream()
+                        .anyMatch(pun -> pun.getId().equals(punishmentId)))
+                .orElse(null);
     }
 
     private void linkAppealToPunishment(Server server, String playerUuid, String punishmentId, String appealId) {
-        Query query = Query.query(
-                Criteria.where("minecraftUuid").is(playerUuid)
-                        .and("punishments.id").is(punishmentId)
-        );
-
         PunishmentNote appealOpenedNote = new PunishmentNote(
                 new ObjectId().toHexString(),
                 "opened appeal (#" + appealId + ")",
@@ -374,7 +343,7 @@ public class AppealService {
         Update update = new Update()
                 .push("punishments.$.attachedTicketIds", appealId)
                 .push("punishments.$.notes", appealOpenedNote);
-        playerRepository.updateFirst(server, query, update);
+        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
     }
 
     private String buildInitialContent(CreateAppealRequest request) {

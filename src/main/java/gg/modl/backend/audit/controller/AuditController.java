@@ -1,6 +1,5 @@
 package gg.modl.backend.audit.controller;
 
-import gg.modl.backend.audit.dto.request.BulkRollbackRequest;
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
@@ -13,7 +12,6 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -167,15 +165,6 @@ public class AuditController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
-    }
-
-    @PostMapping("/punishments/bulk-rollback")
-    public ResponseEntity<?> bulkRollback(
-            @RequestBody @Valid BulkRollbackRequest bulkRequest,
-            HttpServletRequest request
-    ) {
-        // TODO: Implement time-based bulk rollback
-        return ResponseEntity.status(501).body(Map.of("message", "Bulk rollback not yet implemented"));
     }
 
     @GetMapping("/database/{table}")

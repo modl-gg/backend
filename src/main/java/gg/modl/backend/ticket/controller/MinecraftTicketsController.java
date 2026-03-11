@@ -6,7 +6,6 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftTicketsByIdsRequest;
@@ -19,7 +18,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -79,7 +77,7 @@ public class MinecraftTicketsController {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTickets(server, status, type, limit).stream()
-                .map(this::toTicketListItem)
+                .map(minecraftTicketService::toTicketListItem)
                 .toList();
 
         return ResponseEntity.ok(Map.of(
@@ -104,7 +102,7 @@ public class MinecraftTicketsController {
 
         return ResponseEntity.ok(Map.of(
                 "status", 200,
-                "ticket", toTicketDetail(ticket)
+                "ticket", minecraftTicketService.toTicketDetail(ticket)
         ));
     }
 
@@ -177,7 +175,7 @@ public class MinecraftTicketsController {
 
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTicketsByIds(server, request.ids()).stream()
-                .map(this::toTicketLookupItem)
+                .map(minecraftTicketService::toTicketLookupItem)
                 .toList();
 
         return ResponseEntity.ok(Map.of(
@@ -186,76 +184,4 @@ public class MinecraftTicketsController {
         ));
     }
 
-    private Map<String, Object> toTicketListItem(Ticket ticket) {
-        boolean hasStaffResponse = false;
-        if (ticket.getReplies() != null) {
-            hasStaffResponse = ticket.getReplies().stream().anyMatch(TicketReply::isStaff);
-        }
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
-        response.put("assignedTo", ticket.getAssignedTo());
-        response.put("createdAt", ticket.getCreated());
-        response.put("updatedAt", ticket.getUpdatedAt());
-        response.put("hasStaffResponse", hasStaffResponse);
-        response.put("replyCount", ticket.getReplies() != null ? ticket.getReplies().size() : 0);
-        response.put("locked", ticket.isLocked());
-        return response;
-    }
-
-    private Map<String, Object> toTicketDetail(Ticket ticket) {
-        List<Map<String, Object>> replies = new ArrayList<>();
-        if (ticket.getReplies() != null) {
-            for (TicketReply reply : ticket.getReplies()) {
-                Map<String, Object> replyData = new LinkedHashMap<>();
-                replyData.put("id", reply.getId());
-                replyData.put("content", reply.getContent());
-                replyData.put("authorName", reply.getName());
-                replyData.put("authorId", reply.getCreatorIdentifier());
-                replyData.put("isStaff", reply.isStaff());
-                replyData.put("createdAt", reply.getCreated());
-                replies.add(replyData);
-            }
-        }
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
-        response.put("assignedTo", ticket.getAssignedTo());
-        response.put("createdAt", ticket.getCreated());
-        response.put("updatedAt", ticket.getUpdatedAt());
-        response.put("locked", ticket.isLocked());
-        response.put("replies", replies);
-        response.put("chatMessages", ticket.getChatMessages());
-        return response;
-    }
-
-    private Map<String, Object> toTicketLookupItem(Ticket ticket) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("createdAt", ticket.getCreated());
-        if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
-            response.put("firstReplyContent", ticket.getReplies().get(0).getContent());
-        }
-        return response;
-    }
 }

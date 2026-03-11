@@ -8,24 +8,23 @@ import gg.modl.backend.billing.dto.response.CancelResponse;
 import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
 import gg.modl.backend.billing.dto.response.PortalSessionResponse;
 import gg.modl.backend.billing.dto.response.ResubscribeResponse;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.util.ServerMutationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.Locale;
-import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class BillingService {
     private final StripeService stripeService;
-    private final ServerMongoRepository serverRepository;
+    private final ServerMutationHelper serverMutationHelper;
 
     public CheckoutSessionResponse createCheckoutSession(Server server) throws StripeException {
         String customerId = server.getStripeCustomerId();
@@ -33,7 +32,7 @@ public class BillingService {
         if (customerId == null || customerId.isBlank()) {
             customerId = stripeService.createCustomer(server);
             String createdCustomerId = customerId;
-            mutateServer(server, current -> current.setStripeCustomerId(createdCustomerId));
+            serverMutationHelper.mutate(server, current -> current.setStripeCustomerId(createdCustomerId));
         }
 
         Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
@@ -62,7 +61,7 @@ public class BillingService {
         }
 
         Date finalPeriodEndDate = periodEndDate;
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
             if (finalPeriodEndDate != null) {
                 current.setCurrentPeriodEnd(finalPeriodEndDate);
@@ -98,7 +97,7 @@ public class BillingService {
                 if (needsUpdate) {
                     Date finalPeriodStartDate = periodStartDate;
                     Date finalPeriodEndDate = periodEndDate;
-                    mutateServer(server, current -> {
+                    serverMutationHelper.mutate(server, current -> {
                         current.setSubscriptionStatus(effectiveSubscriptionStatus);
                         if (finalPeriodStartDate != null) {
                             current.setCurrentPeriodStart(finalPeriodStartDate);
@@ -166,7 +165,7 @@ public class BillingService {
         String subscriptionId = subscriptionResult.getId();
         SubscriptionStatus subscriptionStatus = parseSubscriptionStatus(subscriptionResult.getStatus());
 
-        mutateServer(server, current -> {
+        serverMutationHelper.mutate(server, current -> {
             current.setStripeSubscriptionId(subscriptionId);
             current.setSubscriptionStatus(subscriptionStatus);
             current.setPlan(ServerPlan.PREMIUM);
@@ -194,11 +193,6 @@ public class BillingService {
             throw new IllegalStateException("No Stripe customer ID found. Cannot create subscription.");
         }
         return stripeService.createSubscription(server.getStripeCustomerId());
-    }
-
-    private void mutateServer(Server server, Consumer<Server> mutator) {
-        mutator.accept(server);
-        serverRepository.saveEntity(server);
     }
 
     private SubscriptionStatus parseSubscriptionStatus(String status) {

@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.service;
 
+import gg.modl.backend.util.ByteFormatUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,16 +45,6 @@ public class MediaValidationService {
             "server-icon", 10L * 1024 * 1024 //  10 mb
     );
 
-    private String formatBytes(long bytes) {
-        if (bytes < 1024 * 1024) {
-            return String.format("%.0f KB", bytes / 1024.0);
-        } else if (bytes < 1024L * 1024 * 1024) {
-            return String.format("%.0f MB", bytes / (1024.0 * 1024));
-        } else {
-            return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
-        }
-    }
-
     public ValidationResult validateMetadata(String fileName, String contentType, long fileSize, String uploadType, boolean isPremium) {
         if (fileName == null || fileName.isBlank()) {
             return new ValidationResult(false, "File name is required");
@@ -82,7 +73,7 @@ public class MediaValidationService {
 
         long maxSize = getMaxSize(uploadType, isPremium);
         if (fileSize > maxSize) {
-            return new ValidationResult(false, "File exceeds maximum size of " + formatBytes(maxSize));
+            return new ValidationResult(false, "File exceeds maximum size of " + ByteFormatUtil.formatCompact(maxSize));
         }
 
         if (fileSize <= 0) {
@@ -132,6 +123,10 @@ public class MediaValidationService {
                 "articles", sizes.get("article"),
                 "server-icons", sizes.get("server-icon")
         );
+    }
+
+    public boolean isKeyOwnedByServer(String key, String serverDatabaseName) {
+        return key != null && serverDatabaseName != null && key.startsWith(serverDatabaseName + "/");
     }
 
     public record ValidationResult(boolean valid, String error) {}

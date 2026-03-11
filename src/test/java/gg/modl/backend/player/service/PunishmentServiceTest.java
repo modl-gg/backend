@@ -1,7 +1,7 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
@@ -59,7 +59,7 @@ class PunishmentServiceTest {
     private IssuerNameResolver issuerNameResolver;
 
     @Mock
-    private TenantMongoAccess tenantMongoAccess;
+    private StaffMongoRepository staffRepository;
 
     @Mock
     private PunishmentQueryService punishmentQueryService;
@@ -77,14 +77,14 @@ class PunishmentServiceTest {
                 punishmentTypeService,
                 thresholdSettingsService,
                 issuerNameResolver,
-                tenantMongoAccess,
+                staffRepository,
                 punishmentQueryService
         );
         punishmentMutationService = new PunishmentMutationService(
                 playerRepository,
                 ticketRepository,
                 issuerNameResolver,
-                tenantMongoAccess,
+                staffRepository,
                 punishmentQueryService,
                 punishmentLifecycleService
         );

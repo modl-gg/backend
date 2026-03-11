@@ -254,6 +254,14 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return punishmentCounts;
     }
 
+    public void updatePunishmentField(Server server, String playerUuid, String punishmentId, Update update) {
+        Query query = Query.query(
+                Criteria.where("minecraftUuid").is(playerUuid)
+                        .and("punishments.id").is(punishmentId)
+        );
+        updateFirst(server, query, update);
+    }
+
     private void updateById(Server server, String playerId, Update update) {
         Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId));
         updateFirst(server, query, update);

@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,11 @@ public class KnowledgebaseArticleService {
 
     public List<KnowledgebaseArticle> getArticlesByCategory(Server server, String categoryId) {
         return articleRepository.findByCategoryOrdered(server, categoryId);
+    }
+
+    public Map<String, List<KnowledgebaseArticle>> getAllArticlesGroupedByCategory(Server server) {
+        return articleRepository.findAll(server).stream()
+                .collect(Collectors.groupingBy(KnowledgebaseArticle::getCategoryId));
     }
 
     public List<KnowledgebaseArticle> getVisibleArticlesByCategory(Server server, String categoryId) {

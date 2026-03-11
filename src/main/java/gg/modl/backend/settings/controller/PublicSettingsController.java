@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -45,7 +44,7 @@ public class PublicSettingsController {
                     generalSettings.getServerDisplayName() != null ? generalSettings.getServerDisplayName() : "modl",
                     generalSettings.getPanelIconUrl(),
                     generalSettings.getHomepageIconUrl(),
-                    buildTicketFormsResponse(ticketForms),
+                    ticketFormSettingsService.buildTicketFormsResponse(ticketForms),
                     globalConfig.isMaintenanceMode(),
                     globalConfig.getMaintenanceMessage()
             ));
@@ -69,27 +68,5 @@ public class PublicSettingsController {
 
     private SystemConfig.GeneralConfig getGlobalMaintenanceConfig() {
         return globalSystemService.getGeneralConfigOrDefault();
-    }
-
-    private Map<String, Object> buildTicketFormsResponse(TicketFormSettings ticketForms) {
-        Map<String, Object> forms = new HashMap<>();
-
-        if (ticketForms.getBug() != null) {
-            forms.put("bug", ticketForms.getBug());
-        }
-        if (ticketForms.getSupport() != null) {
-            forms.put("support", ticketForms.getSupport());
-        }
-        if (ticketForms.getApplication() != null) {
-            forms.put("application", ticketForms.getApplication());
-        }
-        if (ticketForms.getPlayer() != null) {
-            forms.put("player", ticketForms.getPlayer());
-        }
-        if (ticketForms.getChat() != null) {
-            forms.put("chat", ticketForms.getChat());
-        }
-
-        return forms;
     }
 }

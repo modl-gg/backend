@@ -7,6 +7,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,15 +16,12 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -38,15 +36,7 @@ public class AdminAuthController {
     private final AdminAuthService adminAuthService;
     private final AuthService authService;
     private final SessionService sessionService;
-
-    @Value("${modl.cookie-domain:}")
-    private String cookieDomain;
-
-    @Value("${modl.cookie-secure:true}")
-    private boolean cookieSecure;
-
-    @Value("${modl.development-mode:false}")
-    private boolean developmentMode;
+    private final CookieUtil cookieUtil;
 
     @PostMapping("/request-code")
     public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) {
@@ -83,17 +73,7 @@ public class AdminAuthController {
 
         AuthSessionData session = sessionService.createAdminSession(admin.getEmail());
 
-        // Set session cookie with security attributes
-        Cookie sessionCookie = new Cookie(ADMIN_SESSION_COOKIE, session.getId());
-        sessionCookie.setHttpOnly(true);
-        sessionCookie.setSecure(cookieSecure);
-        sessionCookie.setPath("/");
-        sessionCookie.setMaxAge((int) SESSION_MAX_AGE);
-        sessionCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
-        if (cookieDomain != null && !cookieDomain.isEmpty()) {
-            sessionCookie.setDomain(cookieDomain);
-        }
-        response.addCookie(sessionCookie);
+        response.addCookie(cookieUtil.createSessionCookie(ADMIN_SESSION_COOKIE, session.getId(), SESSION_MAX_AGE));
 
         return ResponseEntity.ok(new LoginResponse(true, "Login successful",
                 new UserData(admin.getEmail(), admin.getLastActivityAt())));
@@ -114,7 +94,7 @@ public class AdminAuthController {
             sessionService.invalidateAllAdminSessionsForEmail(sessionEmail);
         }
 
-        for (Cookie expiredCookie : createExpiredSessionCookies()) {
+        for (Cookie expiredCookie : cookieUtil.createExpiredSessionCookies(ADMIN_SESSION_COOKIE)) {
             response.addCookie(expiredCookie);
         }
 
@@ -184,35 +164,6 @@ public class AdminAuthController {
                 .map(Cookie::getValue)
                 .filter(value -> value != null && !value.isBlank())
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-    }
-
-    private List<Cookie> createExpiredSessionCookies() {
-        List<Cookie> cookies = new ArrayList<>();
-        cookies.add(createExpiredSessionCookie(null));
-
-        if (cookieDomain != null && !cookieDomain.isBlank()) {
-            cookies.add(createExpiredSessionCookie(cookieDomain));
-            if (!cookieDomain.startsWith(".")) {
-                cookies.add(createExpiredSessionCookie("." + cookieDomain));
-            } else if (cookieDomain.length() > 1) {
-                cookies.add(createExpiredSessionCookie(cookieDomain.substring(1)));
-            }
-        }
-
-        return cookies;
-    }
-
-    private Cookie createExpiredSessionCookie(String domain) {
-        Cookie expiredCookie = new Cookie(ADMIN_SESSION_COOKIE, "");
-        expiredCookie.setHttpOnly(true);
-        expiredCookie.setSecure(cookieSecure);
-        expiredCookie.setPath("/");
-        expiredCookie.setMaxAge(0);
-        expiredCookie.setAttribute("SameSite", developmentMode ? "Lax" : "Strict");
-        if (domain != null) {
-            expiredCookie.setDomain(domain);
-        }
-        return expiredCookie;
     }
 
     // Request/Response records

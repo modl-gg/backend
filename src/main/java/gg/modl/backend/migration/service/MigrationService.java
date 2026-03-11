@@ -7,9 +7,15 @@ import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.server.data.Server;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
 
 @Service
@@ -17,6 +23,9 @@ import java.util.*;
 @Slf4j
 public class MigrationService {
     private final MigrationMongoRepository migrationRepository;
+
+    @Value("${modl.migration.upload-dir:uploads/migrations}")
+    private String uploadDir;
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
@@ -171,5 +180,35 @@ public class MigrationService {
             return server.getMigrationFileSizeLimit();
         }
         return DEFAULT_FILE_SIZE_LIMIT;
+    }
+
+    public Map<String, Object> validateFileSize(Server server, MultipartFile file) {
+        long fileSizeLimit = getFileSizeLimit(server);
+        if (file.getSize() <= fileSizeLimit) {
+            return null;
+        }
+
+        double fileSizeMB = file.getSize() / (1024.0 * 1024.0);
+        double limitMB = fileSizeLimit / (1024.0 * 1024.0);
+
+        updateProgress(server, new UpdateProgressRequest(
+                "failed", "Migration file exceeds size limit", 0, 0, null
+        ));
+
+        return Map.of(
+                "error", "Migration file exceeds size limit",
+                "message", String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
+                "fileSize", file.getSize(),
+                "limit", fileSizeLimit
+        );
+    }
+
+    public Path saveUploadedFile(MultipartFile file) throws IOException {
+        Path uploadPath = Paths.get(uploadDir).toAbsolutePath();
+        Files.createDirectories(uploadPath);
+        String uniqueFilename = "migration-" + UUID.randomUUID() + ".json";
+        Path filePath = uploadPath.resolve(uniqueFilename);
+        file.transferTo(filePath.toAbsolutePath());
+        return filePath;
     }
 }

@@ -4,6 +4,7 @@ import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
+import gg.modl.backend.util.ByteFormatUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,8 +37,8 @@ public class StorageQuotaService {
                 usedBytes,
                 maxBytes,
                 Math.round(usedPercentage * 100) / 100.0,
-                formatBytes(usedBytes),
-                formatBytes(maxBytes),
+                ByteFormatUtil.format(usedBytes),
+                ByteFormatUtil.format(maxBytes),
                 byType,
                 aiQuota,
                 isPremium,
@@ -61,12 +62,7 @@ public class StorageQuotaService {
                 overageCost,
                 isPremium && totalUsed < requestLimit,
                 Math.round(usagePercentage * 100) / 100.0,
-                Map.of(
-                        "moderation", 0L,
-                        "ticket_analysis", 0L,
-                        "appeal_analysis", 0L,
-                        "other", totalUsed
-                )
+                Map.of("other", totalUsed)
         );
     }
 
@@ -86,15 +82,4 @@ public class StorageQuotaService {
         return FREE_TIER_BYTES;
     }
 
-    private String formatBytes(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        } else if (bytes < 1024 * 1024) {
-            return String.format("%.2f KB", bytes / 1024.0);
-        } else if (bytes < 1024 * 1024 * 1024) {
-            return String.format("%.2f MB", bytes / (1024.0 * 1024));
-        } else {
-            return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
-        }
-    }
 }

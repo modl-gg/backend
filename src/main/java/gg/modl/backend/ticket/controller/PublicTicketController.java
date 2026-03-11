@@ -112,7 +112,7 @@ public class PublicTicketController {
         // Email auth check
         if (ticket.isEmailAuthEnabled()) {
             if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
-                String emailHint = getEmailHint(ticket);
+                String emailHint = ticketService.getEmailHint(ticket);
                 Map<String, Object> body = new HashMap<>();
                 body.put("requiresVerification", true);
                 body.put("emailHint", emailHint != null ? emailHint : "");
@@ -296,13 +296,4 @@ public class PublicTicketController {
         ));
     }
 
-    private String getEmailHint(Ticket ticket) {
-        if (ticket.getData() == null) return null;
-        Object email = ticket.getData().get("creatorEmail");
-        if (email == null) return null;
-        String emailStr = email.toString();
-        int atIndex = emailStr.indexOf('@');
-        if (atIndex <= 1) return emailStr;
-        return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
-    }
 }

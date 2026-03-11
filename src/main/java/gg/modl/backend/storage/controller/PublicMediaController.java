@@ -8,13 +8,10 @@ import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.PresignUploadRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
+import gg.modl.backend.storage.service.MediaAccessService;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
-import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.ticket.service.TicketEmailVerificationService;
-import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +21,6 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 @RestController
@@ -34,8 +30,7 @@ public class PublicMediaController {
     private final S3StorageService s3StorageService;
     private final MediaValidationService validationService;
     private final StorageQuotaService quotaService;
-    private final TicketService ticketService;
-    private final TicketEmailVerificationService verificationService;
+    private final MediaAccessService mediaAccessService;
 
     private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "tickets", "appeal");
 
@@ -78,14 +73,14 @@ public class PublicMediaController {
             ));
         }
 
-        ResponseEntity<?> accessCheck = validatePublicUploadAccess(
+        MediaAccessService.AccessResult accessResult = mediaAccessService.validatePublicUploadAccess(
                 server,
                 presignRequest.uploadType(),
                 normalizedEntityId,
                 presignRequest.accessToken()
         );
-        if (accessCheck != null) {
-            return accessCheck;
+        if (!accessResult.isAllowed()) {
+            return toResponse(accessResult);
         }
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
@@ -127,7 +122,7 @@ public class PublicMediaController {
         Server server = RequestUtil.getRequestServer(request);
         String key = confirmRequest.key();
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
+        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
             return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
         }
 
@@ -142,14 +137,14 @@ public class PublicMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid upload key"));
         }
 
-        ResponseEntity<?> accessCheck = validatePublicUploadAccess(
+        MediaAccessService.AccessResult accessResult = mediaAccessService.validatePublicUploadAccess(
                 server,
                 uploadType,
                 entityId,
                 confirmRequest.accessToken()
         );
-        if (accessCheck != null) {
-            return accessCheck;
+        if (!accessResult.isAllowed()) {
+            return toResponse(accessResult);
         }
 
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
@@ -177,53 +172,11 @@ public class PublicMediaController {
         return "tickets".equals(uploadType) ? "ticket" : uploadType;
     }
 
-    private ResponseEntity<?> validatePublicUploadAccess(
-            Server server,
-            String uploadType,
-            String entityId,
-            String accessToken
-    ) {
-        if (entityId == null || entityId.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "entityId is required for public uploads"));
-        }
-
-        String normalizedEntityId = entityId.trim();
-        String normalizedType = normalizeUploadType(uploadType);
-
-        // Public creation flows upload before a ticket/appeal id exists.
-        // "new" keeps this backward-compatible while still requiring explicit intent.
-        if ("new".equalsIgnoreCase(normalizedEntityId)) {
-            if ("ticket".equals(normalizedType) || "appeal".equals(normalizedType)) {
-                return null;
-            }
-            return ResponseEntity.status(403).body(Map.of("error", "Temporary uploads are only allowed for ticket and appeal types"));
-        }
-
-        Optional<Ticket> ticketOpt = ticketService.getTicketRaw(server, normalizedEntityId);
-        if (ticketOpt.isEmpty() || ticketOpt.get().isHidden()) {
-            return ResponseEntity.notFound().build();
-        }
-
-        Ticket ticket = ticketOpt.get();
-        boolean isAppealTicket = ticket.getType() == TicketCategory.APPEAL;
-        if ("appeal".equals(normalizedType) && !isAppealTicket) {
-            return ResponseEntity.status(403).body(Map.of("error", "Entity is not an appeal ticket"));
-        }
-        if ("ticket".equals(normalizedType) && isAppealTicket) {
-            return ResponseEntity.status(403).body(Map.of("error", "Appeal uploads must use uploadType=appeal"));
-        }
-
-        if (ticket.isEmailAuthEnabled()) {
-            boolean validToken = accessToken != null
-                    && !accessToken.isBlank()
-                    && verificationService.validateToken(server, normalizedEntityId, accessToken);
-            if (!validToken) {
-                return ResponseEntity.status(403).body(Map.of(
-                        "error", "Email verification token required for this ticket"
-                ));
-            }
-        }
-
-        return null;
+    private ResponseEntity<?> toResponse(MediaAccessService.AccessResult result) {
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.notFound().build();
+            case DENIED -> ResponseEntity.status(403).body(Map.of("error", result.error()));
+            case ALLOWED -> throw new IllegalStateException("Should not convert an allowed result to a response");
+        };
     }
 }

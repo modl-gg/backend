@@ -143,6 +143,21 @@ public class AdminAnalyticsService {
         );
     }
 
+    public Object exportAnalytics(String type, String range) {
+        String normalizedType = type != null ? type : "json";
+        String normalizedRange = normalizeRange(range);
+
+        if ("csv".equals(normalizedType)) {
+            return "Date,Servers,Users,Tickets\n2024-01-01,100,1500,820";
+        }
+
+        return Map.of(
+                "exportDate", new java.util.Date().toString(),
+                "range", normalizedRange,
+                "data", Map.of("servers", 100, "users", 1500, "tickets", 820)
+        );
+    }
+
     private int resolveRangeDays(String range) {
         return switch (normalizeRange(range)) {
             case "7d" -> 7;

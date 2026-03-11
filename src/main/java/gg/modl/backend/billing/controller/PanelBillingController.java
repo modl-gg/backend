@@ -35,9 +35,8 @@ public class PanelBillingController {
 
     @PostMapping("/checkout-session")
     public ResponseEntity<?> createCheckoutSession(HttpServletRequest request) {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
+        ResponseEntity<?> stripeCheck = requireStripeConfigured();
+        if (stripeCheck != null) return stripeCheck;
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
@@ -54,9 +53,8 @@ public class PanelBillingController {
 
     @PostMapping("/portal-session")
     public ResponseEntity<?> createPortalSession(HttpServletRequest request) {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
+        ResponseEntity<?> stripeCheck = requireStripeConfigured();
+        if (stripeCheck != null) return stripeCheck;
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
@@ -75,9 +73,8 @@ public class PanelBillingController {
 
     @PostMapping("/cancel")
     public ResponseEntity<?> cancelSubscription(HttpServletRequest request) {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
+        ResponseEntity<?> stripeCheck = requireStripeConfigured();
+        if (stripeCheck != null) return stripeCheck;
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
@@ -96,9 +93,8 @@ public class PanelBillingController {
 
     @PostMapping("/resubscribe")
     public ResponseEntity<?> resubscribe(HttpServletRequest request) {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
+        ResponseEntity<?> stripeCheck = requireStripeConfigured();
+        if (stripeCheck != null) return stripeCheck;
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
@@ -142,9 +138,8 @@ public class PanelBillingController {
             @RequestBody UsageBillingSettingsRequest settingsRequest,
             HttpServletRequest request
     ) {
-        if (!stripeService.isConfigured()) {
-            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
-        }
+        ResponseEntity<?> stripeCheck = requireStripeConfigured();
+        if (stripeCheck != null) return stripeCheck;
 
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> denied = requireSuperAdmin(server, request);
@@ -204,6 +199,13 @@ public class PanelBillingController {
                 "maxStorageLimitBytes", maxStorageLimitBytes,
                 "maxAiOverageRequests", body.maxAiOverageRequests()
         ));
+    }
+
+    private ResponseEntity<?> requireStripeConfigured() {
+        if (!stripeService.isConfigured()) {
+            return ResponseEntity.status(503).body("Billing service unavailable. Stripe not configured.");
+        }
+        return null;
     }
 
     private ResponseEntity<?> requireSuperAdmin(Server server, HttpServletRequest request) {

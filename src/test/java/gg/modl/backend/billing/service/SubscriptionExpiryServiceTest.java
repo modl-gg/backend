@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.util.ServerMutationHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,9 +14,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Date;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,11 +32,14 @@ class SubscriptionExpiryServiceTest {
     @Mock
     private UsageTrackingService usageTrackingService;
 
+    @Mock
+    private ServerMutationHelper serverMutationHelper;
+
     private SubscriptionExpiryService subscriptionExpiryService;
 
     @BeforeEach
     void setUp() {
-        subscriptionExpiryService = new SubscriptionExpiryService(serverRepository, usageTrackingService);
+        subscriptionExpiryService = new SubscriptionExpiryService(serverRepository, usageTrackingService, serverMutationHelper);
     }
 
     @Test
@@ -43,13 +50,18 @@ class SubscriptionExpiryServiceTest {
         server.setCurrentPeriodEnd(new Date(System.currentTimeMillis() - 1000));
         when(serverRepository.findCancelledWithPeriodEnd()).thenReturn(List.of(server));
 
+        doAnswer(invocation -> {
+            Consumer<Server> mutator = invocation.getArgument(1);
+            mutator.accept(invocation.getArgument(0));
+            return null;
+        }).when(serverMutationHelper).mutate(any(Server.class), any());
+
         subscriptionExpiryService.checkExpiredSubscriptions();
 
-        ArgumentCaptor<Server> updatedServerCaptor = ArgumentCaptor.forClass(Server.class);
-        verify(serverRepository).saveEntity(updatedServerCaptor.capture());
-        assertEquals(SubscriptionStatus.INACTIVE, updatedServerCaptor.getValue().getSubscriptionStatus());
-        assertEquals(ServerPlan.FREE, updatedServerCaptor.getValue().getPlan());
-        assertNull(updatedServerCaptor.getValue().getCurrentPeriodEnd());
+        verify(serverMutationHelper).mutate(any(Server.class), any());
+        assertEquals(SubscriptionStatus.INACTIVE, server.getSubscriptionStatus());
+        assertEquals(ServerPlan.FREE, server.getPlan());
+        assertNull(server.getCurrentPeriodEnd());
         verify(usageTrackingService).resetUsageCounters("server-1");
     }
 }

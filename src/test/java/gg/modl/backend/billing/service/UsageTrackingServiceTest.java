@@ -3,6 +3,7 @@ package gg.modl.backend.billing.service;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.util.ServerMutationHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -10,8 +11,12 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.function.Consumer;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -20,11 +25,14 @@ class UsageTrackingServiceTest {
     @Mock
     private ServerMongoRepository serverRepository;
 
+    @Mock
+    private ServerMutationHelper serverMutationHelper;
+
     private UsageTrackingService usageTrackingService;
 
     @BeforeEach
     void setUp() {
-        usageTrackingService = new UsageTrackingService(serverRepository);
+        usageTrackingService = new UsageTrackingService(serverRepository, serverMutationHelper);
     }
 
     @Test
@@ -33,12 +41,17 @@ class UsageTrackingServiceTest {
         server.setId("server-1");
         server.setStripeCustomerId("cus_123");
 
+        doAnswer(invocation -> {
+            Consumer<Server> mutator = invocation.getArgument(1);
+            mutator.accept(invocation.getArgument(0));
+            return null;
+        }).when(serverMutationHelper).mutate(any(Server.class), any());
+
         usageTrackingService.updateUsageBillingSettings(server, true);
 
-        ArgumentCaptor<Server> updatedServerCaptor = ArgumentCaptor.forClass(Server.class);
-        verify(serverRepository).saveEntity(updatedServerCaptor.capture());
-        assertTrue(Boolean.TRUE.equals(updatedServerCaptor.getValue().getUsageBillingEnabled()));
-        assertTrue(updatedServerCaptor.getValue().getUsageBillingUpdatedAt() != null);
+        verify(serverMutationHelper).mutate(any(Server.class), any());
+        assertTrue(Boolean.TRUE.equals(server.getUsageBillingEnabled()));
+        assertTrue(server.getUsageBillingUpdatedAt() != null);
     }
 
     @Test

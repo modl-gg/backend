@@ -4,9 +4,7 @@ import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.homepage.dto.request.CreateCardRequest;
 import gg.modl.backend.homepage.dto.request.UpdateCardRequest;
 import gg.modl.backend.homepage.service.HomepageCardService;
-import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.knowledgebase.dto.request.ReorderRequest;
-import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -20,16 +18,12 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_HOMEPAGE_CARDS)
 @RequiredArgsConstructor
 public class PanelHomepageCardController {
     private final HomepageCardService cardService;
-    private final KnowledgebaseCategoryService categoryService;
-
-    public record EmbeddedCategory(String id, String name, String slug) {}
 
     public record HomepageCardResponse(
             String id,
@@ -46,24 +40,17 @@ public class PanelHomepageCardController {
             int ordinal,
             Date createdAt,
             Date updatedAt,
-            EmbeddedCategory category
+            HomepageCardService.EmbeddedCategory category
     ) {}
 
     @GetMapping
     public ResponseEntity<List<HomepageCardResponse>> getCards(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<HomepageCard> cards = cardService.getAllCards(server);
+        List<HomepageCardService.EnrichedCard> enrichedCards = cardService.getAllCardsEnriched(server);
 
-        List<HomepageCardResponse> response = cards.stream()
-                .map(card -> {
-                    EmbeddedCategory embeddedCategory = null;
-                    if (card.getCategoryId() != null && !card.getCategoryId().isEmpty()) {
-                        Optional<KnowledgebaseCategory> categoryOpt = categoryService.getCategoryById(server, card.getCategoryId());
-                        if (categoryOpt.isPresent()) {
-                            KnowledgebaseCategory cat = categoryOpt.get();
-                            embeddedCategory = new EmbeddedCategory(cat.getId(), cat.getName(), cat.getSlug());
-                        }
-                    }
+        List<HomepageCardResponse> response = enrichedCards.stream()
+                .map(enriched -> {
+                    HomepageCard card = enriched.card();
                     return new HomepageCardResponse(
                             card.getId(),
                             card.getTitle(),
@@ -79,7 +66,7 @@ public class PanelHomepageCardController {
                             card.getOrdinal(),
                             card.getCreatedAt(),
                             card.getUpdatedAt(),
-                            embeddedCategory
+                            enriched.category()
                     );
                 })
                 .toList();

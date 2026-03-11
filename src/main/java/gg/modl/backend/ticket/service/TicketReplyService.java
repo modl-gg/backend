@@ -44,7 +44,7 @@ public class TicketReplyService {
                 .attachments(request.attachments() != null ? request.attachments() : new ArrayList<>())
                 .creatorIdentifier(request.creatorIdentifier())
                 .build();
-        ensureTicketReplies(ticket).add(newReply);
+        ticket.ensureReplies().add(newReply);
         ticket.setUpdatedAt(new Date());
         Ticket saved = ticketRepository.saveEntity(server, ticket);
 
@@ -67,7 +67,7 @@ public class TicketReplyService {
                 .issuerAvatar(request.issuerAvatar())
                 .date(new Date())
                 .build();
-        ensureTicketNotes(ticket).add(newNote);
+        ticket.ensureNotes().add(newNote);
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
 
@@ -107,17 +107,4 @@ public class TicketReplyService {
         return Optional.of(tags);
     }
 
-    private List<TicketReply> ensureTicketReplies(Ticket ticket) {
-        if (ticket.getReplies() == null) {
-            ticket.setReplies(new ArrayList<>());
-        }
-        return ticket.getReplies();
-    }
-
-    private List<TicketNote> ensureTicketNotes(Ticket ticket) {
-        if (ticket.getNotes() == null) {
-            ticket.setNotes(new ArrayList<>());
-        }
-        return ticket.getNotes();
-    }
 }

@@ -12,6 +12,7 @@ import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.util.CookieUtil;
 import jakarta.mail.MessagingException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,7 +33,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.UnsupportedEncodingException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -50,6 +50,7 @@ public class PanelAuthController {
     private final AuthConfiguration authConfiguration;
     private final StaffService staffService;
     private final PermissionService permissionService;
+    private final CookieUtil cookieUtil;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
@@ -97,8 +98,7 @@ public class PanelAuthController {
         String userAgent = request.getHeader("User-Agent");
         AuthSessionData session = sessionService.createSession(server, requestData.email(), clientIp, userAgent);
 
-        Cookie sessionCookie = createSessionCookie(session.getId());
-        response.addCookie(sessionCookie);
+        response.addCookie(cookieUtil.createSessionCookie(session.getId()));
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGIN_SUCCESS));
     }
@@ -117,7 +117,7 @@ public class PanelAuthController {
             sessionService.invalidateAllSessionsForEmail(server, sessionEmail);
         }
 
-        for (Cookie cookie : createExpiredSessionCookies()) {
+        for (Cookie cookie : cookieUtil.createExpiredSessionCookies()) {
             response.addCookie(cookie);
         }
 
@@ -182,7 +182,7 @@ public class PanelAuthController {
             // so the user stays logged in without disruption.
             sessionService.invalidateAllSessionsForEmail(server, currentEmail);
             AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
-            response.addCookie(createSessionCookie(newSession.getId()));
+            response.addCookie(cookieUtil.createSessionCookie(newSession.getId()));
 
             return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
         } catch (IllegalStateException | IllegalArgumentException e) {
@@ -277,60 +277,6 @@ public class PanelAuthController {
             .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));
     }
 
-    private Cookie createSessionCookie(String sessionId) {
-        Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), sessionId);
-
-        cookie.setHttpOnly(true);
-        cookie.setSecure(authConfiguration.isCookieSecure());
-        cookie.setPath("/");
-        cookie.setMaxAge((int) authConfiguration.getSessionDurationSeconds());
-
-        if (authConfiguration.isDevelopmentMode()) {
-            cookie.setAttribute("SameSite", "Lax");
-        } else {
-            cookie.setAttribute("SameSite", "Strict");
-        }
-
-        return cookie;
-    }
-
-    private List<Cookie> createExpiredSessionCookies() {
-        List<Cookie> cookies = new ArrayList<>();
-        cookies.add(createExpiredSessionCookie(null));
-
-        // Also expire any cookies set with the configured domain (for migration from old cookies)
-        String configuredDomain = getConfiguredCookieDomain();
-        if (configuredDomain != null) {
-            cookies.add(createExpiredSessionCookie(configuredDomain));
-            if (!configuredDomain.startsWith(".")) {
-                cookies.add(createExpiredSessionCookie("." + configuredDomain));
-            } else if (configuredDomain.length() > 1) {
-                cookies.add(createExpiredSessionCookie(configuredDomain.substring(1)));
-            }
-        }
-
-        return cookies;
-    }
-
-    private Cookie createExpiredSessionCookie(String domain) {
-        Cookie cookie = new Cookie(authConfiguration.getSessionCookieName(), "");
-
-        cookie.setHttpOnly(true);
-        cookie.setSecure(authConfiguration.isCookieSecure());
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        if (authConfiguration.isDevelopmentMode()) {
-            cookie.setAttribute("SameSite", "Lax");
-        } else {
-            cookie.setAttribute("SameSite", "Strict");
-        }
-        if (domain != null) {
-            cookie.setDomain(domain);
-        }
-
-        return cookie;
-    }
-
     private Set<String> extractSessionIds(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
@@ -344,14 +290,6 @@ public class PanelAuthController {
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
-
-    private String getConfiguredCookieDomain() {
-        String cookieDomain = authConfiguration.getCookieDomain();
-        if (cookieDomain == null || cookieDomain.isBlank()) {
-            return null;
-        }
-        return cookieDomain;
-    }
 
     private boolean isAuthorizedEmail(Server server, String email) {
         if (permissionService.isSuperAdmin(server, email)) {

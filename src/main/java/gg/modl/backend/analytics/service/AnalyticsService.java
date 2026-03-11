@@ -5,13 +5,14 @@ import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
+import gg.modl.backend.util.DateRangeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -33,7 +34,7 @@ public class AnalyticsService {
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final IssuerNameResolver issuerNameResolver;
-    private final TenantMongoAccess tenantMongoAccess;
+    private final StaffMongoRepository staffRepository;
 
     public OverviewResponse getOverview(Server server) {
         long now = System.currentTimeMillis();
@@ -58,7 +59,7 @@ public class AnalyticsService {
     }
 
     public TicketAnalyticsResponse getTicketAnalytics(Server server, String period) {
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
         List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
         List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
                 .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
@@ -83,7 +84,7 @@ public class AnalyticsService {
     }
 
     public PunishmentAnalyticsResponse getPunishmentAnalytics(Server server, String period) {
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
         Document facetResults = analyticsRepository.aggregatePunishmentAnalytics(server, startDate, ANALYTICS_TIME_ZONE);
         if (facetResults == null) {
             return new PunishmentAnalyticsResponse(List.of(), List.of(), List.of(), List.of());
@@ -111,7 +112,7 @@ public class AnalyticsService {
                 potentialIds.add(s);
             }
         }
-        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, tenantMongoAccess.forServer(server));
+        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, server, staffRepository);
 
         Map<String, Integer> staffCountMap = new HashMap<>();
         for (Document document : byStaffDocs) {
@@ -143,7 +144,7 @@ public class AnalyticsService {
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
         List<Document> levelResults = analyticsRepository.aggregateAuditLogLevelCounts(server, startDate);
         List<AuditLogsAnalyticsResponse.LevelCount> byLevel = levelResults.stream()
                 .map(doc -> new AuditLogsAnalyticsResponse.LevelCount(
@@ -185,7 +186,7 @@ public class AnalyticsService {
     }
 
     public PlayerActivityResponse getPlayerActivityAnalytics(Server server, String period) {
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
 
         Document facetResults = analyticsRepository.aggregatePlayerActivity(server, startDate, ANALYTICS_TIME_ZONE);
         if (facetResults == null) {
@@ -308,19 +309,4 @@ public class AnalyticsService {
         }
     }
 
-    private Date getStartDate(String period) {
-        if ("all".equals(period)) {
-            return null;
-        }
-
-        long now = System.currentTimeMillis();
-        long daysMs = 24 * 60 * 60 * 1000L;
-
-        return switch (period) {
-            case "7d" -> new Date(now - 7 * daysMs);
-            case "90d" -> new Date(now - 90 * daysMs);
-            case "1y" -> new Date(now - 365 * daysMs);
-            default -> new Date(now - 30 * daysMs);
-        };
-    }
 }

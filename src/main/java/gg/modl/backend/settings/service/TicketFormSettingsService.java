@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -101,27 +103,18 @@ public class TicketFormSettingsService {
     }
 
     private void ensureFormDefaults(TicketFormSettings settings) {
-        if (settings.getBug() == null) {
-            settings.setBug(emptyForm());
-        }
-        if (settings.getSupport() == null) {
-            settings.setSupport(emptyForm());
-        }
-        if (settings.getApplication() == null) {
-            settings.setApplication(emptyForm());
-        }
-        if (settings.getPlayer() == null) {
-            settings.setPlayer(emptyForm());
-        }
-        if (settings.getChat() == null) {
-            settings.setChat(emptyForm());
-        }
+        if (settings.getBug() == null) settings.setBug(emptyForm());
+        if (settings.getSupport() == null) settings.setSupport(emptyForm());
+        if (settings.getApplication() == null) settings.setApplication(emptyForm());
+        if (settings.getPlayer() == null) settings.setPlayer(emptyForm());
+        if (settings.getChat() == null) settings.setChat(emptyForm());
 
-        sanitizeForm(settings.getBug());
-        sanitizeForm(settings.getSupport());
-        sanitizeForm(settings.getApplication());
-        sanitizeForm(settings.getPlayer());
-        sanitizeForm(settings.getChat());
+        for (TicketFormSettings.TicketForm form : List.of(
+                settings.getBug(), settings.getSupport(), settings.getApplication(),
+                settings.getPlayer(), settings.getChat()
+        )) {
+            sanitizeForm(form);
+        }
     }
 
     private void sanitizeForm(TicketFormSettings.TicketForm form) {
@@ -141,6 +134,22 @@ public class TicketFormSettingsService {
                 .player(emptyForm())
                 .chat(emptyForm())
                 .build();
+    }
+
+    public Map<String, Object> buildTicketFormsResponse(TicketFormSettings ticketForms) {
+        Map<String, Object> forms = new HashMap<>();
+        putFormIfNotNull(forms, "bug", ticketForms.getBug());
+        putFormIfNotNull(forms, "support", ticketForms.getSupport());
+        putFormIfNotNull(forms, "application", ticketForms.getApplication());
+        putFormIfNotNull(forms, "player", ticketForms.getPlayer());
+        putFormIfNotNull(forms, "chat", ticketForms.getChat());
+        return forms;
+    }
+
+    private void putFormIfNotNull(Map<String, Object> forms, String key, TicketFormSettings.TicketForm form) {
+        if (form != null) {
+            forms.put(key, form);
+        }
     }
 
     private TicketFormSettings.TicketForm emptyForm() {

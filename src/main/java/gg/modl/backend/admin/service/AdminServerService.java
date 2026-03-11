@@ -2,8 +2,10 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -79,6 +81,29 @@ public class AdminServerService {
         }
 
         return usageByServerId;
+    }
+
+    public Server createServer(String serverName, String customDomain, String adminEmail, String plan) {
+        Date now = new Date();
+        ServerPlan serverPlan = plan != null ? ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT)) : ServerPlan.FREE;
+        Server server = new Server(serverName, customDomain, "server_" + customDomain, adminEmail, false, serverPlan);
+        server.setProvisioningStatus(ProvisioningStatus.PENDING);
+        server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
+        server.setCreatedAt(now);
+        server.setUpdatedAt(now);
+        return serverRepository.saveEntity(server);
+    }
+
+    public String exportServersCsv(String plan, String status) {
+        List<Server> servers = findServers(null, plan, status, "createdAt", "desc", 0, 10000);
+        StringBuilder csv = new StringBuilder();
+        csv.append("id,serverName,customDomain,adminEmail,plan,provisioningStatus,emailVerified,createdAt\n");
+        for (Server s : servers) {
+            csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s\n",
+                    s.getId(), s.getServerName(), s.getCustomDomain(), s.getAdminEmail(),
+                    s.getPlan(), s.getProvisioningStatus(), s.getEmailVerified(), s.getCreatedAt()));
+        }
+        return csv.toString();
     }
 
     public Optional<Server> findById(String id) {

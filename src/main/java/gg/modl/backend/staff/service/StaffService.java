@@ -335,19 +335,8 @@ public class StaffService {
                 .toList();
     }
 
-    public Optional<Staff> updateProfileUsername(Server server, String email, String newUsername) {
-        return updateOrCreateProfileUsername(server, email, newUsername, false, null, null);
-    }
-
-    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists) {
-        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, null, null);
-    }
-
-    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage) {
-        return updateOrCreateProfileUsername(server, email, newUsername, createIfNotExists, newLanguage, null);
-    }
-
-    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername, boolean createIfNotExists, String newLanguage, String newDateFormat) {
+    public Optional<Staff> updateOrCreateProfileUsername(Server server, String email, String newUsername,
+            boolean createIfNotExists, String newLanguage, String newDateFormat) {
         Staff staff = staffRepository.findByEmailIgnoreCase(server, email).orElse(null);
 
         if (staff == null) {

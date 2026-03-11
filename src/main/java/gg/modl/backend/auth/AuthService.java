@@ -31,32 +31,42 @@ public class AuthService {
     private final AuthConfiguration authConfiguration;
 
     public void sendUserLoginCode(Server server, String email) throws MessagingException, UnsupportedEncodingException {
-        String code = generateNumericCode(authConfiguration.getEmailCodeLength());
-        String codeHash = hashCode(code);
-        String normalizedEmail = email.toLowerCase();
-        Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
+        String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
+                authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
 
-        authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt);
+        if (code == null) return;
 
-        if (authConfiguration.isDevelopmentMode()) {
-            log.info("DEV MODE: Login code for {} is: {}", email, code);
-            return;
-        }
-
-        EmailHTMLTemplate.HTMLEmail emailContent = EmailHTMLTemplate.USER_CODE.build(server.getServerName(), code);
-        emailService.send(email, emailContent);
+        emailService.send(email, EmailHTMLTemplate.USER_CODE.build(server.getServerName(), code));
     }
 
     public void sendAdminLoginCode(String email) throws MessagingException, UnsupportedEncodingException {
+        String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
+                authCodeRepository.replaceForGlobal(normalizedEmail, codeHash, expiresAt));
+
+        if (code == null) return;
+
+        emailService.send(email, EmailHTMLTemplate.ADMIN_CODE.build(code, null));
+    }
+
+    private String prepareAndStoreCode(String email, CodeStorageAction storageAction) {
         String code = generateNumericCode(authConfiguration.getEmailCodeLength());
         String codeHash = hashCode(code);
         String normalizedEmail = email.toLowerCase();
         Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
 
-        authCodeRepository.replaceForGlobal(normalizedEmail, codeHash, expiresAt);
+        storageAction.store(normalizedEmail, codeHash, expiresAt);
 
-        EmailHTMLTemplate.HTMLEmail emailContent = EmailHTMLTemplate.ADMIN_CODE.build(code, null);
-        emailService.send(email, emailContent);
+        if (authConfiguration.isDevelopmentMode()) {
+            log.info("DEV MODE: Login code for {} is: {}", email, code);
+            return null;
+        }
+
+        return code;
+    }
+
+    @FunctionalInterface
+    private interface CodeStorageAction {
+        void store(String normalizedEmail, String codeHash, Date expiresAt);
     }
 
     public boolean verifyCode(Server server, String email, String code) {

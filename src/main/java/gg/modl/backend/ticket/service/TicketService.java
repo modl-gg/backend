@@ -16,7 +16,6 @@ import gg.modl.backend.ticket.dto.request.*;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
-import gg.modl.backend.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,10 +25,13 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class TicketService {
+    static final int MAX_CHAT_MESSAGE_LENGTH = 256;
+    static final int MAX_CHAT_MESSAGES = 50;
+
     private final TicketMongoRepository ticketRepository;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final TicketNotificationService notificationService;
-    private final IdGenerator idGenerator;
+    private final TicketIdGenerator ticketIdGenerator;
 
     public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
         return ticketRepository.findById(server, ticketId).map(this::toTicketResponse);
@@ -41,7 +43,7 @@ public class TicketService {
 
     public TicketResponse createTicket(Server server, CreateTicketRequest request) {
         TicketCategory ticketCategory = TicketCategory.fromCanonicalId(request.type());
-        String ticketId = generateTicketId(server, ticketCategory);
+        String ticketId = ticketIdGenerator.generate(server, ticketCategory);
 
         boolean shouldOpenImmediately = ticketCategory.isReport()
                 || (request.subject() != null && !request.subject().isBlank());
@@ -104,7 +106,7 @@ public class TicketService {
                 .formData(request.formData())
                 .data(data)
                 .locked(ticketStatus.isTerminal())
-                .priority(resolvePriority(request.priority()))
+                .priority(TicketPriority.resolveOrDefault(request.priority()))
                 .emailAuthEnabled(emailAuth)
                 .created(new Date())
                 .updatedAt(new Date())
@@ -124,14 +126,14 @@ public class TicketService {
         ticket.setUpdatedAt(new Date());
 
         if (request.status() != null) {
-            applyLifecycleStatus(ticket, TicketStatus.fromCanonicalId(request.status()));
+            ticket.applyLifecycleStatus(TicketStatus.fromCanonicalId(request.status()));
         }
 
         if (request.locked() != null) {
             TicketStatus nextStatus = request.locked()
                     ? TicketStatus.CLOSED
                     : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
-            applyLifecycleStatus(ticket, nextStatus);
+            ticket.applyLifecycleStatus(nextStatus);
         }
 
         if (request.tags() != null) {
@@ -162,7 +164,7 @@ public class TicketService {
                     .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
                     .build();
 
-            ensureTicketReplies(ticket).add(newReply);
+            ticket.ensureReplies().add(newReply);
         }
 
         if (request.newNote() != null) {
@@ -173,7 +175,7 @@ public class TicketService {
                     .date(new Date())
                     .build();
 
-            ensureTicketNotes(ticket).add(newNote);
+            ticket.ensureNotes().add(newNote);
         }
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
@@ -206,7 +208,7 @@ public class TicketService {
                 TicketStatus nextStatus = request.locked()
                         ? TicketStatus.CLOSED
                         : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
-                applyLifecycleStatus(ticket, nextStatus);
+                ticket.applyLifecycleStatus(nextStatus);
                 hasChanges = true;
             }
 
@@ -278,11 +280,11 @@ public class TicketService {
                 .created(new Date())
                 .staff(true)
                 .build();
-        ensureTicketReplies(ticket).add(responseReply);
+        ticket.ensureReplies().add(responseReply);
         ticket.setUpdatedAt(new Date());
         boolean ticketClosed = false;
         if (Boolean.TRUE.equals(action.getCloseTicket())) {
-            applyLifecycleStatus(ticket, TicketStatus.CLOSED);
+            ticket.applyLifecycleStatus(TicketStatus.CLOSED);
             ticketClosed = true;
         }
 
@@ -310,7 +312,7 @@ public class TicketService {
         if (ticket == null) {
             return Optional.empty();
         }
-        applyLifecycleStatus(ticket, TicketStatus.OPEN);
+        ticket.applyLifecycleStatus(TicketStatus.OPEN);
         ticket.setUpdatedAt(new Date());
 
         Map<String, Object> requestFormData = request.formData() != null ? request.formData() : Collections.emptyMap();
@@ -369,7 +371,7 @@ public class TicketService {
                         .attachments(initialAttachments)
                         .creatorIdentifier(request.creatorIdentifier())
                         .build();
-                ensureTicketReplies(ticket).add(initialReply);
+                ticket.ensureReplies().add(initialReply);
             }
         }
 
@@ -610,20 +612,6 @@ public class TicketService {
         };
     }
 
-    private String generateTicketId(Server server, TicketCategory category) {
-        String prefix = category.getTicketPrefix();
-        String ticketId;
-        int attempts = 0;
-
-        do {
-            int randomId = idGenerator.nextSixDigitInt();
-            ticketId = prefix + "-" + randomId;
-            attempts++;
-        } while (ticketRepository.existsByTicketId(server, ticketId) && attempts < 10);
-
-        return ticketId;
-    }
-
     private String buildTicketContent(CreateTicketRequest request, Map<String, Object> formDataForContent) {
         StringBuilder content = new StringBuilder();
 
@@ -740,9 +728,6 @@ public class TicketService {
         }).toList();
     }
 
-    private static final int MAX_CHAT_MESSAGE_LENGTH = 256;
-    private static final int MAX_CHAT_MESSAGES = 50;
-
     private List<Ticket.ChatMessage> sanitizeChatMessages(List<Map<String, Object>> rawMessages) {
         List<Map<String, Object>> trimmed = rawMessages.size() > MAX_CHAT_MESSAGES
                 ? rawMessages.subList(rawMessages.size() - MAX_CHAT_MESSAGES, rawMessages.size())
@@ -765,28 +750,14 @@ public class TicketService {
         return new Date();
     }
 
-    private void applyLifecycleStatus(Ticket ticket, TicketStatus status) {
-        ticket.setStatus(status);
-        ticket.setLocked(status != null && status.isTerminal());
+    public String getEmailHint(Ticket ticket) {
+        if (ticket.getData() == null) return null;
+        Object email = ticket.getData().get("creatorEmail");
+        if (email == null) return null;
+        String emailStr = email.toString();
+        int atIndex = emailStr.indexOf('@');
+        if (atIndex <= 1) return emailStr;
+        return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
     }
 
-    private TicketPriority resolvePriority(String priority) {
-        return priority == null || priority.isBlank()
-                ? TicketPriority.NORMAL
-                : TicketPriority.fromCanonicalId(priority);
-    }
-
-    private List<TicketReply> ensureTicketReplies(Ticket ticket) {
-        if (ticket.getReplies() == null) {
-            ticket.setReplies(new ArrayList<>());
-        }
-        return ticket.getReplies();
-    }
-
-    private List<TicketNote> ensureTicketNotes(Ticket ticket) {
-        if (ticket.getNotes() == null) {
-            ticket.setNotes(new ArrayList<>());
-        }
-        return ticket.getNotes();
-    }
 }

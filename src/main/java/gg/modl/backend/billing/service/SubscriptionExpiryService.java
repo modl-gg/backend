@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
+import gg.modl.backend.util.ServerMutationHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Date;
 import java.util.List;
-import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +19,7 @@ import java.util.function.Consumer;
 public class SubscriptionExpiryService {
     private final ServerMongoRepository serverRepository;
     private final UsageTrackingService usageTrackingService;
+    private final ServerMutationHelper serverMutationHelper;
 
     @Scheduled(fixedRate = 3600000)
     public void checkExpiredSubscriptions() {
@@ -29,7 +30,7 @@ public class SubscriptionExpiryService {
             for (Server server : cancelledServers) {
                 Date endDate = server.getCurrentPeriodEnd();
                 if (endDate != null && endDate.before(now)) {
-                    mutateServer(server, current -> {
+                    serverMutationHelper.mutate(server, current -> {
                         current.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
                         current.setPlan(ServerPlan.FREE);
                         current.setCurrentPeriodEnd(null);
@@ -42,8 +43,4 @@ public class SubscriptionExpiryService {
         }
     }
 
-    private void mutateServer(Server server, Consumer<Server> mutator) {
-        mutator.accept(server);
-        serverRepository.saveEntity(server);
-    }
 }

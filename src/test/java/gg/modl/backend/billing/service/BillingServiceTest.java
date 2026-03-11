@@ -1,9 +1,9 @@
 package gg.modl.backend.billing.service;
 
 import com.stripe.model.checkout.Session;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.util.ServerMutationHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -24,13 +25,13 @@ class BillingServiceTest {
     private StripeService stripeService;
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerMutationHelper serverMutationHelper;
 
     private BillingService billingService;
 
     @BeforeEach
     void setUp() {
-        billingService = new BillingService(stripeService, serverRepository);
+        billingService = new BillingService(stripeService, serverMutationHelper);
     }
 
     @Test
@@ -44,10 +45,15 @@ class BillingServiceTest {
         when(session.getId()).thenReturn("sess_123");
         when(session.getUrl()).thenReturn("https://checkout.example.com");
 
+        doAnswer(invocation -> {
+            java.util.function.Consumer<Server> mutator = invocation.getArgument(1);
+            mutator.accept(invocation.getArgument(0));
+            return null;
+        }).when(serverMutationHelper).mutate(any(Server.class), any());
+
         billingService.createCheckoutSession(server);
 
-        ArgumentCaptor<Server> updatedServerCaptor = ArgumentCaptor.forClass(Server.class);
-        verify(serverRepository).saveEntity(updatedServerCaptor.capture());
-        assertEquals("cus_123", updatedServerCaptor.getValue().getStripeCustomerId());
+        verify(serverMutationHelper).mutate(any(Server.class), any());
+        assertEquals("cus_123", server.getStripeCustomerId());
     }
 }

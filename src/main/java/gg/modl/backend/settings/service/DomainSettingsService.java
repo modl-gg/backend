@@ -42,7 +42,6 @@ public class DomainSettingsService extends AbstractSettingsService {
         Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         String modlSubdomainUrl = "https://" + server.getCustomDomain() + ".modl.gg";
-        boolean accessingFromCustomDomain = false;
         boolean canManageCustomDomain = customDomainAccessService.canManageCustomDomain(server);
 
         if (settings == null || settings.getData() == null) {
@@ -59,9 +58,8 @@ public class DomainSettingsService extends AbstractSettingsService {
         Map<String, Object> data = (Map<String, Object>) settings.getData();
         String customDomain = getStringValue(data, "customDomain");
 
-        if (customDomain != null && !customDomain.isEmpty() && requestHost != null) {
-            accessingFromCustomDomain = requestHost.equalsIgnoreCase(customDomain);
-        }
+        boolean accessingFromCustomDomain = customDomain != null && !customDomain.isEmpty()
+                && requestHost != null && requestHost.equalsIgnoreCase(customDomain);
 
         DomainSettings.DomainStatus status = null;
         if (customDomain != null && !customDomain.isEmpty()) {
@@ -93,15 +91,7 @@ public class DomainSettingsService extends AbstractSettingsService {
             throw new IllegalArgumentException("modl.gg domains cannot be used as custom domains.");
         }
 
-        String currentDomain = server.getCustomDomainOverride();
-        if (currentDomain == null) {
-            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-            if (existingSettings != null && existingSettings.getData() != null) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
-                currentDomain = getStringValue(data, "customDomain");
-            }
-        }
+        String currentDomain = extractCurrentDomain(server);
 
         if (currentDomain != null && currentDomain.equalsIgnoreCase(customDomain)) {
             throw new IllegalArgumentException("This domain is already configured. Please verify the existing configuration or remove it first.");
@@ -141,30 +131,16 @@ public class DomainSettingsService extends AbstractSettingsService {
                 .error(error)
                 .build();
 
-        Map<String, Object> statusMap = new HashMap<>();
-        statusMap.put("domain", status.getDomain());
-        statusMap.put("status", status.getStatus());
-        statusMap.put("cnameConfigured", status.isCnameConfigured());
-        statusMap.put("sslStatus", status.getSslStatus());
-        statusMap.put("lastChecked", status.getLastChecked());
-        statusMap.put("error", status.getError());
-
         Map<String, Object> data = new HashMap<>();
         data.put("customDomain", customDomain);
-        data.put("status", statusMap);
+        data.put("status", buildDomainStatusMap(status));
         data.put("cloudflareHostnameId", cloudflareHostnameId);
 
         upsertSettings(server, SETTINGS_TYPE_DOMAIN, data);
 
         updateServerDocument(server.getId(), customDomain, initialStatus, cloudflareHostnameId, error);
 
-        return DomainSettings.builder()
-                .customDomain(customDomain)
-                .status(status)
-                .accessingFromCustomDomain(false)
-                .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
-                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
-                .build();
+        return buildDomainSettingsResponse(server, customDomain, status);
     }
 
     private void updateServerDocument(String serverId, String customDomain, String status,
@@ -233,15 +209,7 @@ public class DomainSettingsService extends AbstractSettingsService {
                 .error(error)
                 .build();
 
-        Map<String, Object> statusMap = new HashMap<>();
-        statusMap.put("domain", status.getDomain());
-        statusMap.put("status", status.getStatus());
-        statusMap.put("cnameConfigured", status.isCnameConfigured());
-        statusMap.put("sslStatus", status.getSslStatus());
-        statusMap.put("lastChecked", status.getLastChecked());
-        statusMap.put("error", status.getError());
-
-        data.put("status", statusMap);
+        data.put("status", buildDomainStatusMap(status));
         if (cloudflareHostnameId != null) {
             data.put("cloudflareHostnameId", cloudflareHostnameId);
         }
@@ -250,13 +218,7 @@ public class DomainSettingsService extends AbstractSettingsService {
 
         updateServerDocument(server.getId(), domain, verifiedStatus, cloudflareHostnameId, error);
 
-        return DomainSettings.builder()
-                .customDomain(domain)
-                .status(status)
-                .accessingFromCustomDomain(false)
-                .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
-                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
-                .build();
+        return buildDomainSettingsResponse(server, domain, status);
     }
 
     public void removeDomain(Server server) {
@@ -295,6 +257,41 @@ public class DomainSettingsService extends AbstractSettingsService {
             corsConfigurationSource.invalidateCache(customDomain);
             log.debug("Invalidated CORS cache for removed domain: {}", customDomain);
         }
+    }
+
+    private String extractCurrentDomain(Server server) {
+        String currentDomain = server.getCustomDomainOverride();
+        if (currentDomain == null) {
+            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+            if (existingSettings != null && existingSettings.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
+                currentDomain = getStringValue(data, "customDomain");
+            }
+        }
+        return currentDomain;
+    }
+
+    private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
+        Map<String, Object> statusMap = new HashMap<>();
+        statusMap.put("domain", status.getDomain());
+        statusMap.put("status", status.getStatus());
+        statusMap.put("cnameConfigured", status.isCnameConfigured());
+        statusMap.put("sslStatus", status.getSslStatus());
+        statusMap.put("lastChecked", status.getLastChecked());
+        statusMap.put("error", status.getError());
+        return statusMap;
+    }
+
+    private DomainSettings buildDomainSettingsResponse(Server server, String customDomain,
+                                                        DomainSettings.DomainStatus status) {
+        return DomainSettings.builder()
+                .customDomain(customDomain)
+                .status(status)
+                .accessingFromCustomDomain(false)
+                .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
+                .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
+                .build();
     }
 
     private void clearServerDomainFields(String serverId) {

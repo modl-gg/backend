@@ -56,7 +56,7 @@ public class PanelMediaController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
+        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
             return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
         }
 
@@ -115,7 +115,7 @@ public class PanelMediaController {
 
         String key = confirmRequest.key();
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
+        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
             return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
         }
 

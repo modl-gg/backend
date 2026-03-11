@@ -9,7 +9,6 @@ import gg.modl.backend.admin.service.AdminMonitoringService;
 import gg.modl.backend.rest.RESTMappingV1;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,18 +18,12 @@ import java.util.Map;
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_MONITORING)
 @RequiredArgsConstructor
-@Slf4j
 public class AdminMonitoringController {
     private final AdminMonitoringService adminMonitoringService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<?> getDashboard() {
-        try {
-            return ResponseEntity.ok(adminMonitoringService.getDashboard());
-        } catch (Exception e) {
-            log.error("Dashboard metrics error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch dashboard metrics"));
-        }
+        return ResponseEntity.ok(adminMonitoringService.getDashboard());
     }
 
     @GetMapping("/logs")
@@ -71,12 +64,7 @@ public class AdminMonitoringController {
 
     @GetMapping("/sources")
     public ResponseEntity<?> getSources() {
-        try {
-            return ResponseEntity.ok(adminMonitoringService.getSources());
-        } catch (Exception e) {
-            log.error("Get sources error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch sources"));
-        }
+        return ResponseEntity.ok(adminMonitoringService.getSources());
     }
 
     @PutMapping("/logs/{id}/resolve")
@@ -91,12 +79,7 @@ public class AdminMonitoringController {
 
     @GetMapping("/health")
     public ResponseEntity<?> getHealth() {
-        try {
-            return ResponseEntity.ok(adminMonitoringService.getHealth());
-        } catch (Exception e) {
-            log.error("Health check error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Health check failed"));
-        }
+        return ResponseEntity.ok(adminMonitoringService.getHealth());
     }
 
     @PostMapping("/logs/delete")

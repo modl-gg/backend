@@ -59,14 +59,6 @@ public class AnalyticsController {
         return ResponseEntity.ok(analytics);
     }
 
-    @GetMapping("/staff-performance")
-    public ResponseEntity<?> getStaffPerformanceAnalytics(
-            @RequestParam(defaultValue = "30d") String period,
-            HttpServletRequest request
-    ) {
-        return ResponseEntity.status(501).body(Map.of("message", "Use /audit/staff-performance instead"));
-    }
-
     @GetMapping("/player-activity")
     public ResponseEntity<PlayerActivityResponse> getPlayerActivityAnalytics(
             @RequestParam(defaultValue = "30d") String period,

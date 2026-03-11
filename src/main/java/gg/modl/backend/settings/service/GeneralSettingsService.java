@@ -39,18 +39,10 @@ public class GeneralSettingsService {
         SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
         Map<String, Object> data = new LinkedHashMap<>(current.data());
 
-        if (patch.getServerDisplayName() != null) {
-            data.put("serverDisplayName", sanitize(patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH));
-        }
-        if (patch.getDiscordWebhookUrl() != null) {
-            data.put("discordWebhookUrl", sanitize(patch.getDiscordWebhookUrl(), MAX_URL_LENGTH));
-        }
-        if (patch.getHomepageIconUrl() != null) {
-            data.put("homepageIconUrl", sanitize(patch.getHomepageIconUrl(), MAX_URL_LENGTH));
-        }
-        if (patch.getPanelIconUrl() != null) {
-            data.put("panelIconUrl", sanitize(patch.getPanelIconUrl(), MAX_URL_LENGTH));
-        }
+        putIfNotNull(data, "serverDisplayName", patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
+        putIfNotNull(data, "discordWebhookUrl", patch.getDiscordWebhookUrl(), MAX_URL_LENGTH);
+        putIfNotNull(data, "homepageIconUrl", patch.getHomepageIconUrl(), MAX_URL_LENGTH);
+        putIfNotNull(data, "panelIconUrl", patch.getPanelIconUrl(), MAX_URL_LENGTH);
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
                 server,
@@ -92,6 +84,12 @@ public class GeneralSettingsService {
                 .homepageIconUrl("")
                 .panelIconUrl("")
                 .build();
+    }
+
+    private void putIfNotNull(Map<String, Object> data, String key, String value, int maxLength) {
+        if (value != null) {
+            data.put(key, sanitize(value, maxLength));
+        }
     }
 
     private String sanitize(String value, int maxLength) {

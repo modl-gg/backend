@@ -2,6 +2,7 @@ package gg.modl.backend.role.service;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
+import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.dto.request.CreateRoleRequest;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -200,39 +200,16 @@ public class RoleService {
         });
     }
 
-    // Default punishment permission nodes (punishment.apply.{name})
-    private static final List<String> ALL_PUNISHMENT_PERMS = List.of(
-            "punishment.apply.kick",
-            "punishment.apply.manual-mute",
-            "punishment.apply.manual-ban",
-            "punishment.apply.security-ban",
-            "punishment.apply.linked-ban",
-            "punishment.apply.blacklist",
-            "punishment.apply.chat-abuse",
-            "punishment.apply.anti-social",
-            "punishment.apply.targeting",
-            "punishment.apply.bad-content",
-            "punishment.apply.bad-username",
-            "punishment.apply.bad-skin",
-            "punishment.apply.team-abuse",
-            "punishment.apply.game-abuse",
-            "punishment.apply.cheating",
-            "punishment.apply.game-trading",
-            "punishment.apply.account-abuse",
-            "punishment.apply.systems-abuse"
-    );
-
-    // Moderator gets all except blacklist
-    private static final List<String> MODERATOR_PUNISHMENT_PERMS = ALL_PUNISHMENT_PERMS.stream()
-            .filter(p -> !p.contains("blacklist"))
-            .toList();
-
     public void createDefaultRoles(Server server) {
-        // Super admin gets everything
-        List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
-        superAdminPerms.addAll(ALL_PUNISHMENT_PERMS);
+        List<String> allPunishmentPerms = permissionService.getPunishmentPermissions(server).stream()
+                .map(Permission::id)
+                .toList();
+        List<String> moderatorPunishmentPerms = allPunishmentPerms.stream()
+                .filter(p -> !p.contains("blacklist"))
+                .toList();
 
-        // Admin permissions
+        List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
+
         List<String> adminPerms = new ArrayList<>(List.of(
                 "admin.settings.view", "admin.staff.manage", "admin.audit.view",
                 "punishment.modify",
@@ -241,16 +218,15 @@ public class RoleService {
                 "staff.maintenance", "staff.modactions",
                 "staff.intercept", "staff.chatlogs", "staff.commandlogs"
         ));
-        adminPerms.addAll(ALL_PUNISHMENT_PERMS);
+        adminPerms.addAll(allPunishmentPerms);
 
-        // Moderator permissions
         List<String> moderatorPerms = new ArrayList<>(List.of(
                 "punishment.modify",
                 "ticket.view.all", "ticket.reply.all", "ticket.close.all",
                 "staff.modactions",
                 "staff.chatlogs", "staff.commandlogs"
         ));
-        moderatorPerms.addAll(MODERATOR_PUNISHMENT_PERMS);
+        moderatorPerms.addAll(moderatorPunishmentPerms);
 
         List<StaffRole> defaultRoles = List.of(
                 StaffRole.builder()
@@ -353,10 +329,6 @@ public class RoleService {
                 staffRoleRepository.updateOrder(server, role.getId(), nextOrder++);
             }
         }
-    }
-
-    private Map<String, Integer> getStaffCountsByRole(Server server) {
-        return staffRepository.countByRoleName(server);
     }
 
     private int getStaffCountForRole(Server server, String roleName) {

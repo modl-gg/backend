@@ -6,7 +6,6 @@ import gg.modl.backend.admin.service.AdminAnalyticsService;
 import gg.modl.backend.rest.RESTMappingV1;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,54 +14,33 @@ import java.util.*;
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_ANALYTICS)
 @RequiredArgsConstructor
-@Slf4j
 public class AdminAnalyticsController {
     private final AdminAnalyticsService adminAnalyticsService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<?> getDashboard(@RequestParam(defaultValue = "30d") String range) {
-        try {
-            return ResponseEntity.ok(adminAnalyticsService.getDashboard(range));
-        } catch (Exception e) {
-            log.error("Analytics dashboard error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch analytics data"));
-        }
+        return ResponseEntity.ok(adminAnalyticsService.getDashboard(range));
     }
 
     @GetMapping("/activity")
     public ResponseEntity<?> getActivity(@RequestParam(defaultValue = "30d") String range) {
-        try {
-            return ResponseEntity.ok(adminAnalyticsService.getActivity(range));
-        } catch (Exception e) {
-            log.error("Activity snapshots error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch activity data"));
-        }
+        return ResponseEntity.ok(adminAnalyticsService.getActivity(range));
     }
 
     @GetMapping("/usage")
     public ResponseEntity<?> getUsage() {
-        try {
-            return ResponseEntity.ok(adminAnalyticsService.getUsage());
-        } catch (Exception e) {
-            log.error("Usage statistics error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch usage statistics"));
-        }
+        return ResponseEntity.ok(adminAnalyticsService.getUsage());
     }
 
     @GetMapping("/historical")
     public ResponseEntity<?> getHistorical(
             @RequestParam(required = false) String metric,
             @RequestParam(defaultValue = "30d") String range) {
-        try {
-            Map<String, Object> response = adminAnalyticsService.getHistorical(metric, range);
-            if (Boolean.FALSE.equals(response.get("success"))) {
-                return ResponseEntity.badRequest().body(response);
-            }
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            log.error("Historical data error", e);
-            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to fetch historical data"));
+        Map<String, Object> response = adminAnalyticsService.getHistorical(metric, range);
+        if (Boolean.FALSE.equals(response.get("success"))) {
+            return ResponseEntity.badRequest().body(response);
         }
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/export")
@@ -70,17 +48,15 @@ public class AdminAnalyticsController {
         String type = request.type() != null ? request.type() : "json";
         String range = request.range() != null ? request.range() : "30d";
 
+        Object result = adminAnalyticsService.exportAnalytics(type, range);
+
         if ("csv".equals(type)) {
             return ResponseEntity.ok()
                     .header("Content-Type", "text/csv")
                     .header("Content-Disposition", "attachment; filename=\"modl-analytics-" + range + ".csv\"")
-                    .body("Date,Servers,Users,Tickets\n2024-01-01,100,1500,820");
+                    .body(result);
         } else if ("json".equals(type)) {
-            return ResponseEntity.ok(Map.of(
-                    "exportDate", new Date().toString(),
-                    "range", range,
-                    "data", Map.of("servers", 100, "users", 1500, "tickets", 820)
-            ));
+            return ResponseEntity.ok(result);
         }
 
         return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid export type"));

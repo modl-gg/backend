@@ -10,17 +10,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_MIGRATION)
@@ -29,9 +25,6 @@ import java.util.UUID;
 public class MinecraftMigrationController {
     private final MigrationService migrationService;
     private final MigrationProcessor migrationProcessor;
-
-    @Value("${modl.migration.upload-dir:uploads/migrations}")
-    private String uploadDir;
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadMigrationFile(
@@ -49,33 +42,13 @@ public class MinecraftMigrationController {
             return ResponseEntity.badRequest().body(Map.of("error", "Only JSON files are allowed"));
         }
 
-        long fileSizeLimit = migrationService.getFileSizeLimit(server);
-        if (file.getSize() > fileSizeLimit) {
-            double fileSizeMB = file.getSize() / (1024.0 * 1024.0);
-            double limitMB = fileSizeLimit / (1024.0 * 1024.0);
-
-            migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "failed",
-                    "Migration file exceeds size limit",
-                    0, 0, null
-            ));
-
-            return ResponseEntity.status(413).body(Map.of(
-                    "error", "Migration file exceeds size limit",
-                    "message", String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
-                    "fileSize", file.getSize(),
-                    "limit", fileSizeLimit
-            ));
+        Map<String, Object> sizeError = migrationService.validateFileSize(server, file);
+        if (sizeError != null) {
+            return ResponseEntity.status(413).body(sizeError);
         }
 
         try {
-            Path uploadPath = Paths.get(uploadDir).toAbsolutePath();
-            Files.createDirectories(uploadPath);
-
-            String uniqueFilename = "migration-" + UUID.randomUUID() + ".json";
-            Path filePath = uploadPath.resolve(uniqueFilename);
-
-            file.transferTo(filePath.toAbsolutePath());
+            Path filePath = migrationService.saveUploadedFile(file);
 
             migrationService.updateProgress(server, new UpdateProgressRequest(
                     "uploading_json",

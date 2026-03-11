@@ -1,7 +1,8 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
@@ -10,6 +11,7 @@ import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
+import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.DurationDetail;
@@ -23,6 +25,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,7 +44,8 @@ public class PunishmentQueryService {
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final EvidenceUploadTokenService evidenceUploadTokenService;
     private final IssuerNameResolver issuerNameResolver;
-    private final TenantMongoAccess tenantMongoAccess;
+    private final StaffMongoRepository staffRepository;
+    private final AppealService appealService;
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -85,7 +89,7 @@ public class PunishmentQueryService {
         }
         Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
                 ? Map.of()
-                : issuerNameResolver.batchResolve(allIssuerIds, tenantMongoAccess.forServer(server));
+                : issuerNameResolver.batchResolve(allIssuerIds, server, staffRepository);
 
         for (Player player : players) {
             String username = player.getUsernames().isEmpty() ? "Unknown" :
@@ -251,6 +255,47 @@ public class PunishmentQueryService {
                 ));
     }
 
+    public Optional<Map<String, Object>> getPublicPunishmentWithAppealEligibility(Server server, String punishmentId) {
+        Optional<PunishmentResponse> punishmentOpt = getPunishmentById(server, punishmentId);
+        if (punishmentOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        PunishmentResponse punishment = punishmentOpt.get();
+
+        if (punishment.started() == null) {
+            return Optional.of(Map.of("error", "This punishment has not been started yet and cannot be appealed at this time."));
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", punishment.id());
+        response.put("type", punishment.type());
+        response.put("issued", punishment.issued());
+        response.put("expires", punishment.expires());
+        response.put("active", punishment.active());
+        response.put("appealable", punishment.isAppealable());
+        response.put("playerUuid", punishment.playerUuid());
+
+        List<TicketResponse> existingAppeals = appealService.getAppealsByPunishment(server, punishmentId);
+        if (!existingAppeals.isEmpty()) {
+            TicketResponse latestAppeal = existingAppeals.get(0);
+            Map<String, Object> existingAppeal = new HashMap<>();
+            existingAppeal.put("id", latestAppeal.id());
+            existingAppeal.put("submittedDate", latestAppeal.date());
+            String workflowStatus = latestAppeal.appealWorkflowStatus() != null
+                    ? latestAppeal.appealWorkflowStatus()
+                    : latestAppeal.status();
+            existingAppeal.put("status", workflowStatus);
+            existingAppeal.put("appealWorkflowStatus", workflowStatus);
+            response.put("existingAppeal", existingAppeal);
+        }
+
+        var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
+        response.put("appealForm", punishmentType.map(pt -> pt.getAppealForm()).orElse(null));
+
+        return Optional.of(response);
+    }
+
     public Optional<PunishmentContext> findPunishmentContext(Server server, String punishmentId) {
         return playerRepository.findByPunishmentId(server, punishmentId)
                 .flatMap(player -> player.getPunishments().stream()
@@ -355,7 +400,7 @@ public class PunishmentQueryService {
     private Map<String, String> resolveIssuersForPunishment(Server server, Punishment punishment) {
         Set<String> ids = collectIssuerIds(punishment);
         if (ids.isEmpty()) return Map.of();
-        return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+        return issuerNameResolver.batchResolve(ids, server, staffRepository);
     }
 
     private Map<String, String> resolveIssuersForPunishments(Server server, List<Punishment> punishments) {
@@ -364,7 +409,7 @@ public class PunishmentQueryService {
             ids.addAll(collectIssuerIds(p));
         }
         if (ids.isEmpty()) return Map.of();
-        return issuerNameResolver.batchResolve(ids, tenantMongoAccess.forServer(server));
+        return issuerNameResolver.batchResolve(ids, server, staffRepository);
     }
 
     static Set<String> collectIssuerIds(Punishment punishment) {

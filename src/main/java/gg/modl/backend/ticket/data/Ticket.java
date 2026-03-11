@@ -95,6 +95,25 @@ public class Ticket {
     private boolean emailAuthEnabled;
     private boolean hidden;
 
+    public void applyLifecycleStatus(TicketStatus status) {
+        this.status = status;
+        this.locked = status != null && status.isTerminal();
+    }
+
+    public List<TicketReply> ensureReplies() {
+        if (this.replies == null) {
+            this.replies = new ArrayList<>();
+        }
+        return this.replies;
+    }
+
+    public List<TicketNote> ensureNotes() {
+        if (this.notes == null) {
+            this.notes = new ArrayList<>();
+        }
+        return this.notes;
+    }
+
     @Data
     @AllArgsConstructor
     public static class ChatMessage {

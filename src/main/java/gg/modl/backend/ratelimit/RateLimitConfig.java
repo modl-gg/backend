@@ -2,20 +2,44 @@ package gg.modl.backend.ratelimit;
 
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class RateLimitConfig {
 
     private static final int MAX_BUCKETS_PER_TIER = 50_000;
+
+    private static final Set<String> HEAVY_PANEL_WRITE_PATTERNS = Set.of(
+            "/staff/invite", "/settings", "/find-linked"
+    );
+
+    private static final Set<String> HEAVY_PANEL_ANY_PATTERNS = Set.of(
+            "/dashboard/metrics", "/dashboard/activity",
+            "/dashboard/recent-punishments", "/dashboard/recent-tickets",
+            "/ticket-subscriptions/assigned-updates", "/ticket-subscriptions/updates"
+    );
+
+    private static final Set<String> HEAVY_PUBLIC_POST_PATTERNS = Set.of(
+            "/appeals", "/tickets"
+    );
+
+    private record PathRule(String prefix, RateLimitTier tier) {}
+
+    private static final List<PathRule> PREFIX_RULES = List.of(
+            new PathRule("/v1/minecraft/login", RateLimitTier.MINECRAFT_LOGIN),
+            new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
+            new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
+            new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
+            new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
+    );
 
     private final Map<String, Map<String, Bucket>> buckets = new ConcurrentHashMap<>();
 
@@ -24,7 +48,7 @@ public class RateLimitConfig {
         MINECRAFT_STANDARD(1000, Duration.ofMinutes(1)),
         PANEL_STANDARD(100, Duration.ofMinutes(1)),
         PANEL_HEAVY(20, Duration.ofMinutes(1)),
-        PANEL_AUDIT(200, Duration.ofMinutes(1)), // Higher limit for audit/analytics pages
+        PANEL_AUDIT(200, Duration.ofMinutes(1)),
         PUBLIC_STANDARD(60, Duration.ofMinutes(1)),
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
         PUBLIC_MEDIA_UPLOAD(30, Duration.ofMinutes(1)),
@@ -81,105 +105,79 @@ public class RateLimitConfig {
             return RateLimitTier.PANEL_STANDARD;
         }
 
-        if (path.startsWith("/v1/minecraft/login") || path.startsWith("/v1/minecraft/player/login")) {
-            return RateLimitTier.MINECRAFT_LOGIN;
-        }
-
-        if (path.startsWith("/v1/minecraft/")) {
-            return RateLimitTier.MINECRAFT_STANDARD;
+        for (PathRule rule : PREFIX_RULES) {
+            if (path.startsWith(rule.prefix())) {
+                return rule.tier();
+            }
         }
 
         if (path.startsWith("/v1/panel/auth/")) {
-            if (path.equals("/v1/panel/auth/send-email-code")) {
-                return RateLimitTier.AUTH_SEND_CODE;
-            }
-            return RateLimitTier.AUTH;
-        }
-
-        if (path.startsWith("/v1/admin/auth/")) {
-            return RateLimitTier.ADMIN_AUTH;
-        }
-
-        if (path.startsWith("/v1/admin/")) {
-            return RateLimitTier.ADMIN_STANDARD;
+            return path.equals("/v1/panel/auth/send-email-code")
+                    ? RateLimitTier.AUTH_SEND_CODE : RateLimitTier.AUTH;
         }
 
         if (path.startsWith("/v1/panel/migration/")) {
-            if (path.equals("/v1/panel/migration/status") && "GET".equalsIgnoreCase(method)) {
-                return RateLimitTier.MIGRATION_STATUS;
-            }
-            return RateLimitTier.MIGRATION;
+            return path.equals("/v1/panel/migration/status") && "GET".equalsIgnoreCase(method)
+                    ? RateLimitTier.MIGRATION_STATUS : RateLimitTier.MIGRATION;
         }
 
         if (path.startsWith("/v1/panel/")) {
-            // Audit and analytics endpoints get their own higher limit
-            if (path.contains("/audit/") || path.contains("/analytics/")) {
-                return RateLimitTier.PANEL_AUDIT;
-            }
-            if (isHeavyPanelOperation(path, method)) {
-                return RateLimitTier.PANEL_HEAVY;
-            }
-            return RateLimitTier.PANEL_STANDARD;
+            return resolvePanelTier(path, method);
         }
 
         if (path.startsWith("/v1/public/")) {
-            if (path.startsWith("/v1/public/media/") && "POST".equalsIgnoreCase(method)) {
-                return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
-            }
-            if (path.startsWith("/v1/public/tickets") && "POST".equalsIgnoreCase(method)) {
-                if (path.contains("/verify") || path.contains("/request-verification")) {
-                    return RateLimitTier.PUBLIC_TICKET_VERIFY;
-                }
-                return RateLimitTier.PUBLIC_TICKET_CREATE;
-            }
-            if (isHeavyPublicOperation(path, method)) {
-                return RateLimitTier.PUBLIC_HEAVY;
-            }
-            return RateLimitTier.PUBLIC_STANDARD;
+            return resolvePublicTier(path, method);
         }
 
         return RateLimitTier.PANEL_STANDARD;
     }
 
-    private boolean isHeavyPanelOperation(String path, String method) {
-        if ("POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method)) {
+    private RateLimitTier resolvePanelTier(String path, String method) {
+        if (path.contains("/audit/") || path.contains("/analytics/")) {
+            return RateLimitTier.PANEL_AUDIT;
+        }
+        if (isHeavyOperation(path, method, HEAVY_PANEL_WRITE_PATTERNS, HEAVY_PANEL_ANY_PATTERNS)) {
+            return RateLimitTier.PANEL_HEAVY;
+        }
+        return RateLimitTier.PANEL_STANDARD;
+    }
+
+    private RateLimitTier resolvePublicTier(String path, String method) {
+        if (path.startsWith("/v1/public/media/") && isWriteMethod(method)) {
+            return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
+        }
+        if (path.startsWith("/v1/public/tickets") && isWriteMethod(method)) {
+            if (path.contains("/verify") || path.contains("/request-verification")) {
+                return RateLimitTier.PUBLIC_TICKET_VERIFY;
+            }
+            return RateLimitTier.PUBLIC_TICKET_CREATE;
+        }
+        if (isHeavyOperation(path, method, HEAVY_PUBLIC_POST_PATTERNS, Set.of())) {
+            return RateLimitTier.PUBLIC_HEAVY;
+        }
+        return RateLimitTier.PUBLIC_STANDARD;
+    }
+
+    private boolean isHeavyOperation(String path, String method, Set<String> writePatterns, Set<String> anyMethodPatterns) {
+        if (isWriteMethod(method)) {
             if (path.contains("/tickets") && !path.contains("/replies")) {
                 return true;
             }
-            if (path.contains("/staff/invite")) {
-                return true;
-            }
-            if (path.contains("/settings")) {
-                return true;
-            }
-            // Linked account search is expensive (scans IPs across players)
-            if (path.contains("/find-linked")) {
-                return true;
+            for (String pattern : writePatterns) {
+                if (path.contains(pattern)) {
+                    return true;
+                }
             }
         }
-
-        if (path.contains("/dashboard/metrics") || path.contains("/dashboard/activity")) {
-            return true;
+        for (String pattern : anyMethodPatterns) {
+            if (path.contains(pattern)) {
+                return true;
+            }
         }
-        if (path.contains("/dashboard/recent-punishments") || path.contains("/dashboard/recent-tickets")) {
-            return true;
-        }
-        if (path.contains("/ticket-subscriptions/assigned-updates") || path.contains("/ticket-subscriptions/updates")) {
-            return true;
-        }
-
         return false;
     }
 
-    private boolean isHeavyPublicOperation(String path, String method) {
-        if ("POST".equalsIgnoreCase(method)) {
-            if (path.contains("/appeals")) {
-                return true;
-            }
-            if (path.contains("/tickets")) {
-                return true;
-            }
-        }
-        return false;
+    private boolean isWriteMethod(String method) {
+        return "POST".equalsIgnoreCase(method) || "PUT".equalsIgnoreCase(method);
     }
 }
