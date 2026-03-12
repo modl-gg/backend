@@ -405,10 +405,45 @@ public class PublicRegistrationController {
             log.error("Failed to send verification email for CLI registration", e);
         }
 
-        return ResponseEntity.status(201).body(new RegisterResponse(
+        return ResponseEntity.status(201).body(new CliRegisterResponse(
             true,
             "Registration successful. Please check your email to verify your account.",
-            new ServerInfo(server.getId(), server.getServerName())
+            new ServerInfo(server.getId(), server.getServerName()),
+            emailVerificationToken
+        ));
+    }
+
+    @PostMapping("/cli/status")
+    public ResponseEntity<?> cliSetupStatus(@RequestBody @Valid TokenRequest request) {
+        Server server = serverService.getServerByEmailVerificationToken(request.token());
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new CliStatusResponse(
+                false, null, null, null, "Invalid or expired setup token."
+            ));
+        }
+
+        boolean emailVerified = Boolean.TRUE.equals(server.getEmailVerified());
+        String status = server.getProvisioningStatus() != null
+            ? server.getProvisioningStatus().name() : ProvisioningStatus.PENDING.name();
+        boolean complete = emailVerified && server.getProvisioningStatus() == ProvisioningStatus.COMPLETED;
+
+        String apiKey = null;
+        String panelUrl = null;
+        if (complete) {
+            apiKey = server.getApiKey();
+            if (apiKey == null || apiKey.isBlank()) {
+                apiKey = apiKeySettingsService.getApiKeyFromSettings(server);
+            }
+            if (apiKey == null || apiKey.isBlank()) {
+                apiKey = apiKeySettingsService.generateApiKey(server, "default");
+                apiKeySettingsService.syncApiKeyToServer(server, apiKey);
+            }
+            panelUrl = String.format("https://%s.%s", server.getCustomDomain(), appDomain);
+        }
+
+        return ResponseEntity.ok(new CliStatusResponse(
+            true, emailVerified, status, complete ? apiKey : null,
+            complete ? panelUrl : getProvisioningMessage(server.getProvisioningStatus())
         ));
     }
 
@@ -482,4 +517,8 @@ public class PublicRegistrationController {
     public record AutoLoginRequest(@NotBlank String token) {}
 
     public record AutoLoginResponse(boolean success, String message, String redirectUrl) {}
+
+    public record CliRegisterResponse(boolean success, String message, ServerInfo server, String setupToken) {}
+
+    public record CliStatusResponse(boolean success, Boolean emailVerified, String provisioningStatus, String apiKey, String message) {}
 }
