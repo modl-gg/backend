@@ -11,6 +11,7 @@ import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.settings.service.ApiKeySettingsService;
 import gg.modl.backend.turnstile.TurnstileService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,6 +46,7 @@ public class PublicRegistrationController {
     private final EmailService emailService;
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
+    private final ApiKeySettingsService apiKeySettingsService;
     private final Map<String, Long> rateLimitMap = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -57,8 +59,17 @@ public class PublicRegistrationController {
     private String appDomain;
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+    private static final long CLI_RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
     private static final long AUTO_LOGIN_TOKEN_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
     private static final int MAX_RATE_LIMIT_ENTRIES = 10_000;
+    private final Map<String, Long> cliRateLimitMap = Collections.synchronizedMap(
+        new LinkedHashMap<>(64, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Long> eldest) {
+                return size() > MAX_RATE_LIMIT_ENTRIES;
+            }
+        }
+    );
 
     @PostMapping
     public ResponseEntity<?> register(
@@ -319,6 +330,136 @@ public class PublicRegistrationController {
         }
         return cookie;
     }
+
+    // ── CLI registration (no Turnstile, stricter rate limit) ──
+
+    @PostMapping("/cli")
+    public ResponseEntity<?> registerCli(
+        HttpServletRequest request,
+        @RequestBody @Valid CliRegisterRequest requestData) {
+
+        String clientIp = RequestUtil.getClientIp(request);
+
+        // Stricter rate limit: 1 per IP per 30 minutes
+        long now = System.currentTimeMillis();
+        Long lastRegistration = cliRateLimitMap.get(clientIp);
+        if (lastRegistration != null && (now - lastRegistration) < CLI_RATE_LIMIT_WINDOW_MS) {
+            long remainingMinutes = (CLI_RATE_LIMIT_WINDOW_MS - (now - lastRegistration)) / 1000 / 60 + 1;
+            return ResponseEntity.status(429).body(new RegisterResponse(
+                false,
+                "Rate limit exceeded. CLI registration is limited to once every 30 minutes. Please try again in " + remainingMinutes + " minute(s).",
+                null
+            ));
+        }
+
+        // Check for duplicates
+        ServerService.ServerExistResult existResult = serverService.doesServerExist(
+            requestData.email(),
+            requestData.serverName(),
+            requestData.customDomain()
+        );
+
+        if (existResult.emailMatch()) {
+            return ResponseEntity.status(409).body(new RegisterResponse(false, "An account with this email already exists.", null));
+        }
+        if (existResult.nameMatch()) {
+            return ResponseEntity.status(409).body(new RegisterResponse(false, "This server name is already taken.", null));
+        }
+        if (existResult.domainMatch()) {
+            return ResponseEntity.status(409).body(new RegisterResponse(false, "This subdomain is already in use.", null));
+        }
+
+        // Generate email verification token
+        String emailVerificationToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
+
+        // Parse plan
+        ServerPlan plan = requestData.plan() != null && requestData.plan().equalsIgnoreCase("premium")
+            ? ServerPlan.PREMIUM : ServerPlan.FREE;
+
+        // Create server
+        Server server;
+        try {
+            server = serverService.createServer(
+                requestData.serverName(),
+                requestData.customDomain(),
+                requestData.email(),
+                emailVerificationToken,
+                plan
+            );
+        } catch (Exception e) {
+            log.error("Failed to create server via CLI", e);
+            return ResponseEntity.internalServerError().body(new RegisterResponse(
+                false, "An internal server error occurred during registration. Please try again later.", null
+            ));
+        }
+
+        // Update rate limit
+        cliRateLimitMap.put(clientIp, now);
+
+        // Send verification email
+        try {
+            String verificationLink = String.format("https://%s.%s/verify-email?token=%s",
+                requestData.customDomain(), appDomain, emailVerificationToken);
+            sendVerificationEmail(requestData.email(), verificationLink);
+        } catch (Exception e) {
+            log.error("Failed to send verification email for CLI registration", e);
+        }
+
+        return ResponseEntity.status(201).body(new RegisterResponse(
+            true,
+            "Registration successful. Please check your email to verify your account.",
+            new ServerInfo(server.getId(), server.getServerName())
+        ));
+    }
+
+    @PostMapping("/api-key")
+    public ResponseEntity<?> getApiKeyFromToken(@RequestBody @Valid TokenRequest request) {
+        Server server = serverService.getServerByAutoLoginToken(request.token());
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new ApiKeyResponse(false, null, null, "Invalid or expired token."));
+        }
+
+        // Verify provisioning is complete and email is verified
+        if (server.getProvisioningStatus() != ProvisioningStatus.COMPLETED) {
+            return ResponseEntity.badRequest().body(new ApiKeyResponse(false, null, null, "Server setup is not yet complete."));
+        }
+
+        if (!Boolean.TRUE.equals(server.getEmailVerified())) {
+            return ResponseEntity.badRequest().body(new ApiKeyResponse(false, null, null, "Email verification is required."));
+        }
+
+        // Check token expiry
+        if (server.getProvisioningSignInTokenExpiresAt() != null &&
+            server.getProvisioningSignInTokenExpiresAt().before(new Date())) {
+            return ResponseEntity.badRequest().body(new ApiKeyResponse(false, null, null, "Token has expired."));
+        }
+
+        // Generate API key if server doesn't have one
+        String apiKey = server.getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            apiKey = apiKeySettingsService.getApiKeyFromSettings(server);
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            apiKey = apiKeySettingsService.generateApiKey(server, "default");
+            apiKeySettingsService.syncApiKeyToServer(server, apiKey);
+        }
+
+        String panelUrl = String.format("https://%s.%s", server.getCustomDomain(), appDomain);
+
+        // Clear the auto-login token (one-time use)
+        serverService.clearAutoLoginToken(server);
+
+        return ResponseEntity.ok(new ApiKeyResponse(true, apiKey, panelUrl, "API key retrieved successfully."));
+    }
+
+    public record CliRegisterRequest(
+        @Email @NotBlank String email,
+        @NotBlank @Size(min = 3, max = 100) String serverName,
+        @NotBlank @Size(min = 3, max = 50) @Pattern(regexp = "^[a-z0-9-]+$", message = "Subdomain can only contain lowercase letters, numbers, and hyphens") String customDomain,
+        String plan
+    ) {}
+
+    public record ApiKeyResponse(boolean success, String apiKey, String panelUrl, String message) {}
 
     public record RegisterRequest(
         @Email @NotBlank String email,
