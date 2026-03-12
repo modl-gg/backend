@@ -10,7 +10,9 @@ const CONFIG = {
     batchSize: 500,
     globalDbName: "modl",
     serversCollName: "servers",
-    ticketsCollName: "tickets"
+    ticketsCollName: "tickets",
+    settingsCollName: "settings",
+    aiModerationSettingsType: "aiModerationSettings"
 };
 
 // Consolidated mappings for a cleaner footprint
@@ -31,6 +33,8 @@ async function main() {
 
         let globalModified = 0;
         let globalScanned = 0;
+        let globalAiSettingsModified = 0;
+        let globalAiSettingsScanned = 0;
 
         // Filter targets if specified
         const tenants = CONFIG.targetDatabases.length > 0
@@ -40,20 +44,55 @@ async function main() {
         print(`Targeting ${tenants.length} tenant databases...\n`);
 
         for (const tenant of tenants) {
-            const result = await migrateTenant(tenant.databaseName);
-            globalScanned += result.scanned;
-            globalModified += result.modified;
-            print(`[${tenant.databaseName}] Scanned: ${result.scanned} | Modified: ${result.modified} | Errors: ${result.errors}`);
+            const ticketResult = await migrateTenant(tenant.databaseName);
+            const aiSettingsResult = await migrateAiModerationSettings(tenant.databaseName);
+
+            globalScanned += ticketResult.scanned;
+            globalModified += ticketResult.modified;
+            globalAiSettingsScanned += aiSettingsResult.scanned;
+            globalAiSettingsModified += aiSettingsResult.modified;
+
+            print(
+                `[${tenant.databaseName}] ` +
+                `Tickets Scanned: ${ticketResult.scanned} | Tickets Modified: ${ticketResult.modified} | Ticket Errors: ${ticketResult.errors} | ` +
+                `AI Settings Scanned: ${aiSettingsResult.scanned} | AI Settings Modified: ${aiSettingsResult.modified}`
+            );
         }
 
         print(`\n--- GLOBAL SUMMARY ---`);
-        print(`Total Scanned: ${globalScanned}`);
-        print(`Total Modified: ${globalModified}`);
+        print(`Total Ticket Docs Scanned: ${globalScanned}`);
+        print(`Total Ticket Docs Modified: ${globalModified}`);
+        print(`Total AI Settings Docs Scanned: ${globalAiSettingsScanned}`);
+        print(`Total AI Settings Docs Modified: ${globalAiSettingsModified}`);
         print(`----------------------\n`);
 
     } catch (error) {
         print(`\n[FATAL ERROR] Script execution failed: ${error.message}`);
     }
+}
+
+async function migrateAiModerationSettings(databaseName) {
+    const tenantDb = db.getSiblingDB(databaseName);
+    const settingsColl = tenantDb.getCollection(CONFIG.settingsCollName);
+
+    const filter = {
+        type: CONFIG.aiModerationSettingsType,
+        "data.strictnessLevel": { $exists: true }
+    };
+
+    if (!CONFIG.apply) {
+        const matched = await settingsColl.countDocuments(filter);
+        return { scanned: matched, modified: matched };
+    }
+
+    const result = await settingsColl.updateMany(filter, {
+        $unset: { "data.strictnessLevel": "" }
+    });
+
+    return {
+        scanned: result.matchedCount || 0,
+        modified: result.modifiedCount || 0
+    };
 }
 
 async function migrateTenant(databaseName) {

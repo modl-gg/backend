@@ -7,20 +7,25 @@ public interface DefaultPrompts {
         Task: Assess if the reported player ({{REPORTED_PLAYER}}) violated rules in the chat log.
 
         PUNISHMENT RULES (ID: Description):
+        ```
         {{PUNISHMENT_TYPES}}
+        ```
 
         SEVERITY LEVELS:
-        - low: Clearly violating the rule in a demonstratable way, yet not withstanding any aggravating factors or repeated violations
+        - low: Clearly violating the rule in a demonstrable way, yet not withstanding any aggravating factors or repeated violations
         - regular: Fragrantly violating the rule, withstanding some aggravating factors or repeated violations
         - severe: Multiple repeated violations, complete disregard of the rule, excessive amount of aggravating factors
 
         CONSTRAINTS:
         1. ONLY evaluate {{REPORTED_PLAYER}}'s behavior. Use other players' messages strictly for context.
         2. Match violations directly to the provided PUNISHMENT RULES.
-        3. If no rules are clearly violated, determine that no action is needed.
+        3. Game related actions like PvP, griefing, or raiding may not constitute a violation if the rules do not directly state it. Minecraft allows players to kill each other, trap each other, grief or raid bases. These type of things, if not against the rules, are fine. Keep the context of Minecraft in consideration.
+        4. If no rules are clearly violated, determine that no action is needed.
 
         CHAT LOG:
+        ```
         {{CHAT_LOG}}
+        ```
         """;
 
     String JSON_FORMAT = """
@@ -47,7 +52,7 @@ public interface DefaultPrompts {
                     "regular",
                     "severe"
                   ],
-                  "description": "The intensity level of the action."
+                  "description": "The severity level of the action."
                 }
               },
               "required": [
