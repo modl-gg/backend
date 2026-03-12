@@ -1,7 +1,11 @@
 package gg.modl.backend.database;
 
 public final class CollectionName {
+    // Global
     public static final String MODL_SERVERS = "servers";
+    public static final String METRIC_SNAPSHOTS = "metric_snapshots";
+
+    // Core
     public static final String PLAYERS = "players";
     public static final String SESSIONS = "sessions";
     public static final String AUTH_CODES = "auth_codes";
@@ -24,9 +28,6 @@ public final class CollectionName {
     // WebAuthn
     public static final String WEBAUTHN_CREDENTIALS = "webauthn_credentials";
     public static final String WEBAUTHN_CHALLENGES = "webauthn_challenges";
-
-    // Analytics
-    public static final String METRIC_SNAPSHOTS = "metric_snapshots";
 
     // Knowledgebase & Homepage
     public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebasecategories";

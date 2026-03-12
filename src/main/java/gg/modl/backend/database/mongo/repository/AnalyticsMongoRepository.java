@@ -13,6 +13,7 @@ import java.util.Date;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -22,7 +23,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class AnalyticsMongoRepository {
-    private final TenantMongoAccess tenantMongoAccess;
     private static final String FACET_TOTAL = "total";
     private static final String FACET_ACTIVE = "active";
     private static final String FACET_RECENT = "recent";
@@ -38,7 +38,10 @@ public class AnalyticsMongoRepository {
     private static final String ALIAS_DATE = "date";
     private static final String EARLIEST_FIRST_LOGIN = "earliestFirstLogin";
 
-    public OverviewStats loadOverviewStats(Server server, Date thirtyDaysAgo, Date sixtyDaysAgo) {
+    private final TenantMongoAccess tenantMongoAccess;
+
+    @NotNull
+    public OverviewStats loadOverviewStats(@NotNull Server server, @NotNull Date thirtyDaysAgo, @NotNull Date sixtyDaysAgo) {
         final MongoTemplate template = tenantMongoAccess.forServer(server);
         final List<Document> pipeline = List.of(
             new Document("$facet", new Document()

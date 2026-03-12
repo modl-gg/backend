@@ -1,5 +1,6 @@
 package gg.modl.backend.analytics.data;
 
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.util.Date;
 import lombok.Data;
@@ -7,28 +8,28 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-@Document(collection = "metric_snapshots")
+@Document(collection = CollectionName.METRIC_SNAPSHOTS)
 @Data
 @GenerateMongoFields
 public class MetricSnapshot {
     @Id
     private String id;
 
-    @Field("date")
+    @Field
     private Date date; // truncated to hour (UTC)
 
-    @Field("activeServers")
+    @Field
     private long activeServers;
 
-    @Field("totalServers")
+    @Field
     private long totalServers;
 
-    @Field("totalPlayers")
+    @Field
     private long totalPlayers;
 
-    @Field("onlinePlayers")
+    @Field
     private long onlinePlayers;
 
-    @Field("createdAt")
+    @Field
     private Date createdAt;
 }

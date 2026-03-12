@@ -26,8 +26,9 @@ public class AnalyticsController {
 
     @GetMapping("/overview")
     public ResponseEntity<Map<String, OverviewResponse>> getOverview(HttpServletRequest request) {
-        Server server = RequestUtil.getRequestServer(request);
-        OverviewResponse overview = analyticsService.getOverview(server);
+        final Server server = RequestUtil.getRequestServer(request);
+        final OverviewResponse overview = analyticsService.getOverview(server);
+
         return ResponseEntity.ok(Map.of("overview", overview));
     }
 
@@ -36,8 +37,9 @@ public class AnalyticsController {
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
-        Server server = RequestUtil.getRequestServer(request);
-        TicketAnalyticsResponse analytics = analyticsService.getTicketAnalytics(server, period);
+        final Server server = RequestUtil.getRequestServer(request);
+        final TicketAnalyticsResponse analytics = analyticsService.getTicketAnalytics(server, period);
+
         return ResponseEntity.ok(analytics);
     }
 
@@ -46,8 +48,9 @@ public class AnalyticsController {
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
-        Server server = RequestUtil.getRequestServer(request);
-        PunishmentAnalyticsResponse analytics = analyticsService.getPunishmentAnalytics(server, period);
+        final Server server = RequestUtil.getRequestServer(request);
+        final PunishmentAnalyticsResponse analytics = analyticsService.getPunishmentAnalytics(server, period);
+
         return ResponseEntity.ok(analytics);
     }
 
@@ -56,8 +59,9 @@ public class AnalyticsController {
         @RequestParam(defaultValue = "7d") String period,
         HttpServletRequest request
     ) {
-        Server server = RequestUtil.getRequestServer(request);
-        AuditLogsAnalyticsResponse analytics = analyticsService.getAuditLogsAnalytics(server, period);
+        final Server server = RequestUtil.getRequestServer(request);
+        final AuditLogsAnalyticsResponse analytics = analyticsService.getAuditLogsAnalytics(server, period);
+
         return ResponseEntity.ok(analytics);
     }
 
@@ -66,8 +70,9 @@ public class AnalyticsController {
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
-        Server server = RequestUtil.getRequestServer(request);
-        PlayerActivityResponse analytics = analyticsService.getPlayerActivityAnalytics(server, period);
+        final Server server = RequestUtil.getRequestServer(request);
+        final PlayerActivityResponse analytics = analyticsService.getPlayerActivityAnalytics(server, period);
+
         return ResponseEntity.ok(analytics);
     }
 }

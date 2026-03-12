@@ -1,5 +1,7 @@
 package gg.modl.backend.analytics.service;
 
+import static gg.modl.backend.util.SafeConvertUtil.toInt;
+
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
@@ -31,29 +33,32 @@ import java.util.TimeZone;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
+    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
+
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
-    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
 
-    public OverviewResponse getOverview(Server server) {
-        long now = System.currentTimeMillis();
-        long thirtyDaysMs = 30L * 24 * 60 * 60 * 1000;
-        Date thirtyDaysAgo = new Date(now - thirtyDaysMs);
-        Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
-        AnalyticsMongoRepository.OverviewStats stats = analyticsRepository.loadOverviewStats(server, thirtyDaysAgo, sixtyDaysAgo);
+    @NotNull
+    public OverviewResponse getOverview(@NotNull Server server) {
+        final long now = System.currentTimeMillis();
+        final long thirtyDaysMs = 30L * 24 * 60 * 60 * 1000;
+        final Date thirtyDaysAgo = new Date(now - thirtyDaysMs);
+        final Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
+        final AnalyticsMongoRepository.OverviewStats stats = analyticsRepository.loadOverviewStats(server, thirtyDaysAgo, sixtyDaysAgo);
 
-        int ticketChange = stats.previousTickets() > 0
-                           ? (int) Math.round(((double) (stats.recentTickets() - stats.previousTickets()) / stats.previousTickets()) * 100)
-                           : 0;
-        int playerChange = 0;
+        final int ticketChange = stats.previousTickets() > 0
+                                 ? (int) Math.round(((double) (stats.recentTickets() - stats.previousTickets()) / stats.previousTickets()) * 100)
+                                 : 0;
+        final int playerChange = 0; // TODO: implement or remove
 
         return new OverviewResponse(
             stats.totalTickets(),
@@ -65,20 +70,21 @@ public class AnalyticsService {
         );
     }
 
-    public TicketAnalyticsResponse getTicketAnalytics(Server server, String period) {
-        Date startDate = DateRangeUtil.getStartDate(period);
-        List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
-        List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
+    @NotNull
+    public TicketAnalyticsResponse getTicketAnalytics(@NotNull Server server, @NotNull String period) {
+        final Date startDate = DateRangeUtil.getStartDate(period);
+        final List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
+        final List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
             .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
             .toList();
 
-        List<Document> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
-        List<TicketAnalyticsResponse.CategoryCount> byCategory = categoryResults.stream()
+        final List<Document> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
+        final List<TicketAnalyticsResponse.CategoryCount> byCategory = categoryResults.stream()
             .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
             .toList();
 
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
-        List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate)
+        final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
+        final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate)
             .stream()
             .map(doc -> new TicketAnalyticsResponse.DailyTicket(
                 formatDateLabel(doc.getString("_id"), dateFormatter),
@@ -86,23 +92,10 @@ public class AnalyticsService {
             ))
             .toList();
 
-        List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
+        // TODO: implement or remove
+        final List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
-    }
-
-    private int toInt(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String text) {
-            try {
-                return Integer.parseInt(text);
-            } catch (NumberFormatException ignored) {
-                return 0;
-            }
-        }
-        return 0;
     }
 
     private String formatDateLabel(String dateKey, DateTimeFormatter formatter) {
