@@ -27,7 +27,6 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -52,14 +51,6 @@ public class AITicketAnalysisService {
     private final ObjectMapper objectMapper;
     private final SystemPromptMongoRepository systemPromptRepository;
     public static final String AI_MODERATOR = "AI Moderator";
-    private static final String JSON_FORMAT = """
-        {
-          "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
-          "suggestedAction": {
-            "punishmentTypeId": "<punishment_type_id>",
-            "severity": "low|regular|severe"
-          } OR null if no action needed
-        }""";
 
     @Async
     public void analyzeTicketAsync(@NotNull Server server, @NotNull String ticketId) {
@@ -86,10 +77,10 @@ public class AITicketAnalysisService {
         }
 
         final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        final String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
+        final String promptTemplate = getSystemPrompt();
         final String chatLog = ticket.getChatMessages()
             .stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
-        final String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
+        final String fullPrompt = buildPrompt(promptTemplate, chatLog, ticket.getReportedPlayer(), settings);
 
         final String rawResponse;
         try {
@@ -182,7 +173,7 @@ public class AITicketAnalysisService {
     private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
         UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
         AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
-        String reason = aiAnalysis.getAnalysis() != null ? aiAnalysis.getAnalysis() : "AI-detected violation";
+        String reason = aiAnalysis.getAnalysis();
 
         CreatePunishmentRequest request = new CreatePunishmentRequest(
             staffName,
@@ -232,39 +223,27 @@ public class AITicketAnalysisService {
         ticket.setUpdatedAt(now);
     }
 
-    private String getSystemPrompt(String strictnessLevel) {
-        String normalizedStrictnessLevel = strictnessLevel == null
-                                           ? "STANDARD"
-                                           : strictnessLevel.trim().toUpperCase(Locale.ROOT);
-        SystemPrompt prompt = systemPromptRepository.findActiveByStrictnessLevel(normalizedStrictnessLevel).orElse(null);
+    private String getSystemPrompt() {
+        SystemPrompt prompt = systemPromptRepository.findActive().orElse(null);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
             return prompt.getPrompt();
         }
 
-        return getDefaultPrompt(normalizedStrictnessLevel);
+        return getDefaultPrompt();
     }
 
     @NotNull
-    public static String getDefaultPrompt(@NotNull String level) {
-        final String modeInstruction = switch (level.trim().toUpperCase()) {
-            case "LENIENT" -> DefaultPrompts.LENIENT;
-            case "STRICT" -> DefaultPrompts.STRICT;
-            default -> DefaultPrompts.STANDARD;
-        };
-
-        return DefaultPrompts.MAIN.formatted(modeInstruction);
+    public static String getDefaultPrompt() {
+        return DefaultPrompts.MINECRAFT;
     }
 
     @NotNull
-    private String buildPrompt(@NotNull String systemPrompt, @NotNull String chatLog, @NotNull String reportedPlayer, @NotNull AIModerationSettings settings) {
-        final String punishmentTypes = formatPunishmentTypes(settings);
-
-        systemPrompt = systemPrompt
-            .replace("{{PUNISHMENT_TYPES}}", punishmentTypes)
-            .replace("{{JSON_FORMAT}}", JSON_FORMAT);
-
-        return DefaultPrompts.WRAPPER.formatted(systemPrompt, chatLog, reportedPlayer);
+    private String buildPrompt(@NotNull String promptTemplate, @NotNull String chatLog, @NotNull String reportedPlayer, @NotNull AIModerationSettings settings) {
+        return promptTemplate
+            .replace("{{REPORTED_PLAYER}}", reportedPlayer)
+            .replace("{{PUNISHMENT_TYPES}}", formatPunishmentTypes(settings))
+            .replace("{{CHAT_LOG}}", chatLog);
     }
 
     @NotNull
@@ -278,8 +257,9 @@ public class AITicketAnalysisService {
             .filter(AIPunishmentConfig::isEnabled)
             .map(config -> {
                 String description = config.getAiDescription();
-                return "%s: %s".formatted(
+                return "%s: (%s) %s".formatted(
                     config.getId(),
+                    config.getName(),
                     description != null && !description.isBlank() ? description : config.getName()
                 );
             })

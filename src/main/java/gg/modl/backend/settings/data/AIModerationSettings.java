@@ -13,7 +13,6 @@ import lombok.NoArgsConstructor;
 public class AIModerationSettings {
     private boolean enableAIReview;
     private boolean enableAutomatedActions;
-    private String strictnessLevel;
     private Map<String, AIPunishmentConfig> aiPunishmentConfigs;
 
     @Data

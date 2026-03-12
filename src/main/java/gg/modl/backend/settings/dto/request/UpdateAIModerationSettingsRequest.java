@@ -12,8 +12,6 @@ import java.util.stream.Collectors;
 public record UpdateAIModerationSettingsRequest(
     Boolean enableAIReview,
     Boolean enableAutomatedActions,
-    @NotBlank
-    String strictnessLevel,
     @Size(max = RequestValidationLimits.AI_PUNISHMENT_CONFIGS_MAX_ENTRIES)
     Map<
         String,
@@ -24,7 +22,6 @@ public record UpdateAIModerationSettingsRequest(
         return AIModerationSettings.builder()
             .enableAIReview(Boolean.TRUE.equals(enableAIReview))
             .enableAutomatedActions(Boolean.TRUE.equals(enableAutomatedActions))
-            .strictnessLevel(strictnessLevel)
             .aiPunishmentConfigs(toPunishmentConfigs())
             .build();
     }

@@ -1,7 +1,9 @@
 package gg.modl.backend.ticket.dto.request;
 
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 public record MinecraftCreateTicketRequest(
@@ -14,6 +16,7 @@ public record MinecraftCreateTicketRequest(
     String description,
     String reportedPlayerUuid,
     String reportedPlayerName,
+    @Size(max = RequestValidationLimits.TICKET_MAX_CHAT_MESSAGES)
     List<String> chatMessages,
     List<String> tags,
     @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")

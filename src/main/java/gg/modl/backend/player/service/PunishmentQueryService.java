@@ -1,6 +1,6 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.appeal.service.AppealService;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -19,7 +19,7 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
-import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.data.Ticket;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -44,7 +44,7 @@ public class PunishmentQueryService {
     private final EvidenceUploadTokenService evidenceUploadTokenService;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
-    private final AppealService appealService;
+    private final TicketMongoRepository ticketRepository;
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -449,15 +449,30 @@ public class PunishmentQueryService {
         response.put("appealable", punishment.isAppealable());
         response.put("playerUuid", punishment.playerUuid());
 
-        List<TicketResponse> existingAppeals = appealService.getAppealsByPunishment(server, punishmentId);
+        List<Ticket> existingAppeals = ticketRepository.findAppealsByPunishmentId(server, punishmentId);
         if (!existingAppeals.isEmpty()) {
-            TicketResponse latestAppeal = existingAppeals.get(0);
+            Ticket latestAppeal = existingAppeals.stream()
+                .max((left, right) -> {
+                    Date leftDate = left.getCreated();
+                    Date rightDate = right.getCreated();
+                    if (leftDate == null && rightDate == null) {
+                        return 0;
+                    }
+                    if (leftDate == null) {
+                        return -1;
+                    }
+                    if (rightDate == null) {
+                        return 1;
+                    }
+                    return leftDate.compareTo(rightDate);
+                })
+                .orElse(existingAppeals.get(0));
             Map<String, Object> existingAppeal = new HashMap<>();
-            existingAppeal.put("id", latestAppeal.id());
-            existingAppeal.put("submittedDate", latestAppeal.date());
-            String workflowStatus = latestAppeal.appealWorkflowStatus() != null
-                                    ? latestAppeal.appealWorkflowStatus()
-                                    : latestAppeal.status();
+            existingAppeal.put("id", latestAppeal.getId());
+            existingAppeal.put("submittedDate", latestAppeal.getCreated());
+            String workflowStatus = latestAppeal.getAppealWorkflowStatus() != null
+                                    ? latestAppeal.getAppealWorkflowStatus().getId()
+                                    : latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : "open";
             existingAppeal.put("status", workflowStatus);
             existingAppeal.put("appealWorkflowStatus", workflowStatus);
             response.put("existingAppeal", existingAppeal);

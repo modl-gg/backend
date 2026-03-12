@@ -75,7 +75,6 @@ public class ServerProvisioningService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("enableAIReview", false);
         data.put("enableAutomatedActions", false);
-        data.put("strictnessLevel", "STANDARD");
         data.put("aiPunishmentConfigs", aiPunishmentConfigs);
 
         settingsRepository.saveEntity(server, newSettingsDocument("aiModerationSettings", data));

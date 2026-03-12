@@ -50,7 +50,6 @@ public class AIModerationSettingsService extends AbstractSettingsService {
             return AIModerationSettings.builder()
                 .enableAIReview(false)
                 .enableAutomatedActions(false)
-                .strictnessLevel("STANDARD")
                 .aiPunishmentConfigs(new HashMap<>())
                 .build();
         }
@@ -76,7 +75,6 @@ public class AIModerationSettingsService extends AbstractSettingsService {
         return AIModerationSettings.builder()
             .enableAIReview(false)
             .enableAutomatedActions(false)
-            .strictnessLevel("STANDARD")
             .aiPunishmentConfigs(defaultConfigs)
             .build();
     }

@@ -4,6 +4,7 @@ import com.google.genai.Client;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import gg.modl.backend.ai.LLMConfiguration;
+import gg.modl.backend.ai.data.DefaultPrompts;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,6 +21,7 @@ public class GeminiLLMProvider implements LLMProvider {
             .temperature(config.getGeminiTemperature())
             .topP(config.getGeminiTopP())
             .maxOutputTokens(config.getGeminiMaxOutputTokens())
+            .responseJsonSchema(DefaultPrompts.JSON_FORMAT)
             .build();
         this.geminiModelId = config.getGeminiModelId();
     }

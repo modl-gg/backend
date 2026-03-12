@@ -10,8 +10,6 @@ import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.mongo.repository.SystemConfigMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import java.util.Date;
-import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +19,6 @@ import org.springframework.stereotype.Service;
 public class GlobalSystemService {
     private final SystemConfigMongoRepository systemConfigRepository;
     private final SystemPromptMongoRepository systemPromptRepository;
-    private final AITicketAnalysisService ticketAnalysisService;
 
     public SystemConfig.GeneralConfig getGeneralConfigOrDefault() {
         return systemConfigRepository.findMainConfig()
@@ -86,44 +83,20 @@ public class GlobalSystemService {
         return systemConfigRepository.saveEntity(config).getPerformance();
     }
 
-    public List<SystemPrompt> getPrompts() {
-        return systemPromptRepository.findAll();
+    public SystemPrompt getPrompt() {
+        return systemPromptRepository.findActive().orElse(null);
     }
 
-    public SystemPrompt updatePrompt(String strictnessLevel, UpdatePromptRequest request) {
-        String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
-        if (normalizedStrictnessLevel == null) {
-            throw new IllegalArgumentException("Invalid strictness level");
-        }
+    public SystemPrompt updatePrompt(UpdatePromptRequest request) {
         String prompt = request.prompt() != null ? request.prompt().trim() : "";
         if (prompt.isEmpty()) {
             throw new IllegalArgumentException("Prompt content is required");
         }
 
-        return upsertPrompt(normalizedStrictnessLevel, prompt);
+        return systemPromptRepository.upsertPrompt(prompt, new Date());
     }
 
-    private SystemPrompt upsertPrompt(String strictnessLevel, String prompt) {
-        return systemPromptRepository.upsertPrompt(strictnessLevel, prompt, new Date());
-    }
-
-    private String normalizeStrictnessLevel(String strictnessLevel) {
-        if (strictnessLevel == null || strictnessLevel.isBlank()) {
-            return null;
-        }
-
-        String normalized = strictnessLevel.trim().toUpperCase(Locale.ROOT);
-        return switch (normalized) {
-            case "LENIENT", "STANDARD", "STRICT" -> normalized;
-            default -> null;
-        };
-    }
-
-    public SystemPrompt resetPrompt(String strictnessLevel) {
-        String normalizedStrictnessLevel = normalizeStrictnessLevel(strictnessLevel);
-        if (normalizedStrictnessLevel == null) {
-            throw new IllegalArgumentException("Invalid strictness level");
-        }
-        return upsertPrompt(normalizedStrictnessLevel, ticketAnalysisService.getDefaultPrompt(normalizedStrictnessLevel));
+    public SystemPrompt resetPrompt() {
+        return systemPromptRepository.upsertPrompt(AITicketAnalysisService.getDefaultPrompt(), new Date());
     }
 }

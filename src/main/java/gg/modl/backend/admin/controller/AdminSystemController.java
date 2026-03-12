@@ -79,39 +79,27 @@ public class AdminSystemController {
     }
 
     @GetMapping("/prompts")
-    public ResponseEntity<?> getPrompts() {
-        List<SystemPrompt> prompts = globalSystemService.getPrompts();
-        return ResponseEntity.ok(Map.of("success", true, "data", prompts));
+    public ResponseEntity<?> getPrompt() {
+        SystemPrompt prompt = globalSystemService.getPrompt();
+        return ResponseEntity.ok(Map.of("success", true, "data", prompt != null ? prompt : Map.of()));
     }
 
-    @PutMapping("/prompts/{strictnessLevel}")
-    public ResponseEntity<?> updatePrompt(@PathVariable String strictnessLevel, @RequestBody @Valid UpdatePromptRequest request) {
+    @PutMapping("/prompts")
+    public ResponseEntity<?> updatePrompt(@RequestBody @Valid UpdatePromptRequest request) {
         try {
-            SystemPrompt updated = globalSystemService.updatePrompt(strictnessLevel, request);
-            if (updated == null) {
-                return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
-            }
-            log.info("System prompt for {} level updated", updated.getStrictnessLevel());
-            return ResponseEntity.ok(
-                Map.of("success", true, "data", updated, "message", "System prompt for " + updated.getStrictnessLevel() + " level updated successfully"));
+            SystemPrompt updated = globalSystemService.updatePrompt(request);
+            log.info("System prompt updated");
+            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt updated successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
         }
     }
 
-    @PostMapping("/prompts/{strictnessLevel}/reset")
-    public ResponseEntity<?> resetPrompt(@PathVariable String strictnessLevel) {
-        try {
-            SystemPrompt reset = globalSystemService.resetPrompt(strictnessLevel);
-            if (reset == null) {
-                return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid strictness level"));
-            }
-            log.info("System prompt for {} level reset to default", reset.getStrictnessLevel());
-            return ResponseEntity.ok(
-                Map.of("success", true, "data", reset, "message", "System prompt for " + reset.getStrictnessLevel() + " level reset to default"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
-        }
+    @PostMapping("/prompts/reset")
+    public ResponseEntity<?> resetPrompt() {
+        SystemPrompt reset = globalSystemService.resetPrompt();
+        log.info("System prompt reset to default");
+        return ResponseEntity.ok(Map.of("success", true, "data", reset, "message", "System prompt reset to default"));
     }
 
     @PostMapping("/services/{service}/restart")

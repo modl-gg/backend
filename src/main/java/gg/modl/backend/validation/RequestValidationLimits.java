@@ -65,5 +65,7 @@ public final class RequestValidationLimits {
     public static final int EVIDENCE_URL_MAX_LENGTH = 2_048;
     public static final int FILE_NAME_MAX_LENGTH = 255;
     public static final int CONTENT_TYPE_MAX_LENGTH = 128;
+    public static final int TICKET_MAX_CHAT_MESSAGES = 50;
+
     private RequestValidationLimits() {}
 }

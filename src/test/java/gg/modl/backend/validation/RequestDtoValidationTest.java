@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
-import gg.modl.backend.settings.dto.request.UpdateAIModerationSettingsRequest;
 import gg.modl.backend.settings.dto.request.UpdateWebhookSettingsRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
@@ -92,26 +91,6 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "category");
-    }
-
-    @Test
-    void aiModerationSettingsRequestRejectsInvalidStrictness() {
-        UpdateAIModerationSettingsRequest request = new UpdateAIModerationSettingsRequest(
-            true,
-            false,
-            "AGGRESSIVE",
-            Map.of(
-                "6",
-                new UpdateAIModerationSettingsRequest.AIPunishmentConfigRequest(
-                    "6",
-                    "Chat Abuse",
-                    "Description",
-                    true
-                )
-            )
-        );
-
-        assertHasViolation(validator.validate(request), "strictnessLevel");
     }
 
     @Test
