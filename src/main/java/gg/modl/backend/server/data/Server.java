@@ -153,6 +153,12 @@ public class Server {
     @Field(name = ServerField.CUSTOM_DOMAIN_GRANDFATHERED, targetType = FieldType.BOOLEAN)
     private Boolean customDomainGrandfathered;
 
+    // CLI Setup
+    @Nullable
+    @Field(name = "cliSetupToken", targetType = FieldType.STRING)
+    @Indexed(name = "uidx_servers_cliSetupToken", unique = true, sparse = true)
+    private String cliSetupToken;
+
     // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)

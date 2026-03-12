@@ -187,5 +187,22 @@ public class ServerService {
         return serverRepository.saveEntity(server);
     }
 
+    @Nullable
+    public Server getServerByCliSetupToken(@NotNull String token) {
+        return serverRepository.findByCliSetupToken(token).orElse(null);
+    }
+
+    public Server setCliSetupToken(@NotNull Server server, @NotNull String token) {
+        server.setCliSetupToken(token);
+        server.setUpdatedAt(new Date());
+        return serverRepository.saveEntity(server);
+    }
+
+    public Server clearCliSetupToken(@NotNull Server server) {
+        server.setCliSetupToken(null);
+        server.setUpdatedAt(new Date());
+        return serverRepository.saveEntity(server);
+    }
+
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}
 }

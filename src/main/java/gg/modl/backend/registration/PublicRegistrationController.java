@@ -396,6 +396,10 @@ public class PublicRegistrationController {
         // Update rate limit
         cliRateLimitMap.put(clientIp, now);
 
+        // Generate a separate CLI setup token for polling (survives email verification)
+        String cliSetupToken = RequestUtil.generateSecureToken(TOKEN_BYTE_LENGTH);
+        serverService.setCliSetupToken(server, cliSetupToken);
+
         // Send verification email
         try {
             String verificationLink = String.format("https://%s.%s/verify-email?token=%s",
@@ -409,13 +413,13 @@ public class PublicRegistrationController {
             true,
             "Registration successful. Please check your email to verify your account.",
             new ServerInfo(server.getId(), server.getServerName()),
-            emailVerificationToken
+            cliSetupToken
         ));
     }
 
     @PostMapping("/cli/status")
     public ResponseEntity<?> cliSetupStatus(@RequestBody @Valid TokenRequest request) {
-        Server server = serverService.getServerByEmailVerificationToken(request.token());
+        Server server = serverService.getServerByCliSetupToken(request.token());
         if (server == null) {
             return ResponseEntity.badRequest().body(new CliStatusResponse(
                 false, null, null, null, "Invalid or expired setup token."
@@ -439,6 +443,9 @@ public class PublicRegistrationController {
                 apiKeySettingsService.syncApiKeyToServer(server, apiKey);
             }
             panelUrl = String.format("https://%s.%s", server.getCustomDomain(), appDomain);
+
+            // Clear the CLI setup token (one-time use after completion)
+            serverService.clearCliSetupToken(server);
         }
 
         return ResponseEntity.ok(new CliStatusResponse(

@@ -118,6 +118,10 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return findOne(Query.query(MongoQueries.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token)));
     }
 
+    public Optional<Server> findByCliSetupToken(String token) {
+        return findOne(Query.query(MongoQueries.where(ServerFields.CLI_SETUP_TOKEN).is(token)));
+    }
+
     public Optional<Server> findByStripeCustomerId(String customerId) {
         return findOne(Query.query(MongoQueries.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)));
     }
