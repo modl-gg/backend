@@ -1,15 +1,11 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -40,19 +36,9 @@ public class IssuerNameResolver {
     }
 
     public Map<String, String> batchResolve(Set<String> issuerIds, Server server, StaffMongoRepository staffRepository) {
-        Map<String, String> result = new HashMap<>();
         if (issuerIds == null || issuerIds.isEmpty()) {
-            return result;
+            return Map.of();
         }
-
-        Query query = Query.query(Criteria.where("_id").in(issuerIds));
-        query.fields().include(StaffFields.USERNAME);
-        for (Staff staff : staffRepository.find(server, query)) {
-            if (staff.getId() != null && staff.getUsername() != null) {
-                result.put(staff.getId(), staff.getUsername());
-            }
-        }
-
-        return result;
+        return staffRepository.findUsernamesByIds(server, issuerIds);
     }
 }

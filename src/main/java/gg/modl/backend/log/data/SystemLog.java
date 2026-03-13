@@ -8,6 +8,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Document
 @Data
@@ -19,13 +20,17 @@ public class SystemLog {
     @Id
     private String id;
 
+    @Field("description")
     private String description;
 
+    @Field("level")
     @Builder.Default
     private String level = "info";
 
+    @Field("source")
     @Builder.Default
     private String source = "system";
 
+    @Field("created")
     private Date created;
 }

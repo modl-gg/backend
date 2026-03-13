@@ -11,6 +11,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Document
 @Data
@@ -28,9 +29,14 @@ public class AuditLog {
     @Id
     private String id;
 
+    @Field("created")
     private Date created;
+    @Field("level")
     private String level;
+    @Field("source")
     private String source;
+    @Field("description")
     private String description;
+    @Field("metadata")
     private Map<String, Object> metadata;
 }

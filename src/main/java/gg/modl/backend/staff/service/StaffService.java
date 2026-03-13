@@ -1,5 +1,9 @@
 package gg.modl.backend.staff.service;
 
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
@@ -112,7 +116,7 @@ public class StaffService {
 
     public StaffResponse createStaff(Server server, CreateStaffRequest request) {
         if (staffRepository.existsByEmailOrUsername(server, request.email(), request.username())) {
-            throw new IllegalStateException("Staff member with this email or username already exists");
+            throw new ConflictException("Staff member with this email or username already exists");
         }
 
         String role = request.role() != null ? request.role() : "Helper";
@@ -141,11 +145,11 @@ public class StaffService {
 
         if (request.email() != null && !request.email().equals(staff.getEmail())) {
             if (!staff.getEmail().equalsIgnoreCase(currentUserEmail)) {
-                throw new IllegalArgumentException("You can only change your own email address");
+                throw new ForbiddenException("You can only change your own email address");
             }
 
             if (staffRepository.existsByEmailExact(server, request.email())) {
-                throw new IllegalStateException("Email address already in use");
+                throw new ConflictException("Email address already in use");
             }
 
             staff.setEmail(request.email());
@@ -172,12 +176,12 @@ public class StaffService {
         }
 
         if (staffToRemove.getEmail().equalsIgnoreCase(removerEmail)) {
-            throw new IllegalArgumentException("You cannot remove yourself");
+            throw new ValidationException("You cannot remove yourself");
         }
 
         if (server.getAdminEmail() != null &&
             staffToRemove.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
-            throw new IllegalArgumentException("Cannot remove the server administrator");
+            throw new ForbiddenException("Cannot remove the server administrator");
         }
 
         staffRepository.deleteById(server, id);
@@ -194,11 +198,11 @@ public class StaffService {
 
         if (server.getAdminEmail() != null &&
             staff.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
-            throw new IllegalArgumentException("Cannot change the role of the server administrator");
+            throw new ForbiddenException("Cannot change the role of the server administrator");
         }
 
         if (staff.getEmail().equalsIgnoreCase(performerEmail)) {
-            throw new IllegalArgumentException("You cannot change your own role");
+            throw new ForbiddenException("You cannot change your own role");
         }
 
         staff.setRole(newRole);
@@ -346,7 +350,7 @@ public class StaffService {
         }
 
         if (!staffRoleRepository.existsByName(server, roleName)) {
-            throw new IllegalArgumentException("Role not found");
+            throw new ResourceNotFoundException("Role not found");
         }
 
         staff.setRole(roleName);
@@ -381,14 +385,14 @@ public class StaffService {
                         ? playerRepository.findByMinecraftUuid(server, request.minecraftUuid()).orElse(null)
                         : playerRepository.findByUsernameIgnoreCase(server, request.minecraftUsername()).orElse(null);
         if (player == null) {
-            throw new IllegalArgumentException("Minecraft player not found");
+            throw new ResourceNotFoundException("Minecraft player not found");
         }
 
         Staff existingAssignment = staffRepository
             .findByAssignedMinecraftUuidExcludingId(server, player.getMinecraftUuid().toString(), staff.getId())
             .orElse(null);
         if (existingAssignment != null) {
-            throw new IllegalStateException("This Minecraft player is already assigned to " + existingAssignment.getUsername());
+            throw new ConflictException("This Minecraft player is already assigned to " + existingAssignment.getUsername());
         }
 
         String currentUsername = player.getUsernames().isEmpty() ? "Unknown" :
@@ -442,7 +446,7 @@ public class StaffService {
         boolean hasChanges = false;
         if (newUsername != null && !newUsername.equals(staff.getUsername())) {
             if (staffRepository.existsByUsernameExcludingId(server, newUsername, staff.getId())) {
-                throw new IllegalStateException("Username already in use");
+                throw new ConflictException("Username already in use");
             }
             staff.setUsername(newUsername);
             hasChanges = true;
@@ -468,11 +472,11 @@ public class StaffService {
 
     public Optional<Staff> updateEmail(Server server, String currentEmail, String newEmail, boolean isSuperAdmin) {
         if (staffRepository.existsByEmailIgnoreCaseExcluding(server, newEmail, currentEmail)) {
-            throw new IllegalStateException("Email address already in use");
+            throw new ConflictException("Email address already in use");
         }
 
         if (isSuperAdmin && serverRepository.existsByAdminEmailExcludingId(newEmail, server.getId())) {
-            throw new IllegalStateException("Email address already in use");
+            throw new ConflictException("Email address already in use");
         }
 
         Staff staff = staffRepository.findByEmailIgnoreCase(server, currentEmail).orElse(null);

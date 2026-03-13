@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.exception.UnauthorizedException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -47,7 +48,7 @@ public class TicketSubscriptionController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         boolean result = subscriptionService.unsubscribe(server, staffEmail, ticketId);
@@ -82,7 +83,7 @@ public class TicketSubscriptionController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         boolean result = subscriptionService.markAsRead(server, staffEmail, updateId);
@@ -98,7 +99,7 @@ public class TicketSubscriptionController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         subscriptionService.markTicketAsRead(server, ticketId, staffEmail);

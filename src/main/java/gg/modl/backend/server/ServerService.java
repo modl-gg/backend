@@ -1,5 +1,6 @@
 package gg.modl.backend.server;
 
+import gg.modl.backend.config.ModlCorsProperties;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
@@ -12,7 +13,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -26,11 +26,11 @@ public class ServerService {
     public ServerService(
         ServerMongoRepository serverRepository,
         ServerProvisioningService provisioningService,
-        @Value("${modl.cors.app-domains:modl.gg,modl.top}") String appDomainsConfig
+        ModlCorsProperties corsProperties
     ) {
         this.serverRepository = serverRepository;
         this.provisioningService = provisioningService;
-        this.appDomains = Arrays.stream(appDomainsConfig.split(","))
+        this.appDomains = Arrays.stream(corsProperties.getAppDomains().split(","))
             .map(String::trim)
             .filter(s -> !s.isBlank())
             .collect(Collectors.toSet());

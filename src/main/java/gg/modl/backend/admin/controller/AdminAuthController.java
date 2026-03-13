@@ -6,6 +6,7 @@ import gg.modl.backend.auth.AuthService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
@@ -20,7 +21,6 @@ import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,25 +31,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_AUTH)
 @RequiredArgsConstructor
-@Slf4j
 public class AdminAuthController {
     private final AdminAuthService adminAuthService;
     private final AuthService authService;
     private final SessionService sessionService;
     private final CookieUtil cookieUtil;
-    private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
     private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
 
     @PostMapping("/request-code")
-    public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) {
+    public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) throws Exception {
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
         if (adminOpt.isPresent()) {
-            try {
-                authService.sendAdminLoginCode(request.email());
-            } catch (Exception e) {
-                log.error("Failed to send verification code", e);
-            }
+            authService.sendAdminLoginCode(request.email());
         }
 
         return ResponseEntity.ok(new ApiResponse(true, "If this email is registered, a verification code has been sent"));
@@ -75,7 +69,7 @@ public class AdminAuthController {
 
         AuthSessionData session = sessionService.createAdminSession(admin.getEmail());
 
-        response.addCookie(cookieUtil.createSessionCookie(ADMIN_SESSION_COOKIE, session.getId(), SESSION_MAX_AGE));
+        response.addCookie(cookieUtil.createSessionCookie(RESTSecurityRole.ADMIN_SESSION_COOKIE, session.getId(), SESSION_MAX_AGE));
 
         return ResponseEntity.ok(new LoginResponse(true, "Login successful",
             new UserData(admin.getEmail(), admin.getLastActivityAt())));
@@ -96,7 +90,7 @@ public class AdminAuthController {
             sessionService.invalidateAllAdminSessionsForEmail(sessionEmail);
         }
 
-        for (Cookie expiredCookie : cookieUtil.createExpiredSessionCookies(ADMIN_SESSION_COOKIE)) {
+        for (Cookie expiredCookie : cookieUtil.createExpiredSessionCookies(RESTSecurityRole.ADMIN_SESSION_COOKIE)) {
             response.addCookie(expiredCookie);
         }
 
@@ -110,7 +104,7 @@ public class AdminAuthController {
         }
 
         return Arrays.stream(cookies)
-            .filter(cookie -> ADMIN_SESSION_COOKIE.equals(cookie.getName()))
+            .filter(cookie -> RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName()))
             .map(Cookie::getValue)
             .filter(value -> value != null && !value.isBlank())
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
@@ -146,7 +140,7 @@ public class AdminAuthController {
             return null;
         }
         for (Cookie cookie : cookies) {
-            if (ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
+            if (RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
                 return cookie.getValue();
             }
         }

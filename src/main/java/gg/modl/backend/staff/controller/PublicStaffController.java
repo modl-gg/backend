@@ -2,10 +2,12 @@ package gg.modl.backend.staff.controller;
 
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.dto.request.AcceptInvitationRequest;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.InvitationService;
 import gg.modl.backend.staff.service.StaffTwoFactorService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -40,35 +42,27 @@ public class PublicStaffController {
 
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            StaffResponse staff = invitationService.acceptInvitation(server, token);
+        StaffResponse staff = invitationService.acceptInvitation(server, token);
 
-            return ResponseEntity.ok(Map.of(
-                "message", "Invitation accepted successfully.",
-                "staffMember", Map.of(
-                    "email", staff.email(),
-                    "username", staff.username(),
-                    "role", staff.role()
-                )
-            ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("message", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError()
-                .body(Map.of("message", "Internal server error."));
-        }
+        return ResponseEntity.ok(Map.of(
+            "message", "Invitation accepted successfully.",
+            "staffMember", Map.of(
+                "email", staff.email(),
+                "username", staff.username(),
+                "role", staff.role()
+            )
+        ));
     }
 
     @PostMapping("/invitations/accept")
     public ResponseEntity<?> acceptInvitationPost(
         @RequestParam(required = false) String token,
-        @RequestBody(required = false) Map<String, String> body,
+        @RequestBody(required = false) @Valid AcceptInvitationRequest body,
         HttpServletRequest request
     ) {
         String resolvedToken = token;
         if ((resolvedToken == null || resolvedToken.isBlank()) && body != null) {
-            resolvedToken = body.get("token");
+            resolvedToken = body.token();
         }
 
         return acceptInvitationInternal(resolvedToken, request);

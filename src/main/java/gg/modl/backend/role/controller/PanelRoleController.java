@@ -75,18 +75,11 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleName = getStaffRole(server, performerEmail);
 
-        try {
-            RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "message", "Role created successfully",
-                "role", role
-            ));
-        } catch (IllegalArgumentException e) {
-            if (e.getMessage() != null && e.getMessage().contains("authority")) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-            }
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "message", "Role created successfully",
+            "role", role
+        ));
     }
 
     private String getStaffRole(Server server, String email) {
@@ -105,19 +98,12 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleName = getStaffRole(server, performerEmail);
 
-        try {
-            return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
-                .map(role -> ResponseEntity.ok(Map.of(
-                    "message", "Role updated successfully",
-                    "role", role
-                )))
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            if (e.getMessage() != null && e.getMessage().contains("authority")) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-            }
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
+            .map(role -> ResponseEntity.ok(Map.of(
+                "message", "Role updated successfully",
+                "role", role
+            )))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
@@ -130,20 +116,11 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleName = getStaffRole(server, performerEmail);
 
-        try {
-            boolean deleted = roleService.deleteRole(server, id, performerRoleName, isSuperAdmin);
-            if (deleted) {
-                return ResponseEntity.ok(Map.of("message", "Role deleted successfully"));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                "error", e.getMessage(),
-                "message", "Please reassign all staff members to a different role before deleting this role."
-            ));
+        boolean deleted = roleService.deleteRole(server, id, performerRoleName, isSuperAdmin);
+        if (deleted) {
+            return ResponseEntity.ok(Map.of("message", "Role deleted successfully"));
+        } else {
+            return ResponseEntity.notFound().build();
         }
     }
 
@@ -157,11 +134,7 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleName = getStaffRole(server, performerEmail);
 
-        try {
-            roleService.reorderRoles(server, reorderRequest, performerRoleName, isSuperAdmin);
-            return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        }
+        roleService.reorderRoles(server, reorderRequest, performerRoleName, isSuperAdmin);
+        return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
     }
 }

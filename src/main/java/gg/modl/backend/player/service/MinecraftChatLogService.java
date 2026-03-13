@@ -1,8 +1,5 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.ChatLogFields;
-import gg.modl.backend.database.mongo.fields.CommandLogFields;
 import gg.modl.backend.database.mongo.repository.ChatLogMongoRepository;
 import gg.modl.backend.database.mongo.repository.CommandLogMongoRepository;
 import gg.modl.backend.player.data.log.ChatLogDocument;
@@ -10,8 +7,6 @@ import gg.modl.backend.player.data.log.CommandLogDocument;
 import gg.modl.backend.server.data.Server;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -54,11 +49,7 @@ public class MinecraftChatLogService {
     }
 
     public List<ChatLogEntryView> getChatLogs(Server server, String uuid, int limit) {
-        Query query = Query.query(MongoQueries.where(ChatLogFields.UUID).is(uuid));
-        query.with(MongoQueries.sort(Sort.Direction.DESC, ChatLogFields.TIMESTAMP));
-        query.limit(Math.min(limit, MAX_FETCH_LIMIT));
-
-        return chatLogRepository.find(server, query)
+        return chatLogRepository.findByUuidRecent(server, uuid, Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new ChatLogEntryView(
                 entry.getUuid(),
@@ -71,11 +62,7 @@ public class MinecraftChatLogService {
     }
 
     public List<CommandLogEntryView> getCommandLogs(Server server, String uuid, int limit) {
-        Query query = Query.query(MongoQueries.where(CommandLogFields.UUID).is(uuid));
-        query.with(MongoQueries.sort(Sort.Direction.DESC, CommandLogFields.TIMESTAMP));
-        query.limit(Math.min(limit, MAX_FETCH_LIMIT));
-
-        return commandLogRepository.find(server, query)
+        return commandLogRepository.findByUuidRecent(server, uuid, Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new CommandLogEntryView(
                 entry.getUuid(),

@@ -7,14 +7,16 @@ import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketVerification;
+import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.exception.ValidationException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Date;
 import java.util.HexFormat;
 import java.util.UUID;
+import gg.modl.backend.ticket.config.TicketEmailVerificationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -23,16 +25,13 @@ import org.springframework.stereotype.Service;
 public class TicketEmailVerificationService {
     private final TicketVerificationMongoRepository ticketVerificationRepository;
     private final EmailService emailService;
-    @Value("${modl.ticket.email-verification.code-expiry-seconds:300}")
-    private long codeExpirySeconds;
-    @Value("${modl.ticket.email-verification.token-expiry-seconds:300}")
-    private long tokenExpirySeconds;
+    private final TicketEmailVerificationConfiguration verificationConfig;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     public String sendVerificationCode(Server server, Ticket ticket) {
         String email = getCreatorEmail(ticket);
         if (email == null || email.isBlank()) {
-            throw new IllegalStateException("No valid email associated with this ticket");
+            throw new ValidationException("No valid email associated with this ticket");
         }
 
         String code = String.format("%06d", RANDOM.nextInt(1000000));
@@ -43,7 +42,7 @@ public class TicketEmailVerificationService {
             .ticketId(ticket.getId())
             .codeHash(codeHash)
             .email(email)
-            .expiresAt(new Date(System.currentTimeMillis() + (codeExpirySeconds * 1000L)))
+            .expiresAt(new Date(System.currentTimeMillis() + (verificationConfig.getCodeExpirySeconds() * 1000L)))
             .build();
         ticketVerificationRepository.replaceCodeVerification(server, verification);
 
@@ -53,7 +52,7 @@ public class TicketEmailVerificationService {
             emailService.send(email, emailContent);
         } catch (Exception e) {
             log.error("Failed to send verification code email for ticket {}: {}", ticket.getId(), e.getMessage());
-            throw new RuntimeException("Failed to send verification email", e);
+            throw new ExternalServiceException("Failed to send verification email", e);
         }
 
         return EmailAddressUtil.mask(email);
@@ -102,7 +101,7 @@ public class TicketEmailVerificationService {
             .ticketId(ticketId)
             .token(token)
             .email(verification.getEmail())
-            .expiresAt(new Date(System.currentTimeMillis() + (tokenExpirySeconds * 1000L)))
+            .expiresAt(new Date(System.currentTimeMillis() + (verificationConfig.getTokenExpirySeconds() * 1000L)))
             .build();
         ticketVerificationRepository.saveEntity(server, tokenVerification);
         return token;

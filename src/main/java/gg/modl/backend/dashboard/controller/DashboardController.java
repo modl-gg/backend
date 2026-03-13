@@ -2,6 +2,7 @@ package gg.modl.backend.dashboard.controller;
 
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.dashboard.dto.response.ActivityItemResponse;
+import gg.modl.backend.exception.UnauthorizedException;
 import gg.modl.backend.dashboard.dto.response.DashboardMetricsResponse;
 import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
@@ -62,7 +63,7 @@ public class DashboardController {
         AuthSessionData session = RequestUtil.getSession(request);
 
         if (session == null || session.getEmail() == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         String staffEmail = session.getEmail();

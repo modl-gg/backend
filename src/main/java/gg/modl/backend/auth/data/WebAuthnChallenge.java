@@ -19,12 +19,12 @@ public class WebAuthnChallenge {
     @Id
     private String id;
 
-    @Field
+    @Field("challengeJson")
     private String challengeJson;
 
-    @Field
+    @Field("email")
     private String email;
 
-    @Field
+    @Field("expiresAt")
     private Date expiresAt;
 }

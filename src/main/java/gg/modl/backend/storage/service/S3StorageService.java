@@ -1,6 +1,7 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.config.S3Configuration;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
@@ -13,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Delete;
@@ -39,29 +39,28 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 public class S3StorageService {
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
-    @Value("${modl.storage.bucket-name:}")
-    private String bucketName;
-    @Value("${modl.storage.cdn-domain:}")
-    private String cdnDomain;
+    private final S3Configuration s3Configuration;
     private static final Duration PRESIGN_UPLOAD_DURATION = Duration.ofMinutes(15);
 
     public S3StorageService(
         @org.springframework.lang.Nullable S3Client s3Client,
-        @org.springframework.lang.Nullable S3Presigner s3Presigner
+        @org.springframework.lang.Nullable S3Presigner s3Presigner,
+        S3Configuration s3Configuration
     ) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
+        this.s3Configuration = s3Configuration;
         if (s3Client == null) {
             log.warn("S3 storage is not configured. File storage features will be disabled.");
         }
     }
 
     public boolean isConfigured() {
-        return s3Client != null && bucketName != null && !bucketName.isBlank();
+        return s3Client != null && s3Configuration.getBucketName() != null && !s3Configuration.getBucketName().isBlank();
     }
 
     public String getCdnDomain() {
-        return cdnDomain;
+        return s3Configuration.getCdnDomain();
     }
 
     public boolean deleteFile(String key) {
@@ -71,7 +70,7 @@ public class S3StorageService {
 
         try {
             DeleteObjectRequest request = DeleteObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(s3Configuration.getBucketName())
                 .key(key)
                 .build();
 
@@ -91,7 +90,7 @@ public class S3StorageService {
         String fullPrefix = server.getDatabaseName() + "/" + (prefix != null ? prefix : "");
 
         ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(bucketName)
+            .bucket(s3Configuration.getBucketName())
             .prefix(fullPrefix)
             .maxKeys(1000)
             .build();
@@ -112,10 +111,11 @@ public class S3StorageService {
     }
 
     public String getCdnUrl(String key) {
-        if (cdnDomain == null || cdnDomain.isBlank()) {
+        String cdn = s3Configuration.getCdnDomain();
+        if (cdn == null || cdn.isBlank()) {
             return getPresignedUrl(key);
         }
-        return String.format("https://%s/%s", cdnDomain, key);
+        return String.format("https://%s/%s", cdn, key);
     }
 
     public String getPresignedUrl(String key) {
@@ -126,7 +126,7 @@ public class S3StorageService {
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
             .signatureDuration(Duration.ofHours(1))
             .getObjectRequest(GetObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(s3Configuration.getBucketName())
                 .key(key)
                 .build())
             .build();
@@ -163,7 +163,7 @@ public class S3StorageService {
         String key = buildKey(server, uploadType, fileName, entityId);
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
-            .bucket(bucketName)
+            .bucket(s3Configuration.getBucketName())
             .key(key)
             .contentType(contentType)
             .contentLength(fileSize)
@@ -251,7 +251,7 @@ public class S3StorageService {
 
         try {
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(s3Configuration.getBucketName())
                 .key(key)
                 .build();
 
@@ -272,7 +272,7 @@ public class S3StorageService {
 
         try {
             HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(s3Configuration.getBucketName())
                 .key(key)
                 .build();
 
@@ -315,7 +315,7 @@ public class S3StorageService {
         String prefix = server.getDatabaseName() + "/";
 
         ListObjectsV2Request request = ListObjectsV2Request.builder()
-            .bucket(bucketName)
+            .bucket(s3Configuration.getBucketName())
             .prefix(prefix)
             .build();
 
@@ -365,7 +365,7 @@ public class S3StorageService {
             .toList();
 
         DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(bucketName)
+            .bucket(s3Configuration.getBucketName())
             .delete(Delete.builder().objects(toDelete).build())
             .build();
 
@@ -392,7 +392,7 @@ public class S3StorageService {
 
         try {
             PutObjectRequest putRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
+                .bucket(s3Configuration.getBucketName())
                 .key(key)
                 .contentType(contentType)
                 .contentLength((long) data.length)

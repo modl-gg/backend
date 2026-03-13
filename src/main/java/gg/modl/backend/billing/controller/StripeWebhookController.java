@@ -6,6 +6,7 @@ import com.stripe.net.Webhook;
 import gg.modl.backend.billing.config.StripeConfiguration;
 import gg.modl.backend.billing.service.StripeService;
 import gg.modl.backend.billing.service.StripeWebhookService;
+import gg.modl.backend.exception.UnauthorizedException;
 import gg.modl.backend.rest.RESTMappingV1;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -45,16 +46,10 @@ public class StripeWebhookController {
         try {
             event = Webhook.constructEvent(payload, sigHeader, config.getWebhookSecret());
         } catch (SignatureVerificationException exception) {
-            log.error("Webhook signature verification failed: {}", exception.getMessage());
-            return ResponseEntity.badRequest().body("Webhook Error: " + exception.getMessage());
+            throw new UnauthorizedException("Webhook signature verification failed: " + exception.getMessage());
         }
 
-        try {
-            stripeWebhookService.processEvent(event);
-            return ResponseEntity.ok(Map.of("received", true));
-        } catch (Exception exception) {
-            log.error("Error processing webhook", exception);
-            return ResponseEntity.internalServerError().body("Webhook processing error");
-        }
+        stripeWebhookService.processEvent(event);
+        return ResponseEntity.ok(Map.of("received", true));
     }
 }

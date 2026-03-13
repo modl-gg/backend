@@ -1,9 +1,12 @@
 package gg.modl.backend.storage.config;
 
 import java.net.URI;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -11,16 +14,16 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 @Configuration
+@ConfigurationProperties(prefix = "modl.storage")
+@Validated
+@Getter
+@Setter
 public class S3Configuration {
-
-    @Value("${modl.storage.key-id:}")
-    private String keyId;
-
-    @Value("${modl.storage.application-key:}")
-    private String applicationKey;
-
-    @Value("${modl.storage.endpoint:}")
-    private String endpoint;
+    private String keyId = "";
+    private String applicationKey = "";
+    private String endpoint = "";
+    private String bucketName = "";
+    private String cdnDomain = "";
 
     @Bean
     public S3Client s3Client() {

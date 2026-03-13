@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Document(collection = CollectionName.HOMEPAGE_CARDS)
 @GenerateMongoFields
@@ -22,27 +23,40 @@ public class HomepageCard {
     @Id
     private String id;
 
+    @Field("title")
     private String title;
+    @Field("description")
     private String description;
+    @Field("icon")
     private String icon;
 
+    @Field("iconColor")
     private String iconColor;
 
+    @Field("actionType")
     private String actionType;
 
+    @Field("actionUrl")
     private String actionUrl;
 
+    @Field("actionButtonText")
     private String actionButtonText;
 
+    @Field("categoryId")
     private String categoryId;
 
+    @Field("backgroundColor")
     private String backgroundColor;
 
+    @Field("ordinal")
     private int ordinal;
 
+    @Field("isEnabled")
     private boolean isEnabled;
 
+    @Field("createdAt")
     private Date createdAt;
 
+    @Field("updatedAt")
     private Date updatedAt;
 }

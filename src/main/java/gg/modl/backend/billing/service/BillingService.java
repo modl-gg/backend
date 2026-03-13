@@ -3,11 +3,16 @@ package gg.modl.backend.billing.service;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.billing.dto.response.BillingStatusResponse;
 import gg.modl.backend.billing.dto.response.CancelResponse;
 import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
 import gg.modl.backend.billing.dto.response.PortalSessionResponse;
 import gg.modl.backend.billing.dto.response.ResubscribeResponse;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
@@ -24,54 +29,79 @@ import org.springframework.stereotype.Service;
 public class BillingService {
     private final StripeService stripeService;
     private final ServerMutationHelper serverMutationHelper;
+    private final PermissionService permissionService;
 
-    public CheckoutSessionResponse createCheckoutSession(Server server) throws StripeException {
-        String customerId = server.getStripeCustomerId();
-
-        if (customerId == null || customerId.isBlank()) {
-            customerId = stripeService.createCustomer(server);
-            String createdCustomerId = customerId;
-            serverMutationHelper.mutate(server, current -> current.setStripeCustomerId(createdCustomerId));
+    public void requireStripeConfigured() {
+        if (!stripeService.isConfigured()) {
+            throw new ExternalServiceException("Billing service unavailable. Stripe not configured.");
         }
-
-        Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
-        return new CheckoutSessionResponse(session.getId(), session.getUrl());
     }
 
-    public PortalSessionResponse createPortalSession(Server server) throws StripeException {
-        if (server.getStripeCustomerId() == null || server.getStripeCustomerId().isBlank()) {
-            throw new IllegalStateException("Customer ID not found for server");
+    public void requireSuperAdmin(Server server, String email) {
+        if (email == null || !permissionService.isSuperAdmin(server, email)) {
+            throw new ForbiddenException("Only the super admin can manage billing");
         }
-
-        com.stripe.model.billingportal.Session session = stripeService.createPortalSession(server.getStripeCustomerId(), server.getCustomDomain());
-        return new PortalSessionResponse(session.getUrl());
     }
 
-    public CancelResponse cancelSubscription(Server server) throws StripeException {
-        if (server.getStripeSubscriptionId() == null || server.getStripeSubscriptionId().isBlank()) {
-            throw new IllegalStateException("No active subscription found to cancel");
-        }
+    public CheckoutSessionResponse createCheckoutSession(Server server) {
+        try {
+            String customerId = server.getStripeCustomerId();
 
-        Subscription canceledSubscription = stripeService.cancelSubscription(server.getStripeSubscriptionId());
-
-        Date periodEndDate = server.getCurrentPeriodEnd();
-        if (periodEndDate == null) {
-            periodEndDate = stripeService.extractPeriodEnd(canceledSubscription);
-        }
-
-        Date finalPeriodEndDate = periodEndDate;
-        serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
-            if (finalPeriodEndDate != null) {
-                current.setCurrentPeriodEnd(finalPeriodEndDate);
+            if (customerId == null || customerId.isBlank()) {
+                customerId = stripeService.createCustomer(server);
+                String createdCustomerId = customerId;
+                serverMutationHelper.mutate(server, current -> current.setStripeCustomerId(createdCustomerId));
             }
-        });
 
-        return new CancelResponse(
-            true,
-            "Subscription cancelled successfully. Access will continue until the end of your current billing period.",
-            periodEndDate
-        );
+            Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
+            return new CheckoutSessionResponse(session.getId(), session.getUrl());
+        } catch (StripeException e) {
+            throw new ExternalServiceException("Failed to create checkout session", e);
+        }
+    }
+
+    public PortalSessionResponse createPortalSession(Server server) {
+        if (server.getStripeCustomerId() == null || server.getStripeCustomerId().isBlank()) {
+            throw new ResourceNotFoundException("Customer ID not found for server");
+        }
+
+        try {
+            com.stripe.model.billingportal.Session session = stripeService.createPortalSession(server.getStripeCustomerId(), server.getCustomDomain());
+            return new PortalSessionResponse(session.getUrl());
+        } catch (StripeException e) {
+            throw new ExternalServiceException("Failed to create portal session", e);
+        }
+    }
+
+    public CancelResponse cancelSubscription(Server server) {
+        if (server.getStripeSubscriptionId() == null || server.getStripeSubscriptionId().isBlank()) {
+            throw new ResourceNotFoundException("No active subscription found to cancel");
+        }
+
+        try {
+            Subscription canceledSubscription = stripeService.cancelSubscription(server.getStripeSubscriptionId());
+
+            Date periodEndDate = server.getCurrentPeriodEnd();
+            if (periodEndDate == null) {
+                periodEndDate = stripeService.extractPeriodEnd(canceledSubscription);
+            }
+
+            Date finalPeriodEndDate = periodEndDate;
+            serverMutationHelper.mutate(server, current -> {
+                current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
+                if (finalPeriodEndDate != null) {
+                    current.setCurrentPeriodEnd(finalPeriodEndDate);
+                }
+            });
+
+            return new CancelResponse(
+                true,
+                "Subscription cancelled successfully. Access will continue until the end of your current billing period.",
+                periodEndDate
+            );
+        } catch (StripeException e) {
+            throw new ExternalServiceException("Failed to cancel subscription", e);
+        }
     }
 
     public BillingStatusResponse getBillingStatus(Server server) {
@@ -141,66 +171,70 @@ public class BillingService {
         }
     }
 
-    public ResubscribeResponse resubscribe(Server server) throws StripeException {
+    public ResubscribeResponse resubscribe(Server server) {
         if (server.getSubscriptionStatus() != SubscriptionStatus.CANCELED) {
-            throw new IllegalStateException("No cancelled subscription found to reactivate.");
+            throw new ConflictException("No cancelled subscription found to reactivate.");
         }
 
-        Subscription subscriptionResult;
+        try {
+            Subscription subscriptionResult;
 
-        if (server.getStripeSubscriptionId() != null) {
-            try {
-                Subscription existingSubscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
+            if (server.getStripeSubscriptionId() != null) {
+                try {
+                    Subscription existingSubscription = stripeService.retrieveSubscription(server.getStripeSubscriptionId());
 
-                if ("active".equals(existingSubscription.getStatus()) && Boolean.TRUE.equals(existingSubscription.getCancelAtPeriodEnd())) {
-                    subscriptionResult = stripeService.reactivateSubscription(server.getStripeSubscriptionId());
-                } else if ("canceled".equals(existingSubscription.getStatus())) {
-                    subscriptionResult = createNewSubscription(server);
-                } else {
-                    throw new IllegalStateException("Subscription is not in a cancelled state that can be reactivated.");
+                    if ("active".equals(existingSubscription.getStatus()) && Boolean.TRUE.equals(existingSubscription.getCancelAtPeriodEnd())) {
+                        subscriptionResult = stripeService.reactivateSubscription(server.getStripeSubscriptionId());
+                    } else if ("canceled".equals(existingSubscription.getStatus())) {
+                        subscriptionResult = createNewSubscription(server);
+                    } else {
+                        throw new ConflictException("Subscription is not in a cancelled state that can be reactivated.");
+                    }
+                } catch (StripeException exception) {
+                    if ("resource_missing".equals(exception.getCode())) {
+                        subscriptionResult = createNewSubscription(server);
+                    } else {
+                        throw exception;
+                    }
                 }
-            } catch (StripeException exception) {
-                if ("resource_missing".equals(exception.getCode())) {
-                    subscriptionResult = createNewSubscription(server);
-                } else {
-                    throw exception;
-                }
+            } else {
+                subscriptionResult = createNewSubscription(server);
             }
-        } else {
-            subscriptionResult = createNewSubscription(server);
+
+            Date periodStartDate = stripeService.extractPeriodStart(subscriptionResult);
+            Date periodEndDate = stripeService.extractPeriodEnd(subscriptionResult);
+            String subscriptionId = subscriptionResult.getId();
+            SubscriptionStatus subscriptionStatus = parseSubscriptionStatus(subscriptionResult.getStatus());
+
+            serverMutationHelper.mutate(server, current -> {
+                current.setStripeSubscriptionId(subscriptionId);
+                current.setSubscriptionStatus(subscriptionStatus);
+                current.setPlan(ServerPlan.PREMIUM);
+                if (periodStartDate != null) {
+                    current.setCurrentPeriodStart(periodStartDate);
+                }
+                if (periodEndDate != null) {
+                    current.setCurrentPeriodEnd(periodEndDate);
+                }
+            });
+
+            return new ResubscribeResponse(
+                true,
+                "Subscription reactivated successfully! Your premium features are now active.",
+                new ResubscribeResponse.SubscriptionInfo(
+                    subscriptionResult.getId(),
+                    subscriptionResult.getStatus(),
+                    periodEndDate
+                )
+            );
+        } catch (StripeException e) {
+            throw new ExternalServiceException("Failed to resubscribe", e);
         }
-
-        Date periodStartDate = stripeService.extractPeriodStart(subscriptionResult);
-        Date periodEndDate = stripeService.extractPeriodEnd(subscriptionResult);
-        String subscriptionId = subscriptionResult.getId();
-        SubscriptionStatus subscriptionStatus = parseSubscriptionStatus(subscriptionResult.getStatus());
-
-        serverMutationHelper.mutate(server, current -> {
-            current.setStripeSubscriptionId(subscriptionId);
-            current.setSubscriptionStatus(subscriptionStatus);
-            current.setPlan(ServerPlan.PREMIUM);
-            if (periodStartDate != null) {
-                current.setCurrentPeriodStart(periodStartDate);
-            }
-            if (periodEndDate != null) {
-                current.setCurrentPeriodEnd(periodEndDate);
-            }
-        });
-
-        return new ResubscribeResponse(
-            true,
-            "Subscription reactivated successfully! Your premium features are now active.",
-            new ResubscribeResponse.SubscriptionInfo(
-                subscriptionResult.getId(),
-                subscriptionResult.getStatus(),
-                periodEndDate
-            )
-        );
     }
 
     private Subscription createNewSubscription(Server server) throws StripeException {
         if (server.getStripeCustomerId() == null || server.getStripeCustomerId().isBlank()) {
-            throw new IllegalStateException("No Stripe customer ID found. Cannot create subscription.");
+            throw new ResourceNotFoundException("No Stripe customer ID found. Cannot create subscription.");
         }
         return stripeService.createSubscription(server.getStripeCustomerId());
     }

@@ -36,7 +36,6 @@ public class QuickResponseSettings {
         private Integer order;
         private Boolean closeTicket;
         private Boolean showPunishment;
-        private Boolean issuePunishment; // Legacy field, same as showPunishment
         private String appealAction;
     }
 }

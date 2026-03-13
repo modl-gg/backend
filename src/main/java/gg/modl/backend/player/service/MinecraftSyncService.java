@@ -1,7 +1,5 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
@@ -29,11 +27,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class MinecraftSyncService {
     private final PlayerMongoRepository playerRepository;
@@ -84,12 +81,8 @@ public class MinecraftSyncService {
     ) {
         Instant now = Instant.now();
 
-        serverRepository.updateFirst(
-            Query.query(Criteria.where("_id").is(server.getId())),
-            new Update()
-                .set("lastActivityAt", Date.from(now))
-                .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
-        );
+        serverRepository.updateLastActivity(server.getId(), Date.from(now),
+            onlinePlayers != null ? (long) onlinePlayers.size() : 0L);
 
         Instant lastSync = lastSyncTimestamp != null
                            ? Instant.parse(lastSyncTimestamp)
@@ -341,7 +334,8 @@ public class MinecraftSyncService {
                     .toList());
                 staffRepository.clearPendingTwoFactorDelivery(server);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to fetch sync data section", e);
         }
 
         try {
@@ -350,7 +344,8 @@ public class MinecraftSyncService {
                 "taskId", migration.getTaskId(),
                 "type", migration.getType()
             )));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to fetch sync data section", e);
         }
 
         return Map.of(
@@ -360,12 +355,7 @@ public class MinecraftSyncService {
     }
 
     private void markOfflinePlayers(Server server, Set<String> onlineUuids, String serverName, Date logoutTime) {
-        Criteria staleOnlineCriteria = MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-            .and(PlayerFields.MINECRAFT_UUID).nin(onlineUuids);
-        if (serverName != null && !serverName.isBlank()) {
-            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER).is(serverName);
-        }
-        playerRepository.markStalePlayersOffline(server, staleOnlineCriteria, logoutTime);
+        playerRepository.markStalePlayersOffline(server, onlineUuids, serverName, logoutTime);
     }
 
     private List<Map<String, Object>> getRecentStaffEvents(
@@ -444,7 +434,8 @@ public class MinecraftSyncService {
                 notification.put("data", ticketData);
                 notifications.add(notification);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to fetch sync data section", e);
         }
 
         try {
@@ -487,7 +478,8 @@ public class MinecraftSyncService {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to fetch sync data section", e);
         }
 
         for (Map<String, Object> modified : recentlyModifiedPunishments) {

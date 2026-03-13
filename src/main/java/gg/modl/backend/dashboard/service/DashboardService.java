@@ -5,10 +5,7 @@ import gg.modl.backend.dashboard.dto.response.DashboardMetricsResponse;
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
 import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
-import gg.modl.backend.database.mongo.fields.StaffFields;
-import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -18,7 +15,6 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
@@ -35,10 +31,6 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.aggregation.Aggregation;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -58,25 +50,11 @@ public class DashboardService {
     private static final int MAX_QUERY_RESULTS = 200;
 
     public MinecraftDashboardStatsResponse getMinecraftStats(Server server) {
-        Query unresolvedReportsQuery = Query.query(new Criteria().andOperator(
-            MongoQueries.where(TicketFields.TYPE).in(TicketCategory.reportCategoryIds()),
-            MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
-        ));
-        long unresolvedReports = ticketRepository.count(server, unresolvedReportsQuery);
-
-        Query unresolvedTicketsQuery = Query.query(new Criteria().andOperator(
-            MongoQueries.where(TicketFields.TYPE).in(
-                TicketCategory.SUPPORT.getId(),
-                TicketCategory.BUG.getId(),
-                TicketCategory.APPEAL.getId()
-            ),
-            MongoQueries.where(TicketFields.STATUS).in(TicketStatus.OPEN.getId(), TicketStatus.UNFINISHED.getId())
-        ));
-        long unresolvedTickets = ticketRepository.count(server, unresolvedTicketsQuery);
-
+        long unresolvedReports = ticketRepository.countUnresolvedReports(server);
+        long unresolvedTickets = ticketRepository.countUnresolvedTickets(server);
         long onlineStaff = countActiveStaff(server);
-        long onlinePlayers = playerRepository.count(server, Query.query(MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)));
-        long totalPlayers = playerRepository.count(server, new Query());
+        long onlinePlayers = playerRepository.countOnlinePlayers(server);
+        long totalPlayers = playerRepository.countAll(server);
 
         ActivePunishmentCounts punishmentCounts = countActivePunishments(server);
 
@@ -93,36 +71,20 @@ public class DashboardService {
     }
 
     private long countActiveStaff(Server server) {
-        Query assignedStaffQuery = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne(""));
-        MongoQueries.include(assignedStaffQuery, StaffFields.ASSIGNED_MINECRAFT_UUID);
-        List<String> assignedUuids = staffRepository.find(server, assignedStaffQuery)
-            .stream()
-            .map(Staff::getAssignedMinecraftUuid)
-            .filter(uuid -> uuid != null && !uuid.isBlank())
-            .distinct()
-            .toList();
-
+        List<String> assignedUuids = staffRepository.findAssignedMinecraftUuids(server);
         if (assignedUuids.isEmpty()) {
             return 0;
         }
-
-        Query onlineStaffQuery = Query.query(new Criteria().andOperator(
-            MongoQueries.where(PlayerFields.MINECRAFT_UUID).in(assignedUuids),
-            MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-        ));
-        return playerRepository.count(server, onlineStaffQuery);
+        return playerRepository.countOnlineByUuids(server, assignedUuids);
     }
 
     private ActivePunishmentCounts countActivePunishments(Server server) {
-        Query punishmentsQuery = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true));
-        MongoQueries.include(punishmentsQuery, PlayerFields.PUNISHMENTS);
-
         Map<Integer, PunishmentType> punishmentTypesByOrdinal = buildPunishmentTypeByOrdinal(server);
         long activeBans = 0;
         long activeMutes = 0;
         long totalPunishments = 0;
 
-        for (Player player : playerRepository.find(server, punishmentsQuery)) {
+        for (Player player : playerRepository.findWithPunishmentsProjected(server)) {
             if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
                 continue;
             }
@@ -173,16 +135,16 @@ public class DashboardService {
         Date thirtyDaysAgo = new Date(now - thirtyDaysMs);
         Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
 
-        long totalTickets = ticketRepository.count(server, new Query());
-        long openTickets = ticketRepository.count(server, Query.query(MongoQueries.where(TicketFields.STATUS).is(TicketStatus.OPEN.getId())));
-        long totalPlayers = playerRepository.count(server, new Query());
-        long totalStaff = staffRepository.count(server, new Query());
+        long totalTickets = ticketRepository.countAll(server);
+        long openTickets = ticketRepository.countByStatus(server, TicketStatus.OPEN);
+        long totalPlayers = playerRepository.countAll(server);
+        long totalStaff = staffRepository.countAll(server);
 
         long totalPunishments = 0;
         long activePunishments = 0;
 
-        long recentTickets = ticketRepository.count(server, Query.query(MongoQueries.where(TicketFields.CREATED).gte(thirtyDaysAgo)));
-        long prevTickets = ticketRepository.count(server, Query.query(MongoQueries.where(TicketFields.CREATED).gte(sixtyDaysAgo).lt(thirtyDaysAgo)));
+        long recentTickets = ticketRepository.countCreatedAfter(server, thirtyDaysAgo);
+        long prevTickets = ticketRepository.countCreatedBetween(server, sixtyDaysAgo, thirtyDaysAgo);
         int ticketsTrend = prevTickets > 0 ? (int) Math.round(((double) (recentTickets - prevTickets) / prevTickets) * 100) : 0;
 
         return new DashboardMetricsResponse(
@@ -199,24 +161,7 @@ public class DashboardService {
 
     public List<RecentTicketResponse> getRecentTickets(Server server, int limit) {
         int safeLimit = clampLimit(limit, MAX_RECENT_TICKETS_LIMIT);
-
-        Query query = Query.query(MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId()))
-            .with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.CREATED))
-            .limit(safeLimit);
-
-        MongoQueries.include(
-            query,
-            TicketFields.SUBJECT,
-            TicketFields.STATUS,
-            TicketFields.PRIORITY,
-            TicketFields.CREATED,
-            TicketFields.CREATOR_NAME,
-            TicketFields.TYPE,
-            TicketFields.REPLIES
-        );
-        query.fields().slice(TicketFields.REPLIES, 1);
-
-        List<Ticket> tickets = ticketRepository.find(server, query);
+        List<Ticket> tickets = ticketRepository.findRecentWithProjection(server, safeLimit);
 
         return tickets.stream()
             .map(ticket -> {
@@ -251,11 +196,7 @@ public class DashboardService {
         Date cutoff = new Date(System.currentTimeMillis() - (RECENT_PUNISHMENT_WINDOW_DAYS * 24L * 60 * 60 * 1000));
 
         Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
-        List<Document> punishmentRows = fetchRecentPunishmentRows(
-            server,
-            MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff),
-            safeLimit
-        );
+        List<Document> punishmentRows = playerRepository.fetchRecentPunishmentRows(server, cutoff, safeLimit);
 
         List<RecentPunishmentResponse> results = new ArrayList<>();
         for (Document row : punishmentRows) {
@@ -292,20 +233,6 @@ public class DashboardService {
         }
 
         return results;
-    }
-
-    private List<Document> fetchRecentPunishmentRows(Server server, Criteria punishmentCriteria, int limit) {
-        Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(punishmentCriteria),
-            Aggregation.unwind(PlayerFields.PUNISHMENTS),
-            Aggregation.match(punishmentCriteria),
-            Aggregation.sort(MongoQueries.sort(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED)),
-            Aggregation.limit(limit),
-            Aggregation.project(PlayerFields.MINECRAFT_UUID, PlayerFields.USERNAMES)
-                .and(PlayerFields.PUNISHMENTS).as("punishment")
-        );
-
-        return playerRepository.aggregate(server, aggregation, Document.class).getMappedResults();
     }
 
     private Punishment readPunishment(Server server, Document punishmentDocument) {
@@ -349,7 +276,7 @@ public class DashboardService {
         int safeLimit = clampLimit(limit, MAX_ACTIVITY_LIMIT);
         int safeDays = clampLimit(days, MAX_DAYS);
 
-        String staffUsername = getStaffUsernameByEmail(server, staffEmail);
+        String staffUsername = staffRepository.findUsernameByEmail(server, staffEmail).orElse(null);
         if (staffUsername == null) {
             return activities;
         }
@@ -371,30 +298,7 @@ public class DashboardService {
     private void fetchTicketActivities(Server server, String staffUsername, Date cutoffDate, List<ActivityItemResponse> activities) {
         try {
             String normalizedStaffUsername = TicketAssigneeUtil.normalizeSingle(staffUsername);
-
-            List<Criteria> staffMatchCriteria = new ArrayList<>();
-            staffMatchCriteria.add(MongoQueries.where(TicketFields.CREATOR_NAME).is(staffUsername));
-            if (normalizedStaffUsername != null) {
-                staffMatchCriteria.add(MongoQueries.where(TicketFields.ASSIGNED_TO).is(normalizedStaffUsername));
-            }
-            staffMatchCriteria.add(MongoQueries.where(TicketFields.REPLY_NAME).is(staffUsername));
-
-            Query ticketQuery = Query.query(new Criteria().andOperator(
-                MongoQueries.where(TicketFields.UPDATED_AT).gte(cutoffDate),
-                new Criteria().orOperator(staffMatchCriteria.toArray(new Criteria[0]))
-            )).with(MongoQueries.sort(Sort.Direction.DESC, TicketFields.UPDATED_AT)).limit(MAX_QUERY_RESULTS);
-
-            MongoQueries.include(
-                ticketQuery,
-                TicketFields.SUBJECT,
-                TicketFields.TYPE,
-                TicketFields.CREATED,
-                TicketFields.CREATOR_NAME,
-                TicketFields.REPLY_NAME,
-                TicketFields.REPLY_CREATED
-            );
-
-            List<Ticket> tickets = ticketRepository.find(server, ticketQuery);
+            List<Ticket> tickets = ticketRepository.findStaffActivityTickets(server, staffUsername, normalizedStaffUsername, cutoffDate, MAX_QUERY_RESULTS);
 
             for (Ticket ticket : tickets) {
                 if (ticket.getCreatorName() != null
@@ -450,9 +354,7 @@ public class DashboardService {
     private void fetchPunishmentActivities(Server server, String staffUsername, Date cutoffDate, List<ActivityItemResponse> activities) {
         try {
             Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
-            Criteria punishmentCriteria = MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_NAME).is(staffUsername)
-                .and(PlayerFields.PUNISHMENT_ISSUED).gte(cutoffDate);
-            List<Document> punishmentRows = fetchRecentPunishmentRows(server, punishmentCriteria, MAX_QUERY_RESULTS);
+            List<Document> punishmentRows = playerRepository.fetchRecentPunishmentRowsByIssuer(server, staffUsername, cutoffDate, MAX_QUERY_RESULTS);
 
             for (Document row : punishmentRows) {
                 Punishment punishment = readPunishment(server, row.get("punishment", Document.class));
@@ -479,15 +381,6 @@ public class DashboardService {
         } catch (Exception exception) {
             log.error("Error fetching punishment activities", exception);
         }
-    }
-
-    private String getStaffUsernameByEmail(Server server, String email) {
-        Query query = Query.query(MongoQueries.where(StaffFields.EMAIL).is(email));
-        MongoQueries.include(query, StaffFields.USERNAME);
-        return staffRepository.findOne(server, query)
-            .map(Staff::getUsername)
-            .filter(username -> username != null && !username.isBlank())
-            .orElse(null);
     }
 
     private record ActivePunishmentCounts(long bans, long mutes, long total) {}

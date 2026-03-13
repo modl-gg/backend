@@ -7,6 +7,10 @@ import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.IdCountResult;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.OrdinalCountResult;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.StaffActivityResult;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
@@ -47,10 +51,10 @@ public class AuditService {
         Date startDate = DateRangeUtil.getStartDate(period);
 
         List<Staff> allStaff = auditRepository.findAllStaff(server);
-        Map<String, Document> activityByUsername =
-            indexByLowercaseId(auditRepository.aggregateLogActivityBySource(server, startDate), doc -> doc);
-        Map<String, Integer> ticketResponsesByStaff =
-            indexByLowercaseId(auditRepository.aggregateTicketResponseCounts(server, startDate), doc -> doc.getInteger("count", 0));
+        Map<String, StaffActivityResult> activityByUsername = indexStaffActivity(
+            auditRepository.aggregateLogActivityBySource(server, startDate));
+        Map<String, Integer> ticketResponsesByStaff = indexIdCounts(
+            auditRepository.aggregateTicketResponseCounts(server, startDate));
         Map<String, Integer> punishmentsByStaff = countPunishmentsByStaff(server, startDate);
 
         List<StaffPerformanceResponse> performanceList = new ArrayList<>();
@@ -61,8 +65,8 @@ public class AuditService {
             }
 
             String lowerUsername = username.toLowerCase();
-            Document activity = activityByUsername.get(lowerUsername);
-            int totalActions = activity != null ? activity.getInteger("totalActions", 0) : 0;
+            StaffActivityResult activity = activityByUsername.get(lowerUsername);
+            int totalActions = activity != null ? activity.totalActions() : 0;
             int ticketActions = ticketResponsesByStaff.getOrDefault(lowerUsername, 0);
 
             int moderationActions = punishmentsByStaff.getOrDefault(lowerUsername, 0);
@@ -78,7 +82,7 @@ public class AuditService {
             }
 
             Date lastActive = activity != null
-                              ? activity.getDate("lastActive") : staff.getUpdatedAt();
+                              ? activity.lastActive() : staff.getUpdatedAt();
             if (ticketActions > 0 || moderationActions > 0) {
                 totalActions = Math.max(totalActions, ticketActions + moderationActions);
             }
@@ -100,39 +104,46 @@ public class AuditService {
         return performanceList;
     }
 
-    private <T> Map<String, T> indexByLowercaseId(List<Document> docs, java.util.function.Function<Document, T> valueExtractor) {
-        Map<String, T> result = new HashMap<>();
-        for (Document doc : docs) {
-            String key = doc.getString("_id");
-            if (key != null) {
-                result.put(key.toLowerCase(), valueExtractor.apply(doc));
+    private Map<String, StaffActivityResult> indexStaffActivity(List<StaffActivityResult> results) {
+        Map<String, StaffActivityResult> map = new HashMap<>();
+        for (StaffActivityResult result : results) {
+            if (result.id() != null) {
+                map.put(result.id().toLowerCase(), result);
             }
         }
-        return result;
+        return map;
+    }
+
+    private Map<String, Integer> indexIdCounts(List<IdCountResult> results) {
+        Map<String, Integer> map = new HashMap<>();
+        for (IdCountResult result : results) {
+            if (result.id() != null) {
+                map.put(result.id().toLowerCase(), result.count());
+            }
+        }
+        return map;
     }
 
     private Map<String, Integer> countPunishmentsByStaff(Server server, Date startDate) {
         Map<String, Integer> counts = new HashMap<>();
-        List<Document> results =
+        List<IdCountResult> results =
             auditRepository.aggregatePunishmentCountsByIssuer(server, startDate);
 
         Set<String> issuerIdsToResolve = new HashSet<>();
-        for (Document doc : results) {
-            String key = doc.getString("_id");
-            if (key != null && ObjectId.isValid(key)) {
-                issuerIdsToResolve.add(key);
+        for (IdCountResult result : results) {
+            if (result.id() != null && ObjectId.isValid(result.id())) {
+                issuerIdsToResolve.add(result.id());
             }
         }
         Map<String, String> resolvedIds =
             auditRepository.mapStaffUsernamesByIds(server, issuerIdsToResolve);
 
-        for (Document doc : results) {
-            String key = doc.getString("_id");
-            if (key == null) {
+        for (IdCountResult result : results) {
+            if (result.id() == null) {
                 continue;
             }
-            String displayName = resolvedIds.getOrDefault(key, key);
-            counts.merge(displayName.toLowerCase(), doc.getInteger("count", 0), Integer::sum);
+            String displayName = resolvedIds.getOrDefault(result.id(), result.id());
+            counts.merge(displayName.toLowerCase(), result.count(), Integer::sum);
         }
         return counts;
     }
@@ -284,29 +295,25 @@ public class AuditService {
         Server server, List<String> usernames, String staffId, Date startDate) {
         Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
 
-        List<Document> punishmentResults =
+        List<IdCountResult> punishmentResults =
             auditRepository.aggregateDailyPunishmentCounts(
                 server, usernames, staffId, startDate);
-        for (Document doc : punishmentResults) {
-            String date = doc.getString("_id");
-            int count = doc.getInteger("count", 0);
-            activityByDate.put(date,
-                new StaffDetailsResponse.DailyActivity(date, count, 0, 0));
+        for (IdCountResult result : punishmentResults) {
+            activityByDate.put(result.id(),
+                new StaffDetailsResponse.DailyActivity(result.id(), result.count(), 0, 0));
         }
 
-        List<Document> ticketResults =
+        List<IdCountResult> ticketResults =
             auditRepository.aggregateDailyTicketResponseCounts(
                 server, usernames.get(0), startDate);
-        for (Document doc : ticketResults) {
-            String date = doc.getString("_id");
-            int count = doc.getInteger("count", 0);
-            StaffDetailsResponse.DailyActivity existing = activityByDate.get(date);
+        for (IdCountResult result : ticketResults) {
+            StaffDetailsResponse.DailyActivity existing = activityByDate.get(result.id());
             if (existing != null) {
-                activityByDate.put(date, new StaffDetailsResponse.DailyActivity(
-                    date, existing.punishments(), count, existing.evidence()));
+                activityByDate.put(result.id(), new StaffDetailsResponse.DailyActivity(
+                    result.id(), existing.punishments(), result.count(), existing.evidence()));
             } else {
-                activityByDate.put(date,
-                    new StaffDetailsResponse.DailyActivity(date, 0, count, 0));
+                activityByDate.put(result.id(),
+                    new StaffDetailsResponse.DailyActivity(result.id(), 0, result.count(), 0));
             }
         }
 
@@ -319,16 +326,14 @@ public class AuditService {
     private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(
         Server server, List<String> usernames, String staffId, Date startDate) {
         List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
-        List<Document> results =
+        List<OrdinalCountResult> results =
             auditRepository.aggregatePunishmentTypeBreakdown(
                 server, usernames, staffId, startDate);
 
-        for (Document doc : results) {
-            Integer typeOrdinal = doc.getInteger("_id");
-            int count = doc.getInteger("count", 0);
+        for (OrdinalCountResult result : results) {
             String typeName = punishmentTypeService.getPunishmentTypeName(
-                server, typeOrdinal != null ? typeOrdinal : 0);
-            breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, count));
+                server, result.id() != null ? result.id() : 0);
+            breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, result.count()));
         }
         return breakdown;
     }
@@ -631,7 +636,7 @@ public class AuditService {
             case "staff" -> CollectionName.STAFF;
             case "logs", "punishments" -> CollectionName.LOGS;
             case "settings" -> CollectionName.SETTINGS;
-            default -> table;
+            default -> throw new ValidationException("Unknown table: " + table);
         };
     }
 

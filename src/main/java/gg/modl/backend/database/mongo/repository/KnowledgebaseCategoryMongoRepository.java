@@ -10,8 +10,12 @@ import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
@@ -20,6 +24,10 @@ import org.springframework.stereotype.Repository;
 public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRepository<KnowledgebaseCategory> {
     public KnowledgebaseCategoryMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(KnowledgebaseCategory.class, CollectionName.KNOWLEDGEBASE_CATEGORIES, tenantMongoAccess);
+    }
+
+    public boolean hasAny(Server server) {
+        return count(server, new Query()) > 0;
     }
 
     public List<KnowledgebaseCategory> findAllOrdered(Server server) {
@@ -82,12 +90,15 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
     }
 
     public void reorderCategories(Server server, List<String> ids) {
+        if (ids.isEmpty()) return;
+
+        MongoTemplate template = serverTemplate(server);
+        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (int index = 0; index < ids.size(); index++) {
-            updateFirst(
-                server,
-                Query.query(MongoQueries.where(KnowledgebaseCategoryFields.ID).is(ids.get(index))),
-                new Update().set(KnowledgebaseCategoryFields.ORDINAL, index)
-            );
+            Query query = Query.query(Criteria.where("_id").is(new ObjectId(ids.get(index))));
+            Update update = new Update().set(KnowledgebaseCategoryFields.ORDINAL, index);
+            bulk.updateOne(query, update);
         }
+        bulk.execute();
     }
 }

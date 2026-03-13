@@ -10,9 +10,12 @@ import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -93,6 +96,26 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
 
     public Optional<StaffRole> findByName(Server server, String roleName) {
         return findOne(server, Query.query(MongoQueries.where(StaffRoleFields.NAME).is(roleName)));
+    }
+
+    public List<StaffRole> findByIds(Server server, Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return find(server, Query.query(MongoQueries.where(StaffRoleFields.ID).in(ids)));
+    }
+
+    public void bulkUpdateOrder(Server server, Map<String, Integer> orderById) {
+        if (orderById.isEmpty()) return;
+
+        MongoTemplate template = serverTemplate(server);
+        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
+        for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
+            Query query = Query.query(Criteria.where("_id").is(entry.getKey()));
+            Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
+            bulk.updateOne(query, update);
+        }
+        bulk.execute();
     }
 }
 

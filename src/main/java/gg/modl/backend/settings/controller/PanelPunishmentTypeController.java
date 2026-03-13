@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -54,12 +55,8 @@ public class PanelPunishmentTypeController {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType updatedType = requestBody.toPunishmentType();
 
-        try {
-            PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().build();
-        }
+        PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
+        return ResponseEntity.ok(result);
     }
 
     @PostMapping
@@ -88,18 +85,14 @@ public class PanelPunishmentTypeController {
         Server server = RequestUtil.getRequestServer(request);
 
         if (ordinal < 6) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Cannot delete core administrative punishment types"));
+            throw new ValidationException("Cannot delete core administrative punishment types");
         }
 
-        try {
-            boolean deleted = punishmentTypeService.deletePunishmentType(server, ordinal);
-            if (deleted) {
-                return ResponseEntity.ok(Map.of("message", "Punishment type deleted successfully"));
-            } else {
-                return ResponseEntity.notFound().build();
-            }
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        boolean deleted = punishmentTypeService.deletePunishmentType(server, ordinal);
+        if (deleted) {
+            return ResponseEntity.ok(Map.of("message", "Punishment type deleted successfully"));
+        } else {
+            return ResponseEntity.notFound().build();
         }
     }
 }

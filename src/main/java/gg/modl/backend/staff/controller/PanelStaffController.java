@@ -72,12 +72,8 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            StaffResponse staff = staffService.createStaff(server, createRequest);
-            return ResponseEntity.status(HttpStatus.CREATED).body(staff);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-        }
+        StaffResponse staff = staffService.createStaff(server, createRequest);
+        return ResponseEntity.status(HttpStatus.CREATED).body(staff);
     }
 
     @PatchMapping("/{username}")
@@ -89,15 +85,9 @@ public class PanelStaffController {
         Server server = RequestUtil.getRequestServer(request);
         String currentUserEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            return staffService.updateStaff(server, username, updateRequest, currentUserEmail)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-        }
+        return staffService.updateStaff(server, username, updateRequest, currentUserEmail)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}/role")
@@ -112,16 +102,12 @@ public class PanelStaffController {
             .map(staff -> staff.getRole())
             .orElse("");
 
-        try {
-            return staffService.updateStaffRole(server, id, roleRequest.role(), performerEmail, performerRole)
-                .map(staff -> ResponseEntity.ok(Map.of(
-                    "message", "Role updated successfully.",
-                    "staffMember", staff
-                )))
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
-        }
+        return staffService.updateStaffRole(server, id, roleRequest.role(), performerEmail, performerRole)
+            .map(staff -> ResponseEntity.ok(Map.of(
+                "message", "Role updated successfully.",
+                "staffMember", staff
+            )))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
@@ -135,15 +121,11 @@ public class PanelStaffController {
             .map(staff -> staff.getRole())
             .orElse("");
 
-        try {
-            boolean deleted = staffService.deleteStaff(server, id, removerEmail, removerRole);
-            if (deleted) {
-                return ResponseEntity.ok(Map.of("message", "Removed successfully."));
-            }
-            return ResponseEntity.notFound().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", e.getMessage()));
+        boolean deleted = staffService.deleteStaff(server, id, removerEmail, removerRole);
+        if (deleted) {
+            return ResponseEntity.ok(Map.of("message", "Removed successfully."));
         }
+        return ResponseEntity.notFound().build();
     }
 
     @PostMapping("/invite")
@@ -154,20 +136,14 @@ public class PanelStaffController {
         Server server = RequestUtil.getRequestServer(request);
         String inviterEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail);
+        InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail);
 
-            if (result.success().isEmpty()) {
-                return ResponseEntity.badRequest().body(result);
-            } else if (result.failed().isEmpty()) {
-                return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", result.message()));
-            } else {
-                return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(result);
-            }
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        if (result.success().isEmpty()) {
+            return ResponseEntity.badRequest().body(result);
+        } else if (result.failed().isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", result.message()));
+        } else {
+            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(result);
         }
     }
 
@@ -193,20 +169,14 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            return staffService.assignMinecraftPlayer(server, username, assignRequest)
-                .map(staff -> ResponseEntity.ok(Map.of(
-                    "message", (assignRequest.minecraftUuid() == null && assignRequest.minecraftUsername() == null)
-                               ? "Minecraft player assignment cleared successfully"
-                               : "Minecraft player assigned successfully",
-                    "staffMember", staff
-                )))
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
-        }
+        return staffService.assignMinecraftPlayer(server, username, assignRequest)
+            .map(staff -> ResponseEntity.ok(Map.of(
+                "message", (assignRequest.minecraftUuid() == null && assignRequest.minecraftUsername() == null)
+                           ? "Minecraft player assignment cleared successfully"
+                           : "Minecraft player assigned successfully",
+                "staffMember", staff
+            )))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/available-players")

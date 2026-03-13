@@ -13,14 +13,12 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.util.CookieUtil;
-import jakarta.mail.MessagingException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import java.io.UnsupportedEncodingException;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Collections;
@@ -54,7 +52,7 @@ public class PanelAuthController {
     @PostMapping("/send-email-code")
     public ResponseEntity<AuthResponse> sendEmailCode(
         HttpServletRequest request,
-        @RequestBody @Valid SendEmailCodeRequest requestData) {
+        @RequestBody @Valid SendEmailCodeRequest requestData) throws Exception {
 
         Server server = RequestUtil.getRequestServer(request);
 
@@ -63,13 +61,7 @@ public class PanelAuthController {
             return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
 
-        try {
-            authService.sendUserLoginCode(server, requestData.email());
-        } catch (MessagingException | UnsupportedEncodingException e) {
-            log.error("Failed to send login code email to {}", requestData.email(), e);
-            return ResponseEntity.internalServerError()
-                .body(new AuthResponse(false, AuthResponseMessage.EMAIL_SEND_ERROR));
-        }
+        authService.sendUserLoginCode(server, requestData.email());
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
     }
@@ -156,22 +148,18 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
-        try {
-            Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(),
-                requestData.dateFormat());
-            if (result.isEmpty()) {
-                return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
-            }
-            Staff staff = result.get();
-            String role = isSuperAdmin ? "Super Admin" : staff.getRole();
-            String minecraftUsername = staff.getAssignedMinecraftUsername() != null
-                                       ? staff.getAssignedMinecraftUsername()
-                                       : staff.getUsername();
-            return ResponseEntity.ok(
-                new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
+        Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(),
+            requestData.dateFormat());
+        if (result.isEmpty()) {
+            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
         }
+        Staff staff = result.get();
+        String role = isSuperAdmin ? "Super Admin" : staff.getRole();
+        String minecraftUsername = staff.getAssignedMinecraftUsername() != null
+                                   ? staff.getAssignedMinecraftUsername()
+                                   : staff.getUsername();
+        return ResponseEntity.ok(
+            new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
     }
 
     @PatchMapping("/email")
@@ -193,22 +181,16 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
 
-        try {
-            Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
-            if (result.isEmpty()) {
-                return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
-            }
-
-            // Invalidate all sessions for the old email, then create a fresh one for the new email
-            // so the user stays logged in without disruption.
-            sessionService.invalidateAllSessionsForEmail(server, currentEmail);
-            AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
-            response.addCookie(cookieUtil.createSessionCookie(newSession.getId()));
-
-            return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, e.getMessage()));
+        Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
+        if (result.isEmpty()) {
+            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
         }
+
+        sessionService.invalidateAllSessionsForEmail(server, currentEmail);
+        AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
+        response.addCookie(cookieUtil.createSessionCookie(newSession.getId()));
+
+        return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
     }
 
     @GetMapping("/me")

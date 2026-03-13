@@ -198,23 +198,23 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
-    public List<Document> aggregatePlanCounts() {
+    public List<NameValueResult> aggregatePlanCounts() {
         Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.group(ServerFields.PLAN).count().as(ALIAS_VALUE),
             Aggregation.project().and("_id").as(ALIAS_NAME).and(ALIAS_VALUE).as(ALIAS_VALUE)
         );
-        return aggregate(aggregation, Document.class).getMappedResults();
+        return aggregate(aggregation, NameValueResult.class).getMappedResults();
     }
 
-    public List<Document> aggregateProvisioningStatusCounts() {
+    public List<NameValueResult> aggregateProvisioningStatusCounts() {
         Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.group(ServerFields.PROVISIONING_STATUS).count().as(ALIAS_VALUE),
             Aggregation.project().and("_id").as(ALIAS_NAME).and(ALIAS_VALUE).as(ALIAS_VALUE)
         );
-        return aggregate(aggregation, Document.class).getMappedResults();
+        return aggregate(aggregation, NameValueResult.class).getMappedResults();
     }
 
-    public List<Document> findRegistrationTrend(Date startDate) {
+    public List<DateServersResult> findRegistrationTrend(Date startDate) {
         Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(MongoQueries.where(ServerFields.CREATED_AT).gte(startDate)),
             Aggregation.project()
@@ -223,7 +223,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Aggregation.sort(Sort.Direction.ASC, "_id"),
             Aggregation.project().and("_id").as(ALIAS_DATE).and(ALIAS_SERVERS).as(ALIAS_SERVERS)
         );
-        return aggregate(aggregation, Document.class).getMappedResults();
+        return aggregate(aggregation, DateServersResult.class).getMappedResults();
     }
 
     public List<Server> findTopCompletedVerifiedByUserCount(int limit) {
@@ -583,6 +583,15 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public void updateLastActivity(String serverId, Date lastActivityAt, long onlinePlayerCount) {
+        updateFirst(
+            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            new Update()
+                .set(ServerFields.LAST_ACTIVITY_AT, lastActivityAt)
+                .set(ServerFields.ONLINE_PLAYER_COUNT, onlinePlayerCount)
+        );
+    }
+
     public void updateUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
         Update update = new Update()
             .set(ServerFields.USER_COUNT, userCount)
@@ -603,7 +612,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         updateFirst(Query.query(MongoQueries.where(ServerFields.ID).is(serverId)), update);
     }
 
-    public List<Document> aggregateHistoricalMetric(String metric, Date startDate) {
+    public List<DateValueResult> aggregateHistoricalMetric(String metric, Date startDate) {
         ProjectionOperation projectDateStage = Aggregation.project()
             .and(DateOperators.DateToString.dateOf(ServerFields.CREATED_AT).toString("%Y-%m-%d")).as(ALIAS_DATE);
 
@@ -616,7 +625,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
                 Aggregation.sort(Sort.Direction.ASC, "_id"),
                 Aggregation.project().and("_id").as(ALIAS_DATE).and(ALIAS_VALUE).as(ALIAS_VALUE)
             );
-            return aggregate(aggregation, Document.class).getMappedResults();
+            return aggregate(aggregation, DateValueResult.class).getMappedResults();
         }
 
         Aggregation aggregation = Aggregation.newAggregation(
@@ -626,10 +635,16 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Aggregation.sort(Sort.Direction.ASC, "_id"),
             Aggregation.project().and("_id").as(ALIAS_DATE).and(ALIAS_VALUE).as(ALIAS_VALUE)
         );
-        return aggregate(aggregation, Document.class).getMappedResults();
+        return aggregate(aggregation, DateValueResult.class).getMappedResults();
     }
 
     public record AIUsageSnapshot(long aiRequestsCurrentPeriod, long maxAiOverageRequests) {}
 
     public record UsageTotals(long totalUsers, long totalTickets) {}
+
+    public record NameValueResult(String name, int value) {}
+
+    public record DateServersResult(String date, int servers) {}
+
+    public record DateValueResult(String date, long value) {}
 }

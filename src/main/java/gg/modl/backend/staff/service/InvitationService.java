@@ -1,5 +1,8 @@
 package gg.modl.backend.staff.service;
 
+import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.email.EmailService;
@@ -17,8 +20,6 @@ import java.util.List;
 import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -29,9 +30,7 @@ public class InvitationService {
     private final InvitationMongoRepository invitationRepository;
     private final EmailService emailService;
     private final IdGenerator idGenerator;
-
-    @Value("${modl.domain}")
-    private String appDomain;
+    private final ModlProperties modlProperties;
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
@@ -47,7 +46,7 @@ public class InvitationService {
         }
 
         if (emailsToInvite.isEmpty()) {
-            throw new IllegalArgumentException("No emails provided");
+            throw new ValidationException("No emails provided");
         }
 
         List<String> normalizedEmailsToInvite = emailsToInvite.stream()
@@ -57,17 +56,17 @@ public class InvitationService {
             .toList();
 
         if (normalizedEmailsToInvite.isEmpty()) {
-            throw new IllegalArgumentException("No valid emails provided");
+            throw new ValidationException("No valid emails provided");
         }
 
         int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
-        long currentStaffCount = staffRepository.count(server, new Query());
+        long currentStaffCount = staffRepository.countAll(server);
         long pendingInvitationsCount = invitationRepository.countActive(server, new Date());
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
 
         if (totalCurrentMembers >= staffLimit) {
             String planName = server.getPlan() == ServerPlan.PREMIUM ? "Premium" : "Free";
-            throw new IllegalStateException(
+            throw new ConflictException(
                 String.format("Staff member limit reached. Your %s plan allows up to %d staff members. " +
                               "Please upgrade your plan or remove existing staff members to invite new ones.",
                     planName, staffLimit)
@@ -76,7 +75,7 @@ public class InvitationService {
 
         int availableSlots = (int) (staffLimit - totalCurrentMembers);
         if (normalizedEmailsToInvite.size() > availableSlots) {
-            throw new IllegalStateException(
+            throw new ConflictException(
                 String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
                     normalizedEmailsToInvite.size(), availableSlots)
             );
@@ -144,7 +143,7 @@ public class InvitationService {
         invitationRepository.saveEntity(server, invitation);
 
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
-            server.getCustomDomain(), appDomain, token);
+            server.getCustomDomain(), modlProperties.getDomain(), token);
 
         try {
             emailService.sendStaffInviteEmail(
@@ -173,7 +172,7 @@ public class InvitationService {
         invitationRepository.refreshToken(server, invitationId, newToken, newExpiry, new Date());
 
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
-            server.getCustomDomain(), appDomain, newToken);
+            server.getCustomDomain(), modlProperties.getDomain(), newToken);
 
         emailService.sendStaffInviteEmail(
             invitation.getEmail(),
@@ -189,15 +188,15 @@ public class InvitationService {
         Invitation invitation = invitationRepository.findByToken(server, token).orElse(null);
 
         if (invitation == null) {
-            throw new IllegalArgumentException("Invalid or expired invitation token.");
+            throw new ValidationException("Invalid or expired invitation token.");
         }
 
         if (invitation.getExpiresAt() == null || invitation.getExpiresAt().before(new Date())) {
-            throw new IllegalArgumentException("This invitation has expired. Please request a new invitation.");
+            throw new ValidationException("This invitation has expired. Please request a new invitation.");
         }
 
         if (staffRepository.existsByEmailExact(server, invitation.getEmail())) {
-            throw new IllegalArgumentException("A staff member with this email already exists.");
+            throw new ConflictException("A staff member with this email already exists.");
         }
 
         String username = generateUsernameFromEmail(invitation.getEmail());

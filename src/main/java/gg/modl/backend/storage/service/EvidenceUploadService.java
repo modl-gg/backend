@@ -1,7 +1,5 @@
 package gg.modl.backend.storage.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
@@ -20,7 +18,6 @@ import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.net.URI;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -41,8 +38,7 @@ public class EvidenceUploadService {
             return TokenValidationResult.invalid();
         }
 
-        Player player = playerRepository.findOne(uploadToken.serverDatabaseName(),
-                Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(uploadToken.playerUuid())))
+        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), uploadToken.playerUuid())
             .orElse(null);
         String playerName = "Unknown";
         if (player != null && player.getUsernames() != null && !player.getUsernames().isEmpty()) {

@@ -3,26 +3,22 @@ package gg.modl.backend.config;
 import jakarta.annotation.PostConstruct;
 import java.util.Arrays;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class DevelopmentModeGuard {
     private final Environment environment;
-    @Value("${modl.development-mode:false}")
-    private boolean developmentMode;
+    private final ModlProperties modlProperties;
     private static final Set<String> PRODUCTION_PROFILES = Set.of("prod", "production", "staging");
-
-    public DevelopmentModeGuard(Environment environment) {
-        this.environment = environment;
-    }
 
     @PostConstruct
     public void validate() {
-        if (!developmentMode) {
+        if (!modlProperties.isDevelopmentMode()) {
             return;
         }
 

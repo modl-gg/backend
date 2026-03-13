@@ -2,6 +2,7 @@ package gg.modl.backend.audit.controller;
 
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
@@ -12,6 +13,7 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -93,83 +95,71 @@ public class AuditController {
     @PostMapping("/punishments/{id}/rollback")
     public ResponseEntity<?> rollbackPunishment(
         @PathVariable String id,
-        @RequestBody(required = false) RollbackRequest rollbackRequest,
+        @RequestBody(required = false) @Valid RollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
-        try {
-            String reason = rollbackRequest != null ? rollbackRequest.reason() : "Admin rollback";
-            boolean success = auditService.rollbackPunishment(server, id, reason, performerUsername);
+        String reason = rollbackRequest != null ? rollbackRequest.reason() : "Admin rollback";
+        boolean success = auditService.rollbackPunishment(server, id, reason, performerUsername);
 
-            if (success) {
-                return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Punishment rolled back successfully"
-                ));
-            }
-            return ResponseEntity.notFound().build();
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        if (success) {
+            return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Punishment rolled back successfully"
+            ));
         }
+        return ResponseEntity.notFound().build();
     }
 
     @PostMapping("/staff/{username}/rollback-all")
     public ResponseEntity<?> rollbackAllByStaff(
         @PathVariable String username,
-        @RequestBody(required = false) RollbackRequest rollbackRequest,
+        @RequestBody(required = false) @Valid RollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
-        try {
-            String reason = rollbackRequest != null ? rollbackRequest.reason() : "Bulk rollback by admin";
-            int count = auditService.rollbackAllPunishmentsByStaff(server, username, reason, performerUsername);
+        String reason = rollbackRequest != null ? rollbackRequest.reason() : "Bulk rollback by admin";
+        int count = auditService.rollbackAllPunishmentsByStaff(server, username, reason, performerUsername);
 
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "count", count,
-                "message", "Successfully rolled back " + count + " punishments"
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "count", count,
+            "message", "Successfully rolled back " + count + " punishments"
+        ));
     }
 
     @PostMapping("/staff/{username}/rollback-date-range")
     public ResponseEntity<?> rollbackByDateRange(
         @PathVariable String username,
-        @RequestBody DateRangeRollbackRequest rollbackRequest,
+        @RequestBody @Valid DateRangeRollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         if (rollbackRequest.startDate() == null || rollbackRequest.endDate() == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Start date and end date are required"));
+            throw new ValidationException("Start date and end date are required");
         }
 
-        try {
-            String reason = rollbackRequest.reason() != null ? rollbackRequest.reason() : "Bulk rollback by admin";
-            int count = auditService.rollbackPunishmentsByDateRange(
-                server,
-                username,
-                rollbackRequest.startDate(),
-                rollbackRequest.endDate(),
-                reason,
-                performerUsername
-            );
+        String reason = rollbackRequest.reason() != null ? rollbackRequest.reason() : "Bulk rollback by admin";
+        int count = auditService.rollbackPunishmentsByDateRange(
+            server,
+            username,
+            rollbackRequest.startDate(),
+            rollbackRequest.endDate(),
+            reason,
+            performerUsername
+        );
 
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "count", count,
-                "message", "Successfully rolled back " + count + " punishments"
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "count", count,
+            "message", "Successfully rolled back " + count + " punishments"
+        ));
     }
 
     @GetMapping("/database/{table}")
@@ -182,14 +172,10 @@ public class AuditController {
         Server server = RequestUtil.getRequestServer(request);
 
         if (!ALLOWED_TABLES.contains(table)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid table name"));
+            throw new ValidationException("Invalid table name");
         }
 
-        try {
-            Map<String, Object> result = auditService.getDatabaseTable(server, table, limit, skip);
-            return ResponseEntity.ok(result);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        Map<String, Object> result = auditService.getDatabaseTable(server, table, limit, skip);
+        return ResponseEntity.ok(result);
     }
 }

@@ -47,14 +47,7 @@ public class MinecraftPunishmentController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        try {
-            punishmentLifecycleService.createMinecraftPunishment(server, request);
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Player not found"
-            ));
-        }
+        punishmentLifecycleService.createMinecraftPunishment(server, request);
         return ResponseEntity.ok().build();
     }
 
@@ -64,19 +57,12 @@ public class MinecraftPunishmentController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        try {
-            String punishmentId = punishmentLifecycleService.createMinecraftPunishment(server, request);
-            return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "message", "Punishment created",
-                "punishmentId", punishmentId
-            ));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Player not found"
-            ));
-        }
+        String punishmentId = punishmentLifecycleService.createMinecraftPunishment(server, request);
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "message", "Punishment created",
+            "punishmentId", punishmentId
+        ));
     }
 
     @GetMapping("/{punishmentId}")

@@ -101,19 +101,12 @@ public class AdminServerController {
 
     @PostMapping
     public ResponseEntity<?> createServer(@RequestBody @Valid CreateServerRequest request) {
-        try {
-            Server saved = serverService.createServer(request.serverName(), request.customDomain(), request.adminEmail(), request.plan());
-            return ResponseEntity.status(201).body(Map.of(
-                "success", true,
-                "data", saved,
-                "message", "Server created successfully"
-            ));
-        } catch (Exception e) {
-            if (e.getMessage() != null && e.getMessage().contains("duplicate")) {
-                return ResponseEntity.status(409).body(Map.of("success", false, "error", "Server name or domain already exists"));
-            }
-            throw e;
-        }
+        Server saved = serverService.createServer(request.serverName(), request.customDomain(), request.adminEmail(), request.plan());
+        return ResponseEntity.status(201).body(Map.of(
+            "success", true,
+            "data", saved,
+            "message", "Server created successfully"
+        ));
     }
 
     @PutMapping("/{id}")
@@ -154,7 +147,7 @@ public class AdminServerController {
     }
 
     @PutMapping("/{id}/stats")
-    public ResponseEntity<?> updateServerStats(@PathVariable String id, @RequestBody UpdateStatsRequest request) {
+    public ResponseEntity<?> updateServerStats(@PathVariable String id, @RequestBody @Valid UpdateStatsRequest request) {
         if (!serverService.findById(id).isPresent()) {
             return ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found"));
         }
@@ -235,7 +228,7 @@ public class AdminServerController {
     }
 
     @PostMapping("/search")
-    public ResponseEntity<?> searchServers(@RequestBody SearchRequest request) {
+    public ResponseEntity<?> searchServers(@RequestBody @Valid SearchRequest request) {
         String query = request.query() != null ? request.query() : "";
         Map<String, Object> filters = request.filters() != null ? request.filters() : Map.of();
 
@@ -255,7 +248,7 @@ public class AdminServerController {
     }
 
     @PostMapping("/export")
-    public ResponseEntity<?> exportServers(@RequestBody ExportRequest request) {
+    public ResponseEntity<?> exportServers(@RequestBody @Valid ExportRequest request) {
         String format = request.format() != null ? request.format() : "json";
         Map<String, Object> filters = request.filters() != null ? request.filters() : Map.of();
 

@@ -27,9 +27,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.BulkOperations;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -174,8 +171,7 @@ public class MigrationProcessor {
         }
 
         List<Player> toInsert = new ArrayList<>();
-        BulkOperations bulkOps = playerRepository.bulkOps(server);
-        boolean hasUpdates = false;
+        Map<UUID, Update> mergeUpdates = new HashMap<>();
 
         for (String uuid : uuids) {
             try {
@@ -185,11 +181,7 @@ public class MigrationProcessor {
                 if (existing != null) {
                     Update update = buildMergeUpdate(existing, playerMap);
                     if (update != null) {
-                        bulkOps.updateOne(
-                            Query.query(Criteria.where("minecraftUuid").is(UUID.fromString(uuid))),
-                            update
-                        );
-                        hasUpdates = true;
+                        mergeUpdates.put(UUID.fromString(uuid), update);
                     }
                 } else {
                     Player newPlayer = buildNewPlayer(uuid, playerMap);
@@ -208,8 +200,8 @@ public class MigrationProcessor {
             playerRepository.insertAll(server, toInsert);
         }
 
-        if (hasUpdates) {
-            bulkOps.execute();
+        if (!mergeUpdates.isEmpty()) {
+            playerRepository.bulkMergeByUuid(server, mergeUpdates);
         }
 
         return new int[]{processed, skipped};

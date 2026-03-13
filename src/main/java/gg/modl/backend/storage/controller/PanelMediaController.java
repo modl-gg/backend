@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -57,7 +58,7 @@ public class PanelMediaController {
         Server server = RequestUtil.getRequestServer(request);
 
         if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+            throw new ForbiddenException("Access denied");
         }
 
         boolean deleted = s3StorageService.deleteFile(key);
@@ -91,19 +92,15 @@ public class PanelMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
 
-        try {
-            PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-                server,
-                presignRequest.uploadType(),
-                presignRequest.fileName(),
-                presignRequest.contentType(),
-                presignRequest.fileSize(),
-                presignRequest.entityId()
-            );
-            return ResponseEntity.ok(response);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
+            server,
+            presignRequest.uploadType(),
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            presignRequest.entityId()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/confirm")
@@ -116,7 +113,7 @@ public class PanelMediaController {
         String key = confirmRequest.key();
 
         if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+            throw new ForbiddenException("Access denied");
         }
 
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);

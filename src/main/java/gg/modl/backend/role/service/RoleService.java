@@ -1,5 +1,8 @@
 package gg.modl.backend.role.service;
 
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
@@ -13,11 +16,14 @@ import gg.modl.backend.server.service.ServerTimestampService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -47,9 +53,11 @@ public class RoleService {
             StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
             int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
 
+            Map<String, Integer> orderById = new LinkedHashMap<>();
             for (StaffRole role : problematicRoles) {
-                staffRoleRepository.updateOrder(server, role.getId(), nextOrder++);
+                orderById.put(role.getId(), nextOrder++);
             }
+            staffRoleRepository.bulkUpdateOrder(server, orderById);
         }
     }
 
@@ -146,10 +154,10 @@ public class RoleService {
                 .build();
         }
         if (roleName == null || roleName.isBlank()) {
-            throw new IllegalArgumentException("You do not have authority to perform this action");
+            throw new ForbiddenException("You do not have authority to perform this action");
         }
         return permissionService.getRoleByName(server, roleName)
-            .orElseThrow(() -> new IllegalArgumentException("You do not have authority to perform this action"));
+            .orElseThrow(() -> new ForbiddenException("You do not have authority to perform this action"));
     }
 
     // --- Authorization helpers ---
@@ -177,21 +185,21 @@ public class RoleService {
 
     private void ensureRoleNameAvailable(Server server, String roleName, String excludeRoleId) {
         if (roleName == null || roleName.isBlank()) {
-            throw new IllegalArgumentException("Role name cannot be empty");
+            throw new ValidationException("Role name cannot be empty");
         }
 
         boolean exists = excludeRoleId != null && !excludeRoleId.isBlank()
                          ? staffRoleRepository.existsByNameIgnoreCaseExcludingId(server, roleName, excludeRoleId)
                          : staffRoleRepository.existsByNameIgnoreCase(server, roleName);
         if (exists) {
-            throw new IllegalArgumentException("A role with this name already exists");
+            throw new ConflictException("A role with this name already exists");
         }
     }
 
     public Optional<RoleResponse> updateRole(Server server, String id, UpdateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         // Cannot update Super Admin role
         if (id.contains("super-admin")) {
-            throw new IllegalArgumentException("Cannot modify Super Admin role");
+            throw new ForbiddenException("Cannot modify Super Admin role");
         }
 
         // Hierarchy check: performer must have higher authority than the target role
@@ -239,14 +247,14 @@ public class RoleService {
 
     private void assertHigherAuthority(StaffRole performerRole, StaffRole targetRole) {
         if (performerRole.getOrder() >= targetRole.getOrder()) {
-            throw new IllegalArgumentException("You do not have authority to modify a role at or above your own level");
+            throw new ForbiddenException("You do not have authority to modify a role at or above your own level");
         }
     }
 
     public boolean deleteRole(Server server, String id, String performerRoleName, boolean isSuperAdmin) {
         // Cannot delete Super Admin role
         if (id.contains("super-admin")) {
-            throw new IllegalArgumentException("Cannot delete Super Admin role");
+            throw new ForbiddenException("Cannot delete Super Admin role");
         }
 
         // Check if any staff are using this role
@@ -264,40 +272,44 @@ public class RoleService {
 
         int staffCount = getStaffCountForRole(server, role.getName());
         if (staffCount > 0) {
-            throw new IllegalStateException("Cannot delete role that is currently assigned to staff members");
+            throw new ConflictException("Cannot delete role that is currently assigned to staff members");
         }
 
         return staffRoleRepository.deleteById(server, id);
     }
 
     public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleName, boolean isSuperAdmin) {
+        List<ReorderRolesRequest.RoleOrderItem> items = request.roleOrder();
+        if (items.isEmpty()) return;
+
         if (!isSuperAdmin) {
             StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
             int performerOrder = performerRole.getOrder();
 
-            for (ReorderRolesRequest.RoleOrderItem item : request.roleOrder()) {
-                // Look up the role being reordered
-                StaffRole targetRole = staffRoleRepository.findById(server, item.id()).orElse(null);
+            List<String> ids = items.stream().map(ReorderRolesRequest.RoleOrderItem::id).toList();
+            Map<String, StaffRole> rolesById = staffRoleRepository.findByIds(server, ids)
+                .stream()
+                .collect(Collectors.toMap(StaffRole::getId, Function.identity()));
 
-                if (targetRole == null) {
-                    continue;
-                }
+            for (ReorderRolesRequest.RoleOrderItem item : items) {
+                StaffRole targetRole = rolesById.get(item.id());
+                if (targetRole == null) continue;
 
-                // Performer cannot reorder roles at or above their own authority level
                 if (targetRole.getOrder() <= performerOrder) {
-                    throw new IllegalArgumentException("You do not have authority to reorder this role");
+                    throw new ForbiddenException("You do not have authority to reorder this role");
                 }
 
-                // Cannot promote a role to the performer's level or above
                 if (item.order() <= performerOrder) {
-                    throw new IllegalArgumentException("You cannot promote a role to or above your own authority level");
+                    throw new ForbiddenException("You cannot promote a role to or above your own authority level");
                 }
             }
         }
 
-        request.roleOrder().forEach(item -> {
-            staffRoleRepository.updateOrder(server, item.id(), item.order());
-        });
+        Map<String, Integer> orderById = new LinkedHashMap<>();
+        for (ReorderRolesRequest.RoleOrderItem item : items) {
+            orderById.put(item.id(), item.order());
+        }
+        staffRoleRepository.bulkUpdateOrder(server, orderById);
     }
 
     public void createDefaultRoles(Server server) {

@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.service;
 
+import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
@@ -14,25 +15,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class TicketNotificationService {
     private final PlayerMongoRepository playerRepository;
     private final EmailService emailService;
-    private final String modlDomain;
-
-    public TicketNotificationService(PlayerMongoRepository playerRepository,
-                                     EmailService emailService,
-                                     @Value("${modl.domain:modl.gg}") String modlDomain) {
-        this.playerRepository = playerRepository;
-        this.emailService = emailService;
-        this.modlDomain = modlDomain;
-    }
+    private final ModlProperties modlProperties;
 
     @Async
     public void notifyTicketReply(Server server, Ticket ticket, TicketReply reply) {
@@ -85,7 +79,7 @@ public class TicketNotificationService {
     private String buildTicketUrl(Server server, String ticketId) {
         String domain = server.getCustomDomainOverride();
         if (domain == null || domain.isBlank()) {
-            domain = server.getServerName() + "." + modlDomain;
+            domain = server.getServerName() + "." + modlProperties.getDomain();
         }
         return "https://" + domain + "/ticket/" + ticketId;
     }

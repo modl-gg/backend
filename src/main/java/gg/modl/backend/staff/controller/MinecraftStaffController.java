@@ -57,17 +57,10 @@ public class MinecraftStaffController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        try {
-            if (!staffService.updateMinecraftStaffRole(server, id, request.role())) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Staff member not found"
-                ));
-            }
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                "status", 400,
-                "message", e.getMessage()
+        if (!staffService.updateMinecraftStaffRole(server, id, request.role())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Staff member not found"
             ));
         }
 

@@ -6,6 +6,7 @@ import java.util.Map;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
 @Document(collection = "system_logs")
@@ -13,15 +14,25 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class SystemLog {
     @Id
     private String id;
+    @Field("level")
     private String level; // critical, error, warning, info, debug
+    @Field("message")
     private String message;
+    @Field("source")
     private String source;
+    @Field("category")
     private String category;
+    @Field("serverId")
     private String serverId;
+    @Field("metadata")
     private Map<String, Object> metadata;
+    @Field("resolved")
     private boolean resolved;
+    @Field("resolvedBy")
     private String resolvedBy;
+    @Field("resolvedAt")
     private Date resolvedAt;
+    @Field("timestamp")
     private Date timestamp;
 
     public SystemLog(String level, String message, String source) {

@@ -13,6 +13,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.ApiKeySettingsService;
 import gg.modl.backend.turnstile.TurnstileService;
+import gg.modl.backend.config.ModlProperties;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,7 +28,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -47,6 +47,7 @@ public class PublicRegistrationController {
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
     private final ApiKeySettingsService apiKeySettingsService;
+    private final ModlProperties modlProperties;
     private final Map<String, Long> rateLimitMap = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -55,8 +56,6 @@ public class PublicRegistrationController {
             }
         }
     );
-    @Value("${modl.app-domain}")
-    private String appDomain;
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
     private static final long CLI_RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
@@ -161,7 +160,7 @@ public class PublicRegistrationController {
         // Send verification email
         try {
             String verificationLink = String.format("https://%s.%s/verify-email?token=%s",
-                requestData.customDomain(), appDomain, emailVerificationToken);
+                requestData.customDomain(), modlProperties.getAppDomain(), emailVerificationToken);
             sendVerificationEmail(requestData.email(), verificationLink);
         } catch (Exception e) {
             log.error("Failed to send verification email", e);
@@ -403,7 +402,7 @@ public class PublicRegistrationController {
         // Send verification email
         try {
             String verificationLink = String.format("https://%s.%s/verify-email?token=%s",
-                requestData.customDomain(), appDomain, emailVerificationToken);
+                requestData.customDomain(), modlProperties.getAppDomain(), emailVerificationToken);
             sendVerificationEmail(requestData.email(), verificationLink);
         } catch (Exception e) {
             log.error("Failed to send verification email for CLI registration", e);
@@ -442,7 +441,7 @@ public class PublicRegistrationController {
                 apiKey = apiKeySettingsService.generateApiKey(server, "default");
                 apiKeySettingsService.syncApiKeyToServer(server, apiKey);
             }
-            panelUrl = String.format("https://%s.%s", server.getCustomDomain(), appDomain);
+            panelUrl = String.format("https://%s.%s", server.getCustomDomain(), modlProperties.getAppDomain());
 
             // Clear the CLI setup token (one-time use after completion)
             serverService.clearCliSetupToken(server);
@@ -486,7 +485,7 @@ public class PublicRegistrationController {
             apiKeySettingsService.syncApiKeyToServer(server, apiKey);
         }
 
-        String panelUrl = String.format("https://%s.%s", server.getCustomDomain(), appDomain);
+        String panelUrl = String.format("https://%s.%s", server.getCustomDomain(), modlProperties.getAppDomain());
 
         // Clear the auto-login token (one-time use)
         serverService.clearAutoLoginToken(server);

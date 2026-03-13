@@ -8,6 +8,7 @@ import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
+import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.IdCountResult;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
@@ -73,26 +74,25 @@ public class AnalyticsService {
     @NotNull
     public TicketAnalyticsResponse getTicketAnalytics(@NotNull Server server, @NotNull String period) {
         final Date startDate = DateRangeUtil.getStartDate(period);
-        final List<Document> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
+        final List<IdCountResult> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
         final List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
-            .map(doc -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(doc.getString("_id")), doc.getInteger("count", 0)))
+            .map(result -> new TicketAnalyticsResponse.StatusCount(normalizeStatus(result.id()), result.count()))
             .toList();
 
-        final List<Document> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
+        final List<IdCountResult> categoryResults = analyticsRepository.aggregateTicketCategoryCounts(server, startDate);
         final List<TicketAnalyticsResponse.CategoryCount> byCategory = categoryResults.stream()
-            .map(doc -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(doc.getString("_id")), doc.getInteger("count", 0)))
+            .map(result -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(result.id()), result.count()))
             .toList();
 
         final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
         final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate)
             .stream()
-            .map(doc -> new TicketAnalyticsResponse.DailyTicket(
-                formatDateLabel(doc.getString("_id"), dateFormatter),
-                toInt(doc.get("count"))
+            .map(result -> new TicketAnalyticsResponse.DailyTicket(
+                formatDateLabel(result.id(), dateFormatter),
+                result.count()
             ))
             .toList();
 
-        // TODO: implement or remove
         final List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
@@ -233,11 +233,11 @@ public class AnalyticsService {
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
-        List<Document> levelResults = analyticsRepository.aggregateAuditLogLevelCounts(server, startDate);
+        List<IdCountResult> levelResults = analyticsRepository.aggregateAuditLogLevelCounts(server, startDate);
         List<AuditLogsAnalyticsResponse.LevelCount> byLevel = levelResults.stream()
-            .map(doc -> new AuditLogsAnalyticsResponse.LevelCount(
-                doc.getString("_id") != null ? doc.getString("_id") : "unknown",
-                doc.getInteger("count", 0)
+            .map(result -> new AuditLogsAnalyticsResponse.LevelCount(
+                result.id() != null ? result.id() : "unknown",
+                result.count()
             ))
             .toList();
 

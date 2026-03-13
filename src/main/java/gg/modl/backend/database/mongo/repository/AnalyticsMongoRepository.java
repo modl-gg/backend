@@ -93,7 +93,7 @@ public class AnalyticsMongoRepository {
         return 0;
     }
 
-    public List<Document> aggregateTicketStatusCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {
         Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
@@ -105,11 +105,11 @@ public class AnalyticsMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.TICKETS, Document.class)
+            .aggregate(aggregation, CollectionName.TICKETS, IdCountResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregateTicketCategoryCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateTicketCategoryCounts(Server server, Date startDate) {
         Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
@@ -121,11 +121,11 @@ public class AnalyticsMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.TICKETS, Document.class)
+            .aggregate(aggregation, CollectionName.TICKETS, IdCountResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregateDailyTicketCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateDailyTicketCounts(Server server, Date startDate) {
         Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
@@ -139,7 +139,7 @@ public class AnalyticsMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.TICKETS, Document.class)
+            .aggregate(aggregation, CollectionName.TICKETS, IdCountResult.class)
             .getMappedResults();
     }
 
@@ -181,7 +181,7 @@ public class AnalyticsMongoRepository {
         return aggregateResults.isEmpty() ? null : aggregateResults.get(0);
     }
 
-    public List<Document> aggregateAuditLogLevelCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateAuditLogLevelCounts(Server server, Date startDate) {
         Criteria criteria = new Criteria();
         if (startDate != null) {
             criteria = MongoQueries.where(AuditLogFields.CREATED).gte(startDate);
@@ -193,7 +193,7 @@ public class AnalyticsMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.LOGS, Document.class)
+            .aggregate(aggregation, CollectionName.LOGS, IdCountResult.class)
             .getMappedResults();
     }
 
@@ -303,4 +303,6 @@ public class AnalyticsMongoRepository {
         long previousTickets
     ) {
     }
+
+    public record IdCountResult(String id, int count) {}
 }

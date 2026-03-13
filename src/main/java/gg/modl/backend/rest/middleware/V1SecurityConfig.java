@@ -32,6 +32,14 @@ public class V1SecurityConfig {
         return http
             .cors(cors -> cors.configurationSource(dynamicCorsConfigurationSource))
             .csrf(AbstractHttpConfigurer::disable)
+            .headers(headers -> headers
+                .frameOptions(fo -> fo.deny())
+                .contentTypeOptions(cto -> {})
+                .httpStrictTransportSecurity(hsts -> hsts
+                    .includeSubDomains(true)
+                    .maxAgeInSeconds(31536000)
+                )
+            )
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(c -> c
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

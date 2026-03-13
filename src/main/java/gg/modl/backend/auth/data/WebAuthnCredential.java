@@ -19,27 +19,27 @@ public class WebAuthnCredential {
     @Id
     private String id;
 
-    @Field
+    @Field("email")
     private String email;
 
-    @Field
+    @Field("credentialId")
     private String credentialId;
 
-    @Field
+    @Field("publicKeyCose")
     private byte[] publicKeyCose;
 
-    @Field
+    @Field("signatureCount")
     private long signatureCount;
 
-    @Field
+    @Field("userHandle")
     private String userHandle;
 
-    @Field
+    @Field("name")
     private String name;
 
-    @Field
+    @Field("createdAt")
     private Date createdAt;
 
-    @Field
+    @Field("lastUsedAt")
     private Date lastUsedAt;
 }

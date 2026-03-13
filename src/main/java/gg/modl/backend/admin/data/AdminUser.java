@@ -7,6 +7,7 @@ import java.util.List;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
 @Document(collection = "admin_users")
@@ -14,9 +15,13 @@ import org.springframework.data.mongodb.core.mapping.Document;
 public class AdminUser {
     @Id
     private String id;
+    @Field("email")
     private String email;
+    @Field("loggedInIps")
     private List<String> loggedInIps = new ArrayList<>();
+    @Field("lastActivityAt")
     private Date lastActivityAt;
+    @Field("createdAt")
     private Date createdAt;
 
     public AdminUser(String email) {

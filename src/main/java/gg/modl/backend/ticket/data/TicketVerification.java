@@ -8,8 +8,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
+
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
 @Builder
@@ -21,10 +22,15 @@ public class TicketVerification {
     @Id
     private String id;
 
+    @Field("ticketId")
     private String ticketId;
+    @Field("token")
     private String token;
+    @Field("codeHash")
     private String codeHash;
+    @Field("email")
     private String email;
-    @Indexed(name = "idx_ticket_verifications_expiresAt_ttl", expireAfter = "0s")
+
+    @Field("expiresAt")
     private Date expiresAt;
 }

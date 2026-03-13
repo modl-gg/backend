@@ -1,10 +1,10 @@
 package gg.modl.backend.turnstile;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import gg.modl.backend.config.ModlProperties;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -19,13 +19,11 @@ import org.springframework.web.client.RestTemplate;
 public class TurnstileService {
     private final RestTemplate restTemplate = new RestTemplate();
     private final TurnstileConfiguration config;
-
-    @Value("${modl.development-mode:false}")
-    private boolean developmentMode;
+    private final ModlProperties modlProperties;
 
     public boolean validateToken(String token, String remoteIp) {
         if (config.getSecretKey() == null || config.getSecretKey().isBlank()) {
-            if (developmentMode) {
+            if (modlProperties.isDevelopmentMode()) {
                 log.warn("Turnstile secret key not configured in development mode, skipping validation");
                 return true;
             }

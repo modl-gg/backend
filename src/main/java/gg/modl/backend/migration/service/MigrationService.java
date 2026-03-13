@@ -1,6 +1,7 @@
 package gg.modl.backend.migration.service;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
+import gg.modl.backend.exception.ExternalServiceException;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
@@ -13,10 +14,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import gg.modl.backend.migration.config.MigrationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -25,9 +25,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 public class MigrationService {
     private final MigrationMongoRepository migrationRepository;
-
-    @Value("${modl.migration.upload-dir:uploads/migrations}")
-    private String uploadDir;
+    private final MigrationConfiguration migrationConfiguration;
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
@@ -119,13 +117,8 @@ public class MigrationService {
             return Map.of("success", false, "error", "No active migration to cancel");
         }
 
-        Update update = new Update()
-            .set("status", "failed")
-            .set("error", "Cancelled by administrator")
-            .set("completedAt", new Date())
-            .set("progress.message", "Migration cancelled by administrator");
-
-        migrationRepository.updateById(server, activeMigration.getId(), update);
+        migrationRepository.cancelMigration(server, activeMigration.getId(),
+            "Cancelled by administrator", new Date(), "Migration cancelled by administrator");
 
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
@@ -174,25 +167,13 @@ public class MigrationService {
             return Map.of("success", false, "error", "No active migration found");
         }
 
-        Update update = new Update()
-            .set("status", request.status())
-            .set("progress.message", request.message());
+        Date completedAt = ("completed".equals(request.status()) || "failed".equals(request.status()))
+            ? new Date() : null;
 
-        if (request.recordsProcessed() != null) {
-            update.set("progress.recordsProcessed", request.recordsProcessed());
-        }
-        if (request.recordsSkipped() != null) {
-            update.set("progress.recordsSkipped", request.recordsSkipped());
-        }
-        if (request.totalRecords() != null) {
-            update.set("progress.totalRecords", request.totalRecords());
-        }
-
-        if ("completed".equals(request.status()) || "failed".equals(request.status())) {
-            update.set("completedAt", new Date());
-        }
-
-        migrationRepository.updateById(server, activeMigration.getId(), update);
+        migrationRepository.updateProgress(server, activeMigration.getId(),
+            request.status(), request.message(),
+            request.recordsProcessed(), request.recordsSkipped(),
+            request.totalRecords(), completedAt);
 
         return Map.of("success", true);
     }
@@ -204,12 +185,16 @@ public class MigrationService {
         return DEFAULT_FILE_SIZE_LIMIT;
     }
 
-    public Path saveUploadedFile(MultipartFile file) throws IOException {
-        Path uploadPath = Paths.get(uploadDir).toAbsolutePath();
-        Files.createDirectories(uploadPath);
-        String uniqueFilename = "migration-" + UUID.randomUUID() + ".json";
-        Path filePath = uploadPath.resolve(uniqueFilename);
-        file.transferTo(filePath.toAbsolutePath());
-        return filePath;
+    public Path saveUploadedFile(MultipartFile file) {
+        try {
+            Path uploadPath = Paths.get(migrationConfiguration.getUploadDir()).toAbsolutePath();
+            Files.createDirectories(uploadPath);
+            String uniqueFilename = "migration-" + UUID.randomUUID() + ".json";
+            Path filePath = uploadPath.resolve(uniqueFilename);
+            file.transferTo(filePath.toAbsolutePath());
+            return filePath;
+        } catch (IOException e) {
+            throw new ExternalServiceException("Failed to save migration file", e);
+        }
     }
 }

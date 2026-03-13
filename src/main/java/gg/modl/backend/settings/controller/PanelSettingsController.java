@@ -1,6 +1,7 @@
 package gg.modl.backend.settings.controller;
 
 import gg.modl.backend.ai.service.AITicketAnalysisService;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -234,7 +235,7 @@ public class PanelSettingsController {
         if (success) {
             return ResponseEntity.ok(Map.of("message", "Webhook test sent successfully"));
         } else {
-            return ResponseEntity.badRequest().body(Map.of("error", "Failed to send webhook test"));
+            throw new ValidationException("Failed to send webhook test");
         }
     }
 

@@ -1,5 +1,7 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -45,25 +47,20 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            TicketResponse ticket = ticketService.createTicket(server, createRequest);
+        TicketResponse ticket = ticketService.createTicket(server, createRequest);
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "success", true,
-                "ticketId", ticket.id(),
-                "message", "Ticket created successfully",
-                "ticket", Map.of(
-                    "id", ticket.id(),
-                    "type", ticket.type(),
-                    "subject", ticket.subject(),
-                    "status", ticket.status(),
-                    "created", ticket.date().toInstant().toString()
-                )
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Internal server error", "message", "Failed to create ticket"));
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "success", true,
+            "ticketId", ticket.id(),
+            "message", "Ticket created successfully",
+            "ticket", Map.of(
+                "id", ticket.id(),
+                "type", ticket.type(),
+                "subject", ticket.subject(),
+                "status", ticket.status(),
+                "created", ticket.date().toInstant().toString()
+            )
+        ));
     }
 
     @PostMapping("/unfinished")
@@ -73,25 +70,20 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            TicketResponse ticket = ticketService.createTicket(server, createRequest);
+        TicketResponse ticket = ticketService.createTicket(server, createRequest);
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "success", true,
-                "ticketId", ticket.id(),
-                "message", "Ticket created successfully (Unfinished)",
-                "ticket", Map.of(
-                    "id", ticket.id(),
-                    "type", ticket.type(),
-                    "subject", ticket.subject(),
-                    "status", ticket.status(),
-                    "created", ticket.date().toInstant().toString()
-                )
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Internal server error", "message", "Failed to create unfinished ticket"));
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "success", true,
+            "ticketId", ticket.id(),
+            "message", "Ticket created successfully (Unfinished)",
+            "ticket", Map.of(
+                "id", ticket.id(),
+                "type", ticket.type(),
+                "subject", ticket.subject(),
+                "status", ticket.status(),
+                "created", ticket.date().toInstant().toString()
+            )
+        ));
     }
 
     @GetMapping("/{id}")
@@ -202,27 +194,21 @@ public class PublicTicketController {
         Ticket ticket = rawTicket.get();
         if (ticket.isEmailAuthEnabled()) {
             if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", "Forbidden", "message", "Email verification required"));
+                throw new ForbiddenException("Email verification required");
             }
         }
 
-        try {
-            Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
+        Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
 
-            if (replyOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "success", true,
-                "message", "Reply added successfully",
-                "reply", replyOpt.get()
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Forbidden", "message", e.getMessage()));
+        if (replyOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "success", true,
+            "message", "Reply added successfully",
+            "reply", replyOpt.get()
+        ));
     }
 
     @PostMapping("/{id}/submit")
@@ -260,24 +246,15 @@ public class PublicTicketController {
 
         Ticket ticket = rawTicket.get();
         if (!ticket.isEmailAuthEnabled()) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Bad Request", "message", "Email auth is not enabled for this ticket"));
+            throw new ValidationException("Email auth is not enabled for this ticket");
         }
 
-        try {
-            String emailHint = verificationService.sendVerificationCode(server, ticket);
-            return ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Verification code sent",
-                "emailHint", emailHint
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", "Bad Request", "message", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Internal server error", "message", "Failed to send verification code"));
-        }
+        String emailHint = verificationService.sendVerificationCode(server, ticket);
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Verification code sent",
+            "emailHint", emailHint
+        ));
     }
 
     @PostMapping("/{id}/verify")
@@ -290,8 +267,7 @@ public class PublicTicketController {
 
         String token = verificationService.verifyCode(server, id, body.code());
         if (token == null) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", "Forbidden", "message", "Invalid or expired code"));
+            throw new ForbiddenException("Invalid or expired code");
         }
 
         return ResponseEntity.ok(Map.of(

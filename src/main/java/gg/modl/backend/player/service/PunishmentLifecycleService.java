@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.player.controller.MinecraftPunishmentController.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -85,7 +86,7 @@ public class PunishmentLifecycleService {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
 
         if (player == null) {
-            throw new IllegalArgumentException("Player not found");
+            throw new ResourceNotFoundException("Player not found");
         }
         Date now = new Date();
         Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
@@ -731,7 +732,7 @@ public class PunishmentLifecycleService {
     private String createLinkedBanPunishment(Server server, UUID playerUuid, String parentPunishmentId, String parentPlayerUuid, Long duration) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
         if (player == null) {
-            throw new IllegalArgumentException("Player not found");
+            throw new ResourceNotFoundException("Player not found");
         }
 
         Date now = new Date();

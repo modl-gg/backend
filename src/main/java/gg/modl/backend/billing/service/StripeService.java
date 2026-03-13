@@ -11,6 +11,7 @@ import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.billingportal.SessionCreateParams;
 import com.stripe.param.checkout.SessionCreateParams.ConsentCollection;
 import gg.modl.backend.billing.config.StripeConfiguration;
+import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class StripeService {
     private final StripeConfiguration config;
+    private final ModlProperties modlProperties;
 
     public boolean isConfigured() {
         return config.isConfigured();
@@ -39,8 +41,8 @@ public class StripeService {
     }
 
     public com.stripe.model.checkout.Session createCheckoutSession(String customerId, String subdomain) throws StripeException {
-        String successUrl = String.format("https://%s.%s/panel/settings?session_id={CHECKOUT_SESSION_ID}", subdomain, config.getDomain());
-        String cancelUrl = String.format("https://%s.%s/panel/settings", subdomain, config.getDomain());
+        String successUrl = String.format("https://%s.%s/panel/settings?session_id={CHECKOUT_SESSION_ID}", subdomain, modlProperties.getDomain());
+        String cancelUrl = String.format("https://%s.%s/panel/settings", subdomain, modlProperties.getDomain());
 
         com.stripe.param.checkout.SessionCreateParams params = com.stripe.param.checkout.SessionCreateParams.builder()
             .setMode(com.stripe.param.checkout.SessionCreateParams.Mode.SUBSCRIPTION)
@@ -65,7 +67,7 @@ public class StripeService {
     }
 
     public Session createPortalSession(String customerId, String subdomain) throws StripeException {
-        String returnUrl = String.format("https://%s.%s/panel/settings", subdomain, config.getDomain());
+        String returnUrl = String.format("https://%s.%s/panel/settings", subdomain, modlProperties.getDomain());
 
         SessionCreateParams params = SessionCreateParams.builder()
             .setCustomer(customerId)

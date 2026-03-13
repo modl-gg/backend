@@ -9,7 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
+
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
@@ -21,11 +21,11 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 public class Server {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_serverName", unique = true)
+
     private final String serverName;
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_customDomain", unique = true)
+
     private final String customDomain;
     @Nullable
     @Field(name = "databaseName", targetType = FieldType.STRING)
@@ -37,23 +37,23 @@ public class Server {
     // Admin & Verification
     @NotNull
     @Field(name = ServerField.ADMIN_EMAIL, targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_adminEmail", unique = true)
+
     private String adminEmail;
 
     @NotNull
     @Field(name = "emailVerified", targetType = FieldType.BOOLEAN)
-    @Indexed(name = "idx_servers_emailVerified")
+
     private Boolean emailVerified;
 
     @Nullable
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_emailVerificationToken", unique = true, sparse = true)
+
     private String emailVerificationToken;
 
     // Provisioning & Status
     @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
-    @Indexed(name = "idx_servers_provisioningStatus")
+
     private ProvisioningStatus provisioningStatus;
 
     @Nullable
@@ -62,7 +62,7 @@ public class Server {
 
     @Nullable
     @Field(name = "provisioningSignInToken", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_provisioningSignInToken", unique = true, sparse = true)
+
     private String provisioningSignInToken;
 
     @Nullable
@@ -88,12 +88,12 @@ public class Server {
 
     @Nullable
     @Field(name = "stripeCustomerId", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_stripeCustomerId", unique = true, sparse = true)
+
     private String stripeCustomerId;
 
     @Nullable
     @Field(name = "stripeSubscriptionId", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_stripeSubscriptionId", unique = true, sparse = true)
+
     private String stripeSubscriptionId;
 
     // Usage Tracking & Billing
@@ -129,7 +129,7 @@ public class Server {
     // Custom Domain Management
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_customDomainOverride", unique = true, sparse = true)
+
     private String customDomainOverride;
 
     @Nullable
@@ -146,7 +146,7 @@ public class Server {
 
     @Nullable
     @Field(name = "customDomainCloudflareId", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_customDomainCloudflareId", unique = true, sparse = true)
+
     private String customDomainCloudflareId;
 
     @Nullable
@@ -156,13 +156,13 @@ public class Server {
     // CLI Setup
     @Nullable
     @Field(name = "cliSetupToken", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_cliSetupToken", unique = true, sparse = true)
+
     private String cliSetupToken;
 
     // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)
-    @Indexed(name = "uidx_servers_apiKey", unique = true, sparse = true)
+
     private String apiKey;
 
     // Analytics/Stats
@@ -172,17 +172,17 @@ public class Server {
 
     @Nullable
     @Field(name = "userCount", targetType = FieldType.INT64)
-    @Indexed(name = "idx_servers_userCount")
+
     private Long userCount;
 
     @Nullable
     @Field(name = "ticketCount", targetType = FieldType.INT64)
-    @Indexed(name = "idx_servers_ticketCount")
+
     private Long ticketCount;
 
     @Nullable
     @Field(name = "lastStatsUpdatedAt", targetType = FieldType.DATE_TIME)
-    @Indexed(name = "idx_servers_lastStatsUpdatedAt")
+
     private Date lastStatsUpdatedAt;
 
     @Nullable
@@ -192,7 +192,7 @@ public class Server {
     // Timestamps
     @Nullable
     @Field(name = "createdAt", targetType = FieldType.DATE_TIME)
-    @Indexed(name = "idx_servers_createdAt")
+
     private Date createdAt;
 
     @Nullable

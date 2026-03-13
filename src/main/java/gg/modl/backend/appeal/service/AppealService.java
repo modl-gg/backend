@@ -1,5 +1,7 @@
 package gg.modl.backend.appeal.service;
 
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
@@ -29,7 +31,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -84,17 +85,17 @@ public class AppealService {
     public TicketResponse createAppeal(Server server, CreateAppealRequest request) {
         Player player = findPlayerWithPunishment(server, request.playerUuid(), request.punishmentId());
         if (player == null) {
-            throw new IllegalArgumentException("Punishment not found for the specified player");
+            throw new ResourceNotFoundException("Punishment not found for the specified player");
         }
 
         Punishment punishment = player.getPunishments()
             .stream()
             .filter(p -> p.getId().equals(request.punishmentId()))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("Punishment details not found"));
+            .orElseThrow(() -> new ResourceNotFoundException("Punishment details not found"));
 
         if (ticketRepository.existsAppealForPunishment(server, request.punishmentId())) {
-            throw new IllegalStateException("An appeal already exists for this punishment");
+            throw new ConflictException("An appeal already exists for this punishment");
         }
 
         String appealId = ticketIdGenerator.generateAppealId(server);
@@ -163,10 +164,7 @@ public class AppealService {
             null
         );
 
-        Update update = new Update()
-            .push("punishments.$.attachedTicketIds", appealId)
-            .push("punishments.$.notes", appealOpenedNote);
-        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
+        playerRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, appealOpenedNote);
     }
 
     private String buildInitialContent(CreateAppealRequest request) {
@@ -229,7 +227,7 @@ public class AppealService {
         Ticket appeal = appealOpt.get();
 
         if (appeal.isLocked()) {
-            throw new IllegalStateException("Appeal is locked and cannot accept new replies");
+            throw new ConflictException("Appeal is locked and cannot accept new replies");
         }
 
         TicketReply newReply = TicketReply.builder()
@@ -258,9 +256,13 @@ public class AppealService {
 
         Ticket appeal = appealOpt.get();
 
-        Update update = new Update().set("updatedAt", new Date());
         List<TicketReply> systemReplies = new ArrayList<>();
         boolean statusChanged = false;
+
+        AppealWorkflowStatus newWorkflowStatus = null;
+        TicketStatus newLifecycleStatus = null;
+        Boolean newLocked = null;
+        Map<String, Object> newData = null;
 
         AppealWorkflowStatus requestedWorkflowStatus = null;
         if (request.status() != null) {
@@ -269,9 +271,9 @@ public class AppealService {
 
         if (requestedWorkflowStatus != null && requestedWorkflowStatus != appeal.getAppealWorkflowStatus()) {
             TicketStatus lifecycleStatus = requestedWorkflowStatus.isTerminal() ? TicketStatus.CLOSED : TicketStatus.OPEN;
-            update.set("appealWorkflowStatus", requestedWorkflowStatus.getId());
-            update.set("status", lifecycleStatus.getId());
-            update.set("locked", lifecycleStatus.isTerminal());
+            newWorkflowStatus = requestedWorkflowStatus;
+            newLifecycleStatus = lifecycleStatus;
+            newLocked = lifecycleStatus.isTerminal();
             appeal.setAppealWorkflowStatus(requestedWorkflowStatus);
             appeal.setStatus(lifecycleStatus);
             appeal.setLocked(lifecycleStatus.isTerminal());
@@ -288,7 +290,7 @@ public class AppealService {
             Map<String, Object> data = appeal.getData() != null ? new HashMap<>(appeal.getData()) : new HashMap<>();
             if (!request.resolution().equals(data.get("resolution"))) {
                 data.put("resolution", request.resolution());
-                update.set("data", data);
+                newData = data;
                 appeal.setData(data);
 
                 systemReplies.add(createSystemReply(
@@ -301,8 +303,8 @@ public class AppealService {
 
         if (!statusChanged && request.locked() != null && request.locked() != appeal.isLocked()) {
             TicketStatus lifecycleStatus = request.locked() ? TicketStatus.CLOSED : TicketStatus.OPEN;
-            update.set("locked", request.locked());
-            update.set("status", lifecycleStatus.getId());
+            newLocked = request.locked();
+            newLifecycleStatus = lifecycleStatus;
             appeal.setLocked(request.locked());
             appeal.setStatus(lifecycleStatus);
 
@@ -314,11 +316,11 @@ public class AppealService {
         }
 
         for (TicketReply reply : systemReplies) {
-            update.push("replies", reply);
             appeal.getReplies().add(reply);
         }
 
-        ticketRepository.applyStatusUpdate(server, appealId, update);
+        ticketRepository.updateAppealState(server, appealId, newWorkflowStatus, newLifecycleStatus,
+            newLocked, newData, systemReplies);
 
         if (shouldPardonPunishment(appeal.getAppealWorkflowStatus())) {
             pardonPunishment(server, appeal, request.staffUsername());
@@ -357,12 +359,11 @@ public class AppealService {
             null
         );
 
-        Update update = new Update()
-            .push("punishments.$.notes", appealRejectedNote)
-            .set("punishments.$.data.appealOutcome", "Rejected")
-            .set("punishments.$.data.appealTicketId", appeal.getId());
-
-        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
+        Map<String, Object> dataUpdates = Map.of(
+            "data.appealOutcome", "Rejected",
+            "data.appealTicketId", appeal.getId()
+        );
+        playerRepository.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
     }
 
     private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
@@ -405,13 +406,8 @@ public class AppealService {
             null
         );
 
-        Update update = new Update()
-            .push("punishments.$.modifications", modification)
-            .push("punishments.$.notes", appealAcceptedNote)
-            .set("punishments.$.data.appealOutcome", "Approved")
-            .set("punishments.$.data.appealTicketId", appeal.getId());
-
-        playerRepository.updatePunishmentField(server, playerUuid, punishmentId, update);
+        playerRepository.applyAppealApproval(server, playerUuid, punishmentId,
+            modification, appealAcceptedNote, "Approved", appeal.getId());
 
         playerRepository.findByMinecraftUuid(server, playerUuid)
             .ifPresent(player -> {

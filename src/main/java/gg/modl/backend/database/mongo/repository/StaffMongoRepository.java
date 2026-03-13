@@ -9,10 +9,12 @@ import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -26,6 +28,10 @@ import org.springframework.stereotype.Repository;
 public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
     public StaffMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(Staff.class, CollectionName.STAFF, tenantMongoAccess);
+    }
+
+    public long countAll(Server server) {
+        return count(server, new Query());
     }
 
     public Optional<Staff> findByUsername(Server server, String username) {
@@ -112,6 +118,21 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         return counts;
     }
 
+    public Map<String, String> findUsernamesByIds(Server server, Set<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        Query query = Query.query(MongoQueries.where(StaffFields.ID).in(ids));
+        query.fields().include(StaffFields.USERNAME);
+        Map<String, String> result = new HashMap<>();
+        for (Staff staff : find(server, query)) {
+            if (staff.getId() != null && staff.getUsername() != null) {
+                result.put(staff.getId(), staff.getUsername());
+            }
+        }
+        return result;
+    }
+
     public List<Staff> findByRoleNames(Server server, Collection<String> roleNames) {
         if (roleNames == null || roleNames.isEmpty()) {
             return List.of();
@@ -171,6 +192,25 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         Query query = Query.query(MongoQueries.where(StaffFields.EMAIL).is(email));
         Update update = new Update().addToSet(StaffFields.SUBSCRIBED_TICKETS, subscription);
         updateFirst(server, query, update);
+    }
+
+    public List<String> findAssignedMinecraftUuids(Server server) {
+        Query query = Query.query(MongoQueries.where(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne(""));
+        MongoQueries.include(query, StaffFields.ASSIGNED_MINECRAFT_UUID);
+        return find(server, query)
+            .stream()
+            .map(Staff::getAssignedMinecraftUuid)
+            .filter(uuid -> uuid != null && !uuid.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    public Optional<String> findUsernameByEmail(Server server, String email) {
+        Query query = Query.query(MongoQueries.where(StaffFields.EMAIL).is(email));
+        MongoQueries.include(query, StaffFields.USERNAME);
+        return findOne(server, query)
+            .map(Staff::getUsername)
+            .filter(username -> !username.isBlank());
     }
 
     public List<Staff> findWithPendingTwoFactorDelivery(Server server) {

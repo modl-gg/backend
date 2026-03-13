@@ -1,5 +1,7 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -100,22 +102,18 @@ public class PublicMediaController {
         }
 
         if (!quotaService.canUpload(server, presignRequest.fileSize())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+            throw new ValidationException("Storage quota exceeded");
         }
 
-        try {
-            PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-                server,
-                normalizeUploadType(presignRequest.uploadType()),
-                presignRequest.fileName(),
-                presignRequest.contentType(),
-                presignRequest.fileSize(),
-                normalizedEntityId
-            );
-            return ResponseEntity.ok(response);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
+            server,
+            normalizeUploadType(presignRequest.uploadType()),
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            normalizedEntityId
+        );
+        return ResponseEntity.ok(response);
     }
 
     private String normalizeUploadType(String uploadType) {
@@ -139,7 +137,7 @@ public class PublicMediaController {
         String key = confirmRequest.key();
 
         if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+            throw new ForbiddenException("Access denied");
         }
 
         String uploadType = extractUploadType(key);
@@ -150,7 +148,7 @@ public class PublicMediaController {
             ));
         }
         if (entityId == null || entityId.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid upload key"));
+            throw new ValidationException("Invalid upload key");
         }
 
         MediaAccessService.AccessResult accessResult = mediaAccessService.validatePublicUploadAccess(

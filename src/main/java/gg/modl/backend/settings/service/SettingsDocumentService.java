@@ -1,9 +1,5 @@
 package gg.modl.backend.settings.service;
 
-import com.mongodb.client.result.UpdateResult;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.MongoUpdates;
-import gg.modl.backend.database.mongo.fields.SettingsFields;
 import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
@@ -13,10 +9,6 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -53,16 +45,9 @@ public class SettingsDocumentService {
             return currentState;
         }
 
-        Query updateQuery = Query.query(MongoQueries.where(SettingsFields.ID).is(current.getId())
-            .andOperator(versionCriteria(expectedVersion)));
-        Update update = new Update();
-        MongoUpdates.set(update, SettingsFields.TYPE, type);
-        MongoUpdates.set(update, SettingsFields.DATA, normalizedData);
-        MongoUpdates.set(update, SettingsFields.VERSION, expectedVersion + 1);
-        MongoUpdates.set(update, SettingsFields.UPDATED_AT, now);
-
-        UpdateResult result = settingsRepository.updateFirst(server, updateQuery, update);
-        if (result.getModifiedCount() == 0) {
+        boolean updated = settingsRepository.updateWithVersionCheck(
+            server, current.getId(), expectedVersion, type, normalizedData, expectedVersion + 1, now);
+        if (!updated) {
             throwConflict(getRawState(server, type).version());
         }
 
@@ -82,14 +67,7 @@ public class SettingsDocumentService {
     }
 
     private Settings findLatestSettingsDocument(Server server, String type) {
-        Query query = Query.query(MongoQueries.where(SettingsFields.TYPE).is(type))
-            .with(Sort.by(
-                Sort.Order.desc(SettingsFields.VERSION),
-                Sort.Order.desc(SettingsFields.UPDATED_AT),
-                Sort.Order.desc(SettingsFields.ID)
-            ))
-            .limit(2);
-        List<Settings> matches = settingsRepository.find(server, query);
+        List<Settings> matches = settingsRepository.findLatestByType(server, type, 2);
         if (matches.size() > 1) {
             log.warn(
                 "Detected duplicate settings documents for type '{}'. Using latest id '{}'.",
@@ -98,17 +76,6 @@ public class SettingsDocumentService {
             );
         }
         return matches.isEmpty() ? null : matches.get(0);
-    }
-
-    private Criteria versionCriteria(long expectedVersion) {
-        if (expectedVersion == INITIAL_VERSION) {
-            return new Criteria().orOperator(
-                MongoQueries.where(SettingsFields.VERSION).is(INITIAL_VERSION),
-                MongoQueries.where(SettingsFields.VERSION).exists(false),
-                MongoQueries.where(SettingsFields.VERSION).is(null)
-            );
-        }
-        return MongoQueries.where(SettingsFields.VERSION).is(expectedVersion);
     }
 
     @SuppressWarnings("unchecked")

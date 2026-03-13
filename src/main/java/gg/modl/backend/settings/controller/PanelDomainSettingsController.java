@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -41,27 +42,16 @@ public class PanelDomainSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
-        if (denied != null) {
-            return denied;
-        }
+        requireCustomDomainWriteAccess(server);
 
-        try {
-            DomainSettings settings = domainSettingsService.configureDomain(server, body.customDomain().trim());
-            return ResponseEntity.ok(settings);
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+        DomainSettings settings = domainSettingsService.configureDomain(server, body.customDomain().trim());
+        return ResponseEntity.ok(settings);
     }
 
-    private ResponseEntity<?> requireCustomDomainWriteAccess(Server server) {
-        if (customDomainAccessService.canManageCustomDomain(server)) {
-            return null;
+    private void requireCustomDomainWriteAccess(Server server) {
+        if (!customDomainAccessService.canManageCustomDomain(server)) {
+            throw new ForbiddenException("Custom domains require Premium unless your server is grandfathered.");
         }
-
-        return ResponseEntity.status(403).body(Map.of(
-            "message", "Custom domains require Premium unless your server is grandfathered."
-        ));
     }
 
     @PostMapping("/verify")
@@ -70,47 +60,33 @@ public class PanelDomainSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
-        if (denied != null) {
-            return denied;
-        }
+        requireCustomDomainWriteAccess(server);
 
-        try {
-            DomainSettings settings = domainSettingsService.verifyDomain(server, body.domain().trim());
-            DomainSettings.DomainStatus status = settings.getStatus();
+        DomainSettings settings = domainSettingsService.verifyDomain(server, body.domain().trim());
+        DomainSettings.DomainStatus status = settings.getStatus();
 
-            String message = switch (status.getStatus()) {
-                case "active" -> status.getSslStatus().equals("active")
-                                 ? "Domain verified successfully with active SSL!"
-                                 : "Domain verified! SSL certificate is being provisioned.";
-                case "error" -> status.getError() != null
-                                ? status.getError()
-                                : "Domain verification failed";
-                default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
-            };
+        String message = switch (status.getStatus()) {
+            case "active" -> status.getSslStatus().equals("active")
+                             ? "Domain verified successfully with active SSL!"
+                             : "Domain verified! SSL certificate is being provisioned.";
+            case "error" -> status.getError() != null
+                            ? status.getError()
+                            : "Domain verification failed";
+            default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
+        };
 
-            return ResponseEntity.ok(Map.of(
-                "status", status,
-                "message", message
-            ));
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+        return ResponseEntity.ok(Map.of(
+            "status", status,
+            "message", message
+        ));
     }
 
     @DeleteMapping
     public ResponseEntity<?> removeDomain(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        ResponseEntity<?> denied = requireCustomDomainWriteAccess(server);
-        if (denied != null) {
-            return denied;
-        }
+        requireCustomDomainWriteAccess(server);
 
-        try {
-            domainSettingsService.removeDomain(server);
-            return ResponseEntity.ok(Map.of("message", "Domain removed successfully"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+        domainSettingsService.removeDomain(server);
+        return ResponseEntity.ok(Map.of("message", "Domain removed successfully"));
     }
 }

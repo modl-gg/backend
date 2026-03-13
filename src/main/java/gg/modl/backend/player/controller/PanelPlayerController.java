@@ -152,12 +152,7 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        try {
-            punishmentLifecycleService.createPunishment(server, UUID.fromString(uuid), createRequest);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-
+        punishmentLifecycleService.createPunishment(server, UUID.fromString(uuid), createRequest);
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 

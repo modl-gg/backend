@@ -18,8 +18,6 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -81,8 +79,7 @@ public class ServerProvisioningService {
     }
 
     private boolean settingsExist(Server server, String type) {
-        Query query = new Query(Criteria.where("type").is(type));
-        return settingsRepository.exists(server, query);
+        return settingsRepository.existsByType(server, type);
     }
 
     private Settings newSettingsDocument(String type, Map<String, Object> data) {
@@ -427,7 +424,7 @@ public class ServerProvisioningService {
     }
 
     private List<KnowledgebaseCategory> seedKnowledgebaseCategories(Server server) {
-        if (knowledgebaseCategoryRepository.count(server, new Query()) > 0) {
+        if (knowledgebaseCategoryRepository.hasAny(server)) {
             return List.of();
         }
 
@@ -469,7 +466,7 @@ public class ServerProvisioningService {
     }
 
     private void seedHomepageCards(Server server, List<KnowledgebaseCategory> categories) {
-        if (homepageCardRepository.count(server, new Query()) > 0) {
+        if (homepageCardRepository.hasAny(server)) {
             return;
         }
 

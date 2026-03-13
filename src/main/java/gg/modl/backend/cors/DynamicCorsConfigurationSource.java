@@ -1,5 +1,6 @@
 package gg.modl.backend.cors;
 
+import gg.modl.backend.config.ModlCorsProperties;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
@@ -14,7 +15,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @RequiredArgsConstructor
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
+    private final ModlCorsProperties corsProperties;
     private final Map<String, CachedOrigin> originCache = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -31,10 +32,6 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             }
         }
     );
-    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://modl.top,https://admin.modl.top}")
-    private String systemOrigins;
-    @Value("${modl.cors.app-domains:modl.gg,modl.top}")
-    private String appDomains;
     private volatile Set<String> parsedSystemOrigins = Set.of();
     private volatile Set<String> parsedAppDomains = Set.of();
     private static final int MAX_CACHE_SIZE = 10_000;
@@ -129,12 +126,14 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
 
     @PostConstruct
     void initParsedOrigins() {
+        String systemOrigins = corsProperties.getSystemOrigins();
         if (systemOrigins != null && !systemOrigins.isBlank()) {
             parsedSystemOrigins = Arrays.stream(systemOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.toUnmodifiableSet());
         }
+        String appDomains = corsProperties.getAppDomains();
         if (appDomains != null && !appDomains.isBlank()) {
             parsedAppDomains = Arrays.stream(appDomains.split(","))
                 .map(String::trim)

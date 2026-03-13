@@ -1,5 +1,6 @@
 package gg.modl.backend.staff.service;
 
+import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
@@ -7,15 +8,13 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class StaffTwoFactorService {
     private final StaffMongoRepository staffRepository;
-    @Value("${modl.domain:modl.gg}")
-    private String modlDomain;
+    private final ModlProperties modlProperties;
     private static final long SESSION_DURATION_MILLIS = 7L * 24 * 60 * 60 * 1000;
 
     public Optional<TwoFactorTokenResult> generateToken(Server server, String minecraftUuid, String ip) {
@@ -28,7 +27,7 @@ public class StaffTwoFactorService {
 
         String domain = server.getCustomDomainOverride();
         if (domain == null || domain.isBlank()) {
-            domain = server.getCustomDomain() + "." + modlDomain;
+            domain = server.getCustomDomain() + "." + modlProperties.getDomain();
         }
 
         return Optional.of(new TwoFactorTokenResult(token, "https://" + domain + "/verify/" + token));

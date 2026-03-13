@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -88,7 +89,7 @@ public class PanelTicketController {
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (bulkRequest.ticketIds() == null || bulkRequest.ticketIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No ticket IDs provided"));
+            throw new ValidationException("No ticket IDs provided");
         }
 
         int updatedCount = ticketService.bulkUpdateTickets(server, bulkRequest, staffEmail);
@@ -131,21 +132,17 @@ public class PanelTicketController {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            return ticketService.updateTicket(server, id, updateRequest, staffEmail)
-                .map(ticket -> ResponseEntity.ok(Map.of(
-                    "id", ticket.id(),
-                    "status", ticket.status(),
-                    "tags", ticket.tags(),
-                    "notes", ticket.notes(),
-                    "messages", ticket.messages(),
-                    "data", ticket.data() != null ? ticket.data() : Map.of(),
-                    "locked", ticket.locked()
-                )))
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        }
+        return ticketService.updateTicket(server, id, updateRequest, staffEmail)
+            .map(ticket -> ResponseEntity.ok(Map.of(
+                "id", ticket.id(),
+                "status", ticket.status(),
+                "tags", ticket.tags(),
+                "notes", ticket.notes(),
+                "messages", ticket.messages(),
+                "data", ticket.data() != null ? ticket.data() : Map.of(),
+                "locked", ticket.locked()
+            )))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/notes")
@@ -170,21 +167,17 @@ public class PanelTicketController {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
+        Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
 
-            if (replyOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
-                subscriptionService.ensureSubscription(server, id, staffEmail);
-            }
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(replyOpt.get());
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        if (replyOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
+
+        if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
+            subscriptionService.ensureSubscription(server, id, staffEmail);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(replyOpt.get());
     }
 
     @PostMapping("/{id}/tags")

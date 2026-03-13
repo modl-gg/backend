@@ -4,6 +4,9 @@ import gg.modl.backend.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.domain.external.CloudflareClient;
+import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
@@ -96,13 +99,13 @@ public class DomainSettingsService extends AbstractSettingsService {
 
     public DomainSettings configureDomain(Server server, String customDomain) {
         if (customDomain.toLowerCase().endsWith("modl.gg")) {
-            throw new IllegalArgumentException("modl.gg domains cannot be used as custom domains.");
+            throw new ValidationException("modl.gg domains cannot be used as custom domains.");
         }
 
         String currentDomain = extractCurrentDomain(server);
 
         if (currentDomain != null && currentDomain.equalsIgnoreCase(customDomain)) {
-            throw new IllegalArgumentException("This domain is already configured. Please verify the existing configuration or remove it first.");
+            throw new ConflictException("This domain is already configured. Please verify the existing configuration or remove it first.");
         }
 
         CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
@@ -210,7 +213,7 @@ public class DomainSettingsService extends AbstractSettingsService {
         Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         if (settings == null || settings.getData() == null) {
-            throw new IllegalStateException("No domain configured");
+            throw new ResourceNotFoundException("No domain configured");
         }
 
         @SuppressWarnings("unchecked")
@@ -219,7 +222,7 @@ public class DomainSettingsService extends AbstractSettingsService {
         String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
 
         if (!domain.equalsIgnoreCase(configuredDomain)) {
-            throw new IllegalArgumentException("Domain does not match configured domain");
+            throw new ValidationException("Domain does not match configured domain");
         }
 
         String verifiedStatus = "pending";

@@ -1,9 +1,12 @@
 package gg.modl.backend.auth.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.exception.UnauthorizedException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestUtil;
@@ -19,7 +22,6 @@ import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,7 +35,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUTH + "/webauthn")
 @RequiredArgsConstructor
-@Slf4j
 public class WebAuthnController {
     private final WebAuthnService webAuthnService;
     private final SessionService sessionService;
@@ -45,21 +46,16 @@ public class WebAuthnController {
     // --- Registration (requires session) ---
 
     @PostMapping("/register/options")
-    public ResponseEntity<?> registerOptions(HttpServletRequest request) {
+    public ResponseEntity<?> registerOptions(HttpServletRequest request) throws JsonProcessingException {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        try {
-            WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, getRequestDomain(request), email);
-            Object options = objectMapper.readValue(result.optionsJson(), Object.class);
-            return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
-        } catch (Exception e) {
-            log.error("Failed to start WebAuthn registration for {}", email, e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start registration"));
-        }
+        WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, getRequestDomain(request), email);
+        Object options = objectMapper.readValue(result.optionsJson(), Object.class);
+        return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
     }
 
     private String getRequestDomain(HttpServletRequest request) {
@@ -71,29 +67,22 @@ public class WebAuthnController {
     @PostMapping("/register/verify")
     public ResponseEntity<?> registerVerify(
         HttpServletRequest request,
-        @RequestBody @Valid RegisterVerifyRequest body) {
+        @RequestBody @Valid RegisterVerifyRequest body) throws Exception {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        try {
-            webAuthnService.finishRegistration(server, getRequestDomain(request), email, body.challengeId(), body.response(), body.name());
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Failed to complete WebAuthn registration for {}", email, e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Registration failed"));
-        }
+        webAuthnService.finishRegistration(server, getRequestDomain(request), email, body.challengeId(), body.response(), body.name());
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     @GetMapping("/credentials")
     public ResponseEntity<?> listCredentials(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
@@ -108,7 +97,7 @@ public class WebAuthnController {
         @RequestBody @Valid RenameCredentialRequest body) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
@@ -127,7 +116,7 @@ public class WebAuthnController {
         @PathVariable String id) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
@@ -139,22 +128,17 @@ public class WebAuthnController {
     }
 
     @PostMapping("/login/start")
-    public ResponseEntity<?> loginStart(HttpServletRequest request) {
+    public ResponseEntity<?> loginStart(HttpServletRequest request) throws JsonProcessingException {
         Server server = RequestUtil.getRequestServer(request);
-        try {
-            WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server, getRequestDomain(request));
-            Object options = objectMapper.readValue(result.optionsJson(), Object.class);
-            return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
-        } catch (Exception e) {
-            log.error("Failed to start discoverable WebAuthn authentication", e);
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to start authentication"));
-        }
+        WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server, getRequestDomain(request));
+        Object options = objectMapper.readValue(result.optionsJson(), Object.class);
+        return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
     }
 
     @PostMapping("/login/options")
     public ResponseEntity<?> loginOptions(
         HttpServletRequest request,
-        @RequestBody @Valid LoginOptionsRequest body) {
+        @RequestBody @Valid LoginOptionsRequest body) throws JsonProcessingException {
         Server server = RequestUtil.getRequestServer(request);
 
         // Prevent email enumeration: check if email is authorized first
@@ -167,18 +151,13 @@ public class WebAuthnController {
             return ResponseEntity.ok(Map.of("hasPasskeys", false));
         }
 
-        try {
-            WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, getRequestDomain(request), body.email());
-            Object options = objectMapper.readValue(result.optionsJson(), Object.class);
-            return ResponseEntity.ok(Map.of(
-                "hasPasskeys", true,
-                "challengeId", result.challengeId(),
-                "options", options
-            ));
-        } catch (Exception e) {
-            log.error("Failed to start WebAuthn authentication for {}", body.email(), e);
-            return ResponseEntity.ok(Map.of("hasPasskeys", false));
-        }
+        WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, getRequestDomain(request), body.email());
+        Object options = objectMapper.readValue(result.optionsJson(), Object.class);
+        return ResponseEntity.ok(Map.of(
+            "hasPasskeys", true,
+            "challengeId", result.challengeId(),
+            "options", options
+        ));
     }
 
     // --- Helpers ---
@@ -194,28 +173,19 @@ public class WebAuthnController {
     public ResponseEntity<?> loginVerify(
         HttpServletRequest request,
         HttpServletResponse response,
-        @RequestBody @Valid LoginVerifyRequest body) {
+        @RequestBody @Valid LoginVerifyRequest body) throws Exception {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            String email = webAuthnService.finishAuthentication(server, getRequestDomain(request), body.challengeId(), body.response());
+        String email = webAuthnService.finishAuthentication(server, getRequestDomain(request), body.challengeId(), body.response());
 
-            // Verify this email is still authorized
-            if (!isAuthorizedEmail(server, email)) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Not authorized"));
-            }
-
-            // Create session (same as email code login)
-            AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
-            response.addCookie(cookieUtil.createSessionCookie(session.getId()));
-
-            return ResponseEntity.ok(Map.of("success", true));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            log.error("Failed to complete WebAuthn authentication", e);
-            return ResponseEntity.badRequest().body(Map.of("error", "Authentication failed"));
+        if (!isAuthorizedEmail(server, email)) {
+            throw new ValidationException("Not authorized");
         }
+
+        AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
+        response.addCookie(cookieUtil.createSessionCookie(session.getId()));
+
+        return ResponseEntity.ok(Map.of("success", true));
     }
 
     // --- Request DTOs ---

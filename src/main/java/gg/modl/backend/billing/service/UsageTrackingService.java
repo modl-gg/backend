@@ -3,8 +3,10 @@ package gg.modl.backend.billing.service;
 import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
 import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.util.ServerMutationHelper;
 import java.util.Date;
 import lombok.RequiredArgsConstructor;
@@ -132,10 +134,19 @@ public class UsageTrackingService {
     }
 
     public void updateStorageLimit(Server server, long bytes) {
+        if (server.getPlan() != ServerPlan.PREMIUM) {
+            throw new ValidationException("Storage limit configuration is only available for premium servers");
+        }
+        if (bytes > StorageQuotaService.MAX_PREMIUM_BYTES) {
+            throw new ValidationException("Storage limit cannot exceed 2200 GB. Please contact support for higher limits.");
+        }
         serverMutationHelper.mutate(server, current -> current.setMaxStorageLimitBytes(bytes));
     }
 
     public void updateOverageLimits(Server server, long maxStorageLimitBytes, long maxAiOverageRequests) {
+        if (server.getPlan() != ServerPlan.PREMIUM) {
+            throw new ValidationException("Overage limits configuration is only available for premium servers");
+        }
         serverMutationHelper.mutate(server, current -> {
             current.setMaxStorageLimitBytes(maxStorageLimitBytes);
             current.setMaxAiOverageRequests(maxAiOverageRequests);

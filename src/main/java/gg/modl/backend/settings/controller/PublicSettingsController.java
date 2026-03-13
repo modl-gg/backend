@@ -34,22 +34,18 @@ public class PublicSettingsController {
             return ResponseEntity.ok(getNotFoundSettings());
         }
 
-        try {
-            GeneralSettings generalSettings = generalSettingsService.getGeneralSettings(server);
-            TicketFormSettings ticketForms = ticketFormSettingsService.getTicketFormSettings(server);
-            SystemConfig.GeneralConfig globalConfig = getGlobalMaintenanceConfig();
-            return ResponseEntity.ok(new PublicSettingsResponse(
-                true,
-                generalSettings.getServerDisplayName() != null ? generalSettings.getServerDisplayName() : "modl",
-                generalSettings.getPanelIconUrl(),
-                generalSettings.getHomepageIconUrl(),
-                ticketFormSettingsService.buildTicketFormsResponse(ticketForms),
-                globalConfig.isMaintenanceMode(),
-                globalConfig.getMaintenanceMessage()
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.ok(getNotFoundSettings());
-        }
+        GeneralSettings generalSettings = generalSettingsService.getGeneralSettings(server);
+        TicketFormSettings ticketForms = ticketFormSettingsService.getTicketFormSettings(server);
+        SystemConfig.GeneralConfig globalConfig = getGlobalMaintenanceConfig();
+        return ResponseEntity.ok(new PublicSettingsResponse(
+            true,
+            generalSettings.getServerDisplayName() != null ? generalSettings.getServerDisplayName() : "modl",
+            generalSettings.getPanelIconUrl(),
+            generalSettings.getHomepageIconUrl(),
+            ticketFormSettingsService.buildTicketFormsResponse(ticketForms),
+            globalConfig.isMaintenanceMode(),
+            globalConfig.getMaintenanceMessage()
+        ));
     }
 
     private PublicSettingsResponse getNotFoundSettings() {

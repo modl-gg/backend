@@ -29,6 +29,10 @@ import com.yubico.webauthn.data.UserVerificationRequirement;
 import com.yubico.webauthn.data.exception.Base64UrlException;
 import com.yubico.webauthn.exception.AssertionFailedException;
 import com.yubico.webauthn.exception.RegistrationFailedException;
+import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.exception.UnauthorizedException;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.auth.data.WebAuthnChallenge;
 import gg.modl.backend.auth.data.WebAuthnCredential;
 import gg.modl.backend.database.mongo.repository.WebAuthnChallengeMongoRepository;
@@ -87,7 +91,7 @@ public class WebAuthnService {
             challengeRepository.saveEntity(server, challenge);
             return new StartRegistrationResult(challengeId, options.toCredentialsCreateJson());
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize registration options", e);
+            throw new ExternalServiceException("Failed to serialize registration options", e);
         }
     }
 
@@ -155,12 +159,12 @@ public class WebAuthnService {
         RelyingParty rp = buildRelyingParty(server, requestDomain);
         WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
         if (challenge == null) {
-            throw new IllegalStateException("Challenge not found or expired");
+            throw new ResourceNotFoundException("Challenge not found or expired");
         }
 
         String normalizedEmail = normalizeEmail(email);
         if (!normalizedEmail.equals(challenge.getEmail())) {
-            throw new IllegalStateException("Email mismatch");
+            throw new ValidationException("Email mismatch");
         }
 
         PublicKeyCredentialCreationOptions options = PublicKeyCredentialCreationOptions.fromJson(challenge.getChallengeJson());
@@ -176,7 +180,7 @@ public class WebAuthnService {
                     .build()
             );
         } catch (RegistrationFailedException e) {
-            throw new IllegalStateException("Registration verification failed: " + e.getMessage(), e);
+            throw new ValidationException("Registration verification failed: " + e.getMessage(), e);
         }
 
         WebAuthnCredential cred = new WebAuthnCredential();
@@ -213,7 +217,7 @@ public class WebAuthnService {
             challengeRepository.saveEntity(server, challenge);
             return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize assertion request", e);
+            throw new ExternalServiceException("Failed to serialize assertion request", e);
         }
     }
 
@@ -236,7 +240,7 @@ public class WebAuthnService {
             challengeRepository.saveEntity(server, challenge);
             return new StartAuthenticationResult(challengeId, assertionRequest.toCredentialsGetJson(), true);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException("Failed to serialize assertion request", e);
+            throw new ExternalServiceException("Failed to serialize assertion request", e);
         }
     }
 
@@ -244,7 +248,7 @@ public class WebAuthnService {
         RelyingParty rp = buildRelyingParty(server, requestDomain);
         WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
         if (challenge == null) {
-            throw new IllegalStateException("Challenge not found or expired");
+            throw new ResourceNotFoundException("Challenge not found or expired");
         }
 
         AssertionRequest assertionRequest = AssertionRequest.fromJson(challenge.getChallengeJson());
@@ -260,11 +264,11 @@ public class WebAuthnService {
                     .build()
             );
         } catch (AssertionFailedException e) {
-            throw new IllegalStateException("Authentication verification failed: " + e.getMessage(), e);
+            throw new UnauthorizedException("Authentication verification failed: " + e.getMessage(), e);
         }
 
         if (!result.isSuccess()) {
-            throw new IllegalStateException("Authentication failed");
+            throw new UnauthorizedException("Authentication failed");
         }
 
         String credentialId = result.getCredential().getCredentialId().getBase64Url();
@@ -275,7 +279,7 @@ public class WebAuthnService {
             String userHandleBase64 = result.getCredential().getUserHandle().getBase64Url();
             WebAuthnCredential cred = credentialRepository.findByUserHandle(server, userHandleBase64).orElse(null);
             if (cred == null) {
-                throw new IllegalStateException("Could not determine user identity");
+                throw new ResourceNotFoundException("Could not determine user identity");
             }
             email = cred.getEmail();
         }

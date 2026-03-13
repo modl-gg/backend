@@ -69,7 +69,7 @@ public class AuditMongoRepository {
         return tenantMongoAccess.forServer(server).findAll(Staff.class, CollectionName.STAFF);
     }
 
-    public List<Document> aggregateLogActivityBySource(Server server, Date startDate) {
+    public List<StaffActivityResult> aggregateLogActivityBySource(Server server, Date startDate) {
         Criteria logCriteria = MongoQueries.where(AuditLogFields.SOURCE).ne(SOURCE_SYSTEM);
         if (startDate != null) {
             logCriteria = logCriteria.and(AuditLogFields.CREATED).gte(startDate);
@@ -91,11 +91,11 @@ public class AuditMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.LOGS, Document.class)
+            .aggregate(aggregation, CollectionName.LOGS, StaffActivityResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregateTicketResponseCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateTicketResponseCounts(Server server, Date startDate) {
         Criteria replyCriteria = MongoQueries.where(TicketFields.REPLY_STAFF).is(true);
         if (startDate != null) {
             replyCriteria = replyCriteria.and(TicketFields.REPLY_CREATED).gte(startDate);
@@ -108,11 +108,11 @@ public class AuditMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.TICKETS, Document.class)
+            .aggregate(aggregation, CollectionName.TICKETS, IdCountResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregatePunishmentCountsByIssuer(Server server, Date startDate) {
+    public List<IdCountResult> aggregatePunishmentCountsByIssuer(Server server, Date startDate) {
         List<AggregationOperation> stages = new ArrayList<>();
         stages.add(Aggregation.unwind(PlayerFields.PUNISHMENTS));
         if (startDate != null) {
@@ -123,7 +123,7 @@ public class AuditMongoRepository {
         stages.add(Aggregation.group(ALIAS_EFFECTIVE_ISSUER).count().as(COUNT));
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(Aggregation.newAggregation(stages), CollectionName.PLAYERS, Document.class)
+            .aggregate(Aggregation.newAggregation(stages), CollectionName.PLAYERS, IdCountResult.class)
             .getMappedResults();
     }
 
@@ -306,7 +306,7 @@ public class AuditMongoRepository {
             .getMappedResults();
     }
 
-    public List<Document> aggregateDailyPunishmentCounts(Server server, List<String> usernames, String staffId, Date startDate) {
+    public List<IdCountResult> aggregateDailyPunishmentCounts(Server server, List<String> usernames, String staffId, Date startDate) {
         Criteria criteria = buildIssuerCriteria(usernames, staffId);
         if (startDate != null) {
             criteria = criteria.and(PlayerFields.PUNISHMENT_ISSUED).gte(startDate);
@@ -320,11 +320,11 @@ public class AuditMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.PLAYERS, Document.class)
+            .aggregate(aggregation, CollectionName.PLAYERS, IdCountResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregateDailyTicketResponseCounts(Server server, String username, Date startDate) {
+    public List<IdCountResult> aggregateDailyTicketResponseCounts(Server server, String username, Date startDate) {
         Criteria criteria = MongoQueries.where(TicketFields.REPLY_STAFF).is(true)
             .and(TicketFields.REPLY_NAME).regex("^" + Pattern.quote(username) + "$", "i");
         if (startDate != null) {
@@ -339,11 +339,11 @@ public class AuditMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.TICKETS, Document.class)
+            .aggregate(aggregation, CollectionName.TICKETS, IdCountResult.class)
             .getMappedResults();
     }
 
-    public List<Document> aggregatePunishmentTypeBreakdown(Server server, List<String> usernames, String staffId, Date startDate) {
+    public List<OrdinalCountResult> aggregatePunishmentTypeBreakdown(Server server, List<String> usernames, String staffId, Date startDate) {
         Criteria criteria = buildIssuerCriteria(usernames, staffId);
         if (startDate != null) {
             criteria = criteria.and(PlayerFields.PUNISHMENT_ISSUED).gte(startDate);
@@ -357,7 +357,7 @@ public class AuditMongoRepository {
         );
 
         return tenantMongoAccess.forServer(server)
-            .aggregate(aggregation, CollectionName.PLAYERS, Document.class)
+            .aggregate(aggregation, CollectionName.PLAYERS, OrdinalCountResult.class)
             .getMappedResults();
     }
 
@@ -379,4 +379,10 @@ public class AuditMongoRepository {
 
         return tenantMongoAccess.forServer(server).count(query, AuditLog.class, CollectionName.LOGS);
     }
+
+    public record IdCountResult(String id, int count) {}
+
+    public record OrdinalCountResult(Integer id, int count) {}
+
+    public record StaffActivityResult(String id, int totalActions, int ticketActions, int moderationActions, Date lastActive) {}
 }

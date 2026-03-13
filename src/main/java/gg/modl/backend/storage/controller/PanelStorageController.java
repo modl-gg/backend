@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -57,7 +58,7 @@ public class PanelStorageController {
         String prefix = server.getDatabaseName() + "/";
         for (String key : keys) {
             if (!key.startsWith(prefix)) {
-                return ResponseEntity.status(403).body(Map.of("error", "Access denied for key: " + key));
+                throw new ForbiddenException("Access denied for key: " + key);
             }
         }
 
@@ -73,7 +74,7 @@ public class PanelStorageController {
         Server server = RequestUtil.getRequestServer(request);
 
         if (!key.startsWith(server.getDatabaseName() + "/")) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+            throw new ForbiddenException("Access denied");
         }
 
         String url = s3StorageService.getPresignedUrl(key);

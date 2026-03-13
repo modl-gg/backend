@@ -13,6 +13,26 @@ import org.springframework.stereotype.Service;
 @Service
 public class MongoIndexBootstrapService {
     public void createIndexes(MongoTemplate template) {
+        ensureIndexes(template, CollectionName.MODL_SERVERS, List.of(
+            IndexSpec.standard("uidx_servers_serverName", doc("serverName", 1), true, false),
+            IndexSpec.standard("uidx_servers_customDomain", doc("customDomain", 1), true, false),
+            IndexSpec.standard("uidx_servers_adminEmail", doc("adminEmail", 1), true, false),
+            IndexSpec.standard("idx_servers_emailVerified", doc("emailVerified", 1), false, false),
+            IndexSpec.standard("uidx_servers_emailVerificationToken", doc("emailVerificationToken", 1), true, true),
+            IndexSpec.standard("idx_servers_provisioningStatus", doc("provisioningStatus", 1), false, false),
+            IndexSpec.standard("uidx_servers_provisioningSignInToken", doc("provisioningSignInToken", 1), true, true),
+            IndexSpec.standard("uidx_servers_stripeCustomerId", doc("stripeCustomerId", 1), true, true),
+            IndexSpec.standard("uidx_servers_stripeSubscriptionId", doc("stripeSubscriptionId", 1), true, true),
+            IndexSpec.standard("uidx_servers_customDomainOverride", doc("customDomainOverride", 1), true, true),
+            IndexSpec.standard("uidx_servers_customDomainCloudflareId", doc("customDomainCloudflareId", 1), true, true),
+            IndexSpec.standard("uidx_servers_cliSetupToken", doc("cliSetupToken", 1), true, true),
+            IndexSpec.standard("uidx_servers_apiKey", doc("apiKey", 1), true, true),
+            IndexSpec.standard("idx_servers_userCount", doc("userCount", 1), false, false),
+            IndexSpec.standard("idx_servers_ticketCount", doc("ticketCount", 1), false, false),
+            IndexSpec.standard("idx_servers_lastStatsUpdatedAt", doc("lastStatsUpdatedAt", 1), false, false),
+            IndexSpec.standard("idx_servers_createdAt", doc("createdAt", 1), false, false)
+        ));
+
         ensureIndexes(template, CollectionName.SETTINGS, List.of(
             IndexSpec.standard("uidx_settings_type", doc("type", 1), true, false)
         ));
@@ -97,6 +117,35 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_homepage_cards_ordinal", doc("ordinal", 1), false, false),
             IndexSpec.standard("idx_homepage_cards_isEnabled_ordinal", doc("isEnabled", 1).append("ordinal", 1), false, false),
             IndexSpec.standard("idx_homepage_cards_categoryId", doc("categoryId", 1), false, true)
+        ));
+
+        ensureIndexes(template, CollectionName.SESSIONS, List.of(
+            IndexSpec.standard("idx_sessions_email", doc("email", 1), false, false),
+            IndexSpec.ttl("idx_sessions_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
+
+        ensureIndexes(template, CollectionName.AUTH_CODES, List.of(
+            IndexSpec.standard("uidx_auth_codes_email", doc("email", 1), true, false),
+            IndexSpec.ttl("idx_auth_codes_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
+
+        ensureIndexes(template, CollectionName.SYSTEM_LOGS, List.of(
+            IndexSpec.standard("idx_system_logs_timestamp", doc("timestamp", -1), false, false),
+            IndexSpec.standard("idx_system_logs_level_timestamp", doc("level", 1).append("timestamp", -1), false, false),
+            IndexSpec.standard("idx_system_logs_source_timestamp", doc("source", 1).append("timestamp", -1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.SECURITY_EVENTS, List.of(
+            IndexSpec.standard("idx_security_events_timestamp", doc("timestamp", -1), false, false),
+            IndexSpec.standard("idx_security_events_severity_timestamp", doc("severity", 1).append("timestamp", -1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
+            IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.MIGRATIONS, List.of(
+            IndexSpec.standard("idx_migrations_status_startedAt", doc("status", 1).append("startedAt", -1), false, false)
         ));
     }
 

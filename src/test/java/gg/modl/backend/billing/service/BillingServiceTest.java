@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.stripe.model.checkout.Session;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.util.ServerMutationHelper;
@@ -26,11 +27,14 @@ class BillingServiceTest {
     @Mock
     private ServerMutationHelper serverMutationHelper;
 
+    @Mock
+    private PermissionService permissionService;
+
     private BillingService billingService;
 
     @BeforeEach
     void setUp() {
-        billingService = new BillingService(stripeService, serverMutationHelper);
+        billingService = new BillingService(stripeService, serverMutationHelper, permissionService);
     }
 
     @Test

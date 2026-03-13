@@ -86,13 +86,9 @@ public class AdminSystemController {
 
     @PutMapping("/prompts")
     public ResponseEntity<?> updatePrompt(@RequestBody @Valid UpdatePromptRequest request) {
-        try {
-            SystemPrompt updated = globalSystemService.updatePrompt(request);
-            log.info("System prompt updated");
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt updated successfully"));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
-        }
+        SystemPrompt updated = globalSystemService.updatePrompt(request);
+        log.info("System prompt updated");
+        return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "System prompt updated successfully"));
     }
 
     @PostMapping("/prompts/reset")

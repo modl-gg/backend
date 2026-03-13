@@ -7,7 +7,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
+
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -20,20 +20,18 @@ public class AuthSessionData {
     @Id
     private String id;
 
-    @Field
-    @Indexed(name = "idx_sessions_email")
+    @Field("email")
     private String email;
 
-    @Field
+    @Field("createdAt")
     private Date createdAt;
 
-    @Field
-    @Indexed(name = "idx_sessions_expiresAt_ttl", expireAfter = "0s")
+    @Field("expiresAt")
     private Date expiresAt;
 
-    @Field
+    @Field("ipAddress")
     private String ipAddress;
 
-    @Field
+    @Field("userAgent")
     private String userAgent;
 }

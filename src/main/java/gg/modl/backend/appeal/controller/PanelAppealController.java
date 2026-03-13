@@ -10,7 +10,6 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -62,14 +61,9 @@ public class PanelAppealController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            return appealService.addReply(server, id, replyRequest)
-                .map(reply -> ResponseEntity.status(HttpStatus.CREATED).body(reply))
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of("error", e.getMessage()));
-        }
+        return appealService.addReply(server, id, replyRequest)
+            .map(reply -> ResponseEntity.status(HttpStatus.CREATED).body(reply))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}/status")
@@ -80,13 +74,8 @@ public class PanelAppealController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            return appealService.updateStatus(server, id, statusRequest)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest()
-                .body(Map.of("error", e.getMessage()));
-        }
+        return appealService.updateStatus(server, id, statusRequest)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 }

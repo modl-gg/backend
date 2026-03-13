@@ -1,5 +1,6 @@
 package gg.modl.backend.email;
 
+import gg.modl.backend.exception.ExternalServiceException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.io.UnsupportedEncodingException;
@@ -21,7 +22,7 @@ public class EmailService {
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.STAFF_INVITE_TEMPLATE.build(serverName, role, invitationLink);
             send(toEmail, email);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to send staff invitation email", e);
+            throw new ExternalServiceException("Failed to send staff invitation email", e);
         }
     }
 

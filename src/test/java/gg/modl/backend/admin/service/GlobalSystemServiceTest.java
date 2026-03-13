@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.admin.data.SystemConfig;
-import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.mongo.repository.SystemConfigMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import java.util.Optional;
@@ -25,17 +24,13 @@ class GlobalSystemServiceTest {
     @Mock
     private SystemPromptMongoRepository systemPromptRepository;
 
-    @Mock
-    private AITicketAnalysisService ticketAnalysisService;
-
     private GlobalSystemService globalSystemService;
 
     @BeforeEach
     void setUp() {
         globalSystemService = new GlobalSystemService(
             systemConfigRepository,
-            systemPromptRepository,
-            ticketAnalysisService
+            systemPromptRepository
         );
     }
 

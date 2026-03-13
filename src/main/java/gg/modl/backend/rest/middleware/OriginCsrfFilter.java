@@ -1,7 +1,10 @@
 package gg.modl.backend.rest.middleware;
 
 import gg.modl.backend.auth.AuthConfiguration;
+import gg.modl.backend.config.ModlCorsProperties;
+import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import jakarta.annotation.PostConstruct;
@@ -17,7 +20,6 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -25,16 +27,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class OriginCsrfFilter extends OncePerRequestFilter {
     private final AuthConfiguration authConfiguration;
-    @Value("${modl.cors.system-origins:https://modl.gg,https://admin.modl.gg,https://modl.top,https://admin.modl.top}")
-    private String systemOrigins;
-    @Value("${modl.development-mode:false}")
-    private boolean developmentMode;
+    private final ModlCorsProperties corsProperties;
+    private final ModlProperties modlProperties;
     private volatile Set<String> parsedSystemOrigins = Set.of();
-    private static final String ADMIN_SESSION_COOKIE = "modl.admin.session";
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (developmentMode) {
+        if (modlProperties.isDevelopmentMode()) {
             return true;
         }
 
@@ -75,8 +74,6 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Compatibility path for non-browser clients (or clients that strip origin/referrer):
-        // block only when browser metadata explicitly marks the request as cross-site.
         String fetchSite = request.getHeader("Sec-Fetch-Site");
         if (fetchSite == null || fetchSite.isBlank()
             || "same-origin".equalsIgnoreCase(fetchSite)
@@ -98,11 +95,12 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
         String panelSessionCookie = authConfiguration.getSessionCookieName();
         return Arrays.stream(cookies)
             .map(Cookie::getName)
-            .anyMatch(name -> panelSessionCookie.equals(name) || ADMIN_SESSION_COOKIE.equals(name));
+            .anyMatch(name -> panelSessionCookie.equals(name) || RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(name));
     }
 
     @PostConstruct
     void initParsedOrigins() {
+        String systemOrigins = corsProperties.getSystemOrigins();
         if (systemOrigins != null && !systemOrigins.isBlank()) {
             parsedSystemOrigins = Arrays.stream(systemOrigins.split(","))
                 .map(String::trim)
