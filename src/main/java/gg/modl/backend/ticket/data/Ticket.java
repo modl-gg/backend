@@ -92,6 +92,9 @@ public class Ticket {
     @Nullable
     private AIAnalysisResult aiAnalysis;
 
+    @Nullable
+    private String replayUrl;
+
     private boolean emailAuthEnabled;
     private boolean hidden;
 

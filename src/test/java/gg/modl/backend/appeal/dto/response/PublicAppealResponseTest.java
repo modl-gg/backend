@@ -34,7 +34,8 @@ class PublicAppealResponseTest {
             null,
             null,
             false,
-            false
+            false,
+            null
         );
 
         PublicAppealResponse publicAppealResponse = PublicAppealResponse.fromTicketResponse(ticketResponse);

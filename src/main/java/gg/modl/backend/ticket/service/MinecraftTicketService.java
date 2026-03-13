@@ -75,6 +75,7 @@ public class MinecraftTicketService {
             .chatMessages(unfinished ? null : chatMessages)
             .data(ticketData.isEmpty() ? null : ticketData)
             .priority(TicketPriority.resolveOrDefault(request.priority()))
+            .replayUrl(request.replayUrl())
             .locked(false)
             .created(now)
             .updatedAt(now)
@@ -173,6 +174,9 @@ public class MinecraftTicketService {
         report.put("createdAt", ticket.getCreated());
         report.put("assignedTo", ticket.getAssignedTo());
         report.put("chatMessages", ticket.getChatMessages());
+        if (ticket.getReplayUrl() != null) {
+            report.put("replayUrl", ticket.getReplayUrl());
+        }
         return report;
     }
 
@@ -331,6 +335,9 @@ public class MinecraftTicketService {
         response.put("locked", ticket.isLocked());
         response.put("replies", replies);
         response.put("chatMessages", ticket.getChatMessages());
+        if (ticket.getReplayUrl() != null) {
+            response.put("replayUrl", ticket.getReplayUrl());
+        }
         return response;
     }
 

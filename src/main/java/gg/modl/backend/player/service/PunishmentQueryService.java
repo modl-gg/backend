@@ -88,14 +88,13 @@ public class PunishmentQueryService {
             punishmentTypeService.isAppealable(server, ordinal),
             data != null ? (String) data.get("reason") : null,
             data != null ? (String) data.get("severity") : null,
-            data != null ? (String) data.get("status") : null,
+            data != null ? resolveOffenderStatus(data) : null,
             active,
             expires,
             playerUuid,
             playerUsername,
             data != null ? (Boolean) data.get("altBlocking") : null,
             data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
-            data != null ? (String) data.get("offenseLevel") : null,
             effectiveCategory,
             resolveModifications(punishment.getModifications(), resolvedIssuers),
             resolveNotes(punishment.getNotes(), resolvedIssuers),
@@ -110,6 +109,23 @@ public class PunishmentQueryService {
             return Map.of();
         }
         return issuerNameResolver.batchResolve(ids, server, staffRepository);
+    }
+
+    private static String resolveOffenderStatus(Map<String, Object> data) {
+        String status = data.get("status") instanceof String s ? s : null;
+        if (status != null) {
+            return status;
+        }
+        // Backward compat: map legacy offenseLevel to display status
+        String offenseLevel = data.get("offenseLevel") instanceof String s ? s : null;
+        if (offenseLevel != null) {
+            return switch (offenseLevel.toLowerCase()) {
+                case "first" -> "low";
+                case "habitual" -> "high";
+                default -> offenseLevel;
+            };
+        }
+        return null;
     }
 
     static Set<String> collectIssuerIds(Punishment punishment) {
@@ -341,14 +357,20 @@ public class PunishmentQueryService {
         String socialOffenderLevel = thresholds.getSocialOffenderLevel(currentStatus.socialPoints());
         String gameplayOffenderLevel = thresholds.getGameplayOffenderLevel(currentStatus.gameplayPoints());
 
+        String displayStatus = switch (offenseLevel) {
+            case "first" -> "low";
+            case "habitual" -> "high";
+            default -> offenseLevel;
+        };
+
         PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()
             .status(200)
             .success(true)
+            .offenderStatus(displayStatus)
             .socialStatus(socialOffenderLevel)
             .gameplayStatus(gameplayOffenderLevel)
             .socialPoints(currentStatus.socialPoints())
             .gameplayPoints(currentStatus.gameplayPoints())
-            .offenseLevel(offenseLevel)
             .singleSeverityPunishment(punishmentType.isSingleSeverityPunishment())
             .permanentUntilUsernameChange(punishmentType.isPermanentUntilUsernameChange())
             .permanentUntilSkinChange(punishmentType.isPermanentUntilSkinChange())

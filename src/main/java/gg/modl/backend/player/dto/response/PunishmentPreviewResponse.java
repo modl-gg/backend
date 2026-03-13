@@ -20,8 +20,8 @@ public class PunishmentPreviewResponse {
     private final int socialPoints;
     private final int gameplayPoints;
 
-    // Offense level calculation
-    private final String offenseLevel; // "first", "medium", or "habitual"
+    // Offender status
+    private final String offenderStatus; // "low", "medium", or "high"
 
     // Punishment preview for each severity
     private final SeverityPreview lenient;

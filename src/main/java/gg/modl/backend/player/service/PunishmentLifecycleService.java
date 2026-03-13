@@ -3,7 +3,6 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.player.controller.MinecraftPunishmentController.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -86,7 +85,7 @@ public class PunishmentLifecycleService {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
 
         if (player == null) {
-            throw new ResourceNotFoundException("Player not found");
+            throw new IllegalArgumentException("Player not found");
         }
         Date now = new Date();
         Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
@@ -134,7 +133,14 @@ public class PunishmentLifecycleService {
                     }
                 }
 
-                data.put("offenseLevel", offenseLevel);
+                if (!data.containsKey("status") || data.get("status") == null) {
+                    String displayStatus = switch (offenseLevel) {
+                        case "first" -> "low";
+                        case "habitual" -> "high";
+                        default -> offenseLevel;
+                    };
+                    data.put("status", displayStatus);
+                }
 
                 if (durationDetail != null) {
                     long durationMs = durationDetail.toMilliseconds();
@@ -732,7 +738,7 @@ public class PunishmentLifecycleService {
     private String createLinkedBanPunishment(Server server, UUID playerUuid, String parentPunishmentId, String parentPlayerUuid, Long duration) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
         if (player == null) {
-            throw new ResourceNotFoundException("Player not found");
+            throw new IllegalArgumentException("Player not found");
         }
 
         Date now = new Date();

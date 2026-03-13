@@ -21,6 +21,7 @@ public record MinecraftCreateTicketRequest(
     List<String> tags,
     @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")
     String priority,
-    String createdServer
+    String createdServer,
+    String replayUrl
 ) {
 }

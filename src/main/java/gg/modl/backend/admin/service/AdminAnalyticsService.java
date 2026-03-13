@@ -1,15 +1,14 @@
 package gg.modl.backend.admin.service;
 
 import gg.modl.backend.analytics.data.MetricSnapshot;
+import gg.modl.backend.analytics.data.ServerInstanceSnapshot;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateServersResult;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateValueResult;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.NameValueResult;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -17,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 public class AdminAnalyticsService {
     private final ServerMongoRepository serverRepository;
     private final MetricSnapshotMongoRepository metricSnapshotRepository;
+    private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
     private final GlobalMongoAdminRepository globalMongoAdminRepository;
     private final AdminServerService adminServerService;
 
@@ -48,9 +49,9 @@ public class AdminAnalyticsService {
                                   ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
                                   : (currentPeriodServers > 0 ? 100 : 0);
 
-        List<NameValueResult> planResults = serverRepository.aggregatePlanCounts();
-        List<NameValueResult> statusResults = serverRepository.aggregateProvisioningStatusCounts();
-        List<DateServersResult> registrationTrend = serverRepository.findRegistrationTrend(startDate);
+        List<Document> planResults = serverRepository.aggregatePlanCounts();
+        List<Document> statusResults = serverRepository.aggregateProvisioningStatusCounts();
+        List<Document> registrationTrend = serverRepository.findRegistrationTrend(startDate);
         List<Server> topServers = serverRepository.findTopCompletedVerifiedByUserCount(10);
 
         long serversWithData = serverRepository.countCompletedWithUsers();
@@ -105,16 +106,35 @@ public class AdminAnalyticsService {
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
 
         List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
+        List<ServerInstanceSnapshot> instanceSnapshots = serverInstanceSnapshotRepository.findSinceOrdered(startDate);
 
-        List<Map<String, Object>> data = snapshots.stream().map(s -> Map.<String, Object>of(
+        List<Map<String, Object>> metricData = snapshots.stream().map(s -> Map.<String, Object>of(
             "date", s.getDate().toInstant().toString(),
             "activeServers", s.getActiveServers(),
-            "totalPlayers", s.getTotalPlayers(),
-            "onlinePlayers", s.getOnlinePlayers(),
             "totalServers", s.getTotalServers()
         )).toList();
 
-        return Map.of("success", true, "data", data);
+        List<Map<String, Object>> serverInstances = instanceSnapshots.stream().map(s -> {
+            Map<String, Object> entry = new HashMap<>();
+            entry.put("date", s.getDate().toInstant().toString());
+            List<Map<String, Object>> servers = s.getServers() != null
+                ? s.getServers().stream().map(srv -> {
+                    Map<String, Object> srvMap = new HashMap<>();
+                    srvMap.put("serverId", srv.getServerId());
+                    srvMap.put("serverName", srv.getServerName());
+                    srvMap.put("playerCount", srv.getPlayerCount());
+                    srvMap.put("platform", srv.getPlatform());
+                    srvMap.put("version", srv.getVersion());
+                    srvMap.put("ipAddress", srv.getIpAddress());
+                    srvMap.put("pluginVersion", srv.getPluginVersion());
+                    return srvMap;
+                }).toList()
+                : List.of();
+            entry.put("servers", servers);
+            return entry;
+        }).toList();
+
+        return Map.of("success", true, "data", metricData, "serverInstances", serverInstances);
     }
 
     public Map<String, Object> getUsage() {
@@ -145,7 +165,7 @@ public class AdminAnalyticsService {
 
         int days = resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-        List<DateValueResult> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
+        List<Document> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
 
         return Map.of(
             "success", true,

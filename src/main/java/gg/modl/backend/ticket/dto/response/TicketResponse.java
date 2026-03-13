@@ -30,6 +30,7 @@ public record TicketResponse(
     List<Ticket.ChatMessage> chatMessages,
     AIAnalysisResult aiAnalysis,
     boolean emailAuthEnabled,
-    boolean hidden
+    boolean hidden,
+    String replayUrl
 ) {
 }

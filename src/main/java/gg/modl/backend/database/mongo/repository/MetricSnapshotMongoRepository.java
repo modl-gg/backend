@@ -25,12 +25,10 @@ public class MetricSnapshotMongoRepository extends AbstractGlobalMongoRepository
         return find(query);
     }
 
-    public void upsertSnapshot(Date date, long activeServers, long totalServers, long totalPlayers, long onlinePlayers, Date createdAt) {
+    public void upsertSnapshot(Date date, long activeServers, long totalServers, Date createdAt) {
         Update update = new Update()
             .set(MetricSnapshotFields.ACTIVE_SERVERS, activeServers)
             .set(MetricSnapshotFields.TOTAL_SERVERS, totalServers)
-            .set(MetricSnapshotFields.TOTAL_PLAYERS, totalPlayers)
-            .set(MetricSnapshotFields.ONLINE_PLAYERS, onlinePlayers)
             .setOnInsert(MetricSnapshotFields.CREATED_AT, createdAt);
         upsert(Query.query(MongoQueries.where(MetricSnapshotFields.DATE).is(date)), update);
     }

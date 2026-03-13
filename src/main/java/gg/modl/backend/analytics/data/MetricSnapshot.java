@@ -15,21 +15,15 @@ public class MetricSnapshot {
     @Id
     private String id;
 
-    @Field("date")
+    @Field
     private Date date; // truncated to hour (UTC)
 
-    @Field("activeServers")
+    @Field
     private long activeServers;
 
-    @Field("totalServers")
+    @Field
     private long totalServers;
 
-    @Field("totalPlayers")
-    private long totalPlayers;
-
-    @Field("onlinePlayers")
-    private long onlinePlayers;
-
-    @Field("createdAt")
+    @Field
     private Date createdAt;
 }

@@ -4,6 +4,7 @@ public final class CollectionName {
     // Global
     public static final String MODL_SERVERS = "servers";
     public static final String METRIC_SNAPSHOTS = "metric_snapshots";
+    public static final String SERVER_INSTANCE_SNAPSHOTS = "server_instance_snapshots";
 
     // Core
     public static final String PLAYERS = "players";
@@ -24,11 +25,6 @@ public final class CollectionName {
 
     // Audit
     public static final String LOGS = "logs";
-    public static final String SYSTEM_LOGS = "system_logs";
-    public static final String SECURITY_EVENTS = "security_events";
-
-    // Migrations
-    public static final String MIGRATIONS = "migrations";
 
     // WebAuthn
     public static final String WEBAUTHN_CREDENTIALS = "webauthn_credentials";

@@ -12,7 +12,7 @@ public interface DefaultPrompts {
         ```
 
         SEVERITY LEVELS:
-        - low: Clearly violating the rule in a demonstrable way, yet not withstanding any aggravating factors or repeated violations
+        - lenient: Clearly violating the rule in a demonstrable way, yet not withstanding any aggravating factors or repeated violations
         - regular: Fragrantly violating the rule, withstanding some aggravating factors or repeated violations
         - severe: Multiple repeated violations, complete disregard of the rule, excessive amount of aggravating factors
 
@@ -48,7 +48,7 @@ public interface DefaultPrompts {
                 "severity": {
                   "type": "string",
                   "enum": [
-                    "low",
+                    "lenient",
                     "regular",
                     "severe"
                   ],

@@ -1,6 +1,7 @@
 package gg.modl.backend.analytics.service;
 
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 public class MetricSnapshotService {
     private final ServerMongoRepository serverRepository;
     private final MetricSnapshotMongoRepository metricSnapshotRepository;
+    private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
 
     @Scheduled(cron = "0 */5 * * * *")
     public void takeSnapshot() {
@@ -29,20 +31,16 @@ public class MetricSnapshotService {
 
             long totalServers = serverRepository.countAll();
             long activeServers = serverRepository.countActiveSince(fiveMinutesAgo);
-            long totalPlayers = serverRepository.getUsageTotals().totalUsers();
-            long onlinePlayers = serverRepository.sumOnlinePlayersSince(fiveMinutesAgo);
 
             metricSnapshotRepository.upsertSnapshot(
                 fiveTruncated,
                 activeServers,
                 totalServers,
-                totalPlayers,
-                onlinePlayers,
                 now
             );
 
-            log.info("Metric snapshot saved: activeServers={}, totalServers={}, totalPlayers={}, onlinePlayers={}",
-                activeServers, totalServers, totalPlayers, onlinePlayers);
+            log.info("Metric snapshot saved: activeServers={}, totalServers={}",
+                activeServers, totalServers);
         } catch (Exception e) {
             log.error("Failed to take metric snapshot", e);
         }
@@ -53,9 +51,10 @@ public class MetricSnapshotService {
         try {
             Date oneDayAgo = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
             metricSnapshotRepository.deleteOlderThan(oneDayAgo);
-            log.info("Purged metric snapshots older than 24 hours");
+            serverInstanceSnapshotRepository.deleteOlderThan(oneDayAgo);
+            log.info("Purged metric snapshots and server instance snapshots older than 24 hours");
         } catch (Exception e) {
-            log.error("Failed to purge old metric snapshots", e);
+            log.error("Failed to purge old snapshots", e);
         }
     }
 }

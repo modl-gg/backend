@@ -32,6 +32,16 @@ public class MinecraftSyncController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        MinecraftSyncService.ServerStatusInput serverStatusInput = syncRequest.serverStatus() != null
+            ? new MinecraftSyncService.ServerStatusInput(
+                syncRequest.serverStatus().onlinePlayerCount(),
+                syncRequest.serverStatus().maxPlayers(),
+                syncRequest.serverStatus().serverVersion(),
+                syncRequest.serverStatus().platformType(),
+                syncRequest.serverStatus().pluginVersion()
+            )
+            : null;
+        String clientIp = RequestUtil.getClientIp(httpRequest);
         return ResponseEntity.ok(minecraftSyncService.sync(
             server,
             syncRequest.lastSyncTimestamp(),
@@ -47,7 +57,9 @@ public class MinecraftSyncController {
             syncRequest.commandLogs() == null ? List.of() : syncRequest.commandLogs()
                 .stream()
                 .map(log -> new MinecraftSyncService.CommandLogInput(log.uuid(), log.username(), log.command(), log.timestamp(), log.server()))
-                .toList()
+                .toList(),
+            serverStatusInput,
+            clientIp
         ));
     }
 
@@ -78,7 +90,9 @@ public class MinecraftSyncController {
         int onlinePlayerCount,
         int maxPlayers,
         String serverVersion,
-        String timestamp
+        String timestamp,
+        String platformType,
+        String pluginVersion
     ) {
     }
 }

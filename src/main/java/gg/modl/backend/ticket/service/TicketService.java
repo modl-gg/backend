@@ -86,7 +86,8 @@ public class TicketService {
             ticket.getChatMessages(),
             ticket.getAiAnalysis(),
             ticket.isEmailAuthEnabled(),
-            ticket.isHidden()
+            ticket.isHidden(),
+            ticket.getReplayUrl()
         );
     }
 
