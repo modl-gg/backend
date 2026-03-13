@@ -34,4 +34,9 @@ public final class CollectionName {
     public static final String KNOWLEDGEBASE_CATEGORIES = "knowledgebasecategories";
     public static final String KNOWLEDGEBASE_ARTICLES = "knowledgebasearticles";
     public static final String HOMEPAGE_CARDS = "homepagecards";
+
+    // System
+    public static final String SYSTEM_LOGS = "system_logs";
+    public static final String SECURITY_EVENTS = "security_events";
+    public static final String MIGRATIONS = "migrations";
 }

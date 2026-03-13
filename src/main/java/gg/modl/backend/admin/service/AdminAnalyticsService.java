@@ -16,7 +16,9 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.Document;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateServersResult;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateValueResult;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository.NameValueResult;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -49,9 +51,9 @@ public class AdminAnalyticsService {
                                   ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
                                   : (currentPeriodServers > 0 ? 100 : 0);
 
-        List<Document> planResults = serverRepository.aggregatePlanCounts();
-        List<Document> statusResults = serverRepository.aggregateProvisioningStatusCounts();
-        List<Document> registrationTrend = serverRepository.findRegistrationTrend(startDate);
+        List<NameValueResult> planResults = serverRepository.aggregatePlanCounts();
+        List<NameValueResult> statusResults = serverRepository.aggregateProvisioningStatusCounts();
+        List<DateServersResult> registrationTrend = serverRepository.findRegistrationTrend(startDate);
         List<Server> topServers = serverRepository.findTopCompletedVerifiedByUserCount(10);
 
         long serversWithData = serverRepository.countCompletedWithUsers();
@@ -165,7 +167,7 @@ public class AdminAnalyticsService {
 
         int days = resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-        List<Document> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
+        List<DateValueResult> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
 
         return Map.of(
             "success", true,

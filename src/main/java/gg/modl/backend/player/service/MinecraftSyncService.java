@@ -1,7 +1,5 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
@@ -387,12 +385,7 @@ public class MinecraftSyncService {
     }
 
     private void markOfflinePlayers(Server server, Set<String> onlineUuids, String serverName, Date logoutTime) {
-        Criteria staleOnlineCriteria = MongoQueries.where(PlayerFields.DATA_IS_ONLINE).is(true)
-            .and(PlayerFields.MINECRAFT_UUID).nin(onlineUuids);
-        if (serverName != null && !serverName.isBlank()) {
-            staleOnlineCriteria = staleOnlineCriteria.and(PlayerFields.DATA_LAST_SERVER).is(serverName);
-        }
-        playerRepository.markStalePlayersOffline(server, staleOnlineCriteria, logoutTime);
+        playerRepository.markStalePlayersOffline(server, onlineUuids, serverName, logoutTime);
     }
 
     private List<Map<String, Object>> getRecentStaffEvents(
