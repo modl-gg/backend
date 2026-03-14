@@ -214,8 +214,8 @@ public class PlayerStatusCalculator {
                 String statusVal = data.get("status") instanceof String sv ? sv.toLowerCase() : "";
                 offenseLevel = switch (statusVal) {
                     case "low" -> "first";
-                    case "high" -> "habitual";
                     case "medium" -> "medium";
+                    case "habitual" -> "habitual";
                     default -> "first";
                 };
             }

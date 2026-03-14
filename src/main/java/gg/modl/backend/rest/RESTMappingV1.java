@@ -105,4 +105,9 @@ public final class RESTMappingV1 {
 
     private static final String SECURITY = "/security";
     public static final String ADMIN_SECURITY = PREFIX_ADMIN + SECURITY;
+
+    // Replays
+    private static final String REPLAYS = "/replays";
+    public static final String MINECRAFT_REPLAYS = PREFIX_MINECRAFT + REPLAYS;
+    public static final String PUBLIC_REPLAYS = PREFIX_PUBLIC + REPLAYS;
 }

@@ -306,6 +306,7 @@ public class S3StorageService {
         byType.put("evidence", 0L);
         byType.put("logs", 0L);
         byType.put("backup", 0L);
+        byType.put("replay", 0L);
         byType.put("other", 0L);
 
         if (s3Client == null) {
@@ -351,6 +352,9 @@ public class S3StorageService {
         }
         if (key.contains("/backup/")) {
             return "backup";
+        }
+        if (key.contains("/replays/")) {
+            return "replay";
         }
         return "other";
     }

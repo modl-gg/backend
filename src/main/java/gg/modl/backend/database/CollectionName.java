@@ -39,4 +39,7 @@ public final class CollectionName {
     public static final String SYSTEM_LOGS = "system_logs";
     public static final String SECURITY_EVENTS = "security_events";
     public static final String MIGRATIONS = "migrations";
+
+    // Replays
+    public static final String REPLAYS = "replays";
 }

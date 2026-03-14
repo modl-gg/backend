@@ -121,8 +121,7 @@ public class PunishmentQueryService {
         if (offenseLevel != null) {
             return switch (offenseLevel.toLowerCase()) {
                 case "first" -> "low";
-                case "habitual" -> "high";
-                default -> offenseLevel;
+                default -> offenseLevel; // "medium" and "habitual" stay as-is
             };
         }
         return null;
@@ -359,8 +358,7 @@ public class PunishmentQueryService {
 
         String displayStatus = switch (offenseLevel) {
             case "first" -> "low";
-            case "habitual" -> "high";
-            default -> offenseLevel;
+            default -> offenseLevel; // "medium" and "habitual" stay as-is
         };
 
         PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()

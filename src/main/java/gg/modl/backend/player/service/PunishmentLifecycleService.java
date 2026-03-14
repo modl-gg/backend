@@ -136,8 +136,7 @@ public class PunishmentLifecycleService {
                 if (!data.containsKey("status") || data.get("status") == null) {
                     String displayStatus = switch (offenseLevel) {
                         case "first" -> "low";
-                        case "habitual" -> "high";
-                        default -> offenseLevel;
+                        default -> offenseLevel; // "medium" and "habitual" stay as-is
                     };
                     data.put("status", displayStatus);
                 }
