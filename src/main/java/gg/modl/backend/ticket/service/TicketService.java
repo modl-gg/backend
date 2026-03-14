@@ -1,7 +1,9 @@
 package gg.modl.backend.ticket.service;
 
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
@@ -40,9 +42,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TicketService {
     private final TicketMongoRepository ticketRepository;
+    private final StaffMongoRepository staffRepository;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
+    private static final String AVATAR_URL_FORMAT = "https://mc-heads.net/avatar/%s/32";
     static final int MAX_CHAT_MESSAGE_LENGTH = 256;
     static final int MAX_CHAT_MESSAGES = 50;
 
@@ -57,11 +61,11 @@ public class TicketService {
     }
 
     public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
-        return ticketRepository.findById(server, ticketId).map(this::toTicketResponse);
+        return ticketRepository.findById(server, ticketId).map(ticket -> toTicketResponse(server, ticket));
     }
 
-    private TicketResponse toTicketResponse(Ticket ticket) {
-        List<TicketReply> processedReplies = processRepliesWithNames(ticket);
+    private TicketResponse toTicketResponse(Server server, Ticket ticket) {
+        List<TicketReply> processedReplies = processRepliesWithNames(server, ticket);
         String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
 
         return new TicketResponse(
@@ -91,12 +95,15 @@ public class TicketService {
         );
     }
 
-    private List<TicketReply> processRepliesWithNames(Ticket ticket) {
+    private List<TicketReply> processRepliesWithNames(Server server, Ticket ticket) {
         if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
             return ticket.getReplies();
         }
 
         String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
+
+        // Collect staff usernames that need avatar resolution
+        Map<String, String> staffAvatarCache = new HashMap<>();
 
         return ticket.getReplies()
             .stream().map(reply -> {
@@ -106,6 +113,23 @@ public class TicketService {
                 }
                 if (reply.getType() == null || reply.getType().isBlank()) {
                     reply.setType(reply.isStaff() ? "staff" : "user");
+                }
+                // Resolve staff avatar if missing
+                if (reply.isStaff() && (reply.getAvatar() == null || reply.getAvatar().isBlank()) && reply.getName() != null) {
+                    String cachedAvatar = staffAvatarCache.computeIfAbsent(reply.getName(), name -> {
+                        try {
+                            return staffRepository.findByUsername(server, name)
+                                .map(Staff::getAssignedMinecraftUuid)
+                                .filter(uuid -> uuid != null && !uuid.isBlank())
+                                .map(uuid -> String.format(AVATAR_URL_FORMAT, uuid))
+                                .orElse("");
+                        } catch (Exception e) {
+                            return "";
+                        }
+                    });
+                    if (!cachedAvatar.isEmpty()) {
+                        reply.setAvatar(cachedAvatar);
+                    }
                 }
                 return reply;
             }).toList();
@@ -188,7 +212,7 @@ public class TicketService {
 
         ticketRepository.saveEntity(server, ticket);
 
-        return toTicketResponse(ticket);
+        return toTicketResponse(server, ticket);
     }
 
     public Optional<TicketResponse> updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
@@ -262,7 +286,7 @@ public class TicketService {
             notificationService.notifyTicketClosed(server, saved);
         }
 
-        return Optional.of(toTicketResponse(saved));
+        return Optional.of(toTicketResponse(server, saved));
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
@@ -451,7 +475,7 @@ public class TicketService {
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
 
-        return Optional.of(toTicketResponse(saved));
+        return Optional.of(toTicketResponse(server, saved));
     }
 
     public String getEmailHint(Ticket ticket) {
