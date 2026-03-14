@@ -112,8 +112,7 @@ public class AdminAnalyticsService {
 
         List<Map<String, Object>> metricData = snapshots.stream().map(s -> Map.<String, Object>of(
             "date", s.getDate().toInstant().toString(),
-            "activeServers", s.getActiveServers(),
-            "totalServers", s.getTotalServers()
+            "activeServers", s.getActiveServers()
         )).toList();
 
         List<Map<String, Object>> serverInstances = instanceSnapshots.stream().map(s -> {

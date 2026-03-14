@@ -22,8 +22,5 @@ public class MetricSnapshot {
     private long activeServers;
 
     @Field
-    private long totalServers;
-
-    @Field
     private Date createdAt;
 }

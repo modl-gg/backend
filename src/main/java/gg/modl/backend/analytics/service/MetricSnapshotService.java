@@ -29,18 +29,13 @@ public class MetricSnapshotService {
             Date fiveTruncated = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
             Date fiveMinutesAgo = Date.from(nowInstant.minus(5, ChronoUnit.MINUTES));
 
-            long totalServers = serverRepository.countAll();
             long activeServers = serverRepository.countActiveSince(fiveMinutesAgo);
 
             metricSnapshotRepository.upsertSnapshot(
                 fiveTruncated,
                 activeServers,
-                totalServers,
                 now
             );
-
-            log.info("Metric snapshot saved: activeServers={}, totalServers={}",
-                activeServers, totalServers);
         } catch (Exception e) {
             log.error("Failed to take metric snapshot", e);
         }
