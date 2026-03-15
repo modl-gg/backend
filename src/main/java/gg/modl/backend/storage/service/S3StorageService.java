@@ -7,6 +7,7 @@ import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -17,16 +18,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Delete;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.ObjectVersion;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -69,12 +73,18 @@ public class S3StorageService {
         }
 
         try {
-            DeleteObjectRequest request = DeleteObjectRequest.builder()
+            List<ObjectIdentifier> toDelete = collectAllVersions(key);
+
+            if (toDelete.isEmpty()) {
+                return false;
+            }
+
+            DeleteObjectsRequest request = DeleteObjectsRequest.builder()
                 .bucket(s3Configuration.getBucketName())
-                .key(key)
+                .delete(Delete.builder().objects(toDelete).quiet(true).build())
                 .build();
 
-            s3Client.deleteObject(request);
+            s3Client.deleteObjects(request);
             return true;
         } catch (Exception e) {
             log.error("Error deleting file: {}", key, e);
@@ -359,22 +369,65 @@ public class S3StorageService {
         return "other";
     }
 
+    private List<ObjectIdentifier> collectAllVersions(String key) {
+        List<ObjectIdentifier> identifiers = new ArrayList<>();
+        String bucket = s3Configuration.getBucketName();
+
+        ListObjectVersionsRequest request = ListObjectVersionsRequest.builder()
+            .bucket(bucket)
+            .prefix(key)
+            .build();
+
+        ListObjectVersionsResponse response = s3Client.listObjectVersions(request);
+
+        for (ObjectVersion version : response.versions()) {
+            if (version.key().equals(key)) {
+                identifiers.add(ObjectIdentifier.builder()
+                    .key(key)
+                    .versionId(version.versionId())
+                    .build());
+            }
+        }
+
+        for (DeleteMarkerEntry marker : response.deleteMarkers()) {
+            if (marker.key().equals(key)) {
+                identifiers.add(ObjectIdentifier.builder()
+                    .key(key)
+                    .versionId(marker.versionId())
+                    .build());
+            }
+        }
+
+        return identifiers;
+    }
+
     public int bulkDelete(List<String> keys) {
         if (s3Client == null || keys.isEmpty()) {
             return 0;
         }
 
-        List<ObjectIdentifier> toDelete = keys.stream()
-            .map(key -> ObjectIdentifier.builder().key(key).build())
-            .toList();
+        List<ObjectIdentifier> toDelete = new ArrayList<>();
+        for (String key : keys) {
+            toDelete.addAll(collectAllVersions(key));
+        }
 
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-            .bucket(s3Configuration.getBucketName())
-            .delete(Delete.builder().objects(toDelete).build())
-            .build();
+        if (toDelete.isEmpty()) {
+            return 0;
+        }
 
-        DeleteObjectsResponse response = s3Client.deleteObjects(request);
-        return response.deleted().size();
+        int totalDeleted = 0;
+        for (int i = 0; i < toDelete.size(); i += 1000) {
+            List<ObjectIdentifier> batch = toDelete.subList(i, Math.min(i + 1000, toDelete.size()));
+            DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .delete(Delete.builder().objects(batch).quiet(true).build())
+                .build();
+
+            DeleteObjectsResponse response = s3Client.deleteObjects(request);
+            totalDeleted += response.deleted().size();
+        }
+
+        return totalDeleted;
     }
 
     /**
