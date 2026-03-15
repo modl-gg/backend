@@ -57,11 +57,13 @@ public class PanelMediaController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        if (!validationService.isKeyOwnedByServer(normalizedKey, server.getDatabaseName())) {
             throw new ForbiddenException("Access denied");
         }
 
-        boolean deleted = s3StorageService.deleteFile(key);
+        boolean deleted = s3StorageService.deleteFile(normalizedKey);
         if (deleted) {
             return ResponseEntity.ok(Map.of("message", "File deleted"));
         }

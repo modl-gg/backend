@@ -73,11 +73,13 @@ public class PanelStorageController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        if (!normalizedKey.startsWith(server.getDatabaseName() + "/")) {
             throw new ForbiddenException("Access denied");
         }
 
-        String url = s3StorageService.getPresignedUrl(key);
+        String url = s3StorageService.getPresignedUrl(normalizedKey);
         if (url == null) {
             return ResponseEntity.notFound().build();
         }
