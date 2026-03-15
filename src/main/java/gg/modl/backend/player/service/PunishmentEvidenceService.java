@@ -16,7 +16,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -46,7 +46,7 @@ public class PunishmentEvidenceService {
             null
         ));
         context.punishment().getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "added evidence",
             now,
             resolvedIssuerName,
@@ -144,7 +144,7 @@ public class PunishmentEvidenceService {
             ));
         }
         context.punishment().getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "uploaded " + evidenceItems.size() + " evidence file(s)",
             now,
             resolvedIssuerName,
@@ -163,7 +163,7 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         ensurePunishmentCollections(context.punishment());
-        context.punishment().getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
+        context.punishment().getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
         persistPlayerPunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
@@ -182,7 +182,7 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         ensurePunishmentCollections(punishment);
-        punishment.getNotes().add(new PunishmentNote(new ObjectId().toHexString(), text, new Date(), resolvedIssuerName, issuerId));
+        punishment.getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
         persistPlayerPunishments(server, player);
         return player;
     }

@@ -26,7 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -434,7 +434,7 @@ public class MigrationProcessor {
                         String noteIssuer = validator.sanitizeString((String) noteMap.get("issuerName"), 100);
 
                         if (text != null && date != null) {
-                            notes.add(new PunishmentNote(new ObjectId().toHexString(), text, date, noteIssuer != null ? noteIssuer : "Unknown", null));
+                            notes.add(new PunishmentNote(IdGenerator.generateShortId(), text, date, noteIssuer != null ? noteIssuer : "Unknown", null));
                         }
                     }
                 }

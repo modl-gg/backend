@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -50,7 +50,7 @@ public class PunishmentMutationService {
         String modIssuerId = request.issuerId();
 
         PunishmentModification modification = new PunishmentModification(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             request.type(),
             now,
             modIssuerName,
@@ -124,7 +124,7 @@ public class PunishmentMutationService {
         ensurePunishmentCollections(punishment);
 
         punishment.getModifications().add(new PunishmentModification(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "MANUAL_DURATION_CHANGE",
             now,
             resolvedIssuerName,
@@ -139,7 +139,7 @@ public class PunishmentMutationService {
                               ? "permanent"
                               : PunishmentMapper.formatDuration(newDuration, false);
         punishment.getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "changed duration to " + durationText,
             now,
             resolvedIssuerName,
@@ -191,7 +191,7 @@ public class PunishmentMutationService {
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         ensurePunishmentData(punishment).put(toggleOption.dataKey, enabled);
         punishment.getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
             now,
             resolvedIssuerName,

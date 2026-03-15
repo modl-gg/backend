@@ -28,7 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -156,7 +156,7 @@ public class AppealService {
 
     private void linkAppealToPunishment(Server server, String playerUuid, String punishmentId, String appealId) {
         PunishmentNote appealOpenedNote = new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "opened appeal (#" + appealId + ")",
             new Date(),
             "System",
@@ -347,7 +347,7 @@ public class AppealService {
         String staffName = staffUsername != null ? staffUsername : "System";
 
         PunishmentNote appealRejectedNote = new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "rejected appeal (#" + appeal.getId() + ")",
             now,
             staffName,
@@ -383,7 +383,7 @@ public class AppealService {
         String staffName = staffUsername != null ? staffUsername : "System";
 
         PunishmentModification modification = new PunishmentModification(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "APPEAL_ACCEPT",
             now,
             staffName,
@@ -395,7 +395,7 @@ public class AppealService {
         );
 
         PunishmentNote appealAcceptedNote = new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "accepted appeal (#" + appeal.getId() + ")",
             now,
             staffName,

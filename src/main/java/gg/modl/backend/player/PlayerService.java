@@ -24,7 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -301,7 +301,7 @@ public class PlayerService {
 
     private Player newPlayer(UUID minecraftUuid, String username) {
         return Player.builder()
-            .id(new ObjectId().toHexString())
+            .id(IdGenerator.generateShortId())
             .minecraftUuid(minecraftUuid)
             .usernames(new ArrayList<>(List.of(new UsernameEntry(username, new Date()))))
             .notes(new ArrayList<>())
@@ -364,7 +364,7 @@ public class PlayerService {
         }
 
         NoteEntry entry = NoteEntry.builder()
-            .id(new ObjectId().toHexString())
+            .id(IdGenerator.generateShortId())
             .text(text)
             .date(new Date())
             .issuerName(issuerName)

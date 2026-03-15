@@ -21,7 +21,13 @@ public class ReplayService {
     private final ReplayMongoRepository replayRepository;
     private final S3StorageService s3StorageService;
 
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+
     public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
+        if (fileSize > MAX_FILE_SIZE) {
+            throw new IllegalArgumentException("File size exceeds maximum of 10 MB");
+        }
+
         String replayId = UUID.randomUUID().toString();
 
         PresignUploadResponse presign = s3StorageService.createPresignedUploadUrl(

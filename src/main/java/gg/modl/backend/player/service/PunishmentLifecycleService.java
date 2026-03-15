@@ -34,7 +34,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -220,7 +220,7 @@ public class PunishmentLifecycleService {
             issuedNote = "issued kick";
         }
         notes.add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             issuedNote,
             now,
             reqIssuerName,
@@ -228,7 +228,7 @@ public class PunishmentLifecycleService {
         ));
         if (request.reason() != null && !request.reason().isBlank()) {
             notes.add(new PunishmentNote(
-                new ObjectId().toHexString(),
+                IdGenerator.generateShortId(),
                 request.reason(),
                 now,
                 reqIssuerName,
@@ -239,7 +239,7 @@ public class PunishmentLifecycleService {
             for (CreateNoteRequest noteRequest : request.notes()) {
                 String noteIssuerId = noteRequest.issuerId() != null ? noteRequest.issuerId() : reqIssuerId;
                 String noteIssuerName = noteIssuerId != null ? null : (noteRequest.issuerName() != null ? noteRequest.issuerName() : request.issuerName());
-                notes.add(new PunishmentNote(new ObjectId().toHexString(), noteRequest.text(), now, noteIssuerName, noteIssuerId));
+                notes.add(new PunishmentNote(IdGenerator.generateShortId(), noteRequest.text(), now, noteIssuerName, noteIssuerId));
             }
         }
 
@@ -263,7 +263,7 @@ public class PunishmentLifecycleService {
             }
         }
 
-        String punishmentId = new ObjectId().toHexString();
+        String punishmentId = IdGenerator.generateShortId();
 
         Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
         Date startedDate = null;
@@ -416,7 +416,7 @@ public class PunishmentLifecycleService {
         ensurePunishmentCollections(punishment);
 
         punishment.getModifications().add(new PunishmentModification(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "MANUAL_PARDON",
             now,
             resolvedIssuerName,
@@ -428,7 +428,7 @@ public class PunishmentLifecycleService {
         ));
 
         punishment.getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "pardoned punishment",
             now,
             resolvedIssuerName,
@@ -436,7 +436,7 @@ public class PunishmentLifecycleService {
         ));
         if (reason != null && !reason.isBlank()) {
             punishment.getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
+                IdGenerator.generateShortId(),
                 reason,
                 now,
                 resolvedIssuerName,
@@ -503,7 +503,7 @@ public class PunishmentLifecycleService {
     private void addSystemPardon(Punishment punishment, String reason, Date now) {
         ensurePunishmentCollections(punishment);
         punishment.getModifications().add(new PunishmentModification(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "SYSTEM_PARDON",
             now,
             "System",
@@ -514,7 +514,7 @@ public class PunishmentLifecycleService {
             null
         ));
         punishment.getNotes().add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             reason,
             now,
             "System",
@@ -597,7 +597,7 @@ public class PunishmentLifecycleService {
             ensurePunishmentCollections(punishment);
             ensurePunishmentData(punishment).put("duration", newDuration);
             punishment.getModifications().add(new PunishmentModification(
-                new ObjectId().toHexString(),
+                IdGenerator.generateShortId(),
                 "MANUAL_DURATION_CHANGE",
                 now,
                 "System",
@@ -608,7 +608,7 @@ public class PunishmentLifecycleService {
                 null
             ));
             punishment.getNotes().add(new PunishmentNote(
-                new ObjectId().toHexString(),
+                IdGenerator.generateShortId(),
                 "Duration changed (cascaded from parent ban)",
                 now,
                 "System",
@@ -748,21 +748,21 @@ public class PunishmentLifecycleService {
             data.put("duration", duration);
         }
 
-        String punishmentId = new ObjectId().toHexString();
+        String punishmentId = IdGenerator.generateShortId();
 
         List<PunishmentNote> notes = new ArrayList<>();
         String linkedBanNote = duration != null && duration > 0
                                ? "issued " + PunishmentMapper.formatDuration(duration, false) + " ban"
                                : "issued permanent ban";
         notes.add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             linkedBanNote,
             now,
             "System",
             null
         ));
         notes.add(new PunishmentNote(
-            new ObjectId().toHexString(),
+            IdGenerator.generateShortId(),
             "Automatically issued linked ban due to alt-blocking ban on linked account",
             now,
             "System",

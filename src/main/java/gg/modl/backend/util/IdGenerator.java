@@ -17,4 +17,12 @@ public class IdGenerator {
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
+
+    public static String generateShortId() {
+        StringBuilder sb = new StringBuilder(8);
+        for (int i = 0; i < 8; i++) {
+            sb.append((char) ('A' + RANDOM.nextInt(26)));
+        }
+        return sb.toString();
+    }
 }

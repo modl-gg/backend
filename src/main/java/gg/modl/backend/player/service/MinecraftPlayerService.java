@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import org.bson.types.ObjectId;
+import gg.modl.backend.util.IdGenerator;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -611,7 +611,7 @@ public class MinecraftPlayerService {
         }
 
         ensurePlayerNotes(player).add(NoteEntry.builder()
-            .id(new ObjectId().toHexString())
+            .id(IdGenerator.generateShortId())
             .text(text)
             .date(new Date())
             .issuerName(issuerId != null ? null : issuerName)
