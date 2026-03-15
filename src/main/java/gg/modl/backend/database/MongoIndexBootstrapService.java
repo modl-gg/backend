@@ -1,8 +1,12 @@
 package gg.modl.backend.database;
 
+import gg.modl.backend.database.mongo.TenantMongoAccess;
+import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -11,8 +15,21 @@ import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class MongoIndexBootstrapService {
-    public void createIndexes(MongoTemplate template) {
+    private final TenantMongoAccess tenantMongoAccess;
+
+    @PostConstruct
+    public void initGlobalIndexes() {
+        try {
+            createGlobalIndexes(tenantMongoAccess.global());
+        } catch (Exception e) {
+            log.error("Failed to create global database indexes", e);
+        }
+    }
+
+    private void createGlobalIndexes(MongoTemplate template) {
         ensureIndexes(template, CollectionName.MODL_SERVERS, List.of(
             IndexSpec.standard("uidx_servers_serverName", doc("serverName", 1), true, false),
             IndexSpec.standard("uidx_servers_customDomain", doc("customDomain", 1), true, false),
@@ -33,6 +50,12 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_servers_createdAt", doc("createdAt", 1), false, false)
         ));
 
+        ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
+            IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
+        ));
+    }
+
+    public void createTenantIndexes(MongoTemplate template) {
         ensureIndexes(template, CollectionName.SETTINGS, List.of(
             IndexSpec.standard("uidx_settings_type", doc("type", 1), true, false)
         ));
@@ -125,7 +148,6 @@ public class MongoIndexBootstrapService {
         ));
 
         ensureIndexes(template, CollectionName.AUTH_CODES, List.of(
-            IndexSpec.standard("uidx_auth_codes_email", doc("email", 1), true, false),
             IndexSpec.ttl("idx_auth_codes_expiresAt_ttl", doc("expiresAt", 1), 0)
         ));
 
@@ -138,10 +160,6 @@ public class MongoIndexBootstrapService {
         ensureIndexes(template, CollectionName.SECURITY_EVENTS, List.of(
             IndexSpec.standard("idx_security_events_timestamp", doc("timestamp", -1), false, false),
             IndexSpec.standard("idx_security_events_severity_timestamp", doc("severity", 1).append("timestamp", -1), false, false)
-        ));
-
-        ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
-            IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.MIGRATIONS, List.of(

@@ -33,7 +33,7 @@ public class ServerProvisioningService {
 
     public void provision(Server server) {
         try {
-            mongoIndexBootstrapService.createIndexes(tenantMongoAccess.forServer(server));
+            mongoIndexBootstrapService.createTenantIndexes(tenantMongoAccess.forServer(server));
             seedAIModerationSettings(server);
             seedTicketForms(server);
             seedQuickResponses(server);
