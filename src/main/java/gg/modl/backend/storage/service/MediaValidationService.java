@@ -26,7 +26,8 @@ public class MediaValidationService {
         "appeal", Set.of("image/png", "image/jpeg", "image/gif", "image/apng", "image/webp", "video/mp4", "video/webm", "video/quicktime",
             "video/x-matroska", "application/pdf", "text/plain", "text/markdown"),
         "article", Set.of("image/png", "image/jpeg", "image/gif", "image/webp", "image/apng", "text/plain", "text/markdown"),
-        "server-icon", Set.of("image/png", "image/jpeg", "image/webp", "image/gif", "image/apng")
+        "server-icon", Set.of("image/png", "image/jpeg", "image/webp", "image/gif", "image/apng"),
+        "replay", Set.of("application/octet-stream")
     );
 
     private static final Map<String, Long> MAX_SIZES = Map.of(
@@ -34,7 +35,8 @@ public class MediaValidationService {
         "ticket", 100L * 1024 * 1024, // 100 mb
         "appeal", 100L * 1024 * 1024, // 100 mb
         "article", 50L * 1024 * 1024, // 50 mb
-        "server-icon", 10L * 1024 * 1024 //  10 mb
+        "server-icon", 10L * 1024 * 1024, //  10 mb
+        "replay", 10L * 1024 * 1024 // 10 mb
     );
 
     private static final Map<String, Long> PREMIUM_MAX_SIZES = Map.of(
@@ -42,7 +44,8 @@ public class MediaValidationService {
         "ticket", 1L * 1024 * 1024 * 1024, // 1 GB
         "appeal", 1L * 1024 * 1024 * 1024, // 1 GB
         "article", 50L * 1024 * 1024, // 50 mb
-        "server-icon", 10L * 1024 * 1024 //  10 mb
+        "server-icon", 10L * 1024 * 1024, //  10 mb
+        "replay", 10L * 1024 * 1024 // 10 mb
     );
 
     public ValidationResult validateMetadata(String fileName, String contentType, long fileSize, String uploadType) {
@@ -106,7 +109,8 @@ public class MediaValidationService {
             "tickets", List.copyOf(ALLOWED_TYPES.get("ticket")),
             "appeals", List.copyOf(ALLOWED_TYPES.get("appeal")),
             "articles", List.copyOf(ALLOWED_TYPES.get("article")),
-            "server-icons", List.copyOf(ALLOWED_TYPES.get("server-icon"))
+            "server-icons", List.copyOf(ALLOWED_TYPES.get("server-icon")),
+            "replays", List.copyOf(ALLOWED_TYPES.get("replay"))
         );
     }
 
@@ -121,7 +125,8 @@ public class MediaValidationService {
             "tickets", sizes.get("ticket"),
             "appeals", sizes.get("appeal"),
             "articles", sizes.get("article"),
-            "server-icons", sizes.get("server-icon")
+            "server-icons", sizes.get("server-icon"),
+            "replays", sizes.get("replay")
         );
     }
 

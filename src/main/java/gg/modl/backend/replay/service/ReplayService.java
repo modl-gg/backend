@@ -7,6 +7,7 @@ import gg.modl.backend.replay.dto.PublicReplayResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageQuotaService;
 import java.util.Date;
 import java.util.Optional;
 import java.util.UUID;
@@ -20,12 +21,17 @@ import org.springframework.stereotype.Service;
 public class ReplayService {
     private final ReplayMongoRepository replayRepository;
     private final S3StorageService s3StorageService;
+    private final StorageQuotaService storageQuotaService;
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
     public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
         if (fileSize > MAX_FILE_SIZE) {
             throw new IllegalArgumentException("File size exceeds maximum of 10 MB");
+        }
+
+        if (!storageQuotaService.canUpload(server, fileSize)) {
+            throw new IllegalArgumentException("Storage quota exceeded");
         }
 
         String replayId = UUID.randomUUID().toString();
