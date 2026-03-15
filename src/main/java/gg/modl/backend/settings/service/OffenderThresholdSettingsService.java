@@ -3,25 +3,23 @@ package gg.modl.backend.settings.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class OffenderThresholdSettingsService {
+    private final SettingsDocumentService settingsDocumentService;
+    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_STATUS_THRESHOLDS = "statusThresholds";
     private static final int MIN_THRESHOLD = 0;
     private static final int MAX_THRESHOLD = 10_000;
     private static final int MIN_POINT_EXPIRY_MONTHS = 1;
     private static final int MAX_POINT_EXPIRY_MONTHS = 60;
-
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
 
     public OffenderThresholdSettings getThresholdSettings(Server server) {
         return getThresholdSettingsState(server).data();
@@ -34,9 +32,9 @@ public class OffenderThresholdSettingsService {
     }
 
     public VersionedSettings<OffenderThresholdSettings> patchThresholdSettings(
-            Server server,
-            long expectedVersion,
-            OffenderThresholdSettings patch
+        Server server,
+        long expectedVersion,
+        OffenderThresholdSettings patch
     ) {
         OffenderThresholdSettings current = getThresholdSettings(server);
         if (patch != null) {
@@ -53,10 +51,10 @@ public class OffenderThresholdSettingsService {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(current, Map.class);
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_STATUS_THRESHOLDS,
-                expectedVersion,
-                new LinkedHashMap<>(data)
+            server,
+            SETTINGS_TYPE_STATUS_THRESHOLDS,
+            expectedVersion,
+            new LinkedHashMap<>(data)
         );
         return new VersionedSettings<>(mapToThresholdSettings(updated.data()), updated.version(), updated.updatedAt());
     }
@@ -98,7 +96,7 @@ public class OffenderThresholdSettingsService {
     }
 
     private OffenderThresholdSettings.CategoryThresholds sanitizeCategoryThresholds(
-            OffenderThresholdSettings.CategoryThresholds thresholds
+        OffenderThresholdSettings.CategoryThresholds thresholds
     ) {
         int medium = sanitizeThresholdValue(thresholds.getMedium());
         int habitual = sanitizeThresholdValue(thresholds.getHabitual());

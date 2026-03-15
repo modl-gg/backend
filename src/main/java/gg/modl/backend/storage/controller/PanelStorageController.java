@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -10,12 +11,17 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_STORAGE)
@@ -33,8 +39,8 @@ public class PanelStorageController {
 
     @GetMapping("/files")
     public ResponseEntity<Map<String, Object>> getFiles(
-            @RequestParam(required = false) String prefix,
-            HttpServletRequest request
+        @RequestParam(required = false) String prefix,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<StorageFileResponse> files = s3StorageService.listFiles(server, prefix);
@@ -43,8 +49,8 @@ public class PanelStorageController {
 
     @PostMapping("/bulk-delete")
     public ResponseEntity<?> bulkDelete(
-            @RequestBody @Valid BulkDeleteRequest body,
-            HttpServletRequest request
+        @RequestBody @Valid BulkDeleteRequest body,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<String> keys = body.keys();
@@ -52,7 +58,7 @@ public class PanelStorageController {
         String prefix = server.getDatabaseName() + "/";
         for (String key : keys) {
             if (!key.startsWith(prefix)) {
-                return ResponseEntity.status(403).body(Map.of("error", "Access denied for key: " + key));
+                throw new ForbiddenException("Access denied for key: " + key);
             }
         }
 
@@ -62,16 +68,18 @@ public class PanelStorageController {
 
     @GetMapping("/download/{*key}")
     public ResponseEntity<?> getDownloadUrl(
-            @PathVariable String key,
-            HttpServletRequest request
+        @PathVariable String key,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        if (!normalizedKey.startsWith(server.getDatabaseName() + "/")) {
+            throw new ForbiddenException("Access denied");
         }
 
-        String url = s3StorageService.getPresignedUrl(key);
+        String url = s3StorageService.getPresignedUrl(normalizedKey);
         if (url == null) {
             return ResponseEntity.notFound().build();
         }

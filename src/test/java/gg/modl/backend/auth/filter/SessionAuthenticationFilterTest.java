@@ -1,29 +1,27 @@
 package gg.modl.backend.auth.filter;
 
-import gg.modl.backend.auth.AuthConfiguration;
-import gg.modl.backend.auth.session.AuthSessionData;
-import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.rest.RequestAttribute;
-import gg.modl.backend.server.ServerService;
-import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
-import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockFilterChain;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.security.core.context.SecurityContextHolder;
-
-import java.util.Date;
-import java.util.Optional;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import gg.modl.backend.auth.AuthConfiguration;
+import gg.modl.backend.auth.session.AuthSessionData;
+import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.rest.RequestAttribute;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import jakarta.servlet.http.Cookie;
+import java.util.Date;
+import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 class SessionAuthenticationFilterTest {
 
@@ -33,26 +31,23 @@ class SessionAuthenticationFilterTest {
     }
 
     @Test
-    void refreshesSessionCookieForAppDomains() throws Exception {
+    void refreshesSessionCookieAsHostOnlyStrictInProduction() throws Exception {
         SessionService sessionService = mock(SessionService.class);
-        ServerService serverService = mock(ServerService.class);
 
         AuthConfiguration authConfiguration = new AuthConfiguration();
         authConfiguration.setDevelopmentMode(false);
         authConfiguration.setCookieSecure(true);
         authConfiguration.setSessionCookieName("MODL_SESSION");
 
-        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration, serverService);
+        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
 
         Server server = new Server("Alpha", "alpha", "server_alpha", "admin@example.com", true, ServerPlan.FREE);
-        AuthSessionData session = new AuthSessionData("token-123", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000));
+        AuthSessionData session = new AuthSessionData("token-123", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);
 
         when(sessionService.findAndRefreshSession(server, "token-123")).thenReturn(Optional.of(session));
-        when(serverService.getAppDomain("alpha.modl.gg")).thenReturn("modl.gg");
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/v1/panel/auth/me");
         request.setAttribute(RequestAttribute.SERVER, server);
-        request.addHeader("X-Server-Domain", "alpha.modl.gg");
         request.setCookies(new Cookie("MODL_SESSION", "token-123"));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -63,33 +58,30 @@ class SessionAuthenticationFilterTest {
         assertNotNull(refreshedCookie);
         assertEquals("token-123", refreshedCookie.getValue());
         assertEquals((int) AuthConfiguration.MIN_SESSION_DURATION_SECONDS, refreshedCookie.getMaxAge());
-        assertEquals("modl.gg", refreshedCookie.getDomain());
+        assertNull(refreshedCookie.getDomain());
         assertEquals("Strict", refreshedCookie.getAttribute("SameSite"));
 
         verify(sessionService).findAndRefreshSession(server, "token-123");
     }
 
     @Test
-    void refreshesSessionCookieForCustomDomainsWithoutDomainAttribute() throws Exception {
+    void refreshesSessionCookieWithLaxSameSiteInDevelopmentMode() throws Exception {
         SessionService sessionService = mock(SessionService.class);
-        ServerService serverService = mock(ServerService.class);
 
         AuthConfiguration authConfiguration = new AuthConfiguration();
-        authConfiguration.setDevelopmentMode(false);
+        authConfiguration.setDevelopmentMode(true);
         authConfiguration.setCookieSecure(true);
         authConfiguration.setSessionCookieName("MODL_SESSION");
 
-        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration, serverService);
+        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
 
         Server server = new Server("Custom", "custom", "server_custom", "admin@example.com", true, ServerPlan.FREE);
-        AuthSessionData session = new AuthSessionData("token-456", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000));
+        AuthSessionData session = new AuthSessionData("token-456", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);
 
         when(sessionService.findAndRefreshSession(server, "token-456")).thenReturn(Optional.of(session));
-        when(serverService.getAppDomain("panel.example.com")).thenReturn(null);
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/v1/panel/auth/me");
         request.setAttribute(RequestAttribute.SERVER, server);
-        request.addHeader("X-Server-Domain", "panel.example.com");
         request.setCookies(new Cookie("MODL_SESSION", "token-456"));
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -100,7 +92,7 @@ class SessionAuthenticationFilterTest {
         assertNotNull(refreshedCookie);
         assertEquals("token-456", refreshedCookie.getValue());
         assertNull(refreshedCookie.getDomain());
-        assertEquals("None", refreshedCookie.getAttribute("SameSite"));
+        assertEquals("Lax", refreshedCookie.getAttribute("SameSite"));
 
         verify(sessionService).findAndRefreshSession(server, "token-456");
     }

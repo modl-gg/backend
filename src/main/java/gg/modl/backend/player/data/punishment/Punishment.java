@@ -1,20 +1,29 @@
 package gg.modl.backend.player.data.punishment;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
+import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.mapping.Field;
-
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@GenerateMongoFields
+@MongoFieldAliases({
+    @MongoFieldAlias(name = "DATA_LINKED_BAN_ID", path = "data.linkedBanId"),
+    @MongoFieldAlias(name = "DATA_STATUS", path = "data.status"),
+    @MongoFieldAlias(name = "DATA_REASON", path = "data.reason"),
+    @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
+})
 public class Punishment {
     @NotNull
     @Field(value = "id", targetType = FieldType.STRING)
@@ -23,10 +32,11 @@ public class Punishment {
     @Field("typeOrdinal")
     private int typeOrdinal;
 
-    @NotNull
+    @Nullable
     private String issuerName;
 
-    // TODO: migrate or add issuerId to be able to track exactly who the issuer was because names can change
+    @Nullable
+    private String issuerId;
 
     @NotNull
     private Date issued;

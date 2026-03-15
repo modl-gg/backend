@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.exception.ForbiddenException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -51,16 +52,18 @@ public class PanelMediaController {
 
     @DeleteMapping("/{*key}")
     public ResponseEntity<?> deleteFile(
-            @PathVariable String key,
-            HttpServletRequest request
+        @PathVariable String key,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+
+        if (!validationService.isKeyOwnedByServer(normalizedKey, server.getDatabaseName())) {
+            throw new ForbiddenException("Access denied");
         }
 
-        boolean deleted = s3StorageService.deleteFile(key);
+        boolean deleted = s3StorageService.deleteFile(normalizedKey);
         if (deleted) {
             return ResponseEntity.ok(Map.of("message", "File deleted"));
         }
@@ -69,18 +72,18 @@ public class PanelMediaController {
 
     @PostMapping("/presign")
     public ResponseEntity<?> getPresignedUploadUrl(
-            @RequestBody @Valid PresignUploadRequest presignRequest,
-            HttpServletRequest request
+        @RequestBody @Valid PresignUploadRequest presignRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-                presignRequest.fileName(),
-                presignRequest.contentType(),
-                presignRequest.fileSize(),
-                presignRequest.uploadType(),
-                isPremium
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            presignRequest.uploadType(),
+            isPremium
         );
 
         if (!validation.valid()) {
@@ -91,39 +94,35 @@ public class PanelMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
 
-        try {
-            PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-                    server,
-                    presignRequest.uploadType(),
-                    presignRequest.fileName(),
-                    presignRequest.contentType(),
-                    presignRequest.fileSize(),
-                    presignRequest.entityId()
-            );
-            return ResponseEntity.ok(response);
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+        PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
+            server,
+            presignRequest.uploadType(),
+            presignRequest.fileName(),
+            presignRequest.contentType(),
+            presignRequest.fileSize(),
+            presignRequest.entityId()
+        );
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/confirm")
     public ResponseEntity<?> confirmUpload(
-            @RequestBody @Valid ConfirmUploadRequest confirmRequest,
-            HttpServletRequest request
+        @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         String key = confirmRequest.key();
 
-        if (!key.startsWith(server.getDatabaseName() + "/")) {
-            return ResponseEntity.status(403).body(Map.of("error", "Access denied"));
+        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
+            throw new ForbiddenException("Access denied");
         }
 
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
         if (uploadDetails == null) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "error", "Upload not found",
-                    "message", "The file was not uploaded or the presigned URL expired"
+                "error", "Upload not found",
+                "message", "The file was not uploaded or the presigned URL expired"
             ));
         }
 

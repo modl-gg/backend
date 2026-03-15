@@ -3,17 +3,17 @@ package gg.modl.backend;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class BackendApplication {
-
     public static void main(String[] args) {
         final Dotenv dotenv = Dotenv.load();
         dotenv.entries().forEach(entry ->
-                System.setProperty(entry.getKey(), entry.getValue())
+            System.setProperty(entry.getKey(), entry.getValue())
         );
 
         SpringApplication.run(BackendApplication.class, args);
     }
-
 }

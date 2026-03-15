@@ -1,59 +1,70 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.config.S3Configuration;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.*;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.ObjectVersion;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.*;
 
 @Service
 @Slf4j
 public class S3StorageService {
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final S3Configuration s3Configuration;
+    private static final Duration PRESIGN_UPLOAD_DURATION = Duration.ofMinutes(15);
 
     public S3StorageService(
-            @org.springframework.lang.Nullable S3Client s3Client,
-            @org.springframework.lang.Nullable S3Presigner s3Presigner
+        @org.springframework.lang.Nullable S3Client s3Client,
+        @org.springframework.lang.Nullable S3Presigner s3Presigner,
+        S3Configuration s3Configuration
     ) {
         this.s3Client = s3Client;
         this.s3Presigner = s3Presigner;
+        this.s3Configuration = s3Configuration;
         if (s3Client == null) {
             log.warn("S3 storage is not configured. File storage features will be disabled.");
         }
     }
 
-    @Value("${modl.storage.bucket-name:}")
-    private String bucketName;
-
-    @Value("${modl.storage.cdn-domain:}")
-    private String cdnDomain;
-
     public boolean isConfigured() {
-        return s3Client != null && bucketName != null && !bucketName.isBlank();
+        return s3Client != null && s3Configuration.getBucketName() != null && !s3Configuration.getBucketName().isBlank();
     }
 
     public String getCdnDomain() {
-        return cdnDomain;
-    }
-
-    public String getCdnUrl(String key) {
-        if (cdnDomain == null || cdnDomain.isBlank()) {
-            return getPresignedUrl(key);
-        }
-        return String.format("https://%s/%s", cdnDomain, key);
+        return s3Configuration.getCdnDomain();
     }
 
     public boolean deleteFile(String key) {
@@ -62,12 +73,18 @@ public class S3StorageService {
         }
 
         try {
-            DeleteObjectRequest request = DeleteObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .build();
+            List<ObjectIdentifier> toDelete = collectAllVersions(key);
 
-            s3Client.deleteObject(request);
+            if (toDelete.isEmpty()) {
+                return false;
+            }
+
+            DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .delete(Delete.builder().objects(toDelete).quiet(true).build())
+                .build();
+
+            s3Client.deleteObjects(request);
             return true;
         } catch (Exception e) {
             log.error("Error deleting file: {}", key, e);
@@ -83,23 +100,32 @@ public class S3StorageService {
         String fullPrefix = server.getDatabaseName() + "/" + (prefix != null ? prefix : "");
 
         ListObjectsV2Request request = ListObjectsV2Request.builder()
-                .bucket(bucketName)
-                .prefix(fullPrefix)
-                .maxKeys(1000)
-                .build();
+            .bucket(s3Configuration.getBucketName())
+            .prefix(fullPrefix)
+            .maxKeys(1000)
+            .build();
 
         ListObjectsV2Response response = s3Client.listObjectsV2(request);
 
-        return response.contents().stream()
-                .map(obj -> new StorageFileResponse(
-                        obj.key(),
-                        extractFileName(obj.key()),
-                        obj.size(),
-                        "application/octet-stream",
-                        Date.from(obj.lastModified()),
-                        getCdnUrl(obj.key())
-                ))
-                .toList();
+        return response.contents()
+            .stream()
+            .map(obj -> new StorageFileResponse(
+                obj.key(),
+                extractFileName(obj.key()),
+                obj.size(),
+                "application/octet-stream",
+                Date.from(obj.lastModified()),
+                getCdnUrl(obj.key())
+            ))
+            .toList();
+    }
+
+    public String getCdnUrl(String key) {
+        String cdn = s3Configuration.getCdnDomain();
+        if (cdn == null || cdn.isBlank()) {
+            return getPresignedUrl(key);
+        }
+        return String.format("https://%s/%s", cdn, key);
     }
 
     public String getPresignedUrl(String key) {
@@ -108,35 +134,37 @@ public class S3StorageService {
         }
 
         GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
-                .signatureDuration(Duration.ofHours(1))
-                .getObjectRequest(GetObjectRequest.builder()
-                        .bucket(bucketName)
-                        .key(key)
-                        .build())
-                .build();
+            .signatureDuration(Duration.ofHours(1))
+            .getObjectRequest(GetObjectRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .key(key)
+                .build())
+            .build();
 
         return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
 
-    private static final Duration PRESIGN_UPLOAD_DURATION = Duration.ofMinutes(15);
+    private String extractFileName(String key) {
+        return key.substring(key.lastIndexOf("/") + 1);
+    }
 
     public PresignUploadResponse createPresignedUploadUrl(
-            Server server,
-            String uploadType,
-            String fileName,
-            String contentType,
-            long fileSize
+        Server server,
+        String uploadType,
+        String fileName,
+        String contentType,
+        long fileSize
     ) {
         return createPresignedUploadUrl(server, uploadType, fileName, contentType, fileSize, null);
     }
 
     public PresignUploadResponse createPresignedUploadUrl(
-            Server server,
-            String uploadType,
-            String fileName,
-            String contentType,
-            long fileSize,
-            String entityId
+        Server server,
+        String uploadType,
+        String fileName,
+        String contentType,
+        long fileSize,
+        String entityId
     ) {
         if (s3Presigner == null) {
             throw new IllegalStateException("S3 storage is not configured");
@@ -145,16 +173,16 @@ public class S3StorageService {
         String key = buildKey(server, uploadType, fileName, entityId);
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(key)
-                .contentType(contentType)
-                .contentLength(fileSize)
-                .build();
+            .bucket(s3Configuration.getBucketName())
+            .key(key)
+            .contentType(contentType)
+            .contentLength(fileSize)
+            .build();
 
         PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
-                .signatureDuration(PRESIGN_UPLOAD_DURATION)
-                .putObjectRequest(putRequest)
-                .build();
+            .signatureDuration(PRESIGN_UPLOAD_DURATION)
+            .putObjectRequest(putRequest)
+            .build();
 
         PresignedPutObjectRequest presignedRequest = s3Presigner.presignPutObject(presignRequest);
 
@@ -164,132 +192,12 @@ public class S3StorageService {
         requiredHeaders.put("Content-Type", contentType);
 
         return new PresignUploadResponse(
-                presignedRequest.url().toString(),
-                key,
-                expiresAt,
-                presignedRequest.httpRequest().method().name(),
-                requiredHeaders
+            presignedRequest.url().toString(),
+            key,
+            expiresAt,
+            presignedRequest.httpRequest().method().name(),
+            requiredHeaders
         );
-    }
-
-    public boolean verifyUploadExists(String key) {
-        if (s3Client == null) {
-            return false;
-        }
-
-        try {
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .build();
-
-            s3Client.headObject(headRequest);
-            return true;
-        } catch (NoSuchKeyException e) {
-            return false;
-        } catch (Exception e) {
-            log.error("Error verifying upload for key: {}", key, e);
-            return false;
-        }
-    }
-
-    public UploadResponse getUploadDetails(String key) {
-        if (s3Client == null) {
-            return null;
-        }
-
-        try {
-            HeadObjectRequest headRequest = HeadObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .build();
-
-            HeadObjectResponse response = s3Client.headObject(headRequest);
-            String url = getCdnUrl(key);
-            String fileName = extractFileName(key);
-
-            return new UploadResponse(
-                    key,
-                    url,
-                    fileName,
-                    response.contentLength(),
-                    response.contentType()
-            );
-        } catch (NoSuchKeyException e) {
-            return null;
-        } catch (Exception e) {
-            log.error("Error getting upload details for key: {}", key, e);
-            return null;
-        }
-    }
-
-    public long calculateStorageUsed(Server server) {
-        return calculateStorageByType(server).values().stream().mapToLong(Long::longValue).sum();
-    }
-
-    public Map<String, Long> calculateStorageByType(Server server) {
-        Map<String, Long> byType = new HashMap<>();
-        byType.put("ticket", 0L);
-        byType.put("evidence", 0L);
-        byType.put("logs", 0L);
-        byType.put("backup", 0L);
-        byType.put("other", 0L);
-
-        if (s3Client == null) {
-            return byType;
-        }
-
-        String prefix = server.getDatabaseName() + "/";
-
-        ListObjectsV2Request request = ListObjectsV2Request.builder()
-                .bucket(bucketName)
-                .prefix(prefix)
-                .build();
-
-        ListObjectsV2Response response;
-        String continuationToken = null;
-
-        do {
-            if (continuationToken != null) {
-                request = request.toBuilder().continuationToken(continuationToken).build();
-            }
-
-            response = s3Client.listObjectsV2(request);
-            for (S3Object obj : response.contents()) {
-                String key = obj.key();
-                String type = categorizeFile(key);
-                byType.merge(type, obj.size(), Long::sum);
-            }
-            continuationToken = response.nextContinuationToken();
-        } while (response.isTruncated());
-
-        return byType;
-    }
-
-    private String categorizeFile(String key) {
-        if (key.contains("/evidence/")) return "evidence";
-        if (key.contains("/tickets/") || key.contains("/ticket/")) return "ticket";
-        if (key.contains("/logs/")) return "logs";
-        if (key.contains("/backup/")) return "backup";
-        return "other";
-    }
-
-    public int bulkDelete(List<String> keys) {
-        if (s3Client == null || keys.isEmpty()) {
-            return 0;
-        }
-
-        List<ObjectIdentifier> toDelete = keys.stream()
-                .map(key -> ObjectIdentifier.builder().key(key).build())
-                .toList();
-
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
-                .bucket(bucketName)
-                .delete(Delete.builder().objects(toDelete).build())
-                .build();
-
-        DeleteObjectsResponse response = s3Client.deleteObjects(request);
-        return response.deleted().size();
     }
 
     private String buildKey(Server server, String uploadType, String fileName, String entityId) {
@@ -308,10 +216,6 @@ public class S3StorageService {
         int dotIndex = safeFileName.lastIndexOf('.');
         String extension = dotIndex >= 0 ? safeFileName.substring(dotIndex) : "";
         return String.format("%s/%s/%s%s", server.getDatabaseName(), safeUploadType, uuid, extension);
-    }
-
-    private String extractFileName(String key) {
-        return key.substring(key.lastIndexOf("/") + 1);
     }
 
     private String sanitizeFileName(String fileName) {
@@ -350,13 +254,190 @@ public class S3StorageService {
         return sanitized;
     }
 
+    public boolean verifyUploadExists(String key) {
+        if (s3Client == null) {
+            return false;
+        }
+
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .key(key)
+                .build();
+
+            s3Client.headObject(headRequest);
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
+        } catch (Exception e) {
+            log.error("Error verifying upload for key: {}", key, e);
+            return false;
+        }
+    }
+
+    public UploadResponse getUploadDetails(String key) {
+        if (s3Client == null) {
+            return null;
+        }
+
+        try {
+            HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .key(key)
+                .build();
+
+            HeadObjectResponse response = s3Client.headObject(headRequest);
+            String url = getCdnUrl(key);
+            String fileName = extractFileName(key);
+
+            return new UploadResponse(
+                key,
+                url,
+                fileName,
+                response.contentLength(),
+                response.contentType()
+            );
+        } catch (NoSuchKeyException e) {
+            return null;
+        } catch (Exception e) {
+            log.error("Error getting upload details for key: {}", key, e);
+            return null;
+        }
+    }
+
+    public long calculateStorageUsed(Server server) {
+        return calculateStorageByType(server).values()
+            .stream().mapToLong(Long::longValue).sum();
+    }
+
+    public Map<String, Long> calculateStorageByType(Server server) {
+        Map<String, Long> byType = new HashMap<>();
+        byType.put("ticket", 0L);
+        byType.put("evidence", 0L);
+        byType.put("logs", 0L);
+        byType.put("backup", 0L);
+        byType.put("replay", 0L);
+        byType.put("other", 0L);
+
+        if (s3Client == null) {
+            return byType;
+        }
+
+        String prefix = server.getDatabaseName() + "/";
+
+        ListObjectsV2Request request = ListObjectsV2Request.builder()
+            .bucket(s3Configuration.getBucketName())
+            .prefix(prefix)
+            .build();
+
+        ListObjectsV2Response response;
+        String continuationToken = null;
+
+        do {
+            if (continuationToken != null) {
+                request = request.toBuilder().continuationToken(continuationToken).build();
+            }
+
+            response = s3Client.listObjectsV2(request);
+            for (S3Object obj : response.contents()) {
+                String key = obj.key();
+                String type = categorizeFile(key);
+                byType.merge(type, obj.size(), Long::sum);
+            }
+            continuationToken = response.nextContinuationToken();
+        } while (response.isTruncated());
+
+        return byType;
+    }
+
+    private String categorizeFile(String key) {
+        if (key.contains("/evidence/")) {
+            return "evidence";
+        }
+        if (key.contains("/tickets/") || key.contains("/ticket/")) {
+            return "ticket";
+        }
+        if (key.contains("/logs/")) {
+            return "logs";
+        }
+        if (key.contains("/backup/")) {
+            return "backup";
+        }
+        if (key.contains("/replays/")) {
+            return "replay";
+        }
+        return "other";
+    }
+
+    private List<ObjectIdentifier> collectAllVersions(String key) {
+        List<ObjectIdentifier> identifiers = new ArrayList<>();
+        String bucket = s3Configuration.getBucketName();
+
+        ListObjectVersionsRequest request = ListObjectVersionsRequest.builder()
+            .bucket(bucket)
+            .prefix(key)
+            .build();
+
+        ListObjectVersionsResponse response = s3Client.listObjectVersions(request);
+
+        for (ObjectVersion version : response.versions()) {
+            if (version.key().equals(key)) {
+                identifiers.add(ObjectIdentifier.builder()
+                    .key(key)
+                    .versionId(version.versionId())
+                    .build());
+            }
+        }
+
+        for (DeleteMarkerEntry marker : response.deleteMarkers()) {
+            if (marker.key().equals(key)) {
+                identifiers.add(ObjectIdentifier.builder()
+                    .key(key)
+                    .versionId(marker.versionId())
+                    .build());
+            }
+        }
+
+        return identifiers;
+    }
+
+    public int bulkDelete(List<String> keys) {
+        if (s3Client == null || keys.isEmpty()) {
+            return 0;
+        }
+
+        List<ObjectIdentifier> toDelete = new ArrayList<>();
+        for (String key : keys) {
+            toDelete.addAll(collectAllVersions(key));
+        }
+
+        if (toDelete.isEmpty()) {
+            return 0;
+        }
+
+        int totalDeleted = 0;
+        for (int i = 0; i < toDelete.size(); i += 1000) {
+            List<ObjectIdentifier> batch = toDelete.subList(i, Math.min(i + 1000, toDelete.size()));
+            DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+                .bucket(s3Configuration.getBucketName())
+                .delete(Delete.builder().objects(batch).quiet(true).build())
+                .build();
+
+            DeleteObjectsResponse response = s3Client.deleteObjects(request);
+            totalDeleted += response.deleted().size();
+        }
+
+        return totalDeleted;
+    }
+
     /**
      * Upload a file directly to S3 (for small files like icons).
-     * @param server The server for namespacing
-     * @param uploadType The type of upload (e.g., "icons")
-     * @param fileName The original file name
+     *
+     * @param server      The server for namespacing
+     * @param uploadType  The type of upload (e.g., "icons")
+     * @param fileName    The original file name
      * @param contentType The MIME type
-     * @param data The file bytes
+     * @param data        The file bytes
      * @return The CDN URL of the uploaded file
      */
     public String uploadFile(Server server, String uploadType, String fileName, String contentType, byte[] data) {
@@ -368,11 +449,11 @@ public class S3StorageService {
 
         try {
             PutObjectRequest putRequest = PutObjectRequest.builder()
-                    .bucket(bucketName)
-                    .key(key)
-                    .contentType(contentType)
-                    .contentLength((long) data.length)
-                    .build();
+                .bucket(s3Configuration.getBucketName())
+                .key(key)
+                .contentType(contentType)
+                .contentLength((long) data.length)
+                .build();
 
             s3Client.putObject(putRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data));
 

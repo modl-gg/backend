@@ -1,38 +1,27 @@
 package gg.modl.backend.util;
 
 import java.security.SecureRandom;
+import java.util.Base64;
+import org.springframework.stereotype.Component;
 
-/**
- * Utility class for generating short, human-readable IDs.
- */
-public final class IdGenerator {
-    private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    private static final int ID_LENGTH = 8;
+@Component
+public class IdGenerator {
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private IdGenerator() {
-        // Utility class
+    public int nextSixDigitInt() {
+        return 100000 + RANDOM.nextInt(900000);
     }
 
-    /**
-     * Generate an 8-character alphanumeric ID (all caps).
-     * Example: "A1B2C3D4"
-     */
-    public static String generatePunishmentId() {
-        StringBuilder sb = new StringBuilder(ID_LENGTH);
-        for (int i = 0; i < ID_LENGTH; i++) {
-            sb.append(ALPHANUMERIC.charAt(RANDOM.nextInt(ALPHANUMERIC.length())));
-        }
-        return sb.toString();
+    public String generateToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    /**
-     * Generate a short ID with custom length.
-     */
-    public static String generateId(int length) {
-        StringBuilder sb = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            sb.append(ALPHANUMERIC.charAt(RANDOM.nextInt(ALPHANUMERIC.length())));
+    public static String generateShortId() {
+        StringBuilder sb = new StringBuilder(8);
+        for (int i = 0; i < 8; i++) {
+            sb.append((char) ('A' + RANDOM.nextInt(26)));
         }
         return sb.toString();
     }

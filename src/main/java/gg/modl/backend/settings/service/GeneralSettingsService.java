@@ -3,23 +3,21 @@ package gg.modl.backend.settings.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class GeneralSettingsService {
+    private final SettingsDocumentService settingsDocumentService;
+    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_GENERAL = "general";
     private static final int MAX_SERVER_NAME_LENGTH = 80;
     private static final int MAX_URL_LENGTH = 2048;
-
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
 
     public GeneralSettings getGeneralSettings(Server server) {
         return getGeneralSettingsState(server).data();
@@ -29,36 +27,6 @@ public class GeneralSettingsService {
         SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
         GeneralSettings settings = mapToGeneralSettings(state.data());
         return new VersionedSettings<>(settings, state.version(), state.updatedAt());
-    }
-
-    public VersionedSettings<GeneralSettings> patchGeneralSettings(
-            Server server,
-            long expectedVersion,
-            GeneralSettings patch
-    ) {
-        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
-        Map<String, Object> data = new LinkedHashMap<>(current.data());
-
-        if (patch.getServerDisplayName() != null) {
-            data.put("serverDisplayName", sanitize(patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH));
-        }
-        if (patch.getDiscordWebhookUrl() != null) {
-            data.put("discordWebhookUrl", sanitize(patch.getDiscordWebhookUrl(), MAX_URL_LENGTH));
-        }
-        if (patch.getHomepageIconUrl() != null) {
-            data.put("homepageIconUrl", sanitize(patch.getHomepageIconUrl(), MAX_URL_LENGTH));
-        }
-        if (patch.getPanelIconUrl() != null) {
-            data.put("panelIconUrl", sanitize(patch.getPanelIconUrl(), MAX_URL_LENGTH));
-        }
-
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_GENERAL,
-                expectedVersion,
-                data
-        );
-        return new VersionedSettings<>(mapToGeneralSettings(updated.data()), updated.version(), updated.updatedAt());
     }
 
     private GeneralSettings mapToGeneralSettings(Map<String, Object> data) {
@@ -74,11 +42,11 @@ public class GeneralSettingsService {
             String panelIconUrl = sanitize(mapped.getPanelIconUrl(), MAX_URL_LENGTH);
 
             return GeneralSettings.builder()
-                    .serverDisplayName(serverDisplayName != null ? serverDisplayName : "")
-                    .discordWebhookUrl(discordWebhookUrl != null ? discordWebhookUrl : "")
-                    .homepageIconUrl(homepageIconUrl != null ? homepageIconUrl : "")
-                    .panelIconUrl(panelIconUrl != null ? panelIconUrl : "")
-                    .build();
+                .serverDisplayName(serverDisplayName != null ? serverDisplayName : "")
+                .discordWebhookUrl(discordWebhookUrl != null ? discordWebhookUrl : "")
+                .homepageIconUrl(homepageIconUrl != null ? homepageIconUrl : "")
+                .panelIconUrl(panelIconUrl != null ? panelIconUrl : "")
+                .build();
         } catch (IllegalArgumentException exception) {
             log.warn("Failed to map general settings, using defaults: {}", exception.getMessage());
             return defaultGeneralSettings();
@@ -87,11 +55,11 @@ public class GeneralSettingsService {
 
     private GeneralSettings defaultGeneralSettings() {
         return GeneralSettings.builder()
-                .serverDisplayName("")
-                .discordWebhookUrl("")
-                .homepageIconUrl("")
-                .panelIconUrl("")
-                .build();
+            .serverDisplayName("")
+            .discordWebhookUrl("")
+            .homepageIconUrl("")
+            .panelIconUrl("")
+            .build();
     }
 
     private String sanitize(String value, int maxLength) {
@@ -104,5 +72,33 @@ public class GeneralSettingsService {
             return trimmed;
         }
         return trimmed.substring(0, maxLength);
+    }
+
+    public VersionedSettings<GeneralSettings> patchGeneralSettings(
+        Server server,
+        long expectedVersion,
+        GeneralSettings patch
+    ) {
+        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
+        Map<String, Object> data = new LinkedHashMap<>(current.data());
+
+        putIfNotNull(data, "serverDisplayName", patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
+        putIfNotNull(data, "discordWebhookUrl", patch.getDiscordWebhookUrl(), MAX_URL_LENGTH);
+        putIfNotNull(data, "homepageIconUrl", patch.getHomepageIconUrl(), MAX_URL_LENGTH);
+        putIfNotNull(data, "panelIconUrl", patch.getPanelIconUrl(), MAX_URL_LENGTH);
+
+        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
+            server,
+            SETTINGS_TYPE_GENERAL,
+            expectedVersion,
+            data
+        );
+        return new VersionedSettings<>(mapToGeneralSettings(updated.data()), updated.version(), updated.updatedAt());
+    }
+
+    private void putIfNotNull(Map<String, Object> data, String key, String value, int maxLength) {
+        if (value != null) {
+            data.put(key, sanitize(value, maxLength));
+        }
     }
 }

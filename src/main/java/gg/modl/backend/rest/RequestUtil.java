@@ -3,20 +3,19 @@ package gg.modl.backend.rest;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import java.net.InetAddress;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Optional;
 import java.util.Objects;
+import java.util.Optional;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class RequestUtil {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
-            Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
-                    .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
+        Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
+            .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
     );
 
     @NotNull
@@ -25,20 +24,16 @@ public final class RequestUtil {
     }
 
     @Nullable
-    public static AuthSessionData getSession(HttpServletRequest request) {
-        return (AuthSessionData) request.getAttribute(RequestAttribute.SESSION);
-    }
-
-    @Nullable
     public static String getSessionEmail(HttpServletRequest request) {
         AuthSessionData session = getSession(request);
         return session != null ? session.getEmail() : null;
     }
 
-    /**
-     * Get the current username from the session.
-     * Falls back to email if username lookup fails.
-     */
+    @Nullable
+    public static AuthSessionData getSession(HttpServletRequest request) {
+        return (AuthSessionData) request.getAttribute(RequestAttribute.SESSION);
+    }
+
     @NotNull
     public static String getCurrentUsername(HttpServletRequest request) {
         AuthSessionData session = getSession(request);
@@ -68,12 +63,6 @@ public final class RequestUtil {
         return remoteAddr;
     }
 
-    public static String generateSecureToken(int byteLength) {
-        byte[] bytes = new byte[byteLength];
-        SECURE_RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
     private static boolean isLikelyTrustedProxy(String remoteAddr) {
         if (remoteAddr == null || remoteAddr.isBlank()) {
             return false;
@@ -82,11 +71,17 @@ public final class RequestUtil {
         try {
             InetAddress address = InetAddress.getByName(remoteAddr);
             return address.isAnyLocalAddress()
-                    || address.isLoopbackAddress()
-                    || address.isSiteLocalAddress()
-                    || address.isLinkLocalAddress();
+                   || address.isLoopbackAddress()
+                   || address.isSiteLocalAddress()
+                   || address.isLinkLocalAddress();
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    public static String generateSecureToken(int byteLength) {
+        byte[] bytes = new byte[byteLength];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

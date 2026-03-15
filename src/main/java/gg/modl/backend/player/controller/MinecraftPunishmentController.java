@@ -1,903 +1,457 @@
 package gg.modl.backend.player.controller;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.player.data.Player;
-import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentEvidence;
-import gg.modl.backend.player.data.punishment.PunishmentModification;
-import gg.modl.backend.player.data.punishment.PunishmentNote;
-import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import gg.modl.backend.player.dto.request.CreateUploadTokenRequest;
-import gg.modl.backend.player.service.PlayerStatusCalculator;
-import gg.modl.backend.player.service.PunishmentMapper;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
+import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
+import gg.modl.backend.player.service.PunishmentEvidenceService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
+import gg.modl.backend.player.service.PunishmentMutationService;
+import gg.modl.backend.player.service.PunishmentQueryService;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
+import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.storage.service.EvidenceUploadTokenService;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.servlet.http.HttpServletRequest;
 import gg.modl.backend.validation.RegExpConstants;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.bson.types.ObjectId;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import gg.modl.backend.settings.data.PunishmentType;
-import gg.modl.backend.settings.data.DurationDetail;
-import gg.modl.backend.settings.data.OffenderThresholdSettings;
-import gg.modl.backend.settings.data.DefaultPunishmentTypes;
-import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
-import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
-
-import java.util.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PUNISHMENTS)
 @RequiredArgsConstructor
 public class MinecraftPunishmentController {
-    private final DynamicMongoTemplateProvider mongoProvider;
-    private final PlayerStatusCalculator statusCalculator;
-    private final PunishmentTypeService punishmentTypeService;
-    private final OffenderThresholdSettingsService thresholdSettingsService;
-    private final PunishmentService punishmentService;
-    private final EvidenceUploadTokenService evidenceUploadTokenService;
+    private final PunishmentQueryService punishmentQueryService;
+    private final PunishmentLifecycleService punishmentLifecycleService;
+    private final PunishmentEvidenceService punishmentEvidenceService;
+    private final PunishmentMutationService punishmentMutationService;
 
     @PostMapping("/create")
-    public ResponseEntity<Void> createPunishment(
-            @RequestBody @Valid MinecraftCreatePunishmentRequest request,
-            HttpServletRequest httpRequest
+    public ResponseEntity<?> createPunishment(
+        @RequestBody @Valid MinecraftCreatePunishmentRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        createPunishmentInternal(server, request);
+        punishmentLifecycleService.createMinecraftPunishment(server, request);
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/dynamic")
     public ResponseEntity<Map<String, Object>> createPunishmentDynamic(
-            @RequestBody @Valid MinecraftCreatePunishmentRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid MinecraftCreatePunishmentRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        String punishmentId = createPunishmentInternal(server, request);
-
+        String punishmentId = punishmentLifecycleService.createMinecraftPunishment(server, request);
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "message", "Punishment created",
-                "punishmentId", punishmentId
+            "status", 200,
+            "message", "Punishment created",
+            "punishmentId", punishmentId
         ));
     }
 
     @GetMapping("/{punishmentId}")
     public ResponseEntity<Map<String, Object>> getPunishmentById(
-            @PathVariable String punishmentId,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-        if (player == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
-            ));
-        }
-
-        Punishment punishment = player.getPunishments().stream()
-                .filter(p -> p.getId().equals(punishmentId)).findFirst().orElse(null);
+        Map<String, Object> punishment = punishmentQueryService.getMinecraftPunishmentById(server, punishmentId).orElse(null);
         if (punishment == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+                "status", 404,
+                "message", "Punishment not found"
             ));
         }
 
-        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, Object> result = PunishmentMapper.toPunishmentMap(punishment, types);
-        result.put("playerUuid", player.getMinecraftUuid().toString());
-        result.put("playerName", player.getUsernames().isEmpty() ? "Unknown"
-                : player.getUsernames().get(player.getUsernames().size() - 1).username());
-
-        return ResponseEntity.ok(Map.of("status", 200, "punishment", result));
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "punishment", punishment
+        ));
     }
 
     @PostMapping("/{punishmentId}/upload-token")
     public ResponseEntity<Map<String, Object>> createUploadToken(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid CreateUploadTokenRequest body,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid CreateUploadTokenRequest body,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        // Verify punishment exists
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-        if (player == null) {
+        String token = punishmentQueryService.createEvidenceUploadToken(server, punishmentId, body.issuerName()).orElse(null);
+        if (token == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+                "status", 404,
+                "message", "Punishment not found"
             ));
         }
 
-        String issuerName = body.issuerName() != null ? body.issuerName() : "Unknown";
-        String playerUuid = player.getMinecraftUuid().toString();
-
-        String token = evidenceUploadTokenService.createToken(
-                server, punishmentId, playerUuid, issuerName);
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "token", token
+            "status", 200,
+            "token", token
         ));
     }
 
     @GetMapping("/recent")
     public ResponseEntity<Map<String, Object>> getRecentPunishments(
-            @RequestParam(defaultValue = "48") int hours,
-            HttpServletRequest httpRequest
+        @RequestParam(defaultValue = "48") int hours,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
-
-        Query query = Query.query(Criteria.where("punishments.issued").gte(cutoff));
-        query.limit(100);
-
-        List<Player> players = template.find(query, Player.class, CollectionName.PLAYERS);
-        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-
-        List<Map<String, Object>> punishments = new ArrayList<>();
-        for (Player player : players) {
-            String username = player.getUsernames().isEmpty() ? "Unknown"
-                    : player.getUsernames().get(player.getUsernames().size() - 1).username();
-
-            for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
-                    // Use full punishment format (same as toPunishmentMap in MinecraftPlayerController)
-                    Map<String, Object> p = PunishmentMapper.toPunishmentMap(punishment, types);
-                    // Add player info
-                    p.put("playerName", username);
-                    p.put("playerUuid", player.getMinecraftUuid().toString());
-                    punishments.add(p);
-                }
-            }
-        }
-
-        punishments.sort((a, b) -> ((Date) b.get("issued")).compareTo((Date) a.get("issued")));
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "punishments", punishments
+            "status", 200,
+            "punishments", punishmentQueryService.getRecentPunishments(server, hours)
         ));
     }
 
     @GetMapping("/preview")
     public ResponseEntity<PunishmentPreviewResponse> previewPunishment(
-            @RequestParam String playerUuid,
-            @RequestParam int typeOrdinal,
-            HttpServletRequest httpRequest
+        @RequestParam String playerUuid,
+        @RequestParam int typeOrdinal,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        // Find the player
-        Query query = Query.query(Criteria.where("minecraftUuid").is(playerUuid));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            return ResponseEntity.ok(PunishmentPreviewResponse.error("Player not found"));
-        }
-
-        // Get punishment types
-        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        PunishmentType punishmentType = types.stream()
-                .filter(t -> t.getOrdinal() == typeOrdinal)
-                .findFirst()
-                .orElse(null);
-
-        if (punishmentType == null) {
-            return ResponseEntity.ok(PunishmentPreviewResponse.error("Punishment type not found"));
-        }
-
-        // Get offender threshold settings from database
-        OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
-
-        // Calculate player's current status
-        PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
-
-        // Determine offense level based on current points and punishment category
-        String category = punishmentType.getCategory();
-        boolean isSocial = punishmentType.isSocial();
-        int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
-        String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
-
-        // Calculate offender levels from points using configurable thresholds (separate for social/gameplay)
-        String socialOffenderLevel = thresholds.getSocialOffenderLevel(currentStatus.socialPoints());
-        String gameplayOffenderLevel = thresholds.getGameplayOffenderLevel(currentStatus.gameplayPoints());
-
-        // Build preview response
-        PunishmentPreviewResponse.PunishmentPreviewResponseBuilder builder = PunishmentPreviewResponse.builder()
-                .status(200)
-                .success(true)
-                .socialStatus(socialOffenderLevel)
-                .gameplayStatus(gameplayOffenderLevel)
-                .socialPoints(currentStatus.socialPoints())
-                .gameplayPoints(currentStatus.gameplayPoints())
-                .offenseLevel(offenseLevel)
-                .singleSeverityPunishment(punishmentType.isSingleSeverityPunishment())
-                .permanentUntilUsernameChange(punishmentType.isPermanentUntilUsernameChange())
-                .permanentUntilSkinChange(punishmentType.isPermanentUntilSkinChange())
-                .canBeAltBlocking(punishmentType.isCanBeAltBlocking())
-                .canBeStatWiping(punishmentType.isCanBeStatWiping())
-                .category(category);
-
-        if (punishmentType.isSingleSeverityPunishment() ||
-            punishmentType.isPermanentUntilUsernameChange() ||
-            punishmentType.isPermanentUntilSkinChange()) {
-            // Single severity punishment
-            builder.singleSeverity(buildSeverityPreview(punishmentType, "regular", offenseLevel,
-                    currentStatus, punishmentType.isSocial(), thresholds));
-        } else {
-            // Multi-severity punishment
-            builder.lenient(buildSeverityPreview(punishmentType, "low", offenseLevel,
-                    currentStatus, punishmentType.isSocial(), thresholds));
-            builder.regular(buildSeverityPreview(punishmentType, "regular", offenseLevel,
-                    currentStatus, punishmentType.isSocial(), thresholds));
-            builder.aggravated(buildSeverityPreview(punishmentType, "severe", offenseLevel,
-                    currentStatus, punishmentType.isSocial(), thresholds));
-        }
-
-        return ResponseEntity.ok(builder.build());
-    }
-
-    private PunishmentPreviewResponse.SeverityPreview buildSeverityPreview(
-            PunishmentType type, String severity, String offenseLevel,
-            PlayerStatusCalculator.PlayerStatus currentStatus, boolean isSocial,
-            OffenderThresholdSettings thresholds) {
-
-        int points = type.getPointsForSeverity(severity);
-        DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
-
-        // If no duration detail or points from stored type, fall back to defaults
-        PunishmentType defaultType = null;
-        if (durationDetail == null || points == 0) {
-            defaultType = DefaultPunishmentTypes.getAll().stream()
-                    .filter(t -> t.getOrdinal() == type.getOrdinal())
-                    .findFirst()
-                    .orElse(null);
-        }
-        if (durationDetail == null && defaultType != null) {
-            durationDetail = defaultType.getDurationDetail(severity, offenseLevel);
-        }
-        if (points == 0 && defaultType != null) {
-            points = defaultType.getPointsForSeverity(severity);
-        }
-
-        long durationMs = durationDetail != null ? durationDetail.toMilliseconds() : 0L;
-        boolean isPermanent = durationDetail != null && durationDetail.isPermanent();
-        String punishmentResultType = durationDetail != null ?
-                (durationDetail.isBan() ? "ban" : (durationDetail.isMute() ? "mute" : "kick")) : "unknown";
-
-        // Calculate new points after this punishment
-        int newSocialPoints = currentStatus.socialPoints() + (isSocial ? points : 0);
-        int newGameplayPoints = currentStatus.gameplayPoints() + (isSocial ? 0 : points);
-
-        return PunishmentPreviewResponse.SeverityPreview.builder()
-                .severity(severity)
-                .points(points)
-                .durationMs(durationMs)
-                .durationFormatted(PunishmentMapper.formatDuration(durationMs, isPermanent))
-                .punishmentType(punishmentResultType)
-                .permanent(isPermanent)
-                .newSocialStatus(thresholds.getSocialOffenderLevel(newSocialPoints))
-                .newGameplayStatus(thresholds.getGameplayOffenderLevel(newGameplayPoints))
-                .newSocialPoints(newSocialPoints)
-                .newGameplayPoints(newGameplayPoints)
-                .build();
+        return ResponseEntity.ok(punishmentQueryService.previewPunishment(server, playerUuid, typeOrdinal));
     }
 
     @PostMapping("/acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgePunishment(
-            @RequestBody @Valid AcknowledgeRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid AcknowledgeRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentLifecycleService.acknowledgePunishment(
+            server,
+            UUID.fromString(request.playerUuid()),
+            request.punishmentId()
+        );
 
-        // Find player by UUID (same approach as sync - this is reliable)
-        Query findQuery = Query.query(Criteria.where("minecraftUuid").is(request.playerUuid()));
-        Player player = template.findOne(findQuery, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Player not found: " + request.playerUuid()
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", result.message()
             ));
-        }
-
-        // Verify the punishment exists in the player's punishments
-        Punishment targetPunishment = player.getPunishments().stream()
-                .filter(p -> p.getId().equals(request.punishmentId()))
-                .findFirst()
-                .orElse(null);
-
-        if (targetPunishment == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found: " + request.punishmentId() + " for player: " + request.playerUuid()
+            case INVALID_REQUEST -> ResponseEntity.badRequest().body(Map.of(
+                "status", 400,
+                "message", result.message()
             ));
-        }
-
-        // If already started, no need to update again
-        if (targetPunishment.getStarted() != null) {
-            return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "message", "Punishment already acknowledged"
-            ));
-        }
-
-        // Update the punishment in-memory and save the whole player
-        // This is less efficient but avoids MongoDB array query issues
-        targetPunishment.setStarted(new Date());
-        // Clear "Unstarted" status if present (for promoted queued punishments)
-        if (targetPunishment.getData() != null) {
-            targetPunishment.getData().remove("status");
-        }
-        template.save(player, CollectionName.PLAYERS);
-
-        return ResponseEntity.ok(Map.of(
+            case NO_OP, SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
-                "message", "Punishment acknowledged"
-        ));
+                "message", result.message()
+            ));
+        };
     }
 
     @PostMapping("/{punishmentId}/pardon")
     public ResponseEntity<Map<String, Object>> pardonPunishment(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid PardonRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid PardonRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
-            ));
-        }
-
-        // Find the specific punishment and check if it's active
-        Punishment punishment = player.getPunishments().stream()
-                .filter(p -> punishmentId.equals(p.getId()))
-                .findFirst()
-                .orElse(null);
-
-        if (punishment == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
-            ));
-        }
-
-        // Check if the punishment has already been pardoned
-        boolean alreadyPardoned = punishment.getModifications() != null && punishment.getModifications().stream()
-                .anyMatch(m -> "MANUAL_PARDON".equals(m.type()) || "APPEAL_ACCEPT".equals(m.type()) || "SYSTEM_PARDON".equals(m.type()));
-
-        if (alreadyPardoned) {
-            return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "success", false,
-                    "pardonedCount", 0,
-                    "message", "Punishment has already been pardoned"
-            ));
-        }
-
-        Date now = new Date();
-
-        PunishmentModification modification = new PunishmentModification(
-                new ObjectId().toHexString(),
-                "MANUAL_PARDON",
-                now,
-                request.issuerName(),
-                request.reason() != null ? request.reason() : "",
-                null,
-                null,
-                null
+        PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
+            server,
+            punishmentId,
+            request.issuerName(),
+            request.issuerId(),
+            request.reason()
         );
 
-        // Create automatic note for pardon
-        PunishmentNote pardonNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "pardoned punishment",
-                now,
-                request.issuerName()
-        );
-
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        List<PunishmentNote> notesToAdd = new java.util.ArrayList<>();
-        notesToAdd.add(pardonNote);
-        if (request.reason() != null && !request.reason().isBlank()) {
-            notesToAdd.add(new PunishmentNote(
-                    new ObjectId().toHexString(),
-                    request.reason(),
-                    now,
-                    request.issuerName()
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", result.message()
             ));
-        }
-
-        Update update = new Update()
-                .push("punishments.$.modifications", modification)
-                .push("punishments.$.notes").each(notesToAdd.toArray())
-                .set("punishments.$.data.status", "Pardoned");
-
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        // Cascade pardon linked bans if this was an alt-blocking ban
-        Map<String, Object> pData = punishment.getData();
-        if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
-            punishmentService.cascadePardonLinkedBans(server, punishmentId);
-        }
-
-        return ResponseEntity.ok(Map.of(
+            case INVALID_REQUEST -> ResponseEntity.badRequest().body(Map.of(
+                "status", 400,
+                "message", result.message()
+            ));
+            case NO_OP -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", false,
+                "pardonedCount", 0,
+                "message", result.message()
+            ));
+            case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
                 "pardonedCount", 1,
-                "message", "Punishment pardoned"
-        ));
+                "message", result.message()
+            ));
+        };
     }
 
     @PostMapping("/{punishmentId}/note")
     public ResponseEntity<Map<String, Object>> addNote(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid AddNoteRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid AddNoteRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentEvidenceService.addPunishmentNote(
+            server,
+            punishmentId,
+            request.note(),
+            request.issuerName(),
+            request.issuerId()
+        );
 
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+                "status", 404,
+                "message", result.message()
             ));
         }
 
-        PunishmentNote note = new PunishmentNote(new ObjectId().toHexString(), request.note(), new Date(), request.issuerName());
-
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        Update update = new Update().push("punishments.$.notes", note);
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Note added"
+            "status", 200,
+            "success", true,
+            "message", result.message()
         ));
     }
 
     @PostMapping("/{punishmentId}/evidence")
     public ResponseEntity<Map<String, Object>> addEvidence(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid AddEvidenceRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid AddEvidenceRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentEvidenceService.addEvidence(
+            server,
+            punishmentId,
+            request.evidenceUrl(),
+            request.issuerName(),
+            request.issuerId()
+        );
 
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+                "status", 404,
+                "message", result.message()
             ));
         }
 
-        Date now = new Date();
-
-        PunishmentEvidence evidence = new PunishmentEvidence(
-                null,
-                request.evidenceUrl(),
-                "url",
-                request.issuerName(),
-                now,
-                null, null, null
-        );
-
-        // Create automatic note for evidence addition
-        PunishmentNote evidenceNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "added evidence",
-                now,
-                request.issuerName()
-        );
-
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        Update update = new Update()
-                .push("punishments.$.evidence", evidence)
-                .push("punishments.$.notes", evidenceNote);
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Evidence added"
+            "status", 200,
+            "success", true,
+            "message", result.message()
         ));
     }
 
     @PostMapping("/{punishmentId}/duration")
     public ResponseEntity<Map<String, Object>> changeDuration(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid ChangeDurationRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid ChangeDurationRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentMutationService.changeDuration(
+            server,
+            punishmentId,
+            request.newDuration(),
+            request.issuerName(),
+            request.issuerId()
+        );
 
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+                "status", 404,
+                "message", result.message()
             ));
         }
 
-        Date now = new Date();
-
-        PunishmentModification modification = new PunishmentModification(
-                new ObjectId().toHexString(),
-                "MANUAL_DURATION_CHANGE",
-                now,
-                request.issuerName(),
-                "Duration changed",
-                request.newDuration(),
-                null,
-                null
-        );
-
-        // Create automatic note for duration change
-        String durationText = request.newDuration() == null || request.newDuration() < 0 ? "permanent" : PunishmentMapper.formatDuration(request.newDuration(), false);
-        PunishmentNote durationNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                "changed duration to " + durationText,
-                now,
-                request.issuerName()
-        );
-
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        // Force-start the punishment if it hasn't started yet
-        Punishment targetPunishment = player.getPunishments().stream()
-                .filter(p -> punishmentId.equals(p.getId()))
-                .findFirst()
-                .orElse(null);
-
-        Update update = new Update()
-                .push("punishments.$.modifications", modification)
-                .push("punishments.$.notes", durationNote)
-                .set("punishments.$.data.duration", request.newDuration());
-
-        if (targetPunishment != null && targetPunishment.getStarted() == null) {
-            update.set("punishments.$.started", now);
-        }
-
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        if (targetPunishment != null) {
-            Map<String, Object> pData = targetPunishment.getData();
-            if (pData != null && Boolean.TRUE.equals(pData.get("altBlocking"))) {
-                int cascaded = punishmentService.cascadeDurationChangeToLinkedBans(
-                        server, punishmentId, request.newDuration(), request.issuerName());
-                if (cascaded > 0) {
-                    return ResponseEntity.ok(Map.of(
-                            "status", 200,
-                            "success", true,
-                            "message", "Duration changed (cascaded to " + cascaded + " linked ban" + (cascaded > 1 ? "s" : "") + ")"
-                    ));
-                }
-            }
-        }
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Duration changed"
+            "status", 200,
+            "success", true,
+            "message", result.message()
         ));
     }
 
     @PostMapping("/{punishmentId}/toggle")
     public ResponseEntity<Map<String, Object>> toggleOption(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid ToggleOptionRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid ToggleOptionRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
-            ));
-        }
-
-        String fieldName = switch (request.option()) {
-            case "ALT_BLOCKING" -> "punishments.$.data.altBlocking";
-            case "STAT_WIPE" -> "punishments.$.data.wipeAfterExpiry";
-            default -> null;
-        };
-
-        if (fieldName == null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "status", 400,
-                    "message", "Invalid option"
-            ));
-        }
-
-        // Create automatic note for option toggle
-        String optionDisplayName = switch (request.option()) {
-            case "ALT_BLOCKING" -> "alt-blocking";
-            case "STAT_WIPE" -> "stat wipe";
-            default -> request.option().toLowerCase();
-        };
-        PunishmentNote toggleNote = new PunishmentNote(
-                new ObjectId().toHexString(),
-                (request.enabled() ? "enabled " : "disabled ") + optionDisplayName,
-                new Date(),
-                request.issuerName()
+        PunishmentOperationResult result = punishmentMutationService.toggleOption(
+            server,
+            punishmentId,
+            request.option(),
+            request.enabled(),
+            request.issuerName(),
+            request.issuerId()
         );
 
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        Update update = new Update()
-                .set(fieldName, request.enabled())
-                .push("punishments.$.notes", toggleNote);
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        return ResponseEntity.ok(Map.of(
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", result.message()
+            ));
+            case INVALID_REQUEST -> ResponseEntity.badRequest().body(Map.of(
+                "status", 400,
+                "message", result.message()
+            ));
+            case NO_OP, SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
-                "success", true,
-                "message", "Option toggled"
-        ));
+                "success", result.success(),
+                "message", result.message()
+            ));
+        };
     }
-
-    private String createPunishmentInternal(Server server, MinecraftCreatePunishmentRequest request) {
-        UUID playerUuid = UUID.fromString(request.targetUuid());
-
-        // Map Minecraft-specific notes (List<String>) to CreateNoteRequest format
-        List<gg.modl.backend.player.dto.request.CreateNoteRequest> noteRequests = null;
-        if (request.notes() != null) {
-            noteRequests = request.notes().stream()
-                    .map(text -> new gg.modl.backend.player.dto.request.CreateNoteRequest(text, request.issuerName(), null))
-                    .toList();
-        }
-
-        // Plugin-created punishments stay pending until the plugin acknowledges them via /acknowledge
-        // This ensures the plugin caches the punishment before it's considered "started"
-        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
-        data.put("pendingAcknowledgement", true);
-
-        CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
-                request.issuerName(),
-                request.typeOrdinal(),
-                noteRequests,
-                null,
-                request.attachedTicketIds(),
-                request.severity(),
-                request.status(),
-                data,
-                request.reason(),
-                request.duration()
-        );
-
-        return punishmentService.createPunishment(server, playerUuid, serviceRequest);
-    }
-
-    public record MinecraftCreatePunishmentRequest(
-            @NotBlank String targetUuid,
-            @NotBlank String issuerName,
-            @JsonProperty("type_ordinal") int typeOrdinal,
-            String reason,
-            Long duration,
-            Map<String, Object> data,
-            List<String> notes,
-            List<String> attachedTicketIds,
-            String severity,
-            String status
-    ) {}
-
-    public record AcknowledgeRequest(
-            @NotBlank String punishmentId,
-            @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
-            String executedAt,
-            boolean success,
-            String errorMessage
-    ) {}
-
-    public record PardonRequest(
-            @NotBlank String issuerName,
-            String reason,
-            String expectedType
-    ) {}
-
-    public record AddNoteRequest(
-            @NotBlank String issuerName,
-            @NotBlank String note
-    ) {}
-
-    public record AddEvidenceRequest(
-            @NotBlank String issuerName,
-            @NotBlank String evidenceUrl
-    ) {}
-
-    public record ChangeDurationRequest(
-            @NotBlank String issuerName,
-            Long newDuration
-    ) {}
-
-    public record ToggleOptionRequest(
-            @NotBlank String issuerName,
-            @NotBlank String option,
-            boolean enabled
-    ) {}
 
     @PostMapping("/{punishmentId}/stat-wipe-acknowledge")
     public ResponseEntity<Map<String, Object>> acknowledgeStatWipe(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid StatWipeAcknowledgeRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid StatWipeAcknowledgeRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentMutationService.acknowledgeStatWipe(server, punishmentId);
 
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", result.message()
             ));
-        }
-
-        Punishment punishment = player.getPunishments().stream()
-                .filter(p -> p.getId().equals(punishmentId))
-                .findFirst()
-                .orElse(null);
-
-        if (punishment == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
+            case INVALID_REQUEST -> ResponseEntity.badRequest().body(Map.of(
+                "status", 400,
+                "message", result.message()
             ));
-        }
-
-        // Verify wipeAfterExpiry is still enabled
-        Map<String, Object> data = punishment.getData();
-        if (data == null || !Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) {
-            return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "message", "Stat wipe no longer enabled for this punishment"
+            case NO_OP -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", result.message()
             ));
-        }
-
-        // Mark as completed
-        Query updateQuery = Query.query(
-                Criteria.where("minecraftUuid").is(player.getMinecraftUuid().toString())
-                        .and("punishments.id").is(punishmentId)
-        );
-
-        Update update = new Update()
-                .set("punishments.$.data.statWipeCompleted", true)
-                .set("punishments.$.data.statWipeCompletedAt", new Date());
-        template.updateFirst(updateQuery, update, Player.class, CollectionName.PLAYERS);
-
-        return ResponseEntity.ok(Map.of(
+            case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
-                "message", "Stat wipe acknowledged"
-        ));
+                "message", result.message()
+            ));
+        };
     }
-
-    public record StatWipeAcknowledgeRequest(
-            @NotBlank String punishmentId,
-            String serverName,
-            boolean success
-    ) {}
 
     @PostMapping("/{punishmentId}/tickets")
     public ResponseEntity<Map<String, Object>> modifyPunishmentTickets(
-            @PathVariable String punishmentId,
-            @RequestBody @Valid ModifyTicketsRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String punishmentId,
+        @RequestBody @Valid ModifyTicketsRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        PunishmentOperationResult result = punishmentMutationService.modifyPunishmentTickets(
+            server,
+            punishmentId,
+            new ModifyPunishmentTicketsRequest(
+                request.addTicketIds(),
+                request.removeTicketIds(),
+                request.modifyAssociatedTickets(),
+                request.issuerName(),
+                request.issuerId()
+            )
+        );
 
-        Query query = Query.query(Criteria.where("punishments.id").is(punishmentId));
-        Player player = template.findOne(query, Player.class, CollectionName.PLAYERS);
-
-        if (player == null) {
+        if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Punishment not found"
-            ));
-        }
-
-        gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest serviceRequest =
-                new gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest(
-                        request.addTicketIds(),
-                        request.removeTicketIds(),
-                        request.modifyAssociatedTickets(),
-                        request.issuerName()
-                );
-
-        Player updated = punishmentService.modifyPunishmentTickets(
-                server, player.getMinecraftUuid(), punishmentId, serviceRequest);
-
-        if (updated == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Failed to modify punishment tickets"
+                "status", 404,
+                "message", result.message()
             ));
         }
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Punishment tickets modified"
+            "status", 200,
+            "success", true,
+            "message", result.message()
         ));
     }
 
+    public record MinecraftCreatePunishmentRequest(
+        @NotBlank String targetUuid,
+        String issuerName,
+        String issuerId,
+        @JsonProperty("type_ordinal") int typeOrdinal,
+        String reason,
+        Long duration,
+        Map<String, Object> data,
+        List<String> notes,
+        List<String> attachedTicketIds,
+        String severity,
+        String status
+    ) {
+    }
+
+    public record AcknowledgeRequest(
+        @NotBlank String punishmentId,
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
+        String executedAt,
+        boolean success,
+        String errorMessage
+    ) {
+    }
+
+    public record PardonRequest(
+        String issuerName,
+        String issuerId,
+        String reason,
+        String expectedType
+    ) {
+    }
+
+    public record AddNoteRequest(
+        String issuerName,
+        String issuerId,
+        @NotBlank String note
+    ) {
+    }
+
+    public record AddEvidenceRequest(
+        String issuerName,
+        String issuerId,
+        @NotBlank String evidenceUrl
+    ) {
+    }
+
+    public record ChangeDurationRequest(
+        String issuerName,
+        String issuerId,
+        Long newDuration
+    ) {
+    }
+
+    public record ToggleOptionRequest(
+        String issuerName,
+        String issuerId,
+        @NotBlank String option,
+        boolean enabled
+    ) {
+    }
+
+    public record StatWipeAcknowledgeRequest(
+        @NotBlank String punishmentId,
+        String serverName,
+        boolean success
+    ) {
+    }
+
     public record ModifyTicketsRequest(
-            @NotBlank String issuerName,
-            List<String> addTicketIds,
-            List<String> removeTicketIds,
-            boolean modifyAssociatedTickets
-    ) {}
+        String issuerName,
+        String issuerId,
+        List<String> addTicketIds,
+        List<String> removeTicketIds,
+        boolean modifyAssociatedTickets
+    ) {
+    }
 }

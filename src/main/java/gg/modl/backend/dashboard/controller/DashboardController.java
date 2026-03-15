@@ -2,6 +2,7 @@ package gg.modl.backend.dashboard.controller;
 
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.dashboard.dto.response.ActivityItemResponse;
+import gg.modl.backend.exception.UnauthorizedException;
 import gg.modl.backend.dashboard.dto.response.DashboardMetricsResponse;
 import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
@@ -10,19 +11,19 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
 @RequiredArgsConstructor
 public class DashboardController {
-    private static final int MAX_RECENT_ITEMS_LIMIT = 20;
-
     private final DashboardService dashboardService;
 
     @GetMapping("/metrics")
@@ -34,37 +35,35 @@ public class DashboardController {
 
     @GetMapping("/recent-tickets")
     public ResponseEntity<List<RecentTicketResponse>> getRecentTickets(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
-        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, safeLimit);
+        List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, limit);
         return ResponseEntity.ok(tickets);
     }
 
     @GetMapping("/recent-punishments")
     public ResponseEntity<List<RecentPunishmentResponse>> getRecentPunishments(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        int safeLimit = Math.max(1, Math.min(limit, MAX_RECENT_ITEMS_LIMIT));
-        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, safeLimit);
+        List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, limit);
         return ResponseEntity.ok(punishments);
     }
 
     @GetMapping("/activity/recent")
     public ResponseEntity<?> getRecentActivity(
-            @RequestParam(defaultValue = "20") int limit,
-            @RequestParam(defaultValue = "7") int days,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "20") int limit,
+        @RequestParam(defaultValue = "7") int days,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AuthSessionData session = RequestUtil.getSession(request);
 
         if (session == null || session.getEmail() == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         String staffEmail = session.getEmail();

@@ -1,30 +1,21 @@
 package gg.modl.backend.migration.validation;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
+import gg.modl.backend.validation.RegExpConstants;
 import java.net.InetAddress;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
 public class MigrationValidator {
-    private static final Pattern UUID_PATTERN = Pattern.compile(
-            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-    );
-
-    private static final Pattern UUID_NO_DASHES_PATTERN = Pattern.compile(
-            "^[0-9a-fA-F]{32}$"
-    );
-
-    private static final int MAX_STRING_LENGTH = 10000;
-    private static final int MAX_ARRAY_LENGTH = 100000;
+    private static final Pattern UUID_PATTERN = Pattern.compile(RegExpConstants.UUID);
+    private static final Pattern UUID_NO_DASHES_PATTERN = Pattern.compile("^[0-9a-fA-F]{32}$");
 
     public ValidationResult validateMigrationData(Map<String, Object> data) {
         if (data == null) {
@@ -119,10 +110,10 @@ public class MigrationValidator {
         }
 
         return cleaned.substring(0, 8) + "-" +
-                cleaned.substring(8, 12) + "-" +
-                cleaned.substring(12, 16) + "-" +
-                cleaned.substring(16, 20) + "-" +
-                cleaned.substring(20);
+               cleaned.substring(8, 12) + "-" +
+               cleaned.substring(12, 16) + "-" +
+               cleaned.substring(16, 20) + "-" +
+               cleaned.substring(20);
     }
 
     public String sanitizeString(String input, int maxLength) {
@@ -136,8 +127,8 @@ public class MigrationValidator {
         }
 
         return trimmed
-                .replace("\u0000", "")
-                .replace("\r", "");
+            .replace("\u0000", "")
+            .replace("\r", "");
     }
 
     public Date parseDate(Object dateObj) {

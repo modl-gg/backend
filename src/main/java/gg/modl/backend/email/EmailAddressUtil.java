@@ -1,13 +1,17 @@
 package gg.modl.backend.email;
 
 import jakarta.mail.internet.InternetAddress;
-
 import java.util.Locale;
 
 public final class EmailAddressUtil {
     private static final int MAX_EMAIL_LENGTH = 254;
 
     private EmailAddressUtil() {
+    }
+
+    public static String normalizeIfValid(String email) {
+        String normalized = normalize(email);
+        return isValid(normalized) ? normalized : null;
     }
 
     public static String normalize(String email) {
@@ -32,11 +36,6 @@ public final class EmailAddressUtil {
         } catch (Exception ex) {
             return false;
         }
-    }
-
-    public static String normalizeIfValid(String email) {
-        String normalized = normalize(email);
-        return isValid(normalized) ? normalized : null;
     }
 
     public static String mask(String email) {

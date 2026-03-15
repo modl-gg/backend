@@ -1,9 +1,9 @@
 package gg.modl.backend.settings.data;
 
 public record PunishmentPoints(
-        int low,
-        int regular,
-        int severe
+    int low,
+    int regular,
+    int severe
 ) {
     public int getForSeverity(String severity) {
         return switch (severity.toLowerCase()) {

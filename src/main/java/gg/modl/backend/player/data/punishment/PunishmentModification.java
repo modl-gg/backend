@@ -1,20 +1,20 @@
 package gg.modl.backend.player.data.punishment;
 
+import java.util.Date;
+import java.util.Map;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-import java.util.Date;
-import java.util.Map;
-
 public record PunishmentModification(
-        @NotNull @Field("id") String id,
-        @NotNull String type,
-        @NotNull Date date,
-        @NotNull String issuerName,
-        @NotNull String reason,
-        @Nullable Long effectiveDuration,
-        @Nullable String appealTicketId,
-        @Nullable Map<String, Object> data
+    @NotNull @Field("id") String id,
+    @NotNull String type,
+    @NotNull Date date,
+    @Nullable String issuerName,
+    @Nullable String issuerId,
+    @NotNull String reason,
+    @Nullable Long effectiveDuration,
+    @Nullable String appealTicketId,
+    @Nullable Map<String, Object> data
 ) {
 }

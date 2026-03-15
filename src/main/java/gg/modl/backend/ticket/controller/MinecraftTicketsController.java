@@ -1,483 +1,195 @@
 package gg.modl.backend.ticket.controller;
 
 import gg.modl.backend.ai.service.AITicketAnalysisService;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.data.TicketType;
+import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
+import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
+import gg.modl.backend.ticket.dto.request.MinecraftTicketsByIdsRequest;
+import gg.modl.backend.ticket.service.MinecraftTicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.bson.types.ObjectId;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.security.SecureRandom;
-import java.util.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @Slf4j
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_TICKETS)
 @RequiredArgsConstructor
 public class MinecraftTicketsController {
-    private static final int MINECRAFT_CHAT_MAX_LENGTH = 256;
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final MinecraftTicketService minecraftTicketService;
     private final AITicketAnalysisService aiTicketAnalysisService;
-    private static final SecureRandom RANDOM = new SecureRandom();
 
-    /**
-     * Create a finished ticket (e.g., player report with all info provided)
-     */
     @PostMapping
     public ResponseEntity<Map<String, Object>> createTicket(
-            @RequestBody @Valid CreateTicketRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid MinecraftCreateTicketRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        Ticket ticket = minecraftTicketService.createMinecraftTicket(server, request);
 
-        TicketType ticketType = TicketType.fromId(request.type());
-        String ticketId = generateTicketId(template, ticketType);
-        Date now = new Date();
-
-        List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
-        if (request.chatMessages() != null && !request.chatMessages().isEmpty()) {
-            for (String msg : request.chatMessages()) {
-                chatMessages.add(new Ticket.ChatMessage(msg.substring(0, Math.min(msg.length(), MINECRAFT_CHAT_MAX_LENGTH)), now));
-            }
-        }
-
-        Map<String, Object> ticketData = new java.util.HashMap<>();
-        if (request.createdServer() != null && !request.createdServer().isBlank()) {
-            ticketData.put("createdServer", request.createdServer());
-        }
-
-        Ticket ticket = Ticket.builder()
-                .id(ticketId)
-                .type(mapTicketType(request.type()))
-                .category(request.type())
-                .subject(request.subject())
-                .status("Open")
-                .creatorUuid(request.creatorUuid())
-                .creatorName(request.creatorName())
-                .reportedPlayer(request.reportedPlayerName())
-                .reportedPlayerUuid(request.reportedPlayerUuid())
-                .tags(request.tags() != null ? request.tags() : new ArrayList<>())
-                .replies(new ArrayList<>())
-                .notes(new ArrayList<>())
-                .chatMessages(chatMessages)
-                .data(ticketData.isEmpty() ? null : ticketData)
-                .priority(request.priority() != null ? request.priority() : "normal")
-                .created(now)
-                .updatedAt(now)
-                .build();
-
-        // Add initial description as first reply if provided
-        if (request.description() != null && !request.description().isBlank()) {
-            TicketReply initialReply = TicketReply.builder()
-                    .id(new ObjectId().toHexString())
-                    .content(request.description())
-                    .name(request.creatorName() != null ? request.creatorName() : "Player")
-                    .creatorIdentifier(request.creatorUuid())
-                    .staff(false)
-                    .type("user")
-                    .created(now)
-                    .build();
-            ticket.getReplies().add(initialReply);
-        }
-
-        template.save(ticket, CollectionName.TICKETS);
-
-        if ("chat".equalsIgnoreCase(request.type()) && chatMessages != null && !chatMessages.isEmpty()) {
-            aiTicketAnalysisService.analyzeTicketAsync(server, ticketId);
+        if (TicketCategory.fromCanonicalId(request.type()) == TicketCategory.CHAT
+            && request.chatMessages() != null
+            && !request.chatMessages().isEmpty()) {
+            aiTicketAnalysisService.analyzeTicketAsync(server, ticket.getId());
         }
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "ticketId", ticketId,
-                "message", "Ticket created successfully"
+            "status", 200,
+            "success", true,
+            "ticketId", ticket.getId(),
+            "message", "Ticket created successfully"
         ));
     }
 
-    /**
-     * Create an unfinished ticket (e.g., staff application that needs form completion)
-     */
     @PostMapping("/unfinished")
     public ResponseEntity<Map<String, Object>> createUnfinishedTicket(
-            @RequestBody @Valid CreateTicketRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid MinecraftCreateTicketRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        TicketType ticketType = TicketType.fromId(request.type());
-        String ticketId = generateTicketId(template, ticketType);
-        Date now = new Date();
-
-        Ticket ticket = Ticket.builder()
-                .id(ticketId)
-                .type(mapTicketType(request.type()))
-                .category(request.type())
-                .subject(request.subject())
-                .status("Unfinished") // Unfinished tickets start as Unfinished
-                .creatorUuid(request.creatorUuid())
-                .creatorName(request.creatorName())
-                .tags(request.tags() != null ? request.tags() : new ArrayList<>())
-                .replies(new ArrayList<>())
-                .notes(new ArrayList<>())
-                .priority(request.priority() != null ? request.priority() : "normal")
-                .created(now)
-                .updatedAt(now)
-                .build();
-
-        template.save(ticket, CollectionName.TICKETS);
+        Ticket ticket = minecraftTicketService.createUnfinishedMinecraftTicket(server, request);
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "ticketId", ticketId,
-                "message", "Ticket draft created - complete the form on the panel"
+            "status", 200,
+            "success", true,
+            "ticketId", ticket.getId(),
+            "message", "Ticket draft created - complete the form on the panel"
         ));
-    }
-
-    /**
-     * Map plugin ticket type to internal type
-     */
-    private String mapTicketType(String type) {
-        if (type == null) return "SUPPORT";
-        return switch (type.toLowerCase()) {
-            case "player", "chat" -> "REPORT";
-            case "bug" -> "BUG";
-            case "appeal" -> "APPEAL";
-            default -> "SUPPORT";
-        };
-    }
-
-    /**
-     * Generate a readable ticket ID like SUPPORT-123456
-     */
-    private String generateTicketId(MongoTemplate template, TicketType type) {
-        String prefix = TicketType.getPrefix(type);
-        String ticketId;
-        int attempts = 0;
-
-        do {
-            int randomId = 100000 + RANDOM.nextInt(900000);
-            ticketId = prefix + "-" + randomId;
-            attempts++;
-        } while (template.exists(Query.query(Criteria.where("_id").is(ticketId)), Ticket.class, CollectionName.TICKETS) && attempts < 10);
-
-        return ticketId;
     }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllTickets(
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String type,
-            @RequestParam(defaultValue = "50") int limit,
-            HttpServletRequest httpRequest
+        @RequestParam(required = false) String status,
+        @RequestParam(required = false) String type,
+        @RequestParam(defaultValue = "50") int limit,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Criteria criteria = new Criteria();
-        List<Criteria> conditions = new ArrayList<>();
-
-        // Filter by status if provided
-        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) {
-            conditions.add(Criteria.where("status").is(status));
-        }
-
-        // Filter by type if provided (support tickets vs reports)
-        if (type != null && !type.isBlank()) {
-            conditions.add(Criteria.where("type").is(type));
-        } else {
-            // Default to support tickets (exclude player reports)
-            conditions.add(Criteria.where("type").in("SUPPORT", "BUG", "APPEAL"));
-        }
-
-        if (!conditions.isEmpty()) {
-            criteria = new Criteria().andOperator(conditions.toArray(new Criteria[0]));
-        }
-
-        Query query = Query.query(criteria);
-        query.with(Sort.by(Sort.Direction.DESC, "created"));
-        query.limit(Math.min(limit, 100));
-
-        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
-
-        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
-            boolean hasStaffResponse = false;
-            if (t.getReplies() != null) {
-                hasStaffResponse = t.getReplies().stream()
-                        .anyMatch(r -> r.isStaff());
-            }
-
-            Map<String, Object> ticket = new LinkedHashMap<>();
-            ticket.put("id", t.getId());
-            ticket.put("type", t.getType());
-            ticket.put("category", t.getCategory());
-            ticket.put("subject", t.getSubject());
-            ticket.put("status", t.getStatus());
-            ticket.put("playerName", t.getCreatorName());
-            ticket.put("playerUuid", t.getCreatorUuid());
-            ticket.put("priority", t.getPriority());
-            ticket.put("assignedTo", t.getAssignedTo());
-            ticket.put("createdAt", t.getCreated());
-            ticket.put("updatedAt", t.getUpdatedAt());
-            ticket.put("hasStaffResponse", hasStaffResponse);
-            ticket.put("replyCount", t.getReplies() != null ? t.getReplies().size() : 0);
-            ticket.put("locked", t.isLocked());
-            return ticket;
-        }).toList();
+        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTickets(server, status, type, limit)
+            .stream()
+            .map(minecraftTicketService::toTicketListItem)
+            .toList();
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "tickets", ticketList
+            "status", 200,
+            "tickets", ticketList
         ));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getTicket(
-            @PathVariable String id,
-            HttpServletRequest httpRequest
+        @PathVariable String id,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("_id").is(id));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
+        Ticket ticket = minecraftTicketService.getMinecraftTicket(server, id).orElse(null);
         if (ticket == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "message", "Ticket not found"
+                "status", 404,
+                "message", "Ticket not found"
             ));
         }
 
-        List<Map<String, Object>> replies = new ArrayList<>();
-        if (ticket.getReplies() != null) {
-            for (TicketReply reply : ticket.getReplies()) {
-                Map<String, Object> r = new LinkedHashMap<>();
-                r.put("id", reply.getId());
-                r.put("content", reply.getContent());
-                r.put("authorName", reply.getName());
-                r.put("authorId", reply.getCreatorIdentifier());
-                r.put("isStaff", reply.isStaff());
-                r.put("createdAt", reply.getCreated());
-                replies.add(r);
-            }
-        }
-
-        Map<String, Object> ticketData = new LinkedHashMap<>();
-        ticketData.put("id", ticket.getId());
-        ticketData.put("type", ticket.getType());
-        ticketData.put("category", ticket.getCategory());
-        ticketData.put("subject", ticket.getSubject());
-        ticketData.put("status", ticket.getStatus());
-        ticketData.put("playerName", ticket.getCreatorName());
-        ticketData.put("playerUuid", ticket.getCreatorUuid());
-        ticketData.put("priority", ticket.getPriority());
-        ticketData.put("assignedTo", ticket.getAssignedTo());
-        ticketData.put("createdAt", ticket.getCreated());
-        ticketData.put("updatedAt", ticket.getUpdatedAt());
-        ticketData.put("locked", ticket.isLocked());
-        ticketData.put("replies", replies);
-        ticketData.put("chatMessages", ticket.getChatMessages());
-
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "ticket", ticketData
+            "status", 200,
+            "ticket", minecraftTicketService.toTicketDetail(ticket)
         ));
     }
 
     @GetMapping("/player/{uuid}")
     public ResponseEntity<Map<String, Object>> getPlayerTickets(
-            @PathVariable String uuid,
-            HttpServletRequest httpRequest
+        @PathVariable String uuid,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
-        Query query = Query.query(Criteria.where("creatorUuid").is(uuid));
-        query.with(Sort.by(Sort.Direction.DESC, "created"));
-        query.limit(50);
-
-        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
-
-        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
-            Map<String, Object> ticket = new LinkedHashMap<>();
-            ticket.put("id", t.getId());
-            ticket.put("type", t.getType());
-            ticket.put("subject", t.getSubject());
-            ticket.put("status", t.getStatus());
-            ticket.put("createdAt", t.getCreated());
-            return ticket;
-        }).toList();
+        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
+            .stream()
+            .map(ticket -> {
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("id", ticket.getId());
+                response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+                response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
+                response.put("subject", ticket.getSubject());
+                response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
+                response.put("createdAt", ticket.getCreated());
+                return response;
+            })
+            .toList();
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "tickets", ticketList
+            "status", 200,
+            "tickets", tickets
         ));
     }
 
-    /**
-     * Claim an unlinked ticket by linking it to a Minecraft account.
-     * This allows players to claim tickets created via web form.
-     * Also updates all reply names from "{name} (Web User)" to the verified player name.
-     */
     @PostMapping("/{id}/claim")
     public ResponseEntity<Map<String, Object>> claimTicket(
-            @PathVariable String id,
-            @RequestBody @Valid ClaimTicketRequest request,
-            HttpServletRequest httpRequest
+        @PathVariable String id,
+        @RequestBody @Valid MinecraftClaimTicketRequest request,
+        HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
+        MinecraftTicketService.MinecraftTicketClaimResult result = minecraftTicketService.claimMinecraftTicket(server, id, request);
 
-        Query query = Query.query(Criteria.where("_id").is(id));
-        Ticket ticket = template.findOne(query, Ticket.class, CollectionName.TICKETS);
-
-        if (ticket == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", 404,
-                    "success", false,
-                    "message", "Ticket not found"
+        return switch (result.status()) {
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "success", false,
+                "message", "Ticket not found"
             ));
-        }
-
-        // Check if ticket is already claimed
-        if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "status", 409,
-                    "success", false,
-                    "message", "Ticket is already linked to a Minecraft account"
+            case ALREADY_LINKED -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "status", 409,
+                "success", false,
+                "message", "Ticket is already linked to a Minecraft account"
             ));
-        }
-
-        // Store the old creator name to update replies.
-        String oldCreatorName = ticket.getCreatorName();
-
-        // Update all replies that match the old creator name (Web User format)
-        // This changes "{name} (Web User)" to the verified player name
-        List<TicketReply> updatedReplies = null;
-        if (ticket.getReplies() != null && oldCreatorName != null) {
-            updatedReplies = ticket.getReplies().stream()
-                    .map(reply -> {
-                        // Update replies that match the old web user name and are not staff
-                        if (!reply.isStaff() && oldCreatorName.equals(reply.getName())) {
-                            reply.setName(request.playerName());
-                        }
-                        return reply;
-                    })
-                    .toList();
-        }
-
-        // Update the ticket with the player's information
-        Update update = new Update()
-                .set("creatorUuid", request.playerUuid())
-                .set("creatorName", request.playerName())
-                .set("updatedAt", new Date());
-
-        // Update replies if we modified them
-        if (updatedReplies != null) {
-            update.set("replies", updatedReplies);
-        }
-
-        template.updateFirst(query, update, Ticket.class, CollectionName.TICKETS);
-
-        return ResponseEntity.ok(Map.of(
+            case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "success", true,
                 "message", "Ticket successfully linked to your account",
                 "ticketId", id,
-                "subject", ticket.getSubject()
-        ));
+                "subject", result.ticket() != null ? result.ticket().getSubject() : null
+            ));
+        };
     }
 
-    /**
-     * Request record for claiming a ticket
-     */
-    public record ClaimTicketRequest(
-            @NotBlank String playerUuid,
-            @NotBlank String playerName
-    ) {}
-
-    /**
-     * Fetch tickets by a list of IDs. Returns ticket summaries.
-     */
     @PostMapping("/by-ids")
     public ResponseEntity<Map<String, Object>> getTicketsByIds(
-            @RequestBody @Valid TicketsByIdsRequest request,
-            HttpServletRequest httpRequest
+        @RequestBody @Valid MinecraftTicketsByIdsRequest request,
+        HttpServletRequest httpRequest
     ) {
-        Server server = RequestUtil.getRequestServer(httpRequest);
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-
         if (request.ids() == null || request.ids().isEmpty()) {
             return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "tickets", List.of()
+                "status", 200,
+                "tickets", List.of()
             ));
         }
 
-        Query query = Query.query(Criteria.where("_id").in(request.ids()));
-        List<Ticket> tickets = template.find(query, Ticket.class, CollectionName.TICKETS);
-
-        List<Map<String, Object>> ticketList = tickets.stream().map(t -> {
-            Map<String, Object> ticket = new LinkedHashMap<>();
-            ticket.put("id", t.getId());
-            ticket.put("type", t.getType());
-            ticket.put("category", t.getCategory());
-            ticket.put("subject", t.getSubject());
-            ticket.put("status", t.getStatus());
-            ticket.put("playerName", t.getCreatorName());
-            ticket.put("playerUuid", t.getCreatorUuid());
-            ticket.put("createdAt", t.getCreated());
-            // Include the body of the first reply
-            if (t.getReplies() != null && !t.getReplies().isEmpty()) {
-                ticket.put("firstReplyContent", t.getReplies().get(0).getContent());
-            }
-            return ticket;
-        }).toList();
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTicketsByIds(server, request.ids())
+            .stream()
+            .map(minecraftTicketService::toTicketLookupItem)
+            .toList();
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "tickets", ticketList
+            "status", 200,
+            "tickets", ticketList
         ));
     }
 
-    public record TicketsByIdsRequest(
-            List<String> ids
-    ) {}
-
-    /**
-     * Request record for creating tickets from the Minecraft plugin
-     */
-    public record CreateTicketRequest(
-            @NotBlank String creatorUuid,
-            String creatorName,
-            @NotBlank String type,
-            String subject,
-            String description,
-            String reportedPlayerUuid,
-            String reportedPlayerName,
-            List<String> chatMessages,
-            List<String> tags,
-            String priority,
-            String createdServer
-    ) {}
 }

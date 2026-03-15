@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.exception.UnauthorizedException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -7,19 +8,22 @@ import gg.modl.backend.ticket.dto.response.SubscriptionUpdateResponse;
 import gg.modl.backend.ticket.dto.response.TicketSubscriptionResponse;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)
 @RequiredArgsConstructor
 public class TicketSubscriptionController {
-    private static final int MAX_UPDATES_LIMIT = 25;
-
     private final TicketSubscriptionService subscriptionService;
 
     @GetMapping
@@ -37,14 +41,14 @@ public class TicketSubscriptionController {
 
     @DeleteMapping("/{ticketId}")
     public ResponseEntity<?> unsubscribe(
-            @PathVariable String ticketId,
-            HttpServletRequest request
+        @PathVariable String ticketId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         boolean result = subscriptionService.unsubscribe(server, staffEmail, ticketId);
@@ -56,8 +60,8 @@ public class TicketSubscriptionController {
 
     @GetMapping("/updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getUpdates(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
@@ -66,21 +70,20 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, safeLimit);
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getUpdates(server, staffEmail, limit);
         return ResponseEntity.ok(updates);
     }
 
     @PostMapping("/updates/{updateId}/read")
     public ResponseEntity<?> markAsRead(
-            @PathVariable String updateId,
-            HttpServletRequest request
+        @PathVariable String updateId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         boolean result = subscriptionService.markAsRead(server, staffEmail, updateId);
@@ -89,14 +92,14 @@ public class TicketSubscriptionController {
 
     @PostMapping("/tickets/{ticketId}/read")
     public ResponseEntity<?> markTicketAsRead(
-            @PathVariable String ticketId,
-            HttpServletRequest request
+        @PathVariable String ticketId,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (staffEmail == null || staffEmail.isBlank()) {
-            return ResponseEntity.status(401).body(Map.of("error", "Not authenticated"));
+            throw new UnauthorizedException("Not authenticated");
         }
 
         subscriptionService.markTicketAsRead(server, ticketId, staffEmail);
@@ -105,8 +108,8 @@ public class TicketSubscriptionController {
 
     @GetMapping("/assigned-updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getAssignedUpdates(
-            @RequestParam(defaultValue = "10") int limit,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "10") int limit,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
@@ -115,8 +118,7 @@ public class TicketSubscriptionController {
             return ResponseEntity.status(401).build();
         }
 
-        int safeLimit = Math.max(1, Math.min(limit, MAX_UPDATES_LIMIT));
-        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, safeLimit);
+        List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, limit);
         return ResponseEntity.ok(updates);
     }
 }

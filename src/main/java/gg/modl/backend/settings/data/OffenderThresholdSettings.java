@@ -1,5 +1,7 @@
 package gg.modl.backend.settings.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -14,6 +16,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class OffenderThresholdSettings {
     /**
      * Thresholds for social category punishments.
@@ -29,8 +32,34 @@ public class OffenderThresholdSettings {
     @Builder.Default
     private CategoryThresholds gameplay = new CategoryThresholds(5, 10);
 
+    public static OffenderThresholdSettings defaults() {
+        return OffenderThresholdSettings.builder().build();
+    }
+
+    /**
+     * Get the social offender level for display.
+     */
+    public String getSocialOffenderLevel(int points) {
+        return social.getOffenderLevel(points);
+    }
+
+    /**
+     * Get the gameplay offender level for display.
+     */
+    public String getGameplayOffenderLevel(int points) {
+        return gameplay.getOffenderLevel(points);
+    }
+
+    /**
+     * Get the internal offense level for a category (for duration lookup).
+     */
+    public String getOffenseLevelInternal(int points, boolean isSocial) {
+        return isSocial ? social.getOffenseLevelInternal(points) : gameplay.getOffenseLevelInternal(points);
+    }
+
     @Data
     @NoArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class CategoryThresholds {
         /**
          * Points threshold for Medium offender level.
@@ -65,12 +94,14 @@ public class OffenderThresholdSettings {
         /**
          * Convert pointExpiryMonths to milliseconds for date comparison.
          */
+        @JsonIgnore
         public long getPointExpiryMs() {
             return (long) pointExpiryMonths * 30L * 24L * 60L * 60L * 1000L;
         }
 
         /**
          * Calculate the offender level based on points.
+         *
          * @param points The player's offense points
          * @return "Low", "Medium", or "Habitual"
          */
@@ -86,6 +117,7 @@ public class OffenderThresholdSettings {
 
         /**
          * Get the internal offense level used for duration lookup.
+         *
          * @param points The player's offense points
          * @return "first", "medium", or "habitual" (for duration matrix lookup)
          */
@@ -98,30 +130,5 @@ public class OffenderThresholdSettings {
                 return "first";
             }
         }
-    }
-
-    /**
-     * Get the social offender level for display.
-     */
-    public String getSocialOffenderLevel(int points) {
-        return social.getOffenderLevel(points);
-    }
-
-    /**
-     * Get the gameplay offender level for display.
-     */
-    public String getGameplayOffenderLevel(int points) {
-        return gameplay.getOffenderLevel(points);
-    }
-
-    /**
-     * Get the internal offense level for a category (for duration lookup).
-     */
-    public String getOffenseLevelInternal(int points, boolean isSocial) {
-        return isSocial ? social.getOffenseLevelInternal(points) : gameplay.getOffenseLevelInternal(points);
-    }
-
-    public static OffenderThresholdSettings defaults() {
-        return OffenderThresholdSettings.builder().build();
     }
 }

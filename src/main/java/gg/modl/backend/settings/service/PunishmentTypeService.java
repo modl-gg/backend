@@ -2,39 +2,39 @@ package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.jetbrains.annotations.NotNull;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.stereotype.Service;
-
 import java.util.List;
 import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
+import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class PunishmentTypeService {
-    private static final String SETTINGS_TYPE_PUNISHMENT_TYPES = "punishmentTypes";
-
-    private final DynamicMongoTemplateProvider mongoProvider;
+public class PunishmentTypeService extends AbstractSettingsService {
     private final ObjectMapper objectMapper;
     private final ServerTimestampService serverTimestampService;
+    private static final String SETTINGS_TYPE_PUNISHMENT_TYPES = "punishmentTypes";
+
+    public PunishmentTypeService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper, ServerTimestampService serverTimestampService) {
+        super(settingsRepository);
+        this.objectMapper = objectMapper;
+        this.serverTimestampService = serverTimestampService;
+    }
+
+    public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
+        return getPunishmentTypes(server).stream()
+            .filter(pt -> pt.getId() == id)
+            .findFirst();
+    }
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_PUNISHMENT_TYPES));
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return initializeDefaultTypes(server);
@@ -42,8 +42,8 @@ public class PunishmentTypeService {
 
         try {
             return objectMapper.convertValue(
-                    settings.getData(),
-                    new TypeReference<List<PunishmentType>>() {}
+                settings.getData(),
+                new TypeReference<List<PunishmentType>>() {}
             );
         } catch (Exception e) {
             log.error("Failed to convert punishment types from settings, initializing defaults", e);
@@ -51,26 +51,13 @@ public class PunishmentTypeService {
         }
     }
 
-    public Optional<PunishmentType> getPunishmentTypeByOrdinal(@NotNull Server server, int ordinal) {
-        return getPunishmentTypes(server).stream()
-                .filter(pt -> pt.getOrdinal() == ordinal)
-                .findFirst();
-    }
-
-    public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
-        return getPunishmentTypes(server).stream()
-                .filter(pt -> pt.getId() == id)
-                .findFirst();
+    public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
+        List<PunishmentType> defaultTypes = DefaultPunishmentTypes.getAll();
+        return savePunishmentTypes(server, defaultTypes);
     }
 
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_PUNISHMENT_TYPES));
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_PUNISHMENT_TYPES)
-                .set("data", types);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
         serverTimestampService.updatePunishmentTypesTimestamp(server);
         return types;
     }
@@ -122,8 +109,8 @@ public class PunishmentTypeService {
 
         List<PunishmentType> types = getPunishmentTypes(server);
         List<PunishmentType> filtered = types.stream()
-                .filter(pt -> pt.getOrdinal() != ordinal)
-                .toList();
+            .filter(pt -> pt.getOrdinal() != ordinal)
+            .toList();
 
         if (filtered.size() == types.size()) {
             return false;
@@ -137,14 +124,14 @@ public class PunishmentTypeService {
         List<PunishmentType> types = new java.util.ArrayList<>(getPunishmentTypes(server));
 
         int maxOrdinal = types.stream()
-                .mapToInt(PunishmentType::getOrdinal)
-                .max()
-                .orElse(5);
+            .mapToInt(PunishmentType::getOrdinal)
+            .max()
+            .orElse(5);
 
         int maxId = types.stream()
-                .mapToInt(PunishmentType::getId)
-                .max()
-                .orElse(5);
+            .mapToInt(PunishmentType::getId)
+            .max()
+            .orElse(5);
 
         newType.setOrdinal(maxOrdinal + 1);
         newType.setId(maxId + 1);
@@ -156,40 +143,41 @@ public class PunishmentTypeService {
         return newType;
     }
 
-    public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
-        List<PunishmentType> defaultTypes = DefaultPunishmentTypes.getAll();
-        return savePunishmentTypes(server, defaultTypes);
-    }
-
     public long calculateDurationMillis(
-            @NotNull Server server,
-            int ordinal,
-            String severity,
-            String offenseLevel
+        @NotNull Server server,
+        int ordinal,
+        String severity,
+        String offenseLevel
     ) {
         return getPunishmentTypeByOrdinal(server, ordinal)
-                .map(type -> type.getDurationMillis(
-                        severity != null ? severity : "regular",
-                        offenseLevel != null ? offenseLevel : "first"
-                ))
-                .orElse(0L);
+            .map(type -> type.getDurationMillis(
+                severity != null ? severity : "regular",
+                offenseLevel != null ? offenseLevel : "first"
+            ))
+            .orElse(0L);
+    }
+
+    public Optional<PunishmentType> getPunishmentTypeByOrdinal(@NotNull Server server, int ordinal) {
+        return getPunishmentTypes(server).stream()
+            .filter(pt -> pt.getOrdinal() == ordinal)
+            .findFirst();
     }
 
     public String getPunishmentTypeName(@NotNull Server server, int ordinal) {
         return getPunishmentTypeByOrdinal(server, ordinal)
-                .map(PunishmentType::getName)
-                .orElse("Unknown");
+            .map(PunishmentType::getName)
+            .orElse("Unknown");
     }
 
     public boolean isAppealable(@NotNull Server server, int ordinal) {
         return getPunishmentTypeByOrdinal(server, ordinal)
-                .map(PunishmentType::isAppealable)
-                .orElse(false);
+            .map(PunishmentType::isAppealable)
+            .orElse(false);
     }
 
     public int getPointsForPunishment(@NotNull Server server, int ordinal, String severity) {
         return getPunishmentTypeByOrdinal(server, ordinal)
-                .map(type -> type.getPointsForSeverity(severity != null ? severity : "regular"))
-                .orElse(0);
+            .map(type -> type.getPointsForSeverity(severity != null ? severity : "regular"))
+            .orElse(0);
     }
 }

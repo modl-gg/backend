@@ -1,59 +1,45 @@
 package gg.modl.backend.billing.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
-
+import gg.modl.backend.util.ServerMutationHelper;
 import java.util.Date;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class SubscriptionExpiryService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
     private final UsageTrackingService usageTrackingService;
+    private final ServerMutationHelper serverMutationHelper;
 
     @Scheduled(fixedRate = 3600000)
     public void checkExpiredSubscriptions() {
         try {
-            MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-
-            Query query = Query.query(
-                    Criteria.where("subscriptionStatus").is(SubscriptionStatus.CANCELED)
-                            .and("currentPeriodEnd").exists(true).ne(null)
-            );
-
-            List<Server> cancelledServers = globalDb.find(query, Server.class, CollectionName.MODL_SERVERS);
-
+            List<Server> cancelledServers = serverRepository.findCancelledWithPeriodEnd();
             Date now = new Date();
 
             for (Server server : cancelledServers) {
                 Date endDate = server.getCurrentPeriodEnd();
                 if (endDate != null && endDate.before(now)) {
-                    Update update = new Update()
-                            .set("subscriptionStatus", SubscriptionStatus.INACTIVE)
-                            .set("plan", ServerPlan.FREE)
-                            .unset("currentPeriodEnd");
-
-                    Query updateQuery = Query.query(Criteria.where("_id").is(server.getId()));
-                    globalDb.updateFirst(updateQuery, update, CollectionName.MODL_SERVERS);
-
+                    serverMutationHelper.mutate(server, current -> {
+                        current.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
+                        current.setPlan(ServerPlan.FREE);
+                        current.setCurrentPeriodEnd(null);
+                    });
                     usageTrackingService.resetUsageCounters(server.getId());
                 }
             }
-        } catch (Exception e) {
-            log.error("Error checking for expired subscriptions", e);
+        } catch (Exception exception) {
+            log.error("Error checking for expired subscriptions", exception);
         }
     }
+
 }

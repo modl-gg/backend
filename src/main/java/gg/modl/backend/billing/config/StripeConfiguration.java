@@ -4,28 +4,23 @@ import com.stripe.Stripe;
 import com.stripe.StripeClient;
 import jakarta.annotation.PostConstruct;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
 
 @Configuration
+@ConfigurationProperties(prefix = "modl.stripe")
+@Validated
+@Getter
+@Setter
 @Slf4j
 public class StripeConfiguration {
-    @Value("${modl.stripe.secret-key:}")
-    private String secretKey;
-
-    @Getter
-    @Value("${modl.stripe.webhook-secret:}")
-    private String webhookSecret;
-
-    @Getter
-    @Value("${modl.stripe.price-id:}")
-    private String priceId;
-
-    @Getter
-    @Value("${modl.domain}")
-    private String domain;
+    private String secretKey = "";
+    private String webhookSecret = "";
+    private String priceId = "";
 
     @PostConstruct
     public void init() {

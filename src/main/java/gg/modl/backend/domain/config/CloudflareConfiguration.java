@@ -1,24 +1,19 @@
 package gg.modl.backend.domain.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
 
 @Configuration
+@ConfigurationProperties(prefix = "modl.cloudflare")
+@Validated
+@Getter
+@Setter
 public class CloudflareConfiguration {
-
-    @Value("${modl.cloudflare.api-token:}")
-    private String apiToken;
-
-    @Value("${modl.cloudflare.zone-id:}")
-    private String zoneId;
-
-    public String getApiToken() {
-        return apiToken;
-    }
-
-    public String getZoneId() {
-        return zoneId;
-    }
+    private String apiToken = "";
+    private String zoneId = "";
 
     public boolean isConfigured() {
         return apiToken != null && !apiToken.isBlank() && zoneId != null && !zoneId.isBlank();

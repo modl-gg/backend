@@ -1,77 +1,95 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.dto.request.*;
+import gg.modl.backend.ticket.dto.request.AddNoteRequest;
+import gg.modl.backend.ticket.dto.request.AddReplyRequest;
+import gg.modl.backend.ticket.dto.request.AddTagRequest;
+import gg.modl.backend.ticket.dto.request.BulkTicketUpdateRequest;
+import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
+import gg.modl.backend.ticket.dto.request.QuickResponseRequest;
+import gg.modl.backend.ticket.dto.request.UpdateTicketRequest;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.service.TicketReplyService;
+import gg.modl.backend.ticket.service.TicketSearchService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKETS)
 @RequiredArgsConstructor
 public class PanelTicketController {
     private final TicketService ticketService;
+    private final TicketSearchService ticketSearchService;
+    private final TicketReplyService ticketReplyService;
     private final TicketSubscriptionService subscriptionService;
 
     @GetMapping
     public ResponseEntity<PaginatedTicketsResponse> searchTickets(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int limit,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) List<String> type,
-            @RequestParam(required = false) String author,
-            @RequestParam(required = false) List<String> labels,
-            @RequestParam(required = false) List<String> assignee,
-            @RequestParam(defaultValue = "newest") String sort,
-            HttpServletRequest request
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(required = false) String search,
+        @RequestParam(required = false) String status,
+        @RequestParam(required = false) List<String> type,
+        @RequestParam(required = false) String author,
+        @RequestParam(required = false) List<String> labels,
+        @RequestParam(required = false) List<String> assignee,
+        @RequestParam(defaultValue = "newest") String sort,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        PaginatedTicketsResponse response = ticketService.searchTickets(
-                server, page, limit, search, status, type, author, labels, assignee, sort);
+        PaginatedTicketsResponse response = ticketSearchService.searchTickets(
+            server, page, limit, search, status, type, author, labels, assignee, sort);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping("/counts")
     public ResponseEntity<Map<String, Long>> getTicketCounts(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false) List<String> type,
-            @RequestParam(required = false) String author,
-            @RequestParam(required = false) List<String> labels,
-            @RequestParam(required = false) List<String> assignee,
-            HttpServletRequest request
+        @RequestParam(required = false) String search,
+        @RequestParam(required = false) List<String> type,
+        @RequestParam(required = false) String author,
+        @RequestParam(required = false) List<String> labels,
+        @RequestParam(required = false) List<String> assignee,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Map<String, Long> counts = ticketService.getTicketCounts(server, search, type, author, labels, assignee);
+        Map<String, Long> counts = ticketSearchService.getTicketCounts(server, search, type, author, labels, assignee);
         return ResponseEntity.ok(counts);
     }
 
     @PostMapping("/bulk")
     public ResponseEntity<?> bulkUpdateTickets(
-            @RequestBody @Valid BulkTicketUpdateRequest bulkRequest,
-            HttpServletRequest request
+        @RequestBody @Valid BulkTicketUpdateRequest bulkRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
         if (bulkRequest.ticketIds() == null || bulkRequest.ticketIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "No ticket IDs provided"));
+            throw new ValidationException("No ticket IDs provided");
         }
 
         int updatedCount = ticketService.bulkUpdateTickets(server, bulkRequest, staffEmail);
@@ -80,8 +98,8 @@ public class PanelTicketController {
 
     @GetMapping("/{id}")
     public ResponseEntity<TicketResponse> getTicket(
-            @PathVariable String id,
-            HttpServletRequest request
+        @PathVariable String id,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
@@ -91,14 +109,14 @@ public class PanelTicketController {
         }
 
         return ticketService.getTicketById(server, id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
     public ResponseEntity<TicketResponse> createTicket(
-            @RequestBody @Valid CreateTicketRequest createRequest,
-            HttpServletRequest request
+        @RequestBody @Valid CreateTicketRequest createRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         TicketResponse ticket = ticketService.createTicket(server, createRequest);
@@ -107,120 +125,112 @@ public class PanelTicketController {
 
     @PatchMapping("/{id}")
     public ResponseEntity<?> updateTicket(
-            @PathVariable String id,
-            @RequestBody @Valid UpdateTicketRequest updateRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid UpdateTicketRequest updateRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            return ticketService.updateTicket(server, id, updateRequest, staffEmail)
-                    .map(ticket -> ResponseEntity.ok(Map.of(
-                            "id", ticket.id(),
-                            "status", ticket.status(),
-                            "tags", ticket.tags(),
-                            "notes", ticket.notes(),
-                            "messages", ticket.messages(),
-                            "data", ticket.data() != null ? ticket.data() : Map.of(),
-                            "locked", ticket.locked()
-                    )))
-                    .orElse(ResponseEntity.notFound().build());
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
-        }
+        return ticketService.updateTicket(server, id, updateRequest, staffEmail)
+            .map(ticket -> ResponseEntity.ok(Map.of(
+                "id", ticket.id(),
+                "status", ticket.status(),
+                "tags", ticket.tags(),
+                "notes", ticket.notes(),
+                "messages", ticket.messages(),
+                "data", ticket.data() != null ? ticket.data() : Map.of(),
+                "locked", ticket.locked()
+            )))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/notes")
     public ResponseEntity<?> addNote(
-            @PathVariable String id,
-            @RequestBody @Valid AddNoteRequest noteRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid AddNoteRequest noteRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.addNote(server, id, noteRequest)
-                .map(note -> ResponseEntity.status(HttpStatus.CREATED).body(note))
-                .orElse(ResponseEntity.notFound().build());
+        return ticketReplyService.addNote(server, id, noteRequest)
+            .map(note -> ResponseEntity.status(HttpStatus.CREATED).body(note))
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping("/{id}/replies")
     public ResponseEntity<?> addReply(
-            @PathVariable String id,
-            @RequestBody @Valid AddReplyRequest replyRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid AddReplyRequest replyRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        try {
-            Optional<TicketReply> replyOpt = ticketService.addReply(server, id, replyRequest);
+        Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
 
-            if (replyOpt.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
-                subscriptionService.ensureSubscription(server, id, staffEmail);
-            }
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(replyOpt.get());
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("error", e.getMessage()));
+        if (replyOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
+
+        if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
+            subscriptionService.ensureSubscription(server, id, staffEmail);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(replyOpt.get());
     }
 
     @PostMapping("/{id}/tags")
     public ResponseEntity<?> addTag(
-            @PathVariable String id,
-            @RequestBody @Valid AddTagRequest tagRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid AddTagRequest tagRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.addTag(server, id, tagRequest.tag())
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ticketReplyService.addTag(server, id, tagRequest.tag())
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}/tags/{tag}")
     public ResponseEntity<?> removeTag(
-            @PathVariable String id,
-            @PathVariable String tag,
-            HttpServletRequest request
+        @PathVariable String id,
+        @PathVariable String tag,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.removeTag(server, id, tag)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ticketReplyService.removeTag(server, id, tag)
+            .map(ResponseEntity::ok)
+            .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/player/{uuid}")
     public ResponseEntity<?> getTicketsByPlayer(
-            @PathVariable String uuid,
-            HttpServletRequest request
+        @PathVariable String uuid,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketService.getTicketsByPlayer(server, uuid);
+        List<Ticket> tickets = ticketSearchService.getTicketsByPlayer(server, uuid);
         return ResponseEntity.ok(tickets);
     }
 
     @GetMapping("/tag/{tag}")
     public ResponseEntity<?> getTicketsByTag(
-            @PathVariable String tag,
-            HttpServletRequest request
+        @PathVariable String tag,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketService.getTicketsByTag(server, tag);
+        List<Ticket> tickets = ticketSearchService.getTicketsByTag(server, tag);
         return ResponseEntity.ok(tickets);
     }
 
     @PostMapping("/{id}/quick-response")
     public ResponseEntity<?> quickResponse(
-            @PathVariable String id,
-            @RequestBody @Valid QuickResponseRequest quickRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid QuickResponseRequest quickRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);

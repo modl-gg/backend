@@ -1,5 +1,7 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
@@ -7,15 +9,13 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 class PublicSettingsApiTest {
 
     static ApiClient api;
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -27,3 +27,4 @@ class PublicSettingsApiTest {
         assertTrue(json.has("serverExists"));
     }
 }
+

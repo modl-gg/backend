@@ -11,19 +11,45 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
 public class PanelPermissionFilter extends OncePerRequestFilter {
     private final PermissionService permissionService;
     private final StaffService staffService;
+    private static final List<PermissionMapping> FIXED_PERMISSIONS = List.of(
+        new PermissionMapping(RESTMappingV1.PANEL_STAFF, "admin.staff.manage.members"),
+        new PermissionMapping(RESTMappingV1.PANEL_ROLES, "admin.staff.manage.roles"),
+        new PermissionMapping(RESTMappingV1.PANEL_PLAYERS, "punishment.modify"),
+        new PermissionMapping(RESTMappingV1.PANEL_DASHBOARD, "admin.audit.view.dashboard"),
+        new PermissionMapping(RESTMappingV1.PANEL_ANALYTICS, "admin.audit.view.analytics"),
+        new PermissionMapping(RESTMappingV1.PANEL_AUDIT, "admin.audit.view.logs"),
+        new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs")
+    );
+    private static final List<PermissionMapping> RW_PERMISSIONS = List.of(
+        new PermissionMapping(RESTMappingV1.PANEL_BILLING, "admin.settings.view.billing", "admin.settings.modify.billing"),
+        new PermissionMapping(RESTMappingV1.PANEL_HOMEPAGE_CARDS, "admin.settings.view.content", "admin.settings.modify.content"),
+        new PermissionMapping(RESTMappingV1.PANEL_KNOWLEDGEBASE, "admin.settings.view.content", "admin.settings.modify.content"),
+        new PermissionMapping(RESTMappingV1.PANEL_MEDIA, "admin.settings.view.content", "admin.settings.modify.content"),
+        new PermissionMapping(RESTMappingV1.PANEL_MIGRATION, "admin.settings.view.migration", "admin.settings.modify.migration"),
+        new PermissionMapping(RESTMappingV1.PANEL_STORAGE, "admin.settings.view.storage", "admin.settings.modify.storage"),
+        new PermissionMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS, "ticket.view.all", "ticket.reply.all"),
+        new PermissionMapping(RESTMappingV1.PANEL_TICKETS, "ticket.view.all", "ticket.reply.all"),
+        new PermissionMapping(RESTMappingV1.PANEL_APPEALS, "ticket.view.all", "ticket.reply.all"),
+        new PermissionMapping(RESTMappingV1.PANEL_SERVER, "admin.settings.view", "admin.settings.modify")
+    );
+    private static final Set<String> SETTINGS_PUNISHMENT_PATHS = Set.of(
+        "/punishment-types", "/status-thresholds", "/ai-moderation",
+        "/ai-apply-punishment", "/ai-dismiss-suggestion"
+    );
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -36,9 +62,9 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(
-            HttpServletRequest request,
-            @NotNull HttpServletResponse response,
-            @NotNull FilterChain filterChain
+        HttpServletRequest request,
+        @NotNull HttpServletResponse response,
+        @NotNull FilterChain filterChain
     ) throws ServletException, IOException {
         Server server = (Server) request.getAttribute(RequestAttribute.SERVER);
         String email = RequestUtil.getSessionEmail(request);
@@ -76,59 +102,20 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     }
 
     private String resolveRequiredPermission(String path, String method) {
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_STAFF)) {
-            return "admin.staff.manage.members";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_ROLES)) {
-            return "admin.staff.manage.roles";
+        for (PermissionMapping mapping : FIXED_PERMISSIONS) {
+            if (startsWithEndpoint(path, mapping.endpoint())) {
+                return mapping.readPermission();
+            }
         }
 
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_BILLING)) {
-            return isReadOnly(method) ? "admin.settings.view.billing" : "admin.settings.modify.billing";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_HOMEPAGE_CARDS)
-                || startsWithEndpoint(path, RESTMappingV1.PANEL_KNOWLEDGEBASE)
-                || startsWithEndpoint(path, RESTMappingV1.PANEL_MEDIA)) {
-            return isReadOnly(method) ? "admin.settings.view.content" : "admin.settings.modify.content";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_MIGRATION)) {
-            return isReadOnly(method) ? "admin.settings.view.migration" : "admin.settings.modify.migration";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_STORAGE)) {
-            return isReadOnly(method) ? "admin.settings.view.storage" : "admin.settings.modify.storage";
-        }
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_SETTINGS)) {
             return resolveSettingsPermission(path, method);
         }
 
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_DASHBOARD)) {
-            return "admin.audit.view.dashboard";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_ANALYTICS)) {
-            return "admin.audit.view.analytics";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_AUDIT)
-                || startsWithEndpoint(path, RESTMappingV1.PANEL_LOGS)) {
-            return "admin.audit.view.logs";
-        }
-
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)) {
-            return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
-        }
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKETS)) {
-            return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
-        }
-
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_PLAYERS)) {
-            return "punishment.modify";
-        }
-
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_APPEALS)) {
-            return isReadOnly(method) ? "ticket.view.all" : "ticket.reply.all";
-        }
-
-        if (startsWithEndpoint(path, RESTMappingV1.PANEL_SERVER)) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
+        for (PermissionMapping mapping : RW_PERMISSIONS) {
+            if (startsWithEndpoint(path, mapping.endpoint())) {
+                return isReadOnly(method) ? mapping.readPermission() : mapping.writePermission();
+            }
         }
 
         return null;
@@ -137,36 +124,30 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     private String resolveSettingsPermission(String path, String method) {
         String base = RESTMappingV1.PANEL_SETTINGS;
 
-        if (startsWithEndpoint(path, base + "/punishment-types")
-                || startsWithEndpoint(path, base + "/status-thresholds")
-                || startsWithEndpoint(path, base + "/ai-moderation")
-                || startsWithEndpoint(path, base + "/ai-apply-punishment")
-                || startsWithEndpoint(path, base + "/ai-dismiss-suggestion")) {
-            return isReadOnly(method) ? "admin.settings.view.punishments" : "admin.settings.modify.punishments";
+        for (String suffix : SETTINGS_PUNISHMENT_PATHS) {
+            if (startsWithEndpoint(path, base + suffix)) {
+                return isReadOnly(method) ? "admin.settings.view.punishments" : "admin.settings.modify.punishments";
+            }
         }
 
         if (startsWithEndpoint(path, base + "/domain")) {
             return isReadOnly(method) ? "admin.settings.view.domain" : "admin.settings.modify.domain";
         }
 
-        if (startsWithEndpoint(path, base + "/general")
-                || startsWithEndpoint(path, base + "/upload-icon")
-                || startsWithEndpoint(path, base + "/api-keys")
-                || startsWithEndpoint(path, base + "/quick-responses")
-                || startsWithEndpoint(path, base + "/ticket-forms")
-                || startsWithEndpoint(path, base + "/ticket-labels")
-                || startsWithEndpoint(path, base + "/webhooks")) {
-            return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
-        }
-
         return isReadOnly(method) ? "admin.settings.view" : "admin.settings.modify";
+    }
+
+    private boolean isReadOnly(String method) {
+        return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
     }
 
     private boolean startsWithEndpoint(String path, String endpoint) {
         return path.equals(endpoint) || path.startsWith(endpoint + "/");
     }
 
-    private boolean isReadOnly(String method) {
-        return "GET".equalsIgnoreCase(method) || "HEAD".equalsIgnoreCase(method);
+    private record PermissionMapping(String endpoint, String readPermission, String writePermission) {
+        PermissionMapping(String endpoint, String permission) {
+            this(endpoint, permission, permission);
+        }
     }
 }

@@ -7,15 +7,13 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 class PublicHomepageCardApiTest {
 
     static ApiClient api;
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -25,3 +23,4 @@ class PublicHomepageCardApiTest {
         JsonHelper.assertStatus(response, 200);
     }
 }
+

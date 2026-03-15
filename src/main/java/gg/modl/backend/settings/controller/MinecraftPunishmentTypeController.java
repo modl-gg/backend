@@ -6,14 +6,13 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PUNISHMENTS)
@@ -27,8 +26,8 @@ public class MinecraftPunishmentTypeController {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
         return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "data", types
+            "status", 200,
+            "data", types
         ));
     }
 }

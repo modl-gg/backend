@@ -1,15 +1,15 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PublicMediaApiTest {
 
@@ -17,7 +17,7 @@ class PublicMediaApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -32,11 +32,11 @@ class PublicMediaApiTest {
     @Test
     void presignUpload() throws Exception {
         var response = api.publicPost("/v1/public/media/presign", Map.of(
-                "fileName", "test-image.png",
-                "contentType", "image/png",
-                "fileSize", 1024,
-                "uploadType", "ticket",
-                "entityId", "new"
+            "fileName", "test-image.png",
+            "contentType", "image/png",
+            "fileSize", 1024,
+            "uploadType", "ticket",
+            "entityId", "new"
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -44,8 +44,9 @@ class PublicMediaApiTest {
     @Test
     void confirmUpload() throws Exception {
         var response = api.publicPost("/v1/public/media/confirm", Map.of(
-                "key", "nonexistent-key"
+            "key", "nonexistent-key"
         ));
         assertEquals(403, response.statusCode());
     }
 }
+

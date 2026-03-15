@@ -1,42 +1,35 @@
 package gg.modl.backend.config;
 
 import jakarta.annotation.PostConstruct;
+import java.util.Arrays;
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-import java.util.Arrays;
-import java.util.Set;
-
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class DevelopmentModeGuard {
-    private static final Set<String> PRODUCTION_PROFILES = Set.of("prod", "production", "staging");
-
-    @Value("${modl.development-mode:false}")
-    private boolean developmentMode;
-
     private final Environment environment;
-
-    public DevelopmentModeGuard(Environment environment) {
-        this.environment = environment;
-    }
+    private final ModlProperties modlProperties;
+    private static final Set<String> PRODUCTION_PROFILES = Set.of("prod", "production", "staging");
 
     @PostConstruct
     public void validate() {
-        if (!developmentMode) {
+        if (!modlProperties.isDevelopmentMode()) {
             return;
         }
 
         boolean isProductionProfile = Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(profile -> PRODUCTION_PROFILES.contains(profile.toLowerCase()));
+            .anyMatch(profile -> PRODUCTION_PROFILES.contains(profile.toLowerCase()));
 
         if (isProductionProfile) {
             throw new IllegalStateException(
-                    "FATAL: modl.development-mode=true is set with a production Spring profile active. " +
-                    "Development mode disables CSRF protection, captcha validation, and weakens cookie security. " +
-                    "Remove modl.development-mode or set it to false for production deployments."
+                "FATAL: modl.development-mode=true is set with a production Spring profile active. " +
+                "Development mode disables CSRF protection, captcha validation, and weakens cookie security. " +
+                "Remove modl.development-mode or set it to false for production deployments."
             );
         }
 

@@ -5,18 +5,18 @@ import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
-import jakarta.servlet.*;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.springframework.web.filter.OncePerRequestFilter;
-
 import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 public class ServerHeaderFilter extends OncePerRequestFilter {
     private final ServerService serverService;
@@ -25,8 +25,8 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     private final Set<String> systemOrigins;
 
     private static final Set<String> EXCLUDED_PATHS = Set.of(
-            RESTMappingV1.PUBLIC_REGISTRATION,
-            RESTMappingV1.PUBLIC_EVIDENCE_UPLOAD
+        RESTMappingV1.PUBLIC_REGISTRATION,
+        RESTMappingV1.PUBLIC_EVIDENCE_UPLOAD
     );
 
     public ServerHeaderFilter(ServerService serverService) {
@@ -34,15 +34,26 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     }
 
     public ServerHeaderFilter(
-            ServerService serverService,
-            boolean developmentMode,
-            @Nullable String devServerDomain,
-            @Nullable String systemOrigins
+        ServerService serverService,
+        boolean developmentMode,
+        @Nullable String devServerDomain,
+        @Nullable String systemOrigins
     ) {
         this.serverService = serverService;
         this.developmentMode = developmentMode;
         this.devServerDomain = devServerDomain;
         this.systemOrigins = parseSystemOrigins(systemOrigins);
+    }
+
+    private Set<String> parseSystemOrigins(@Nullable String origins) {
+        if (origins == null || origins.isBlank()) {
+            return Set.of();
+        }
+
+        return Arrays.stream(origins.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isBlank())
+            .collect(Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -55,25 +66,34 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain chain) throws ServletException, IOException {
-        String serverDomain = request.getHeader(RequestHeader.SERVER_DOMAIN);
+    protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain chain)
+        throws ServletException, IOException {
+        String requestHost = resolveRequestHost(request);
+        String legacyServerDomainHeader = normalizeServerDomain(request.getHeader(RequestHeader.SERVER_DOMAIN));
 
-        // In development mode, use the configured dev server domain if header is localhost
+        String serverDomain = requestHost != null ? requestHost : legacyServerDomainHeader;
+
+        // In development mode, use the configured dev server domain for localhost requests.
         if (developmentMode && devServerDomain != null && !devServerDomain.isBlank()) {
-            if (serverDomain == null || serverDomain.isBlank() ||
-                serverDomain.equals("localhost") || serverDomain.startsWith("127.0.0.1")) {
+            if (serverDomain == null || serverDomain.isBlank() || isLocalhost(serverDomain)) {
                 serverDomain = devServerDomain;
             }
         }
 
         if (serverDomain == null || serverDomain.isBlank()) {
-            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing server domain (X-Server-Domain)");
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Missing server domain host");
             return;
         }
 
         String normalizedServerDomain = normalizeServerDomain(serverDomain);
         if (normalizedServerDomain == null || normalizedServerDomain.isBlank()) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid server domain format");
+            return;
+        }
+
+        if (requestHost != null && legacyServerDomainHeader != null
+            && !requestHost.equalsIgnoreCase(legacyServerDomainHeader)) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Mismatched server domain headers");
             return;
         }
 
@@ -88,19 +108,37 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return;
         }
 
+        request.setAttribute(RequestAttribute.SERVER_DOMAIN, normalizedServerDomain);
         request.setAttribute(RequestAttribute.SERVER, server);
         chain.doFilter(request, response);
     }
 
-    private Set<String> parseSystemOrigins(@Nullable String origins) {
-        if (origins == null || origins.isBlank()) {
-            return Set.of();
+    @Nullable
+    private String resolveRequestHost(HttpServletRequest request) {
+        String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
+        if (forwardedHost != null) {
+            return forwardedHost;
         }
 
-        return Arrays.stream(origins.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .collect(Collectors.toUnmodifiableSet());
+        String host = normalizeServerDomain(request.getHeader("Host"));
+        if (host != null) {
+            return host;
+        }
+
+        return normalizeServerDomain(request.getServerName());
+    }
+
+    @Nullable
+    private String extractFirstForwardedHost(@Nullable String forwardedHostHeader) {
+        if (forwardedHostHeader == null || forwardedHostHeader.isBlank()) {
+            return null;
+        }
+
+        int separatorIndex = forwardedHostHeader.indexOf(',');
+        String firstForwardedHost = separatorIndex >= 0
+                                    ? forwardedHostHeader.substring(0, separatorIndex).trim()
+                                    : forwardedHostHeader.trim();
+        return normalizeServerDomain(firstForwardedHost);
     }
 
     private boolean isOriginAllowedForServer(HttpServletRequest request, String serverDomain) {
@@ -129,7 +167,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     private boolean isLocalhost(String host) {
         String normalized = host.toLowerCase();
         return "localhost".equals(normalized) || "0.0.0.0".equals(normalized)
-                || "::1".equals(normalized) || normalized.startsWith("127.");
+               || "::1".equals(normalized) || normalized.startsWith("127.");
     }
 
     private String extractHost(String originOrDomain) {

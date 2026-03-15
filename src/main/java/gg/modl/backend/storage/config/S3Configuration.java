@@ -1,27 +1,29 @@
 package gg.modl.backend.storage.config;
 
-import org.springframework.beans.factory.annotation.Value;
+import java.net.URI;
+import lombok.Getter;
+import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.annotation.Validated;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
-import java.net.URI;
-
 @Configuration
+@ConfigurationProperties(prefix = "modl.storage")
+@Validated
+@Getter
+@Setter
 public class S3Configuration {
-
-    @Value("${modl.storage.key-id:}")
-    private String keyId;
-
-    @Value("${modl.storage.application-key:}")
-    private String applicationKey;
-
-    @Value("${modl.storage.endpoint:}")
-    private String endpoint;
+    private String keyId = "";
+    private String applicationKey = "";
+    private String endpoint = "";
+    private String bucketName = "";
+    private String cdnDomain = "";
 
     @Bean
     public S3Client s3Client() {
@@ -32,11 +34,11 @@ public class S3Configuration {
         AwsBasicCredentials credentials = AwsBasicCredentials.create(keyId, applicationKey);
 
         return S3Client.builder()
-                .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .endpointOverride(URI.create(endpoint))
-                .region(Region.US_EAST_1)
-                .forcePathStyle(true)
-                .build();
+            .credentialsProvider(StaticCredentialsProvider.create(credentials))
+            .endpointOverride(URI.create(endpoint))
+            .region(Region.US_EAST_1)
+            .forcePathStyle(true)
+            .build();
     }
 
     @Bean
@@ -48,9 +50,9 @@ public class S3Configuration {
         AwsBasicCredentials credentials = AwsBasicCredentials.create(keyId, applicationKey);
 
         return S3Presigner.builder()
-                .credentialsProvider(StaticCredentialsProvider.create(credentials))
-                .endpointOverride(URI.create(endpoint))
-                .region(Region.US_EAST_1)
-                .build();
+            .credentialsProvider(StaticCredentialsProvider.create(credentials))
+            .endpointOverride(URI.create(endpoint))
+            .region(Region.US_EAST_1)
+            .build();
     }
 }

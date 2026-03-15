@@ -1,31 +1,48 @@
 package gg.modl.backend.ticket.data;
 
 import gg.modl.backend.ai.data.AIAnalysisResult;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
+import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 @Document
+@GenerateMongoFields
+@MongoFieldAliases({
+    @MongoFieldAlias(name = "REPLY_NAME", path = "replies.name"),
+    @MongoFieldAlias(name = "REPLY_CONTENT", path = "replies.content"),
+    @MongoFieldAlias(name = "REPLY_CREATED", path = "replies.created"),
+    @MongoFieldAlias(name = "REPLY_STAFF", path = "replies.staff")
+})
 public class Ticket {
     @Id
+    @NotNull
     private String id;
 
-    private String type;
-    private String category;
+    @Field(targetType = FieldType.STRING)
+    private TicketCategory type;
+
     private String subject;
-    private String status;
+
+    @Field(targetType = FieldType.STRING)
+    private TicketStatus status;
 
     private String creatorUuid;
     private String creatorName;
@@ -35,38 +52,78 @@ public class Ticket {
     private String reportedPlayerUuid;
 
     @Builder.Default
+    @NotNull
     private List<String> tags = new ArrayList<>();
 
     @Builder.Default
+    @NotNull
     private List<TicketReply> replies = new ArrayList<>();
 
     @Builder.Default
+    @NotNull
     private List<TicketNote> notes = new ArrayList<>();
 
+    @Nullable
     private List<ChatMessage> chatMessages;
 
+    @Nullable
     private Map<String, Object> formData;
+
+    @Nullable
     private Map<String, Object> data;
 
     private boolean locked;
-    private String priority;
 
     @Builder.Default
+    @Field(targetType = FieldType.STRING)
+    private TicketPriority priority = TicketPriority.NORMAL;
+
+    @Builder.Default
+    @NotNull
     private List<String> assignedTo = new ArrayList<>();
 
     private Date created;
     private Date updatedAt;
 
+    @Nullable
+    @Field(targetType = FieldType.STRING)
+    private AppealWorkflowStatus appealWorkflowStatus;
+
+    @Nullable
     private AIAnalysisResult aiAnalysis;
+
+    @Nullable
+    private String replayUrl;
 
     private boolean emailAuthEnabled;
     private boolean hidden;
 
+    public void applyLifecycleStatus(TicketStatus status) {
+        this.status = status;
+        this.locked = status != null && status.isTerminal();
+    }
+
+    public List<TicketReply> ensureReplies() {
+        if (this.replies == null) {
+            this.replies = new ArrayList<>();
+        }
+        return this.replies;
+    }
+
+    public List<TicketNote> ensureNotes() {
+        if (this.notes == null) {
+            this.notes = new ArrayList<>();
+        }
+        return this.notes;
+    }
+
     @Data
-    @NoArgsConstructor
     @AllArgsConstructor
     public static class ChatMessage {
+        @NotNull
         private String content;
+
+        @NotNull
         private Date timestamp;
     }
 }

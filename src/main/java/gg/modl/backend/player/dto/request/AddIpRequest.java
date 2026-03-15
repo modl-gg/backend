@@ -5,6 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 public record AddIpRequest(
-        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ipAddress
+    @NotBlank @Pattern(regexp = RegExpConstants.IP) String ipAddress
 ) {
 }

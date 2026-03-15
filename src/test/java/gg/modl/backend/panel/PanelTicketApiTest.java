@@ -1,20 +1,20 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
-import gg.modl.backend.support.TestDatabase;
 import gg.modl.backend.support.TestDataProvider;
-import com.google.gson.JsonObject;
+import gg.modl.backend.support.TestDatabase;
+import java.util.List;
+import java.util.Map;
 import org.bson.Document;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelTicketApiTest {
 
@@ -24,7 +24,7 @@ class PanelTicketApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
 
         testUuid = TestDataProvider.getPlayers().get(0).uuid();
@@ -45,18 +45,21 @@ class PanelTicketApiTest {
     @Test
     void createAndCleanupTicket() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test Ticket",
-                "description", "Created by automated test",
-                "creatorName", "TestBot"
+            "type", "bug_report",
+            "subject", "Panel API Test Ticket",
+            "description", "Created by automated test",
+            "creatorName", "TestBot"
         ));
         int createStatus = createResponse.statusCode();
         assertTrue(createStatus == 200 || createStatus == 201, "Expected 200 or 201 but got " + createStatus);
 
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = null;
-        if (json.has("id")) ticketId = json.get("id").getAsString();
-        else if (json.has("_id")) ticketId = json.get("_id").getAsString();
+        if (json.has("id")) {
+            ticketId = json.get("id").getAsString();
+        } else if (json.has("_id")) {
+            ticketId = json.get("_id").getAsString();
+        }
 
         // DB VERIFICATION: confirm ticket created
         if (TestDatabase.isAvailable() && ticketId != null) {
@@ -74,13 +77,15 @@ class PanelTicketApiTest {
     void getTicketById() throws Exception {
         // Create
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - get by id"
+            "type", "bug_report",
+            "subject", "Panel API Test - get by id"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         var response = api.panelGet("/v1/panel/tickets/" + ticketId);
         JsonHelper.assertStatus(response, 200);
@@ -92,16 +97,18 @@ class PanelTicketApiTest {
     @Test
     void updateTicket() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - update"
+            "type", "bug_report",
+            "subject", "Panel API Test - update"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         var response = api.panelPatch("/v1/panel/tickets/" + ticketId, Map.of(
-                "status", "in_progress"
+            "status", "in_progress"
         ));
         JsonHelper.assertStatus(response, 200);
 
@@ -119,17 +126,19 @@ class PanelTicketApiTest {
     @Test
     void addNoteToTicket() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - add note"
+            "type", "bug_report",
+            "subject", "Panel API Test - add note"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         var response = api.panelPost("/v1/panel/tickets/" + ticketId + "/notes", Map.of(
-                "text", "Panel API test note",
-                "issuerName", "TestBot"
+            "text", "Panel API test note",
+            "issuerName", "TestBot"
         ));
         int noteStatus = response.statusCode();
         assertTrue(noteStatus == 200 || noteStatus == 201, "Expected 200 or 201 but got " + noteStatus);
@@ -141,18 +150,20 @@ class PanelTicketApiTest {
     @Test
     void addReplyToTicket() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - add reply"
+            "type", "bug_report",
+            "subject", "Panel API Test - add reply"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         var response = api.panelPost("/v1/panel/tickets/" + ticketId + "/replies", Map.of(
-                "name", "TestBot",
-                "content", "Automated test reply",
-                "staff", true
+            "name", "TestBot",
+            "content", "Automated test reply",
+            "staff", true
         ));
         int replyStatus = response.statusCode();
         assertTrue(replyStatus == 200 || replyStatus == 201, "Expected 200 or 201 but got " + replyStatus);
@@ -164,8 +175,8 @@ class PanelTicketApiTest {
             var replies = dbTicket.getList("replies", Document.class);
             assertNotNull(replies, "Replies list should exist");
             assertTrue(replies.stream().anyMatch(r ->
-                            "Automated test reply".equals(r.getString("content"))),
-                    "Should contain the test reply");
+                    "Automated test reply".equals(r.getString("content"))),
+                "Should contain the test reply");
         }
 
         // Cleanup
@@ -175,16 +186,18 @@ class PanelTicketApiTest {
     @Test
     void addTag() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - tags"
+            "type", "bug_report",
+            "subject", "Panel API Test - tags"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         var response = api.panelPost("/v1/panel/tickets/" + ticketId + "/tags", Map.of(
-                "tag", "api-test"
+            "tag", "api-test"
         ));
         JsonHelper.assertStatus(response, 200);
 
@@ -215,13 +228,15 @@ class PanelTicketApiTest {
     @Test
     void removeTag() throws Exception {
         var createResponse = api.panelPost("/v1/panel/tickets", Map.of(
-                "type", "bug_report",
-                "subject", "Panel API Test - remove tag"
+            "type", "bug_report",
+            "subject", "Panel API Test - remove tag"
         ));
         var json = JsonHelper.parseObject(createResponse.body());
         String ticketId = json.has("id") ? json.get("id").getAsString() :
-                json.has("_id") ? json.get("_id").getAsString() : null;
-        if (ticketId == null) return;
+                          json.has("_id") ? json.get("_id").getAsString() : null;
+        if (ticketId == null) {
+            return;
+        }
 
         // Add then remove
         api.panelPost("/v1/panel/tickets/" + ticketId + "/tags", Map.of("tag", "temp-tag"));
@@ -253,10 +268,12 @@ class PanelTicketApiTest {
         var j2 = JsonHelper.parseObject(r2.body());
         String id1 = j1.has("id") ? j1.get("id").getAsString() : j1.has("_id") ? j1.get("_id").getAsString() : null;
         String id2 = j2.has("id") ? j2.get("id").getAsString() : j2.has("_id") ? j2.get("_id").getAsString() : null;
-        if (id1 == null || id2 == null) return;
+        if (id1 == null || id2 == null) {
+            return;
+        }
 
         var response = api.panelPost("/v1/panel/tickets/bulk", Map.of(
-                "ticketIds", List.of(id1, id2)
+            "ticketIds", List.of(id1, id2)
         ));
         JsonHelper.assertStatus(response, 200);
 
@@ -265,3 +282,4 @@ class PanelTicketApiTest {
         api.panelPatch("/v1/panel/tickets/" + id2, Map.of("status", "closed"));
     }
 }
+

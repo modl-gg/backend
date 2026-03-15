@@ -3,39 +3,38 @@ package gg.modl.backend.ai.external;
 import com.google.genai.Client;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.ThinkingConfig;
-import com.google.genai.types.ThinkingLevel;
 import gg.modl.backend.ai.LLMConfiguration;
+import gg.modl.backend.ai.data.DefaultPrompts;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.Objects;
-
 public class GeminiLLMProvider implements LLMProvider {
-    private static final String GEMINI_MODEL_ID = "gemini-2.5-flash-lite";
-
     private final Client client;
-    private final LLMConfiguration configuration;
+    private final GenerateContentConfig gemini;
+    private final String geminiModelId;
 
     public GeminiLLMProvider(LLMConfiguration config) {
-        this.configuration = config;
         this.client = Client.builder()
-                .apiKey(config.getGeminiApiKey())
-                .build();
+            .apiKey(config.getGeminiApiKey())
+            .build();
+        this.gemini = GenerateContentConfig.builder()
+            .temperature(config.getGeminiTemperature())
+            .topP(config.getGeminiTopP())
+            .maxOutputTokens(config.getGeminiMaxOutputTokens())
+            .responseJsonSchema(DefaultPrompts.JSON_FORMAT)
+            .build();
+        this.geminiModelId = config.getGeminiModelId();
     }
 
     @Override
     public @NotNull String generate(@NotNull String prompt) {
-        GenerateContentResponse result = client.models.generateContent(GEMINI_MODEL_ID, prompt, GenerateContentConfig.builder()
-                .temperature(configuration.getGeminiTemperature())
-                .topP(configuration.getGeminiTopP())
-                .maxOutputTokens(configuration.getGeminiMaxOutputTokens())
-                .build());
+        final GenerateContentResponse result = client.models.generateContent(geminiModelId, prompt, gemini);
 
         return Objects.requireNonNull(result.text(), "Failed to get response from Gemini API.");
     }
 
     @Override
     public boolean isConnected() {
-        return true; // TODO: test connection
+        return client != null;
     }
 }

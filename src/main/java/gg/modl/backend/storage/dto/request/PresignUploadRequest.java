@@ -6,21 +6,21 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 public record PresignUploadRequest(
-        @NotBlank(message = "Upload type is required")
-        String uploadType,
+    @NotBlank(message = "Upload type is required")
+    String uploadType,
 
-        @NotBlank(message = "File name is required")
-        @Size(max = 255, message = "File name too long")
-        String fileName,
+    @NotBlank(message = "File name is required")
+    @Size(max = 255, message = "File name too long")
+    String fileName,
 
-        @NotNull(message = "File size is required")
-        @Positive(message = "File size must be positive")
-        Long fileSize,
+    @NotNull(message = "File size is required")
+    @Positive(message = "File size must be positive")
+    Long fileSize,
 
-        @NotBlank(message = "Content type is required")
-        String contentType,
+    @NotBlank(message = "Content type is required")
+    String contentType,
 
-        String entityId,
+    String entityId,
 
-        String accessToken
+    String accessToken
 ) {}

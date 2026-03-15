@@ -13,19 +13,6 @@ public final class TicketAssigneeUtil {
     private TicketAssigneeUtil() {
     }
 
-    public static String normalizeSingle(String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String trimmed = value.trim();
-        if (trimmed.isEmpty()) {
-            return null;
-        }
-
-        return trimmed.toLowerCase(Locale.ROOT);
-    }
-
     public static List<String> normalizeCsv(String value) {
         if (value == null || value.isBlank()) {
             return List.of();
@@ -61,6 +48,19 @@ public final class TicketAssigneeUtil {
         }
 
         return List.copyOf(normalized);
+    }
+
+    public static String normalizeSingle(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        return trimmed.toLowerCase(Locale.ROOT);
     }
 
     public static String toDisplayString(List<String> assignedTo) {

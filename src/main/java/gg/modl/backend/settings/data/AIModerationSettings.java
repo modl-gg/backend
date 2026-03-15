@@ -1,11 +1,10 @@
 package gg.modl.backend.settings.data;
 
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.Map;
 
 @Data
 @Builder
@@ -14,7 +13,6 @@ import java.util.Map;
 public class AIModerationSettings {
     private boolean enableAIReview;
     private boolean enableAutomatedActions;
-    private String strictnessLevel;
     private Map<String, AIPunishmentConfig> aiPunishmentConfigs;
 
     @Data

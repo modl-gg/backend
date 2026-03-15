@@ -1,48 +1,44 @@
 package gg.modl.backend.server;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
-import gg.modl.backend.server.data.*;
+import gg.modl.backend.config.ModlCorsProperties;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-
 import java.util.Arrays;
 import java.util.Date;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
 
 @Service
 public class ServerService {
-    public static final String SERVER_DATABASE_PREFIX = "server_";
-    private final DynamicMongoTemplateProvider mongoProvider;
+    private final ServerMongoRepository serverRepository;
     private final ServerProvisioningService provisioningService;
     private final Set<String> appDomains;
+    public static final String SERVER_DATABASE_PREFIX = "server_";
 
     public ServerService(
-            DynamicMongoTemplateProvider mongoProvider,
-            ServerProvisioningService provisioningService,
-            @Value("${modl.cors.app-domains:modl.gg}") String appDomainsConfig
+        ServerMongoRepository serverRepository,
+        ServerProvisioningService provisioningService,
+        ModlCorsProperties corsProperties
     ) {
-        this.mongoProvider = mongoProvider;
+        this.serverRepository = serverRepository;
         this.provisioningService = provisioningService;
-        this.appDomains = Arrays.stream(appDomainsConfig.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .collect(Collectors.toSet());
+        this.appDomains = Arrays.stream(corsProperties.getAppDomains().split(","))
+            .map(String::trim)
+            .filter(s -> !s.isBlank())
+            .collect(Collectors.toSet());
     }
 
     @Async
     public void createServer(@NotNull Server server) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-
-        db.save(server, CollectionName.MODL_SERVERS);
+        serverRepository.saveEntity(server);
     }
 
     public void createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail) {
@@ -50,7 +46,7 @@ public class ServerService {
     }
 
     public Server createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail,
-                             @Nullable String emailVerificationToken, @NotNull ServerPlan plan) {
+                               @Nullable String emailVerificationToken, @NotNull ServerPlan plan) {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
@@ -64,8 +60,7 @@ public class ServerService {
             server.setEmailVerificationToken(emailVerificationToken);
         }
 
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        return db.save(server, CollectionName.MODL_SERVERS);
+        return serverRepository.saveEntity(server);
     }
 
     public String generateDatabaseName(@NotNull String subdomain) {
@@ -74,21 +69,27 @@ public class ServerService {
 
     @Nullable
     public Server getServerFromDomain(@NotNull String domain) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-
         String subdomain = extractSubdomain(domain);
 
         if (subdomain != null) {
-            Query query = new Query(Criteria.where(ServerField.SUBDOMAIN).is(subdomain));
-            return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+            return serverRepository.findByCustomDomain(subdomain).orElse(null);
         }
 
-        // Strictly require active custom domain status after schema cutover.
-        Criteria customDomainCriteria = new Criteria().andOperator(
-                Criteria.where(ServerField.CUSTOM_DOMAIN).is(domain),
-                Criteria.where(ServerField.CUSTOM_DOMAIN_STATUS).is(CustomDomainStatus.ACTIVE.name())
-        );
-        return db.findOne(new Query(customDomainCriteria), Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findByActiveCustomDomainOverride(domain).orElse(null);
+    }
+
+    @Nullable
+    private String extractSubdomain(@NotNull String domain) {
+        for (String appDomain : appDomains) {
+            String suffix = "." + appDomain;
+            if (domain.endsWith(suffix)) {
+                String subdomain = domain.substring(0, domain.length() - suffix.length());
+                if (!subdomain.isBlank() && !subdomain.contains(".")) {
+                    return subdomain;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -109,28 +110,8 @@ public class ServerService {
         return null;
     }
 
-    @Nullable
-    private String extractSubdomain(@NotNull String domain) {
-        for (String appDomain : appDomains) {
-            String suffix = "." + appDomain;
-            if (domain.endsWith(suffix)) {
-                String subdomain = domain.substring(0, domain.length() - suffix.length());
-                if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return subdomain;
-                }
-            }
-        }
-        return null;
-    }
-
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-
-        Criteria emailCriteria = Criteria.where(ServerField.ADMIN_EMAIL).is(email);
-        Criteria nameCriteria = Criteria.where(ServerField.SERVER_NAME).is(serverName);
-        Criteria domainCriteria = Criteria.where(ServerField.SUBDOMAIN).is(subdomain);
-
-        Server found = db.findOne(new Query(new Criteria().orOperator(emailCriteria, nameCriteria, domainCriteria)), Server.class, CollectionName.MODL_SERVERS);
+        Server found = serverRepository.findMatchingIdentity(email, serverName, subdomain).orElse(null);
         if (found == null) {
             return new ServerExistResult(false, false, false);
         }
@@ -154,30 +135,22 @@ public class ServerService {
 
     @Nullable
     public Server getServerByDatabaseName(@NotNull String databaseName) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where("databaseName").is(databaseName));
-        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findByDatabaseName(databaseName).orElse(null);
     }
 
     @Nullable
     public Server getServerByApiKey(@NotNull String apiKey) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where(ServerField.API_KEY).is(apiKey));
-        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findByApiKey(apiKey).orElse(null);
     }
 
     @Nullable
     public Server getServerByEmailVerificationToken(@NotNull String token) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where("emailVerificationToken").is(token));
-        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findByEmailVerificationToken(token).orElse(null);
     }
 
     @Nullable
     public Server verifyEmailToken(@NotNull String token) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where("emailVerificationToken").is(token));
-        Server server = db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        Server server = serverRepository.findByEmailVerificationToken(token).orElse(null);
 
         if (server == null) {
             return null;
@@ -187,7 +160,7 @@ public class ServerService {
         server.setEmailVerificationToken(null);
         server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
         server.setUpdatedAt(new Date());
-        Server saved = db.save(server, CollectionName.MODL_SERVERS);
+        Server saved = serverRepository.saveEntity(server);
 
         // Seed default data for the new server
         provisioningService.provision(saved);
@@ -197,25 +170,38 @@ public class ServerService {
 
     @Nullable
     public Server getServerByAutoLoginToken(@NotNull String token) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
-        Query query = new Query(Criteria.where("provisioningSignInToken").is(token));
-        return db.findOne(query, Server.class, CollectionName.MODL_SERVERS);
+        return serverRepository.findByProvisioningSignInToken(token).orElse(null);
     }
 
     public Server setAutoLoginToken(@NotNull Server server, @NotNull String token, @NotNull Date expiresAt) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
         server.setProvisioningSignInToken(token);
         server.setProvisioningSignInTokenExpiresAt(expiresAt);
         server.setUpdatedAt(new Date());
-        return db.save(server, CollectionName.MODL_SERVERS);
+        return serverRepository.saveEntity(server);
     }
 
     public Server clearAutoLoginToken(@NotNull Server server) {
-        MongoTemplate db = mongoProvider.getGlobalDatabase();
         server.setProvisioningSignInToken(null);
         server.setProvisioningSignInTokenExpiresAt(null);
         server.setUpdatedAt(new Date());
-        return db.save(server, CollectionName.MODL_SERVERS);
+        return serverRepository.saveEntity(server);
+    }
+
+    @Nullable
+    public Server getServerByCliSetupToken(@NotNull String token) {
+        return serverRepository.findByCliSetupToken(token).orElse(null);
+    }
+
+    public Server setCliSetupToken(@NotNull Server server, @NotNull String token) {
+        server.setCliSetupToken(token);
+        server.setUpdatedAt(new Date());
+        return serverRepository.saveEntity(server);
+    }
+
+    public Server clearCliSetupToken(@NotNull Server server) {
+        server.setCliSetupToken(null);
+        server.setUpdatedAt(new Date());
+        return serverRepository.saveEntity(server);
     }
 
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}

@@ -1,0 +1,45 @@
+package gg.modl.backend.replay.controller;
+
+import gg.modl.backend.replay.dto.PublicReplayResponse;
+import gg.modl.backend.replay.service.ReplayService;
+import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.server.data.Server;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping(RESTMappingV1.PUBLIC_REPLAYS)
+@RequiredArgsConstructor
+public class PublicReplayController {
+    private final ReplayService replayService;
+
+    @GetMapping("/{replayId}")
+    public ResponseEntity<?> getReplay(
+        @PathVariable String replayId,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+
+        return replayService.getPublicReplay(server, replayId)
+            .<ResponseEntity<?>>map(replay -> ResponseEntity.ok(Map.of(
+                "replayId", replay.replayId(),
+                "mcVersion", replay.mcVersion(),
+                "fileSize", replay.fileSize(),
+                "timestamp", replay.timestamp(),
+                "replayUrl", replay.replayUrl(),
+                "status", replay.status()
+            )))
+            .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Replay not found"
+            )));
+    }
+}

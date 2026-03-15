@@ -1,17 +1,18 @@
 package gg.modl.backend.panel;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
 import gg.modl.backend.support.TestDatabase;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PanelStaffApiTest {
 
@@ -19,7 +20,7 @@ class PanelStaffApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
     }
 
@@ -36,7 +37,9 @@ class PanelStaffApiTest {
         // Get first staff member's username
         var listResponse = api.panelGet("/v1/panel/staff");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.isEmpty()) return;
+        if (arr.isEmpty()) {
+            return;
+        }
         String username = arr.get(0).getAsJsonObject().get("username").getAsString();
 
         var response = api.panelGet("/v1/panel/staff/" + username);
@@ -56,9 +59,9 @@ class PanelStaffApiTest {
         String testUsername = "apitest" + System.currentTimeMillis();
         String testEmail = "api-test-" + System.currentTimeMillis() + "@example.com";
         var createResponse = api.panelPost("/v1/panel/staff", Map.of(
-                "email", testEmail,
-                "username", testUsername,
-                "role", "Moderator"
+            "email", testEmail,
+            "username", testUsername,
+            "role", "Moderator"
         ));
         int status = createResponse.statusCode();
         assertTrue(status == 200 || status == 201, "Expected 200 or 201 but got " + status);
@@ -87,13 +90,15 @@ class PanelStaffApiTest {
     void updateStaff() throws Exception {
         var listResponse = api.panelGet("/v1/panel/staff");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.isEmpty()) return;
+        if (arr.isEmpty()) {
+            return;
+        }
         var staff = arr.get(0).getAsJsonObject();
         String username = staff.get("username").getAsString();
 
         // Idempotent update
         var response = api.panelPatch("/v1/panel/staff/" + username, Map.of(
-                "username", username
+            "username", username
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -103,7 +108,9 @@ class PanelStaffApiTest {
     void updateStaffRole() throws Exception {
         var listResponse = api.panelGet("/v1/panel/staff");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.size() < 2) return; // need at least 2 staff to safely test
+        if (arr.size() < 2) {
+            return; // need at least 2 staff to safely test
+        }
 
         var staff = arr.get(arr.size() - 1).getAsJsonObject(); // last staff member
         String staffId = staff.get("id").getAsString();
@@ -111,7 +118,7 @@ class PanelStaffApiTest {
 
         // Set same role (idempotent)
         var response = api.panelPatch("/v1/panel/staff/" + staffId + "/role", Map.of(
-                "role", currentRole
+            "role", currentRole
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -119,8 +126,8 @@ class PanelStaffApiTest {
     @Test
     void inviteStaff() throws Exception {
         var response = api.panelPost("/v1/panel/staff/invite", Map.of(
-                "email", "invite-test-" + System.currentTimeMillis() + "@example.com",
-                "role", "Moderator"
+            "email", "invite-test-" + System.currentTimeMillis() + "@example.com",
+            "role", "Moderator"
         ));
         int inviteStatus = response.statusCode();
         assertTrue(inviteStatus == 200 || inviteStatus == 201, "Expected 200 or 201 but got " + inviteStatus);
@@ -130,7 +137,9 @@ class PanelStaffApiTest {
     void assignMinecraftPlayer() throws Exception {
         var listResponse = api.panelGet("/v1/panel/staff");
         var arr = JsonHelper.parseArray(listResponse.body());
-        if (arr.isEmpty()) return;
+        if (arr.isEmpty()) {
+            return;
+        }
         String username = arr.get(0).getAsJsonObject().get("username").getAsString();
 
         var response = api.panelPatch("/v1/panel/staff/" + username + "/minecraft-player", Map.of());
@@ -145,3 +154,4 @@ class PanelStaffApiTest {
         assertTrue(json.has("players"));
     }
 }
+

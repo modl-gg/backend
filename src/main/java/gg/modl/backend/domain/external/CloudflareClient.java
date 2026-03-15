@@ -1,34 +1,25 @@
 package gg.modl.backend.domain.external;
 
 import gg.modl.backend.domain.config.CloudflareConfiguration;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.*;
-import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
-
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestTemplate;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class CloudflareClient {
-    private static final String CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
-
     private final CloudflareConfiguration config;
     private final RestTemplate restTemplate;
-
-    public record CustomHostnameResult(
-            String id,
-            String hostname,
-            String status,
-            SslStatus ssl,
-            String ownershipVerificationHttpUrl,
-            String ownershipVerificationHttpBody
-    ) {
-        public record SslStatus(String status, String method, String type) {}
-    }
+    private static final String CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
     public CustomHostnameResult createCustomHostname(String hostname) {
         if (!config.isConfigured()) {
@@ -40,13 +31,13 @@ public class CloudflareClient {
             HttpHeaders headers = createHeaders();
 
             Map<String, Object> ssl = Map.of(
-                    "method", "http",
-                    "type", "dv"
+                "method", "http",
+                "type", "dv"
             );
 
             Map<String, Object> body = Map.of(
-                    "hostname", hostname,
-                    "ssl", ssl
+                "hostname", hostname,
+                "ssl", ssl
             );
 
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
@@ -70,6 +61,52 @@ public class CloudflareClient {
             log.error("Failed to create custom hostname for {}", hostname, e);
             return null;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private CustomHostnameResult parseCustomHostnameResult(Map<String, Object> responseBody) {
+        Map<String, Object> result = (Map<String, Object>) responseBody.get("result");
+        if (result == null) {
+            return null;
+        }
+
+        String id = (String) result.get("id");
+        String hostname = (String) result.get("hostname");
+        String status = (String) result.get("status");
+
+        CustomHostnameResult.SslStatus sslStatus = null;
+        Map<String, Object> ssl = (Map<String, Object>) result.get("ssl");
+        if (ssl != null) {
+            sslStatus = new CustomHostnameResult.SslStatus(
+                (String) ssl.get("status"),
+                (String) ssl.get("method"),
+                (String) ssl.get("type")
+            );
+        }
+
+        String ownershipHttpUrl = null;
+        String ownershipHttpBody = null;
+        Map<String, Object> ownershipVerification = (Map<String, Object>) result.get("ownership_verification");
+        if (ownershipVerification != null) {
+            ownershipHttpUrl = (String) ownershipVerification.get("http_url");
+            ownershipHttpBody = (String) ownershipVerification.get("http_body");
+        }
+
+        return new CustomHostnameResult(
+            id,
+            hostname,
+            status,
+            sslStatus,
+            ownershipHttpUrl,
+            ownershipHttpBody
+        );
+    }
+
+    private HttpHeaders createHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Authorization", "Bearer " + config.getApiToken());
+        return headers;
     }
 
     public CustomHostnameResult getCustomHostname(String hostnameId) {
@@ -115,8 +152,8 @@ public class CloudflareClient {
                     List<Map<String, Object>> results = (List<Map<String, Object>>) response.getBody().get("result");
                     if (results != null && !results.isEmpty()) {
                         Map<String, Object> modifiedBody = Map.of(
-                                "success", true,
-                                "result", results.get(0)
+                            "success", true,
+                            "result", results.get(0)
                         );
                         return parseCustomHostnameResult(modifiedBody);
                     }
@@ -151,49 +188,14 @@ public class CloudflareClient {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private CustomHostnameResult parseCustomHostnameResult(Map<String, Object> responseBody) {
-        Map<String, Object> result = (Map<String, Object>) responseBody.get("result");
-        if (result == null) {
-            return null;
-        }
-
-        String id = (String) result.get("id");
-        String hostname = (String) result.get("hostname");
-        String status = (String) result.get("status");
-
-        CustomHostnameResult.SslStatus sslStatus = null;
-        Map<String, Object> ssl = (Map<String, Object>) result.get("ssl");
-        if (ssl != null) {
-            sslStatus = new CustomHostnameResult.SslStatus(
-                    (String) ssl.get("status"),
-                    (String) ssl.get("method"),
-                    (String) ssl.get("type")
-            );
-        }
-
-        String ownershipHttpUrl = null;
-        String ownershipHttpBody = null;
-        Map<String, Object> ownershipVerification = (Map<String, Object>) result.get("ownership_verification");
-        if (ownershipVerification != null) {
-            ownershipHttpUrl = (String) ownershipVerification.get("http_url");
-            ownershipHttpBody = (String) ownershipVerification.get("http_body");
-        }
-
-        return new CustomHostnameResult(
-                id,
-                hostname,
-                status,
-                sslStatus,
-                ownershipHttpUrl,
-                ownershipHttpBody
-        );
-    }
-
-    private HttpHeaders createHeaders() {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + config.getApiToken());
-        return headers;
+    public record CustomHostnameResult(
+        String id,
+        String hostname,
+        String status,
+        SslStatus ssl,
+        String ownershipVerificationHttpUrl,
+        String ownershipVerificationHttpBody
+    ) {
+        public record SslStatus(String status, String method, String type) {}
     }
 }

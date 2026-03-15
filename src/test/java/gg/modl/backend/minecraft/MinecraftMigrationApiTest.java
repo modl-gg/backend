@@ -3,14 +3,11 @@ package gg.modl.backend.minecraft;
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftMigrationApiTest {
 
@@ -32,10 +29,10 @@ class MinecraftMigrationApiTest {
     @Test
     void reportProgress() throws Exception {
         var response = api.minecraftPost("/v1/minecraft/migration/progress", Map.of(
-                "status", "IDLE",
-                "message", "API test progress report",
-                "processed", 0,
-                "total", 0
+            "status", "IDLE",
+            "message", "API test progress report",
+            "processed", 0,
+            "total", 0
         ));
         JsonHelper.assertStatus(response, 200);
     }

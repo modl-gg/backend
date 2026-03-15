@@ -6,7 +6,11 @@ import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.IdCountResult;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.OrdinalCountResult;
+import gg.modl.backend.database.mongo.repository.AuditMongoRepository.StaffActivityResult;
+import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
@@ -14,263 +18,378 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.util.DateRangeUtil;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
-import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.aggregation.*;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
+import org.bson.types.ObjectId;
 import org.springframework.stereotype.Service;
-
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AuditService {
-    private final DynamicMongoTemplateProvider mongoProvider;
+
+    private final AuditMongoRepository auditRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
     private final PlayerStatusCalculator statusCalculator;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
-        MongoTemplate template = getTemplate(server);
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
 
-        // First, get all staff members
-        List<Staff> allStaff = template.findAll(Staff.class, CollectionName.STAFF);
-
-        // Build criteria - include date filter only if startDate is not null
-        Criteria logCriteria = Criteria.where("source").ne("system");
-        if (startDate != null) {
-            logCriteria = logCriteria.and("created").gte(startDate);
-        }
-
-        // Aggregate log activity by source (username)
-        Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(logCriteria),
-                Aggregation.group("source")
-                        .count().as("totalActions")
-                        .sum(ConditionalOperators.when(Criteria.where("description").regex(Pattern.compile("ticket", Pattern.CASE_INSENSITIVE))).then(1).otherwise(0)).as("ticketActions")
-                        .sum(ConditionalOperators.when(new Criteria().orOperator(
-                                Criteria.where("level").is("moderation"),
-                                Criteria.where("description").regex(Pattern.compile("ban|mute|kick|punishment", Pattern.CASE_INSENSITIVE))
-                        )).then(1).otherwise(0)).as("moderationActions")
-                        .max("created").as("lastActive"),
-                Aggregation.sort(Sort.Direction.DESC, "totalActions")
-        );
-
-        List<Document> logResults = template.aggregate(aggregation, CollectionName.LOGS, Document.class).getMappedResults();
-
-        // Create a map of username -> log activity
-        Map<String, Document> activityByUsername = new HashMap<>();
-        for (Document doc : logResults) {
-            String username = doc.getString("_id");
-            if (username != null) {
-                activityByUsername.put(username.toLowerCase(), doc);
-            }
-        }
-
-        // Also count ticket responses from the tickets collection
-        Map<String, Integer> ticketResponsesByStaff = countTicketResponsesByStaff(template, startDate);
-
-        // Also count punishments issued from punishments/logs
-        Map<String, Integer> punishmentsByStaff = countPunishmentsByStaff(template, startDate);
+        List<Staff> allStaff = auditRepository.findAllStaff(server);
+        Map<String, StaffActivityResult> activityByUsername = indexStaffActivity(
+            auditRepository.aggregateLogActivityBySource(server, startDate));
+        Map<String, Integer> ticketResponsesByStaff = indexIdCounts(
+            auditRepository.aggregateTicketResponseCounts(server, startDate));
+        Map<String, Integer> punishmentsByStaff = countPunishmentsByStaff(server, startDate);
 
         List<StaffPerformanceResponse> performanceList = new ArrayList<>();
-
         for (Staff staff : allStaff) {
             String username = staff.getUsername();
-            if (username == null) continue;
-
-            Document activity = activityByUsername.get(username.toLowerCase());
-
-            int totalActions = activity != null ? activity.getInteger("totalActions", 0) : 0;
-            int ticketActions = ticketResponsesByStaff.getOrDefault(username.toLowerCase(), 0);
-
-            // Count punishments by both panel username AND Minecraft username (if linked)
-            int moderationActions = punishmentsByStaff.getOrDefault(username.toLowerCase(), 0);
-            String mcUsername = staff.getAssignedMinecraftUsername();
-            if (mcUsername != null && !mcUsername.isEmpty() && !mcUsername.equalsIgnoreCase(username)) {
-                moderationActions += punishmentsByStaff.getOrDefault(mcUsername.toLowerCase(), 0);
+            if (username == null) {
+                continue;
             }
 
-            Date lastActive = activity != null ? activity.getDate("lastActive") : staff.getUpdatedAt();
+            String lowerUsername = username.toLowerCase();
+            StaffActivityResult activity = activityByUsername.get(lowerUsername);
+            int totalActions = activity != null ? activity.totalActions() : 0;
+            int ticketActions = ticketResponsesByStaff.getOrDefault(lowerUsername, 0);
 
-            // Add ticket and moderation actions to total if they weren't counted in logs
+            int moderationActions = punishmentsByStaff.getOrDefault(lowerUsername, 0);
+            String minecraftUsername = staff.getAssignedMinecraftUsername();
+            if (minecraftUsername != null && !minecraftUsername.isEmpty()
+                && !minecraftUsername.equalsIgnoreCase(username)) {
+                moderationActions +=
+                    punishmentsByStaff.getOrDefault(minecraftUsername.toLowerCase(), 0);
+            }
+            if (staff.getId() != null) {
+                moderationActions +=
+                    punishmentsByStaff.getOrDefault(staff.getId().toLowerCase(), 0);
+            }
+
+            Date lastActive = activity != null
+                              ? activity.lastActive() : staff.getUpdatedAt();
             if (ticketActions > 0 || moderationActions > 0) {
                 totalActions = Math.max(totalActions, ticketActions + moderationActions);
             }
 
             performanceList.add(new StaffPerformanceResponse(
-                    staff.getId(),
-                    username,
-                    staff.getRole() != null ? staff.getRole() : "User",
-                    totalActions,
-                    ticketActions,
-                    moderationActions,
-                    60,
-                    lastActive != null ? lastActive : new Date()
+                staff.getId(),
+                username,
+                staff.getRole() != null ? staff.getRole() : "User",
+                totalActions,
+                ticketActions,
+                moderationActions,
+                60,
+                lastActive != null ? lastActive : new Date()
             ));
         }
 
-        // Sort by total actions descending
-        performanceList.sort((a, b) -> Integer.compare(b.totalActions(), a.totalActions()));
-
+        performanceList.sort(
+            (left, right) -> Integer.compare(right.totalActions(), left.totalActions()));
         return performanceList;
     }
 
-    private Map<String, Integer> countTicketResponsesByStaff(MongoTemplate template, Date startDate) {
-        Map<String, Integer> counts = new HashMap<>();
-
-        try {
-            // Build criteria - include date filter only if startDate is not null
-            Criteria replyCriteria = Criteria.where("replies.staff").is(true);
-            if (startDate != null) {
-                replyCriteria = replyCriteria.and("replies.created").gte(startDate);
+    private Map<String, StaffActivityResult> indexStaffActivity(List<StaffActivityResult> results) {
+        Map<String, StaffActivityResult> map = new HashMap<>();
+        for (StaffActivityResult result : results) {
+            if (result.id() != null) {
+                map.put(result.id().toLowerCase(), result);
             }
-
-            // Count staff replies in tickets
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind("replies"),
-                    Aggregation.match(replyCriteria),
-                    Aggregation.group("replies.name").count().as("count")
-            );
-
-            List<Document> results = template.aggregate(aggregation, CollectionName.TICKETS, Document.class).getMappedResults();
-            for (Document doc : results) {
-                String name = doc.getString("_id");
-                if (name != null) {
-                    counts.put(name.toLowerCase(), doc.getInteger("count", 0));
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error counting ticket responses: {}", e.getMessage());
         }
-
-        return counts;
+        return map;
     }
 
-    private Map<String, Integer> countPunishmentsByStaff(MongoTemplate template, Date startDate) {
-        Map<String, Integer> counts = new HashMap<>();
-
-        try {
-            // Build aggregation stages
-            List<AggregationOperation> stages = new ArrayList<>();
-            stages.add(Aggregation.unwind("punishments"));
-
-            // Add date filter only if startDate is not null
-            if (startDate != null) {
-                stages.add(Aggregation.match(Criteria.where("punishments.issued").gte(startDate)));
+    private Map<String, Integer> indexIdCounts(List<IdCountResult> results) {
+        Map<String, Integer> map = new HashMap<>();
+        for (IdCountResult result : results) {
+            if (result.id() != null) {
+                map.put(result.id().toLowerCase(), result.count());
             }
-
-            stages.add(Aggregation.group("punishments.issuerName").count().as("count"));
-
-            Aggregation aggregation = Aggregation.newAggregation(stages);
-
-            List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
-            for (Document doc : results) {
-                String issuerName = doc.getString("_id");
-                if (issuerName != null) {
-                    counts.put(issuerName.toLowerCase(), doc.getInteger("count", 0));
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error counting punishments: {}", e.getMessage());
         }
+        return map;
+    }
 
+    private Map<String, Integer> countPunishmentsByStaff(Server server, Date startDate) {
+        Map<String, Integer> counts = new HashMap<>();
+        List<IdCountResult> results =
+            auditRepository.aggregatePunishmentCountsByIssuer(server, startDate);
+
+        Set<String> issuerIdsToResolve = new HashSet<>();
+        for (IdCountResult result : results) {
+            if (result.id() != null && ObjectId.isValid(result.id())) {
+                issuerIdsToResolve.add(result.id());
+            }
+        }
+        Map<String, String> resolvedIds =
+            auditRepository.mapStaffUsernamesByIds(server, issuerIdsToResolve);
+
+        for (IdCountResult result : results) {
+            if (result.id() == null) {
+                continue;
+            }
+            String displayName = resolvedIds.getOrDefault(result.id(), result.id());
+            counts.merge(displayName.toLowerCase(), result.count(), Integer::sum);
+        }
         return counts;
     }
 
     public StaffDetailsResponse getStaffDetails(Server server, String username, String period) {
-        MongoTemplate template = getTemplate(server);
-        Date startDate = getStartDate(period);
+        Date startDate = DateRangeUtil.getStartDate(period);
 
-        // Get the staff member's Minecraft username if they have one linked
         List<String> usernamesToSearch = new ArrayList<>();
         usernamesToSearch.add(username);
+        String staffId = null;
 
-        staffService.getStaffByUsername(server, username).ifPresent(staff -> {
-            if (staff.assignedMinecraftUsername() != null && !staff.assignedMinecraftUsername().isEmpty()) {
-                // Add the Minecraft username if it's different from the panel username
-                if (!staff.assignedMinecraftUsername().equalsIgnoreCase(username)) {
-                    usernamesToSearch.add(staff.assignedMinecraftUsername());
-                }
+        Optional<StaffResponse> staffOpt = staffService.getStaffByUsername(server, username);
+        if (staffOpt.isPresent()) {
+            StaffResponse staff = staffOpt.get();
+            staffId = staff.id();
+            if (staff.assignedMinecraftUsername() != null
+                && !staff.assignedMinecraftUsername().isEmpty()
+                && !staff.assignedMinecraftUsername().equalsIgnoreCase(username)) {
+                usernamesToSearch.add(staff.assignedMinecraftUsername());
             }
-        });
+        }
 
-        List<StaffDetailsResponse.PunishmentDetail> punishments = getPunishmentDetails(server, template, usernamesToSearch, startDate);
-        List<StaffDetailsResponse.TicketDetail> tickets = getTicketDetails(template, username, startDate);
-        List<StaffDetailsResponse.DailyActivity> dailyActivity = getDailyActivity(template, usernamesToSearch, startDate);
-        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown = getPunishmentTypeBreakdown(server, template, usernamesToSearch, startDate);
+        List<StaffDetailsResponse.PunishmentDetail> punishments =
+            getPunishmentDetails(server, usernamesToSearch, staffId, startDate);
+        List<StaffDetailsResponse.TicketDetail> tickets =
+            getTicketDetails(server, username, startDate);
+        List<StaffDetailsResponse.DailyActivity> dailyActivity =
+            getDailyActivity(server, usernamesToSearch, staffId, startDate);
+        List<StaffDetailsResponse.PunishmentTypeBreakdown> typeBreakdown =
+            getPunishmentTypeBreakdown(server, usernamesToSearch, staffId, startDate);
 
-        long evidenceUploads = countEvidenceUploads(template, username, startDate);
-
-        int avgResponseTime = tickets.isEmpty() ? 0 :
-                (int) tickets.stream().mapToInt(StaffDetailsResponse.TicketDetail::responseTime).average().orElse(0);
+        long evidenceUploads = auditRepository.countEvidenceUploads(server, username, startDate);
+        int avgResponseTime = tickets.isEmpty()
+                              ? 0
+                              : (int) tickets.stream()
+                                  .mapToInt(StaffDetailsResponse.TicketDetail::responseTime)
+                                  .average()
+                                  .orElse(0);
 
         StaffDetailsResponse.Summary summary = new StaffDetailsResponse.Summary(
-                punishments.size(),
-                tickets.size(),
-                avgResponseTime,
-                (int) evidenceUploads
+            punishments.size(),
+            tickets.size(),
+            avgResponseTime,
+            (int) evidenceUploads
         );
 
         return new StaffDetailsResponse(
-                username,
-                period,
-                punishments,
-                tickets,
-                dailyActivity,
-                typeBreakdown,
-                (int) evidenceUploads,
-                summary
+            username,
+            period,
+            punishments,
+            tickets,
+            dailyActivity,
+            typeBreakdown,
+            (int) evidenceUploads,
+            summary
         );
     }
 
-    public List<PunishmentAuditResponse> getPunishments(Server server, int limit, boolean canRollbackOnly) {
-        MongoTemplate template = getTemplate(server);
-        Date thirtyDaysAgo = getStartDate("30d");
+    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(
+        Server server, List<String> usernames, String staffId, Date startDate) {
+        List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
+        List<Document> results =
+            auditRepository.aggregatePunishmentDetails(server, usernames, staffId, startDate);
 
-        Criteria criteria = Criteria.where("created").gte(thirtyDaysAgo)
-                .orOperator(
-                        Criteria.where("level").is("moderation"),
-                        Criteria.where("description").regex(Pattern.compile("ban|mute|kick|warn", Pattern.CASE_INSENSITIVE))
-                );
+        for (Document doc : results) {
+            int typeOrdinal = doc.getInteger("typeOrdinal", 0);
+            String reason = doc.getString("reason");
+            Object durationObj = doc.get("duration");
 
-        if (canRollbackOnly) {
-            criteria = criteria.and("metadata.canRollback").ne(false);
+            details.add(new StaffDetailsResponse.PunishmentDetail(
+                doc.getString("punishmentId"),
+                doc.getString("playerId"),
+                extractPlayerNameFromDoc(doc),
+                punishmentTypeService.getPunishmentTypeName(server, typeOrdinal),
+                reason != null ? reason : "No reason provided",
+                durationObj != null ? durationObj.toString() : null,
+                doc.getDate("issued"),
+                !hasModificationType(doc, "REMOVE", "REVOKE"),
+                hasModificationType(doc, "ROLLBACK")
+            ));
+        }
+        return details;
+    }
+
+    private String extractPlayerNameFromDoc(Document doc) {
+        List<Document> usernames = doc.getList("usernames", Document.class);
+        if (usernames != null && !usernames.isEmpty()) {
+            String name = usernames.get(0).getString("username");
+            if (name != null) {
+                return name;
+            }
+        }
+        return "Unknown";
+    }
+
+    private boolean hasModificationType(Document doc, String... types) {
+        List<?> modifications = doc.getList("modifications", Document.class);
+        if (modifications == null) {
+            return false;
+        }
+        for (Object mod : modifications) {
+            if (mod instanceof Document modDoc) {
+                String modType = modDoc.getString("type");
+                for (String type : types) {
+                    if (type.equalsIgnoreCase(modType)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<StaffDetailsResponse.TicketDetail> getTicketDetails(
+        Server server, String username, Date startDate) {
+        List<StaffDetailsResponse.TicketDetail> details = new ArrayList<>();
+        List<Document> results =
+            auditRepository.aggregateTicketDetails(server, username, startDate);
+
+        for (Document doc : results) {
+            int responseTime = calculateResponseTimeMinutes(
+                doc.getDate("ticketCreated"), doc.getDate("firstReply"));
+
+            String subject = doc.getString("subject");
+            String category = doc.getString("category");
+            String status = doc.getString("status");
+
+            details.add(new StaffDetailsResponse.TicketDetail(
+                doc.getString("_id"),
+                subject != null ? subject : "No Subject",
+                category != null ? category : "General",
+                status != null ? status : "Unknown",
+                doc.getDate("lastActivity"),
+                responseTime
+            ));
+        }
+        return details;
+    }
+
+    private int calculateResponseTimeMinutes(Date ticketCreated, Date firstReply) {
+        if (ticketCreated == null || firstReply == null) {
+            return 0;
+        }
+        long diffMs = firstReply.getTime() - ticketCreated.getTime();
+        return (int) (diffMs / (1000 * 60));
+    }
+
+    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(
+        Server server, List<String> usernames, String staffId, Date startDate) {
+        Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
+
+        List<IdCountResult> punishmentResults =
+            auditRepository.aggregateDailyPunishmentCounts(
+                server, usernames, staffId, startDate);
+        for (IdCountResult result : punishmentResults) {
+            activityByDate.put(result.id(),
+                new StaffDetailsResponse.DailyActivity(result.id(), result.count(), 0, 0));
         }
 
-        Query query = Query.query(criteria)
-                .with(Sort.by(Sort.Direction.DESC, "created"))
-                .limit(limit);
+        List<IdCountResult> ticketResults =
+            auditRepository.aggregateDailyTicketResponseCounts(
+                server, usernames.get(0), startDate);
+        for (IdCountResult result : ticketResults) {
+            StaffDetailsResponse.DailyActivity existing = activityByDate.get(result.id());
+            if (existing != null) {
+                activityByDate.put(result.id(), new StaffDetailsResponse.DailyActivity(
+                    result.id(), existing.punishments(), result.count(), existing.evidence()));
+            } else {
+                activityByDate.put(result.id(),
+                    new StaffDetailsResponse.DailyActivity(result.id(), 0, result.count(), 0));
+            }
+        }
 
-        List<AuditLog> logs = template.find(query, AuditLog.class, CollectionName.LOGS);
+        return activityByDate.values()
+            .stream()
+            .sorted(Comparator.comparing(StaffDetailsResponse.DailyActivity::date))
+            .toList();
+    }
 
-        return logs.stream().map(log -> {
-            Map<String, Object> metadata = log.getMetadata() != null ? log.getMetadata() : Collections.emptyMap();
+    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(
+        Server server, List<String> usernames, String staffId, Date startDate) {
+        List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
+        List<OrdinalCountResult> results =
+            auditRepository.aggregatePunishmentTypeBreakdown(
+                server, usernames, staffId, startDate);
 
+        for (OrdinalCountResult result : results) {
+            String typeName = punishmentTypeService.getPunishmentTypeName(
+                server, result.id() != null ? result.id() : 0);
+            breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, result.count()));
+        }
+        return breakdown;
+    }
+
+    public List<PunishmentAuditResponse> getPunishments(
+        Server server, int limit, boolean canRollbackOnly) {
+        Date thirtyDaysAgo = DateRangeUtil.getStartDate("30d");
+        List<AuditLog> logs =
+            auditRepository.findPunishmentLogs(server, thirtyDaysAgo, limit, canRollbackOnly);
+
+        return logs.stream().map(logEntry -> {
+            Map<String, Object> metadata = logEntry.getMetadata() != null
+                                           ? logEntry.getMetadata() : Collections.emptyMap();
             return new PunishmentAuditResponse(
-                    log.getId(),
-                    extractPunishmentType(log.getDescription()),
-                    getStringFromMetadata(metadata, "playerId", "unknown"),
-                    getStringFromMetadata(metadata, "playerName", extractPlayerName(log.getDescription())),
-                    getStringFromMetadata(metadata, "staffId", log.getSource()),
-                    log.getSource(),
-                    getStringFromMetadata(metadata, "reason", extractReason(log.getDescription())),
-                    getStringFromMetadata(metadata, "duration", null),
-                    log.getCreated(),
-                    !Boolean.FALSE.equals(metadata.get("canRollback"))
+                logEntry.getId(),
+                extractPunishmentType(logEntry.getDescription()),
+                getStringFromMetadata(metadata, "playerId", "unknown"),
+                getStringFromMetadata(metadata, "playerName", "Unknown"),
+                getStringFromMetadata(metadata, "staffId", logEntry.getSource()),
+                logEntry.getSource(),
+                getStringFromMetadata(metadata, "reason",
+                    logEntry.getDescription()),
+                getStringFromMetadata(metadata, "duration", null),
+                logEntry.getCreated(),
+                !Boolean.FALSE.equals(metadata.get("canRollback"))
             );
         }).toList();
+    }
+
+    private String extractPunishmentType(String description) {
+        if (description == null) {
+            return "Unknown";
+        }
+        String lower = description.toLowerCase();
+        if (lower.contains("ban")) {
+            return "Ban";
+        }
+        if (lower.contains("mute")) {
+            return "Mute";
+        }
+        if (lower.contains("kick")) {
+            return "Kick";
+        }
+        if (lower.contains("warn")) {
+            return "Warn";
+        }
+        return "Unknown";
+    }
+
+    private String getStringFromMetadata(
+        Map<String, Object> metadata, String key, String defaultValue) {
+        Object value = metadata.get(key);
+        if (value instanceof String stringValue) {
+            return stringValue;
+        }
+        return defaultValue;
     }
 
     public List<ActivePunishmentResponse> getActivePunishments(Server server) {
@@ -278,178 +397,182 @@ public class AuditService {
     }
 
     public List<ActivePunishmentResponse> getPunishmentsList(Server server, String statusFilter) {
-        MongoTemplate template = getTemplate(server);
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        List<ActivePunishmentResponse> results = new ArrayList<>();
+        List<Document> rows = auditRepository.aggregatePunishmentRows(server);
+        Map<String, String> resolvedIssuers = resolveIssuerNames(server, rows);
 
         boolean filterActive = "active".equalsIgnoreCase(statusFilter);
         boolean filterInactive = "inactive".equalsIgnoreCase(statusFilter);
-        // "all" or any other value = no filter
 
-        try {
-            // Query all players that have punishments, unwind and project punishment fields
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.match(Criteria.where("punishments").exists(true).ne(Collections.emptyList())),
-                    Aggregation.unwind("punishments"),
-                    // Exclude kicks (ordinal 0) and unstarted punishments early
-                    Aggregation.match(Criteria.where("punishments.typeOrdinal").ne(0)
-                            .and("punishments.data.status").ne("Unstarted")),
-                    Aggregation.project()
-                            .and("punishments.id").as("punishmentId")
-                            .and("minecraftUuid").as("playerId")
-                            .and("punishments.typeOrdinal").as("typeOrdinal")
-                            .and("punishments.issuerName").as("issuerName")
-                            .and("punishments.issued").as("issued")
-                            .and("punishments.started").as("started")
-                            .and("punishments.data").as("data")
-                            .and("punishments.modifications").as("modifications")
-                            .and("punishments.evidence").as("evidence")
-                            .and("punishments.attachedTicketIds").as("attachedTicketIds")
-                            .and("usernames").as("usernames")
-            );
+        List<ActivePunishmentResponse> results = new ArrayList<>();
+        for (Document row : rows) {
+            Punishment punishment = reconstructPunishment(row);
+            boolean active = statusCalculator.isPunishmentActive(punishment);
 
-            List<Document> docs = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
-
-            for (Document doc : docs) {
-                // Reconstruct a minimal Punishment to check active status
-                Punishment punishment = reconstructPunishment(doc);
-                boolean isActive = statusCalculator.isPunishmentActive(punishment);
-
-                if (filterActive && !isActive) continue;
-                if (filterInactive && isActive) continue;
-
-                int typeOrdinal = doc.getInteger("typeOrdinal", 0);
-                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
-
-                // Determine category from PunishmentType
-                String category = punishmentTypes.stream()
-                        .filter(pt -> pt.getOrdinal() == typeOrdinal)
-                        .findFirst()
-                        .map(pt -> pt.getCategory() != null ? pt.getCategory() : "Administrative")
-                        .orElse("Administrative");
-
-                String playerId = doc.getString("playerId");
-                String playerName = extractPlayerNameFromDoc(doc);
-                String issuerName = doc.getString("issuerName");
-
-                Document data = doc.get("data", Document.class);
-                String reason = data != null ? data.getString("reason") : null;
-                Long duration = extractDuration(data);
-
-                Date issued = doc.getDate("issued");
-                Date started = doc.getDate("started");
-                Date expires = statusCalculator.getEffectiveExpiry(punishment);
-
-                // Evidence
-                List<Document> evidenceDocs = doc.getList("evidence", Document.class);
-                List<ActivePunishmentResponse.EvidenceItem> evidenceItems = new ArrayList<>();
-                if (evidenceDocs != null) {
-                    for (Document evDoc : evidenceDocs) {
-                        evidenceItems.add(new ActivePunishmentResponse.EvidenceItem(
-                                evDoc.getString("text"),
-                                evDoc.getString("url"),
-                                evDoc.getString("type"),
-                                evDoc.getString("fileName")
-                        ));
-                    }
-                }
-
-                List<String> ticketIds = doc.getList("attachedTicketIds", String.class);
-                if (ticketIds == null) ticketIds = Collections.emptyList();
-
-                results.add(new ActivePunishmentResponse(
-                        doc.getString("punishmentId"),
-                        playerId,
-                        playerName,
-                        typeName,
-                        category,
-                        issuerName,
-                        reason,
-                        duration,
-                        issued,
-                        started,
-                        expires,
-                        isActive,
-                        !evidenceItems.isEmpty(),
-                        evidenceItems.size(),
-                        evidenceItems,
-                        ticketIds
-                ));
+            if (filterActive && !active) {
+                continue;
             }
-        } catch (Exception e) {
-            log.error("Error fetching punishments list: {}", e.getMessage());
+            if (filterInactive && active) {
+                continue;
+            }
+
+            results.add(mapToActivePunishmentResponse(
+                server, row, punishment, active, punishmentTypes, resolvedIssuers));
         }
 
         return results;
     }
 
-    private Punishment reconstructPunishment(Document doc) {
-        Punishment p = new Punishment();
-        p.setId(doc.getString("punishmentId"));
-        p.setTypeOrdinal(doc.getInteger("typeOrdinal", 0));
-        p.setIssuerName(doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
-        p.setIssued(doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
-        p.setStarted(doc.getDate("started"));
+    private ActivePunishmentResponse mapToActivePunishmentResponse(
+        Server server, Document row, Punishment punishment, boolean active,
+        List<PunishmentType> punishmentTypes, Map<String, String> resolvedIssuers) {
+        int typeOrdinal = row.getInteger("typeOrdinal", 0);
+        String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
+        String category = punishmentTypes.stream()
+            .filter(type -> type.getOrdinal() == typeOrdinal)
+            .findFirst()
+            .map(type -> type.getCategory() != null ? type.getCategory() : "Administrative")
+            .orElse("Administrative");
 
-        Document data = doc.get("data", Document.class);
-        if (data != null) {
-            p.setData(new HashMap<>(data));
+        Document data = row.get("data", Document.class);
+        String reason = data != null ? data.getString("reason") : null;
+        Long duration = extractDuration(data);
+        List<ActivePunishmentResponse.EvidenceItem> evidenceItems = extractEvidenceItems(row);
+
+        List<String> ticketIds = row.getList("attachedTicketIds", String.class);
+        if (ticketIds == null) {
+            ticketIds = Collections.emptyList();
         }
 
-        List<PunishmentModification> mods = new ArrayList<>();
-        List<Document> modDocs = doc.getList("modifications", Document.class);
-        if (modDocs != null) {
-            for (Document modDoc : modDocs) {
-                Long effectiveDuration = null;
-                Object edObj = modDoc.get("effectiveDuration");
-                if (edObj instanceof Number num) {
-                    effectiveDuration = num.longValue();
-                }
-                mods.add(new PunishmentModification(
-                        modDoc.getString("id"),
-                        modDoc.getString("type"),
-                        modDoc.getDate("date"),
-                        modDoc.getString("issuerName"),
-                        modDoc.getString("reason"),
-                        effectiveDuration,
-                        modDoc.getString("appealTicketId"),
-                        null
-                ));
-            }
-        }
-        p.setModifications(mods);
-        p.setNotes(Collections.emptyList());
-        p.setEvidence(Collections.emptyList());
-        p.setAttachedTicketIds(Collections.emptyList());
-
-        return p;
+        return new ActivePunishmentResponse(
+            row.getString("punishmentId"),
+            row.getString("playerId"),
+            extractPlayerNameFromDoc(row),
+            typeName,
+            category,
+            resolveIssuerFromDoc(
+                row.getString("issuerId"),
+                row.getString("issuerName"),
+                resolvedIssuers),
+            reason,
+            duration,
+            row.getDate("issued"),
+            row.getDate("started"),
+            statusCalculator.getEffectiveExpiry(punishment),
+            active,
+            !evidenceItems.isEmpty(),
+            evidenceItems.size(),
+            evidenceItems,
+            ticketIds
+        );
     }
 
-    private String extractPlayerNameFromDoc(Document doc) {
-        List<Document> usernames = doc.getList("usernames", Document.class);
-        if (usernames != null && !usernames.isEmpty()) {
-            String name = usernames.get(0).getString("username");
-            if (name != null) return name;
+    private List<ActivePunishmentResponse.EvidenceItem> extractEvidenceItems(Document row) {
+        List<Document> evidenceDocs = row.getList("evidence", Document.class);
+        if (evidenceDocs == null) {
+            return Collections.emptyList();
         }
-        return "Unknown";
+
+        List<ActivePunishmentResponse.EvidenceItem> items = new ArrayList<>();
+        for (Document evidenceDoc : evidenceDocs) {
+            items.add(new ActivePunishmentResponse.EvidenceItem(
+                evidenceDoc.getString("text"),
+                evidenceDoc.getString("url"),
+                evidenceDoc.getString("type"),
+                evidenceDoc.getString("fileName")
+            ));
+        }
+        return items;
+    }
+
+    private static String resolveIssuerFromDoc(
+        String issuerId, String issuerName, Map<String, String> resolvedIssuers) {
+        if (issuerId != null && resolvedIssuers.containsKey(issuerId)) {
+            return resolvedIssuers.get(issuerId);
+        }
+        if (issuerName != null) {
+            return issuerName;
+        }
+        return issuerId != null ? "Unknown Staff" : "Console";
     }
 
     private Long extractDuration(Document data) {
-        if (data == null) return null;
+        if (data == null) {
+            return null;
+        }
         Object durationObj = data.get("duration");
-        if (durationObj instanceof Long l) return l;
-        if (durationObj instanceof Integer i) return i.longValue();
-        if (durationObj instanceof Double d) return d.longValue();
-        if (durationObj instanceof Number n) return n.longValue();
+        if (durationObj instanceof Number number) {
+            return number.longValue();
+        }
         return null;
     }
 
-    public boolean rollbackPunishment(Server server, String punishmentId, String reason, String performerUsername) {
-        MongoTemplate template = getTemplate(server);
+    private Map<String, String> resolveIssuerNames(Server server, List<Document> rows) {
+        Set<String> issuerIds = new HashSet<>();
+        for (Document doc : rows) {
+            String issuerId = doc.getString("issuerId");
+            if (issuerId != null) {
+                issuerIds.add(issuerId);
+            }
+        }
+        return auditRepository.mapStaffUsernamesByIds(server, issuerIds);
+    }
 
-        Query query = Query.query(Criteria.where("_id").is(punishmentId));
-        AuditLog punishment = template.findOne(query, AuditLog.class, CollectionName.LOGS);
+    private Punishment reconstructPunishment(Document doc) {
+        Punishment punishment = new Punishment();
+        punishment.setId(doc.getString("punishmentId"));
+        punishment.setTypeOrdinal(doc.getInteger("typeOrdinal", 0));
+        punishment.setIssuerName(
+            doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
+        punishment.setIssuerId(doc.getString("issuerId"));
+        punishment.setIssued(
+            doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
+        punishment.setStarted(doc.getDate("started"));
 
+        Document data = doc.get("data", Document.class);
+        if (data != null) {
+            punishment.setData(new HashMap<>(data));
+        }
+
+        punishment.setModifications(extractModifications(doc));
+        punishment.setNotes(Collections.emptyList());
+        punishment.setEvidence(Collections.emptyList());
+        punishment.setAttachedTicketIds(Collections.emptyList());
+
+        return punishment;
+    }
+
+    private List<PunishmentModification> extractModifications(Document doc) {
+        List<Document> modDocs = doc.getList("modifications", Document.class);
+        if (modDocs == null) {
+            return new ArrayList<>();
+        }
+
+        List<PunishmentModification> mods = new ArrayList<>();
+        for (Document modDoc : modDocs) {
+            Long effectiveDuration = null;
+            Object edObj = modDoc.get("effectiveDuration");
+            if (edObj instanceof Number num) {
+                effectiveDuration = num.longValue();
+            }
+            mods.add(new PunishmentModification(
+                modDoc.getString("id"),
+                modDoc.getString("type"),
+                modDoc.getDate("date"),
+                modDoc.getString("issuerName"),
+                modDoc.getString("issuerId"),
+                modDoc.getString("reason"),
+                effectiveDuration,
+                modDoc.getString("appealTicketId"),
+                null
+            ));
+        }
+        return mods;
+    }
+
+    public boolean rollbackPunishment(
+        Server server, String punishmentId, String reason, String performerUsername) {
+        AuditLog punishment = auditRepository.findAuditLogById(server, punishmentId);
         if (punishment == null) {
             return false;
         }
@@ -460,492 +583,50 @@ public class AuditService {
         }
 
         AuditLog rollbackLog = AuditLog.builder()
-                .created(new Date())
-                .level("moderation")
-                .source(performerUsername)
-                .description("Rolled back " + extractPunishmentType(punishment.getDescription()) +
-                        " for " + (metadata != null ? metadata.get("playerName") : "unknown player"))
-                .metadata(Map.of(
-                        "originalPunishmentId", punishmentId,
-                        "rollbackReason", reason != null ? reason : "Admin rollback",
-                        "originalPunishment", Map.of(
-                                "type", extractPunishmentType(punishment.getDescription()),
-                                "player", metadata != null ? metadata.getOrDefault("playerName", "") : "",
-                                "staff", punishment.getSource(),
-                                "originalReason", metadata != null ? metadata.getOrDefault("reason", "") : ""
-                        )
-                ))
-                .build();
+            .created(new Date())
+            .level("moderation")
+            .source(performerUsername)
+            .description("Rolled back " + extractPunishmentType(punishment.getDescription())
+                         + " for "
+                         + (metadata != null ? metadata.get("playerName") : "unknown player"))
+            .metadata(Map.of(
+                "originalPunishmentId", punishmentId,
+                "rollbackReason", reason != null ? reason : "Admin rollback",
+                "originalPunishment", Map.of(
+                    "type", extractPunishmentType(punishment.getDescription()),
+                    "player", metadata != null
+                              ? metadata.getOrDefault("playerName", "") : "",
+                    "staff", punishment.getSource(),
+                    "originalReason", metadata != null
+                                      ? metadata.getOrDefault("reason", "") : ""
+                )
+            ))
+            .build();
 
-        template.save(rollbackLog, CollectionName.LOGS);
-
-        Update update = new Update()
-                .set("metadata.rolledBack", true)
-                .set("metadata.rollbackDate", new Date())
-                .set("metadata.rollbackBy", performerUsername);
-
-        template.updateFirst(query, update, AuditLog.class, CollectionName.LOGS);
-
+        auditRepository.saveAuditLog(server, rollbackLog);
+        auditRepository.markAuditLogRolledBack(
+            server, punishmentId, performerUsername, new Date());
         return true;
     }
 
-    public Map<String, Object> getDatabaseTable(Server server, String table, int limit, int skip) {
-        MongoTemplate template = getTemplate(server);
-
-        List<String> allowedTables = List.of("players", "tickets", "staff", "punishments", "logs", "settings");
+    public Map<String, Object> getDatabaseTable(
+        Server server, String table, int limit, int skip) {
+        List<String> allowedTables =
+            List.of("players", "tickets", "staff", "punishments", "logs", "settings");
         if (!allowedTables.contains(table)) {
             throw new IllegalArgumentException("Invalid table name");
         }
 
         String collectionName = getCollectionName(table);
-
-        Query query = new Query()
-                .with(Sort.by(Sort.Direction.DESC, "_id"))
-                .skip(skip)
-                .limit(limit);
-
-        List<Document> documents = template.find(query, Document.class, collectionName);
-        long total = template.count(new Query(), collectionName);
+        List<Document> documents = auditRepository.readTable(server, collectionName, limit, skip);
+        long total = auditRepository.countCollection(server, collectionName);
 
         return Map.of(
-                "data", documents,
-                "total", total,
-                "limit", limit,
-                "skip", skip
+            "data", documents,
+            "total", total,
+            "limit", limit,
+            "skip", skip
         );
-    }
-
-    /**
-     * Rollback all punishments issued by a staff member.
-     */
-    public int rollbackAllPunishmentsByStaff(Server server, String staffUsername, String reason, String performerUsername) {
-        MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(server, template, staffUsername, null, null, reason, performerUsername);
-    }
-
-    /**
-     * Rollback punishments issued by a staff member within a date range.
-     */
-    public int rollbackPunishmentsByDateRange(Server server, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
-        MongoTemplate template = getTemplate(server);
-        return rollbackPunishmentsInternal(server, template, staffUsername, startDate, endDate, reason, performerUsername);
-    }
-
-    private int rollbackPunishmentsInternal(Server server, MongoTemplate template, String staffUsername, Date startDate, Date endDate, String reason, String performerUsername) {
-        int rollbackCount = 0;
-
-        try {
-            // Build criteria for finding punishments
-            Criteria criteria = Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i");
-
-            if (startDate != null && endDate != null) {
-                criteria = criteria.and("punishments.issued").gte(startDate).lte(endDate);
-            }
-
-            // Find all players with matching punishments
-            Query findQuery = Query.query(Criteria.where("punishments").elemMatch(
-                    Criteria.where("issuerName").regex("^" + Pattern.quote(staffUsername) + "$", "i")
-            ));
-
-            List<Document> players = template.find(findQuery, Document.class, CollectionName.PLAYERS);
-
-            Date now = new Date();
-            Map<String, Object> rollbackModification = new HashMap<>();
-            rollbackModification.put("type", "ROLLBACK");
-            rollbackModification.put("timestamp", now);
-            rollbackModification.put("performedBy", performerUsername);
-            rollbackModification.put("reason", reason);
-
-            for (Document player : players) {
-                String playerId = player.getString("_id");
-                List<Document> punishments = player.getList("punishments", Document.class);
-
-                if (punishments == null) continue;
-
-                // Get player name for audit log
-                String playerName = "Unknown";
-                List<Document> usernames = player.getList("usernames", Document.class);
-                if (usernames != null && !usernames.isEmpty()) {
-                    playerName = usernames.get(0).getString("username");
-                    if (playerName == null) playerName = "Unknown";
-                }
-
-                for (Document punishment : punishments) {
-                    String issuerName = punishment.getString("issuerName");
-                    Date issued = punishment.getDate("issued");
-                    String punishmentId = punishment.getString("_id");
-
-                    // Check if this punishment matches our criteria
-                    if (issuerName == null || !issuerName.equalsIgnoreCase(staffUsername)) {
-                        continue;
-                    }
-
-                    if (startDate != null && endDate != null) {
-                        if (issued == null || issued.before(startDate) || issued.after(endDate)) {
-                            continue;
-                        }
-                    }
-
-                    // Check if already rolled back
-                    List<Document> modifications = punishment.getList("modifications", Document.class);
-                    boolean alreadyRolledBack = false;
-                    if (modifications != null) {
-                        for (Document mod : modifications) {
-                            if ("ROLLBACK".equalsIgnoreCase(mod.getString("type"))) {
-                                alreadyRolledBack = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (alreadyRolledBack) {
-                        continue;
-                    }
-
-                    // Add rollback modification to this punishment
-                    Update update = new Update().push("punishments.$.modifications", rollbackModification);
-                    Query updateQuery = Query.query(
-                            Criteria.where("_id").is(playerId)
-                                    .and("punishments.id").is(punishmentId)
-                    );
-                    template.updateFirst(updateQuery, update, CollectionName.PLAYERS);
-
-                    // Create audit log for this rollback
-                    int typeOrdinal = punishment.getInteger("typeOrdinal", 0);
-                    String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
-
-                    AuditLog rollbackLog = AuditLog.builder()
-                            .created(now)
-                            .level("moderation")
-                            .source(performerUsername)
-                            .description("Bulk rollback: " + typeName + " for " + playerName + " (issued by " + staffUsername + ")")
-                            .metadata(Map.of(
-                                    "punishmentId", punishmentId != null ? punishmentId : "",
-                                    "playerId", playerId != null ? playerId : "",
-                                    "playerName", playerName,
-                                    "staffUsername", staffUsername,
-                                    "rollbackReason", reason != null ? reason : "Bulk rollback",
-                                    "punishmentType", typeName,
-                                    "bulkRollback", true
-                            ))
-                            .build();
-
-                    template.save(rollbackLog, CollectionName.LOGS);
-                    rollbackCount++;
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error during bulk rollback for staff {}: {}", staffUsername, e.getMessage());
-            throw new RuntimeException("Failed to rollback punishments: " + e.getMessage());
-        }
-
-        return rollbackCount;
-    }
-
-    private List<StaffDetailsResponse.PunishmentDetail> getPunishmentDetails(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
-        List<StaffDetailsResponse.PunishmentDetail> details = new ArrayList<>();
-
-        try {
-            // Build criteria to match any of the usernames (panel username OR minecraft username)
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
-            if (startDate != null) {
-                matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
-            }
-
-            // Query players collection and unwind punishments issued by this staff member
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind("punishments"),
-                    Aggregation.match(matchCriteria),
-                    Aggregation.sort(Sort.Direction.DESC, "punishments.issued"),
-                    Aggregation.limit(50),
-                    Aggregation.project()
-                            .and("punishments.id").as("punishmentId")
-                            .and("minecraftUuid").as("playerId") // Use minecraftUuid instead of _id
-                            .and("punishments.typeOrdinal").as("typeOrdinal")
-                            .and("punishments.issued").as("issued")
-                            .and("punishments.started").as("started")
-                            .and("punishments.data.reason").as("reason")
-                            .and("punishments.data.duration").as("duration")
-                            .and("punishments.modifications").as("modifications")
-                            .and("usernames").as("usernames")
-            );
-
-            List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
-
-            for (Document doc : results) {
-                String punishmentId = doc.getString("punishmentId");
-                String playerId = doc.getString("playerId");
-                int typeOrdinal = doc.getInteger("typeOrdinal", 0);
-                Date issued = doc.getDate("issued");
-                String reason = doc.getString("reason");
-                Object durationObj = doc.get("duration");
-                String duration = durationObj != null ? durationObj.toString() : null;
-
-                // Get player name from first username entry (most recent)
-                String playerName = "Unknown";
-                List<?> playerUsernames = doc.getList("usernames", Document.class);
-                if (playerUsernames != null && !playerUsernames.isEmpty()) {
-                    Document firstUsername = (Document) playerUsernames.get(0);
-                    playerName = firstUsername.getString("username");
-                    if (playerName == null) playerName = "Unknown";
-                }
-
-                // Check if punishment is active (not removed/expired)
-                boolean active = isPunishmentActive(doc);
-                boolean rolledBack = isPunishmentRolledBack(doc);
-
-                // Map type ordinal to type name using the server's punishment type settings
-                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
-
-                details.add(new StaffDetailsResponse.PunishmentDetail(
-                        punishmentId,
-                        playerId,
-                        playerName,
-                        typeName,
-                        reason != null ? reason : "No reason provided",
-                        duration,
-                        issued,
-                        active,
-                        rolledBack
-                ));
-            }
-        } catch (Exception e) {
-            log.debug("Error fetching punishment details for {}: {}", usernames, e.getMessage());
-        }
-
-        return details;
-    }
-
-    private List<StaffDetailsResponse.TicketDetail> getTicketDetails(MongoTemplate template, String username, Date startDate) {
-        List<StaffDetailsResponse.TicketDetail> details = new ArrayList<>();
-
-        try {
-            // Build criteria - include date filter only if startDate is not null
-            Criteria matchCriteria = Criteria.where("replies.staff").is(true)
-                    .and("replies.name").regex("^" + Pattern.quote(username) + "$", "i");
-            if (startDate != null) {
-                matchCriteria = matchCriteria.and("replies.created").gte(startDate);
-            }
-
-            // Find tickets where this staff member has replied
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind("replies"),
-                    Aggregation.match(matchCriteria),
-                    Aggregation.sort(Sort.Direction.DESC, "replies.created"),
-                    Aggregation.group("_id")
-                            .first("subject").as("subject")
-                            .first("category").as("category")
-                            .first("status").as("status")
-                            .first("created").as("ticketCreated")
-                            .max("replies.created").as("lastActivity")
-                            .min("replies.created").as("firstReply"),
-                    Aggregation.limit(50)
-            );
-
-            List<Document> results = template.aggregate(aggregation, CollectionName.TICKETS, Document.class).getMappedResults();
-
-            for (Document doc : results) {
-                String ticketId = doc.getString("_id");
-                String subject = doc.getString("subject");
-                String category = doc.getString("category");
-                String status = doc.getString("status");
-                Date lastActivity = doc.getDate("lastActivity");
-                Date ticketCreated = doc.getDate("ticketCreated");
-                Date firstReply = doc.getDate("firstReply");
-
-                // Calculate response time in minutes (time from ticket creation to first staff reply)
-                int responseTime = 0;
-                if (ticketCreated != null && firstReply != null) {
-                    long diffMs = firstReply.getTime() - ticketCreated.getTime();
-                    responseTime = (int) (diffMs / (1000 * 60)); // Convert to minutes
-                }
-
-                details.add(new StaffDetailsResponse.TicketDetail(
-                        ticketId,
-                        subject != null ? subject : "No Subject",
-                        category != null ? category : "General",
-                        status != null ? status : "Unknown",
-                        lastActivity,
-                        responseTime
-                ));
-            }
-        } catch (Exception e) {
-            log.debug("Error fetching ticket details for {}: {}", username, e.getMessage());
-        }
-
-        return details;
-    }
-
-    private List<StaffDetailsResponse.DailyActivity> getDailyActivity(MongoTemplate template, List<String> usernames, Date startDate) {
-        Map<String, StaffDetailsResponse.DailyActivity> activityByDate = new HashMap<>();
-
-        try {
-            // Build punishment criteria to match any of the usernames
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria punishmentCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
-            if (startDate != null) {
-                punishmentCriteria = punishmentCriteria.and("punishments.issued").gte(startDate);
-            }
-
-            // Get daily punishment counts
-            Aggregation punishmentAgg = Aggregation.newAggregation(
-                    Aggregation.unwind("punishments"),
-                    Aggregation.match(punishmentCriteria),
-                    Aggregation.project()
-                            .andExpression("dateToString('%Y-%m-%d', punishments.issued)").as("date"),
-                    Aggregation.group("date").count().as("count")
-            );
-
-            List<Document> punishmentResults = template.aggregate(punishmentAgg, CollectionName.PLAYERS, Document.class).getMappedResults();
-            for (Document doc : punishmentResults) {
-                String date = doc.getString("_id");
-                int count = doc.getInteger("count", 0);
-                activityByDate.put(date, new StaffDetailsResponse.DailyActivity(date, count, 0, 0));
-            }
-
-            // Build ticket criteria - use just the first (panel) username for tickets
-            String panelUsername = usernames.get(0);
-            Criteria ticketCriteria = Criteria.where("replies.staff").is(true)
-                    .and("replies.name").regex("^" + Pattern.quote(panelUsername) + "$", "i");
-            if (startDate != null) {
-                ticketCriteria = ticketCriteria.and("replies.created").gte(startDate);
-            }
-
-            // Get daily ticket response counts
-            Aggregation ticketAgg = Aggregation.newAggregation(
-                    Aggregation.unwind("replies"),
-                    Aggregation.match(ticketCriteria),
-                    Aggregation.project()
-                            .andExpression("dateToString('%Y-%m-%d', replies.created)").as("date"),
-                    Aggregation.group("date").count().as("count")
-            );
-
-            List<Document> ticketResults = template.aggregate(ticketAgg, CollectionName.TICKETS, Document.class).getMappedResults();
-            for (Document doc : ticketResults) {
-                String date = doc.getString("_id");
-                int count = doc.getInteger("count", 0);
-                StaffDetailsResponse.DailyActivity existing = activityByDate.get(date);
-                if (existing != null) {
-                    activityByDate.put(date, new StaffDetailsResponse.DailyActivity(date, existing.punishments(), count, existing.evidence()));
-                } else {
-                    activityByDate.put(date, new StaffDetailsResponse.DailyActivity(date, 0, count, 0));
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error fetching daily activity for {}: {}", usernames, e.getMessage());
-        }
-
-        return activityByDate.values().stream()
-                .sorted(Comparator.comparing(StaffDetailsResponse.DailyActivity::date))
-                .toList();
-    }
-
-    private List<StaffDetailsResponse.PunishmentTypeBreakdown> getPunishmentTypeBreakdown(Server server, MongoTemplate template, List<String> usernames, Date startDate) {
-        List<StaffDetailsResponse.PunishmentTypeBreakdown> breakdown = new ArrayList<>();
-
-        try {
-            // Build criteria to match any of the usernames
-            List<Criteria> usernameCriteria = usernames.stream()
-                    .map(name -> Criteria.where("punishments.issuerName").regex("^" + Pattern.quote(name) + "$", "i"))
-                    .toList();
-
-            Criteria matchCriteria = new Criteria().orOperator(usernameCriteria.toArray(new Criteria[0]));
-            if (startDate != null) {
-                matchCriteria = matchCriteria.and("punishments.issued").gte(startDate);
-            }
-
-            // Aggregate punishments by typeOrdinal
-            Aggregation aggregation = Aggregation.newAggregation(
-                    Aggregation.unwind("punishments"),
-                    Aggregation.match(matchCriteria),
-                    Aggregation.group("punishments.typeOrdinal").count().as("count"),
-                    Aggregation.sort(Sort.Direction.DESC, "count")
-            );
-
-            List<Document> results = template.aggregate(aggregation, CollectionName.PLAYERS, Document.class).getMappedResults();
-
-            for (Document doc : results) {
-                Integer typeOrdinal = doc.getInteger("_id");
-                int count = doc.getInteger("count", 0);
-                // Use punishment type service to get the actual type name from server settings
-                String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal != null ? typeOrdinal : 0);
-
-                breakdown.add(new StaffDetailsResponse.PunishmentTypeBreakdown(typeName, count));
-            }
-        } catch (Exception e) {
-            log.debug("Error fetching punishment type breakdown for {}: {}", usernames, e.getMessage());
-        }
-
-        return breakdown;
-    }
-
-    private boolean isPunishmentActive(Document doc) {
-        // Check modifications for removal
-        List<?> modifications = doc.getList("modifications", Document.class);
-        if (modifications != null) {
-            for (Object mod : modifications) {
-                if (mod instanceof Document modDoc) {
-                    String type = modDoc.getString("type");
-                    if ("REMOVE".equalsIgnoreCase(type) || "REVOKE".equalsIgnoreCase(type)) {
-                        return false;
-                    }
-                }
-            }
-        }
-        return true;
-    }
-
-    private boolean isPunishmentRolledBack(Document doc) {
-        List<?> modifications = doc.getList("modifications", Document.class);
-        if (modifications != null) {
-            for (Object mod : modifications) {
-                if (mod instanceof Document modDoc) {
-                    String type = modDoc.getString("type");
-                    if ("ROLLBACK".equalsIgnoreCase(type)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    private long countEvidenceUploads(MongoTemplate template, String username, Date startDate) {
-        // Build criteria - include date filter only if startDate is not null
-        Criteria baseCriteria = Criteria.where("source").is(username);
-        if (startDate != null) {
-            baseCriteria = baseCriteria.and("created").gte(startDate);
-        }
-
-        Query query = Query.query(
-                baseCriteria.orOperator(
-                        Criteria.where("description").regex(Pattern.compile("evidence|upload|file", Pattern.CASE_INSENSITIVE)),
-                        Criteria.where("level").is("info").and("description").regex(Pattern.compile("uploaded|attachment", Pattern.CASE_INSENSITIVE))
-                )
-        );
-        return template.count(query, AuditLog.class, CollectionName.LOGS);
-    }
-
-    private Date getStartDate(String period) {
-        if ("all".equals(period)) {
-            return null; // No date filter for all time
-        }
-
-        long now = System.currentTimeMillis();
-        long daysInMs = 24 * 60 * 60 * 1000L;
-
-        return switch (period) {
-            case "7d" -> new Date(now - 7 * daysInMs);
-            case "90d" -> new Date(now - 90 * daysInMs);
-            default -> new Date(now - 30 * daysInMs);
-        };
     }
 
     private String getCollectionName(String table) {
@@ -955,35 +636,125 @@ public class AuditService {
             case "staff" -> CollectionName.STAFF;
             case "logs", "punishments" -> CollectionName.LOGS;
             case "settings" -> CollectionName.SETTINGS;
-            default -> table;
+            default -> throw new ValidationException("Unknown table: " + table);
         };
     }
 
-    private String extractPunishmentType(String description) {
-        if (description == null) return "Unknown";
-        String lower = description.toLowerCase();
-        if (lower.contains("ban")) return "Ban";
-        if (lower.contains("mute")) return "Mute";
-        if (lower.contains("kick")) return "Kick";
-        if (lower.contains("warn")) return "Warn";
-        return "Unknown";
+    public int rollbackAllPunishmentsByStaff(
+        Server server, String staffUsername, String reason, String performerUsername) {
+        String staffId = staffService.getStaffByUsername(server, staffUsername)
+            .map(StaffResponse::id)
+            .orElse(null);
+        return rollbackPunishmentsInternal(
+            server, staffUsername, staffId, null, null, reason, performerUsername);
     }
 
-    private String extractPlayerName(String description) {
-        return "Unknown";
+    private int rollbackPunishmentsInternal(
+        Server server, String staffUsername, String staffId,
+        Date startDate, Date endDate, String reason, String performerUsername) {
+        try {
+            List<Document> players =
+                auditRepository.findPlayersForRollback(server, staffUsername, staffId);
+            Date now = new Date();
+            Map<String, Object> rollbackModification = new HashMap<>();
+            rollbackModification.put("type", "ROLLBACK");
+            rollbackModification.put("timestamp", now);
+            rollbackModification.put("performedBy", performerUsername);
+            rollbackModification.put("reason", reason);
+
+            int rollbackCount = 0;
+            for (Document player : players) {
+                rollbackCount += applyRollbackToPlayer(
+                    server, player, staffUsername, staffId,
+                    startDate, endDate, reason, performerUsername,
+                    rollbackModification, now);
+            }
+            return rollbackCount;
+        } catch (Exception e) {
+            log.error("Error during bulk rollback for staff {}: {}",
+                staffUsername, e.getMessage());
+            throw new RuntimeException("Failed to rollback punishments: " + e.getMessage());
+        }
     }
 
-    private String extractReason(String description) {
-        return description;
+    private int applyRollbackToPlayer(
+        Server server, Document player, String staffUsername, String staffId,
+        Date startDate, Date endDate, String reason, String performerUsername,
+        Map<String, Object> rollbackModification, Date now) {
+        String playerId = player.getString("_id");
+        List<Document> punishments = player.getList("punishments", Document.class);
+        if (punishments == null) {
+            return 0;
+        }
+
+        String playerName = extractPlayerNameFromDoc(player);
+        int count = 0;
+
+        for (Document punishment : punishments) {
+            if (!matchesIssuer(punishment, staffUsername, staffId)) {
+                continue;
+            }
+            if (!isWithinDateRange(punishment.getDate("issued"), startDate, endDate)) {
+                continue;
+            }
+            if (hasModificationType(punishment, "ROLLBACK")) {
+                continue;
+            }
+
+            String punishmentId = punishment.getString("_id");
+            auditRepository.appendRollbackModification(
+                server, playerId, punishmentId, rollbackModification);
+
+            int typeOrdinal = punishment.getInteger("typeOrdinal", 0);
+            String typeName =
+                punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
+
+            AuditLog rollbackLog = AuditLog.builder()
+                .created(now)
+                .level("moderation")
+                .source(performerUsername)
+                .description("Bulk rollback: " + typeName + " for " + playerName
+                             + " (issued by " + staffUsername + ")")
+                .metadata(Map.of(
+                    "punishmentId", punishmentId != null ? punishmentId : "",
+                    "playerId", playerId != null ? playerId : "",
+                    "playerName", playerName,
+                    "staffUsername", staffUsername,
+                    "rollbackReason", reason != null ? reason : "Bulk rollback",
+                    "punishmentType", typeName,
+                    "bulkRollback", true
+                ))
+                .build();
+
+            auditRepository.saveAuditLog(server, rollbackLog);
+            count++;
+        }
+
+        return count;
     }
 
-    private String getStringFromMetadata(Map<String, Object> metadata, String key, String defaultValue) {
-        Object value = metadata.get(key);
-        return value instanceof String ? (String) value : defaultValue;
+    private boolean matchesIssuer(
+        Document punishment, String staffUsername, String staffId) {
+        String issuerName = punishment.getString("issuerName");
+        String issuerId = punishment.getString("issuerId");
+        return (issuerName != null && issuerName.equalsIgnoreCase(staffUsername))
+               || (staffId != null && staffId.equals(issuerId));
     }
 
-    private MongoTemplate getTemplate(Server server) {
-        return mongoProvider.getFromDatabaseName(server.getDatabaseName());
+    private boolean isWithinDateRange(Date issued, Date startDate, Date endDate) {
+        if (startDate == null || endDate == null) {
+            return true;
+        }
+        return issued != null && !issued.before(startDate) && !issued.after(endDate);
+    }
+
+    public int rollbackPunishmentsByDateRange(
+        Server server, String staffUsername, Date startDate, Date endDate,
+        String reason, String performerUsername) {
+        String staffId = staffService.getStaffByUsername(server, staffUsername)
+            .map(StaffResponse::id)
+            .orElse(null);
+        return rollbackPunishmentsInternal(
+            server, staffUsername, staffId, startDate, endDate, reason, performerUsername);
     }
 }
-

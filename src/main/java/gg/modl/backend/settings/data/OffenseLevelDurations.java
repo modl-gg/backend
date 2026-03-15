@@ -1,9 +1,9 @@
 package gg.modl.backend.settings.data;
 
 public record OffenseLevelDurations(
-        DurationDetail first,
-        DurationDetail medium,
-        DurationDetail habitual
+    DurationDetail first,
+    DurationDetail medium,
+    DurationDetail habitual
 ) {
     public DurationDetail getForOffenseLevel(String offenseLevel) {
         return switch (offenseLevel.toLowerCase()) {

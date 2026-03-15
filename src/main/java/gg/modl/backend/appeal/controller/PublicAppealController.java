@@ -2,6 +2,7 @@ package gg.modl.backend.appeal.controller;
 
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.appeal.dto.response.PublicAppealResponse;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.rest.RESTMappingV1;
@@ -11,13 +12,17 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_APPEALS)
@@ -27,76 +32,60 @@ public class PublicAppealController {
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getAppeal(
-            @PathVariable String id,
-            HttpServletRequest request
+        @PathVariable String id,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return appealService.getAppealById(server, id)
-                .map(appeal -> ResponseEntity.ok((Object) PublicAppealResponse.fromTicketResponse(appeal)))
-                .orElse(ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Appeal not found")));
+            .map(appeal -> ResponseEntity.ok((Object) PublicAppealResponse.fromTicketResponse(appeal)))
+            .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
     }
 
     @PostMapping
     public ResponseEntity<?> createAppeal(
-            @RequestBody @Valid CreateAppealRequest createRequest,
-            HttpServletRequest request
+        @RequestBody @Valid CreateAppealRequest createRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            TicketResponse appeal = appealService.createAppeal(server, createRequest);
+        TicketResponse appeal = appealService.createAppeal(server, createRequest);
+        String workflowStatus = appeal.appealWorkflowStatus() != null ? appeal.appealWorkflowStatus() : appeal.status();
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "success", true,
-                    "appealId", appeal.id(),
-                    "message", "Appeal created successfully",
-                    "appeal", Map.of(
-                            "id", appeal.id(),
-                            "_id", appeal.id(),
-                            "type", appeal.type(),
-                            "subject", appeal.subject(),
-                            "status", appeal.status(),
-                            "created", appeal.date().toInstant().toString()
-                    )
-            ));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("error", e.getMessage()));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("error", "Internal server error", "message", "Failed to create appeal"));
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "success", true,
+            "appealId", appeal.id(),
+            "message", "Appeal created successfully",
+            "appeal", Map.of(
+                "id", appeal.id(),
+                "_id", appeal.id(),
+                "type", appeal.type(),
+                "subject", appeal.subject(),
+                "status", workflowStatus,
+                "appealWorkflowStatus", workflowStatus,
+                "created", appeal.date().toInstant().toString()
+            )
+        ));
     }
 
     @PostMapping("/{id}/replies")
     public ResponseEntity<?> addReply(
-            @PathVariable String id,
-            @RequestBody @Valid AddAppealReplyRequest replyRequest,
-            HttpServletRequest request
+        @PathVariable String id,
+        @RequestBody @Valid AddAppealReplyRequest replyRequest,
+        HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        try {
-            Optional<TicketReply> replyOpt = appealService.addReply(server, id, replyRequest);
+        Optional<TicketReply> replyOpt = appealService.addReply(server, id, replyRequest);
 
-            if (replyOpt.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("error", "Appeal not found"));
-            }
-
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                    "success", true,
-                    "message", "Reply added successfully",
-                    "reply", replyOpt.get()
-            ));
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("error", e.getMessage()));
+        if (replyOpt.isEmpty()) {
+            throw new ResourceNotFoundException("Appeal not found");
         }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+            "success", true,
+            "message", "Reply added successfully",
+            "reply", replyOpt.get()
+        ));
     }
 }

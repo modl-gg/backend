@@ -4,10 +4,11 @@ import jakarta.validation.constraints.NotBlank;
 import org.jetbrains.annotations.Nullable;
 
 public record AddModificationRequest(
-        @NotBlank String type,
-        @NotBlank String issuerName,
-        @Nullable Long effectiveDuration,
-        @Nullable String reason,
-        @Nullable String appealTicketId
+    @NotBlank String type,
+    @Nullable String issuerName,
+    @Nullable String issuerId,
+    @Nullable Long effectiveDuration,
+    @Nullable String reason,
+    @Nullable String appealTicketId
 ) {
 }

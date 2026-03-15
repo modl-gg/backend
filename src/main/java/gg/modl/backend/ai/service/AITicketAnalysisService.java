@@ -6,11 +6,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
+import gg.modl.backend.ai.data.DefaultPrompts;
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
+import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
-import gg.modl.backend.player.service.PunishmentService;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.AIModerationSettings;
@@ -18,186 +20,111 @@ import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.scheduling.annotation.Async;
-import org.springframework.stereotype.Service;
-
+import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AITicketAnalysisService {
-    private static final String PROMPTS_COLLECTION = "systemprompts";
-    private static final String JSON_FORMAT = """
-            {
-              "analysis": "Brief explanation of what rule violations (if any) were found in the chat",
-              "suggestedAction": {
-                "punishmentTypeId": "<punishment_type_id>",
-                "severity": "low|regular|severe"
-              } OR null if no action needed
-            }""";
-
     private final LLMService llmService;
     private final AIModerationSettingsService aiModerationSettingsService;
-    private final DynamicMongoTemplateProvider mongoProvider;
-    private final PunishmentService punishmentService;
+    private final TicketMongoRepository ticketRepository;
+    private final ServerMongoRepository serverRepository;
+    private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentTypeService punishmentTypeService;
     private final UsageTrackingService usageTrackingService;
     private final ObjectMapper objectMapper;
-
-    public record AISuggestionResult(boolean success, String error) {}
+    private final SystemPromptMongoRepository systemPromptRepository;
+    public static final String AI_MODERATOR = "AI Moderator";
 
     @Async
-    public void analyzeTicketAsync(Server server, String ticketId) {
-        try {
-            analyzeTicket(server, ticketId);
-        } catch (Exception e) {
-            log.error("Failed to analyze ticket {} for server {}", ticketId, server.getServerName(), e);
-        }
-    }
-
-    public AIAnalysisResult analyzeTicket(Server server, String ticketId) {
+    public void analyzeTicketAsync(@NotNull Server server, @NotNull String ticketId) {
         if (!shouldAnalyze(server)) {
             log.debug("Skipping AI analysis for ticket {}: preconditions not met", ticketId);
-            return null;
+            return;
         }
 
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
         if (ticket == null) {
             log.debug("Ticket {} not found for AI analysis", ticketId);
-            return null;
+            return;
         }
 
         if (!isChatReport(ticket)) {
             log.debug("Skipping AI analysis for ticket {}: not a chat report", ticketId);
-            return null;
+            return;
         }
 
         if (ticket.getChatMessages() == null || ticket.getChatMessages().isEmpty()) {
             log.debug("Skipping AI analysis for ticket {}: no chat messages", ticketId);
-            return null;
+            return;
         }
 
-        AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        String systemPrompt = getSystemPrompt(settings.getStrictnessLevel());
-        String chatLog = ticket.getChatMessages().stream()
-            .map(Ticket.ChatMessage::getContent)
-            .collect(Collectors.joining("\n"));
-        String fullPrompt = buildPrompt(systemPrompt, chatLog, ticket.getReportedPlayer(), settings);
+        final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
+        final String promptTemplate = getSystemPrompt();
+        final String chatLog = ticket.getChatMessages()
+            .stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
+        final String fullPrompt = buildPrompt(promptTemplate, chatLog, ticket.getReportedPlayer(), settings);
 
-        String rawResponse;
+        final String rawResponse;
         try {
             rawResponse = llmService.generate(fullPrompt);
             usageTrackingService.incrementAiRequests(server.getId(), 1);
         } catch (Exception e) {
             log.error("LLM generation failed for ticket {}", ticketId, e);
-            return null;
+            return;
         }
 
-        AIAnalysisResult result = parseResponse(rawResponse);
-        result.setCreatedAt(new Date());
-        result.setRawResponse(rawResponse);
+        final AIAnalysisResult result = parseResponse(rawResponse);
+        if (result == null) {
+            return; // failed but we can just ignore
+        }
 
         if (settings.isEnableAutomatedActions() && result.hasViolation()) {
-            executeAutomatedAction(server, template, ticket, result, settings);
+            executeAutomatedAction(server, ticket, result, settings);
         }
 
-        Update update = new Update().set("aiAnalysis", result).set("updatedAt", new Date());
-        template.updateFirst(Query.query(Criteria.where("_id").is(ticketId)), update, Ticket.class, CollectionName.TICKETS);
-
-        return result;
+        ticket.setAiAnalysis(result);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveEntity(server, ticket);
     }
 
-    public AISuggestionResult applyAISuggestion(Server server, String ticketId, String staffName) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
-
-        if (ticket == null) {
-            return new AISuggestionResult(false, "Ticket not found");
-        }
-
-        AIAnalysisResult aiAnalysis = ticket.getAiAnalysis();
-        if (aiAnalysis == null || aiAnalysis.getSuggestedAction() == null) {
-            return new AISuggestionResult(false, "No AI suggestion to apply");
-        }
-
-        if (aiAnalysis.isWasAppliedAutomatically() || aiAnalysis.isDismissed()) {
-            return new AISuggestionResult(false, "AI suggestion already handled");
-        }
-
-        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
-            return new AISuggestionResult(false, "No reported player UUID");
-        }
-
-        applyPunishmentAndCloseTicket(server, template, ticket, aiAnalysis, staffName);
-        return new AISuggestionResult(true, null);
-    }
-
-    public AISuggestionResult dismissAISuggestion(Server server, String ticketId) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Ticket ticket = findTicket(template, ticketId);
-
-        if (ticket == null) {
-            return new AISuggestionResult(false, "Ticket not found");
-        }
-
-        if (ticket.getAiAnalysis() == null) {
-            return new AISuggestionResult(false, "No AI analysis to dismiss");
-        }
-
-        Update update = new Update()
-                .set("aiAnalysis.dismissed", true)
-                .set("updatedAt", new Date());
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(ticketId)),
-                update, Ticket.class, CollectionName.TICKETS
-        );
-
-        return new AISuggestionResult(true, null);
-    }
-
-    private boolean shouldAnalyze(Server server) {
+    private boolean shouldAnalyze(@NotNull Server server) {
         if (!llmService.isAvailable()) {
             log.debug("LLM service not available");
             return false;
         }
 
         if (server.getPlan() != ServerPlan.PREMIUM) {
-            log.debug("Server {} is not on premium plan", server.getServerName());
             return false;
         }
 
-        AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        if (!settings.isEnableAIReview()) {
-            log.debug("AI review is disabled for server {}", server.getServerName());
+        final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
+        if (!settings.isEnableAIReview() || settings.getAiPunishmentConfigs().isEmpty()) {
             return false;
         }
 
-        // Check AI usage cap, fetch fresh server data for current period counts
-        MongoTemplate globalDb = mongoProvider.getGlobalDatabase();
-        Server freshServer = globalDb.findOne(
-                Query.query(Criteria.where("_id").is(server.getId())),
-                Server.class, CollectionName.MODL_SERVERS
-        );
-        if (freshServer != null) {
-            long currentUsage = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
-            long limit = usageTrackingService.getAiRequestLimit(freshServer);
+        // Check AI usage cap via direct usage snapshot to avoid loading the full server document.
+        final ServerMongoRepository.AIUsageSnapshot usageSnapshot = serverRepository.findAIUsageSnapshotById(server.getId()).orElse(null);
+        if (usageSnapshot != null) {
+            long currentUsage = usageSnapshot.aiRequestsCurrentPeriod();
+            long limit = usageTrackingService.getAiBaseLimitRequests() + Math.max(0L, usageSnapshot.maxAiOverageRequests());
             if (currentUsage >= limit) {
                 log.debug("Server {} has reached AI request limit ({}/{})", server.getServerName(), currentUsage, limit);
                 return false;
@@ -208,70 +135,12 @@ public class AITicketAnalysisService {
     }
 
     private boolean isChatReport(Ticket ticket) {
-        return "chat".equalsIgnoreCase(ticket.getCategory());
+        return ticket.getType() == TicketCategory.CHAT;
     }
 
-    private Ticket findTicket(MongoTemplate template, String ticketId) {
-        return template.findOne(
-                Query.query(Criteria.where("_id").is(ticketId)),
-                Ticket.class, CollectionName.TICKETS
-        );
-    }
-
-    private void applyPunishmentAndCloseTicket(Server server, MongoTemplate template, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
-        UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
-        AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
-        String reason = aiAnalysis.getAnalysis() != null ? aiAnalysis.getAnalysis() : "AI-detected violation";
-
-        CreatePunishmentRequest request = new CreatePunishmentRequest(
-                staffName,
-                suggestion.getPunishmentTypeId(),
-                null, null,
-                List.of(ticket.getId()),
-                suggestion.getSeverity(),
-                "active",
-                Map.of("aiGenerated", true),
-                reason, null
-        );
-
-        punishmentService.createPunishment(server, playerUuid, request);
-
-        Date now = new Date();
-        String typeName = punishmentTypeService.getPunishmentTypeName(server, suggestion.getPunishmentTypeId());
-
-        TicketReply systemReply = TicketReply.builder()
-                .id(UUID.randomUUID().toString())
-                .name(staffName)
-                .content("This report has been reviewed and appropriate action has been taken. Thank you for your report.")
-                .type("system")
-                .created(now)
-                .staff(true)
-                .action("Close")
-                .attachments(new ArrayList<>())
-                .build();
-
-        TicketNote staffNote = TicketNote.builder()
-                .text("AI Analysis by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
-                .issuerName(staffName)
-                .date(now)
-                .build();
-
-        Update update = new Update()
-                .set("aiAnalysis.wasAppliedAutomatically", true)
-                .push("replies", systemReply)
-                .push("notes", staffNote)
-                .set("status", "Closed")
-                .set("locked", true)
-                .set("updatedAt", now);
-        template.updateFirst(
-                Query.query(Criteria.where("_id").is(ticket.getId())),
-                update, Ticket.class, CollectionName.TICKETS
-        );
-    }
-
-    private void executeAutomatedAction(Server server, MongoTemplate template, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
-        AIAnalysisResult.SuggestedAction suggestion = result.getSuggestedAction();
-        if (suggestion == null || suggestion.getPunishmentTypeId() == null) {
+    private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
+        final AIAnalysisResult.SuggestedAction suggestion = result.getSuggestedAction();
+        if (suggestion == null) {
             return;
         }
 
@@ -285,8 +154,8 @@ public class AITicketAnalysisService {
             return;
         }
 
-        String typeKey = String.valueOf(suggestion.getPunishmentTypeId());
-        AIPunishmentConfig punishmentConfig = settings.getAiPunishmentConfigs().get(typeKey);
+        final String typeKey = String.valueOf(suggestion.getPunishmentTypeId());
+        final AIPunishmentConfig punishmentConfig = settings.getAiPunishmentConfigs().get(typeKey);
 
         if (punishmentConfig == null || !punishmentConfig.isEnabled()) {
             log.warn("Punishment config not found or disabled for type ordinal {}", typeKey);
@@ -294,169 +163,149 @@ public class AITicketAnalysisService {
         }
 
         try {
-            applyPunishmentAndCloseTicket(server, template, ticket, result, "AI Moderator");
+            applyPunishmentAndCloseTicket(server, ticket, result, AI_MODERATOR);
             result.setWasAppliedAutomatically(true);
         } catch (Exception e) {
             log.error("Failed to apply automated punishment for ticket {}", ticket.getId(), e);
         }
     }
 
-    private String getSystemPrompt(String strictnessLevel) {
-        String normalizedStrictnessLevel = strictnessLevel == null
-                ? "STANDARD"
-                : strictnessLevel.trim().toUpperCase(Locale.ROOT);
-        MongoTemplate template = mongoProvider.getGlobalDatabase();
-        Query query = Query.query(Criteria.where("strictnessLevel").is(normalizedStrictnessLevel).and("isActive").is(true));
-        SystemPrompt prompt = template.findOne(query, SystemPrompt.class, PROMPTS_COLLECTION);
+    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
+        UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
+        AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
+        String reason = aiAnalysis.getAnalysis();
+
+        CreatePunishmentRequest request = new CreatePunishmentRequest(
+            staffName,
+            null,
+            suggestion.getPunishmentTypeId(),
+            null, null,
+            List.of(ticket.getId()),
+            suggestion.getSeverity(),
+            "active",
+            Map.of("aiGenerated", true),
+            reason, null
+        );
+
+        punishmentLifecycleService.createPunishment(server, playerUuid, request);
+
+        Date now = new Date();
+        String typeName = punishmentTypeService.getPunishmentTypeName(server, suggestion.getPunishmentTypeId());
+
+        TicketReply systemReply = TicketReply.builder()
+            .id(UUID.randomUUID().toString())
+            .name(staffName)
+            .content("This report has been reviewed and appropriate action has been taken. Thank you for your report.")
+            .type("system")
+            .created(now)
+            .staff(true)
+            .action("Close")
+            .attachments(new ArrayList<>())
+            .build();
+
+        TicketNote staffNote = TicketNote.builder()
+            .text("AI Analysis by " + staffName + ": " + typeName + " (" + suggestion.getSeverity() + "). Reason: " + reason)
+            .issuerName(staffName)
+            .date(now)
+            .build();
+
+        aiAnalysis.setWasAppliedAutomatically(true);
+        if (ticket.getReplies() == null) {
+            ticket.setReplies(new ArrayList<>());
+        }
+        if (ticket.getNotes() == null) {
+            ticket.setNotes(new ArrayList<>());
+        }
+        ticket.getReplies().add(systemReply);
+        ticket.getNotes().add(staffNote);
+        ticket.setStatus(TicketStatus.CLOSED);
+        ticket.setLocked(true);
+        ticket.setUpdatedAt(now);
+    }
+
+    private String getSystemPrompt() {
+        SystemPrompt prompt = systemPromptRepository.findActive().orElse(null);
 
         if (prompt != null && prompt.getPrompt() != null && !prompt.getPrompt().isBlank()) {
             return prompt.getPrompt();
         }
 
-        return getDefaultPrompt(normalizedStrictnessLevel);
+        return getDefaultPrompt();
     }
 
-    public String getDefaultPrompt(String level) {
-        String normalizedLevel = level == null ? "STANDARD" : level.trim().toUpperCase(Locale.ROOT);
-        String modeInstruction = switch (normalizedLevel) {
-            case "LENIENT" ->
-                """
-                LENIENT MODE - Additional Guidelines:
-                - Give players the benefit of the doubt when context is unclear
-                - Only suggest action for clear, obvious rule violations
-                - Prefer warnings and lighter punishments for first-time offenses
-                - Consider context and intent - friendly banter may not require action
-                - Be more forgiving of minor language issues
-                - Focus on patterns of behavior rather than isolated incidents
-
-                If there's any ambiguity about whether something violates rules, err on the side of no action.
-                """;
-            case "STRICT" ->
-                """
-                STRICT MODE - Additional Guidelines:
-                - Enforce rules rigorously with zero tolerance for violations
-                - Take action on borderline cases that could negatively impact the community
-                - Prefer higher severity punishments to maintain server standards
-                - Consider even minor infractions as worthy of moderation action
-                - Prioritize community safety and positive environment over individual leniency
-                - Be proactive in preventing escalation of problematic behavior
-
-                When in doubt, err on the side of taking moderation action to maintain high community standards.
-                """;
-            default ->
-                """
-                STANDARD MODE - Additional Guidelines:
-                - Apply consistent moderation based on clear rule violations
-                - Consider the severity and impact of violations on the community
-                - Balance player behavior with server standards
-                - Escalate punishment severity for repeat offenses when evident
-                - Take context into account but enforce rules fairly
-                - Focus on maintaining a positive gaming environment
-
-                Apply appropriate action when rules are clearly violated, using good judgment for edge cases.
-                """;
-        };
-
-        return """
-               You are an AI moderator analyzing Minecraft server chat logs for rule violations. Analyze the provided chat transcript and determine if any moderation action is needed.
-
-               RESPONSE FORMAT:
-               You must respond with a valid JSON object in this exact format:
-               {{JSON_FORMAT}}
-
-               PUNISHMENT SEVERITY GUIDELINES:
-               - "low": Minor infractions, first-time offenses, borderline cases
-               - "regular": Clear rule violations, repeat minor offenses
-               - "severe": Serious violations, multiple rule breaks, toxic behavior
-
-               AVAILABLE PUNISHMENT TYPES:
-               {{PUNISHMENT_TYPES}}
-
-               Choose the most appropriate punishment type from the provided list based on the violation category and severity. Use the descriptions provided to understand when each punishment type is appropriate.
-
-               %s
-               """
-            .formatted(modeInstruction);
+    @NotNull
+    public static String getDefaultPrompt() {
+        return DefaultPrompts.MINECRAFT;
     }
 
-    private String buildPrompt(String systemPrompt, String chatLog, String reportedPlayer, AIModerationSettings settings) {
-        String punishmentTypes = formatPunishmentTypes(settings);
-
-        if (systemPrompt.contains("{{")) {
-            systemPrompt = systemPrompt
-                    .replace("{{PUNISHMENT_TYPES}}", punishmentTypes)
-                    .replace("{{JSON_FORMAT}}", JSON_FORMAT);
-        }
-
-        return """
-                %s
-
-                CHAT TRANSCRIPT TO ANALYZE:
-                ```
-                %s
-                ```
-
-                REPORTED PLAYER: %s
-
-                Please analyze the chat transcript and respond with a JSON object following the exact format specified in the system prompt.
-                """.formatted(systemPrompt, chatLog, reportedPlayer);
+    @NotNull
+    private String buildPrompt(@NotNull String promptTemplate, @NotNull String chatLog, @NotNull String reportedPlayer, @NotNull AIModerationSettings settings) {
+        return promptTemplate
+            .replace("{{REPORTED_PLAYER}}", reportedPlayer)
+            .replace("{{PUNISHMENT_TYPES}}", formatPunishmentTypes(settings))
+            .replace("{{CHAT_LOG}}", chatLog);
     }
 
-    private String formatPunishmentTypes(AIModerationSettings settings) {
+    @NotNull
+    private String formatPunishmentTypes(@NotNull AIModerationSettings settings) {
         if (settings.getAiPunishmentConfigs() == null || settings.getAiPunishmentConfigs().isEmpty()) {
             return "No punishment types configured";
         }
 
-        return settings.getAiPunishmentConfigs().values().stream()
-                .filter(AIPunishmentConfig::isEnabled)
-                .map(config -> {
-                    String description = config.getAiDescription();
-                    return "%s: %s".formatted(
-                            config.getId(),
-                            description != null && !description.isBlank() ? description : config.getName()
-                    );
-                })
-                .collect(Collectors.joining("\n"));
+        return settings.getAiPunishmentConfigs().values()
+            .stream()
+            .filter(AIPunishmentConfig::isEnabled)
+            .map(config -> {
+                String description = config.getAiDescription();
+                return "%s: (%s) %s".formatted(
+                    config.getId(),
+                    config.getName(),
+                    description != null && !description.isBlank() ? description : config.getName()
+                );
+            })
+            .collect(Collectors.joining("\n"));
     }
 
-    private AIAnalysisResult parseResponse(String rawResponse) {
+    @Nullable
+    private AIAnalysisResult parseResponse(@NotNull String rawResponse) {
         try {
-            String jsonContent = extractJson(rawResponse);
-            JsonNode json = objectMapper.readTree(jsonContent);
+            final String jsonContent = extractJson(rawResponse);
+            final JsonNode json = objectMapper.readTree(jsonContent);
+            final String analysis = json.has("analysis") ? json.get("analysis").asText() : null;
 
-            String analysis = json.has("analysis") ? json.get("analysis").asText() : null;
+            if (analysis == null) {
+                return null;
+            }
 
             AIAnalysisResult.SuggestedAction suggestedAction = null;
             if (json.has("suggestedAction") && !json.get("suggestedAction").isNull()) {
                 JsonNode actionNode = json.get("suggestedAction");
-                suggestedAction = AIAnalysisResult.SuggestedAction.builder()
-                        .punishmentTypeId(parseIntField(actionNode, "punishmentTypeId"))
-                        .severity(actionNode.has("severity") ? actionNode.get("severity").asText() : null)
-                        .build();
+                final Integer punishmentTypeId = parseIntField(actionNode, "punishmentTypeId");
+                final String severity = actionNode.get("severity").asText();
+
+                if (punishmentTypeId != null && severity != null) {
+                    suggestedAction = new AIAnalysisResult.SuggestedAction(punishmentTypeId, severity);
+                }
             }
 
-            return AIAnalysisResult.builder()
-                    .analysis(analysis)
-                    .suggestedAction(suggestedAction)
-                    .wasAppliedAutomatically(false)
-                    .build();
+            return new AIAnalysisResult(analysis, suggestedAction, new Date(), rawResponse);
         } catch (JsonProcessingException e) {
-            log.warn("Failed to parse AI response: {}", rawResponse, e);
-            return AIAnalysisResult.builder()
-                    .analysis("Failed to parse AI response")
-                    .wasAppliedAutomatically(false)
-                    .build();
+            log.error("Failed to parse AI response: {}", rawResponse, e);
+            return null;
         }
     }
 
-    private Integer parseIntField(JsonNode node, String field) {
-        if (!node.has(field) || node.get(field).isNull()) {
+    @Nullable
+    private Integer parseIntField(@Nullable JsonNode node, @Nullable String field) {
+        if (node == null || field == null || !node.has(field) || node.get(field).isNull()) {
             return null;
         }
-        JsonNode value = node.get(field);
+
+        final JsonNode value = node.get(field);
         if (value.isNumber()) {
             return value.asInt();
         }
+
         if (value.isTextual()) {
             try {
                 return Integer.parseInt(value.asText());
@@ -465,16 +314,68 @@ public class AITicketAnalysisService {
                 return null;
             }
         }
+
         return null;
     }
 
-    private String extractJson(String response) {
-        String trimmed = response.trim();
-        int start = trimmed.indexOf('{');
-        int end = trimmed.lastIndexOf('}');
+    @NotNull
+    private String extractJson(@NotNull String response) {
+        final String trimmed = response.trim();
+        final int start = trimmed.indexOf('{');
+        final int end = trimmed.lastIndexOf('}');
+
         if (start != -1 && end != -1 && end > start) {
             return trimmed.substring(start, end + 1);
         }
+
         return trimmed;
     }
+
+    @NotNull
+    public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @NotNull String staffName) {
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+
+        if (ticket == null) {
+            return new AISuggestionResult(false, "Ticket not found");
+        }
+
+        final AIAnalysisResult aiAnalysis = ticket.getAiAnalysis();
+        if (aiAnalysis == null || aiAnalysis.getSuggestedAction() == null) {
+            return new AISuggestionResult(false, "No AI suggestion to apply");
+        }
+
+        if (aiAnalysis.isWasAppliedAutomatically() || aiAnalysis.isDismissed()) {
+            return new AISuggestionResult(false, "AI suggestion already handled");
+        }
+
+        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
+            return new AISuggestionResult(false, "No reported player UUID");
+        }
+
+        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
+        ticketRepository.saveEntity(server, ticket);
+
+        return new AISuggestionResult(true, null);
+    }
+
+    @NotNull
+    public AISuggestionResult dismissAISuggestion(@NotNull Server server, @NotNull String ticketId) {
+        final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
+
+        if (ticket == null) {
+            return new AISuggestionResult(false, "Ticket not found");
+        }
+
+        if (ticket.getAiAnalysis() == null) {
+            return new AISuggestionResult(false, "No AI analysis to dismiss");
+        }
+
+        ticket.getAiAnalysis().setDismissed(true);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveEntity(server, ticket);
+
+        return new AISuggestionResult(true, null);
+    }
+
+    public record AISuggestionResult(boolean success, String error) {}
 }

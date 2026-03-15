@@ -4,6 +4,6 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.lang.Nullable;
 
 public record ToggleMaintenanceRequest(
-        @NotNull Boolean enabled,
-        @Nullable String message
+    @NotNull Boolean enabled,
+    @Nullable String message
 ) {}

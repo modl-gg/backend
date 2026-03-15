@@ -1,11 +1,10 @@
 package gg.modl.backend.settings.data;
 
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -37,7 +36,6 @@ public class QuickResponseSettings {
         private Integer order;
         private Boolean closeTicket;
         private Boolean showPunishment;
-        private Boolean issuePunishment; // Legacy field, same as showPunishment
         private String appealAction;
     }
 }

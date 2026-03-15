@@ -1,18 +1,18 @@
 package gg.modl.backend.public_api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
-import gg.modl.backend.support.TestDatabase;
 import gg.modl.backend.support.TestDataProvider;
-import org.bson.Document;
+import gg.modl.backend.support.TestDatabase;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class PublicAppealApiTest {
 
@@ -23,7 +23,7 @@ class PublicAppealApiTest {
 
     @BeforeAll
     static void setUp() {
-        Assumptions.assumeTrue(StagingCredentials.isAvailable(), "Staging credentials not configured");
+        Assumptions.assumeTrue(StagingCredentials.isPublicApiAvailable(), StagingCredentials.publicApiUnavailableReason());
         api = new ApiClient();
 
         testUuid = TestDataProvider.getPlayers().get(0).uuid();
@@ -40,23 +40,25 @@ class PublicAppealApiTest {
     void createAndGetAppeal() throws Exception {
         // Need an active punishment first
         var createPunishment = api.minecraftPost("/v1/minecraft/punishments/dynamic", Map.of(
-                "targetUuid", testUuid,
-                "issuerName", "TestBot",
-                "type_ordinal", testTypeOrdinal,
-                "reason", "Public appeal test",
-                "duration", 300,
-                "severity", "LOW",
-                "status", "ACTIVE"
+            "targetUuid", testUuid,
+            "issuerName", "TestBot",
+            "type_ordinal", testTypeOrdinal,
+            "reason", "Public appeal test",
+            "duration", 300,
+            "severity", "LOW",
+            "status", "ACTIVE"
         ));
-        if (createPunishment.statusCode() != 200) return;
+        if (createPunishment.statusCode() != 200) {
+            return;
+        }
         String punishmentId = JsonHelper.parseObject(createPunishment.body()).get("punishmentId").getAsString();
 
         // Create appeal
         var createAppeal = api.publicPost("/v1/public/appeals", Map.of(
-                "punishmentId", punishmentId,
-                "playerUuid", testUuid,
-                "email", "test@example.com",
-                "reason", "API test appeal - auto cleanup"
+            "punishmentId", punishmentId,
+            "playerUuid", testUuid,
+            "email", "test@example.com",
+            "reason", "API test appeal - auto cleanup"
         ));
         int appealStatus = createAppeal.statusCode();
         assertTrue(appealStatus == 200 || appealStatus == 201, "Expected 200 or 201 but got " + appealStatus);
@@ -83,19 +85,20 @@ class PublicAppealApiTest {
 
         // Cleanup punishment
         api.minecraftPost("/v1/minecraft/punishments/" + punishmentId + "/pardon", Map.of(
-                "issuerName", "TestBot",
-                "reason", "cleanup"
+            "issuerName", "TestBot",
+            "reason", "cleanup"
         ));
     }
 
     @Test
     void replyToAppeal() throws Exception {
         var response = api.publicPost("/v1/public/appeals/nonexistent-appeal-id/replies", Map.of(
-                "name", "PublicUser",
-                "content", "Test reply",
-                "type", "player",
-                "staff", false
+            "name", "PublicUser",
+            "content", "Test reply",
+            "type", "player",
+            "staff", false
         ));
         assertEquals(404, response.statusCode());
     }
 }
+

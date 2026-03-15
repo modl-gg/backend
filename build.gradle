@@ -24,6 +24,18 @@ repositories {
 	mavenCentral()
 }
 
+subprojects {
+	repositories {
+		mavenCentral()
+	}
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(21)
+		}
+	}
+}
+
 dependencies {
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
@@ -46,13 +58,18 @@ dependencies {
     implementation platform('software.amazon.awssdk:bom:2.29.0')
     implementation 'software.amazon.awssdk:s3'
 
+    // WebAuthn / Passkeys
+    implementation 'com.yubico:webauthn-server-core:2.5.4'
+
     // Utilities
     implementation 'com.github.slugify:slugify:3.0.7'
 
     // Compile-only
     compileOnly 'org.jetbrains:annotations:26.0.2'
     compileOnly 'org.projectlombok:lombok'
+    compileOnly project(':mongo-fields-annotations')
     annotationProcessor 'org.projectlombok:lombok'
+    annotationProcessor project(':mongo-fields-processor')
 
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
@@ -62,6 +79,16 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+tasks.withType(JavaCompile) {
+    options.compilerArgs << '-parameters'
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
+	binaryResultsDirectory = file("$buildDir/test-results/test/binary-${System.currentTimeMillis()}")
+	testLogging {
+		events 'failed', 'skipped'
+		exceptionFormat 'full'
+		showStandardStreams = false
+	}
 }

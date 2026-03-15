@@ -1,22 +1,21 @@
 package gg.modl.backend.player.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import org.jetbrains.annotations.Nullable;
-
 import java.util.List;
 import java.util.Map;
+import org.jetbrains.annotations.Nullable;
 
 public record CreatePunishmentRequest(
-        @NotBlank String issuerName,
-        @NotNull Integer typeOrdinal,
-        @Nullable List<CreateNoteRequest> notes,
-        @Nullable List<CreateEvidenceRequest> evidence,
-        @Nullable List<String> attachedTicketIds,
-        @Nullable String severity,
-        @Nullable String status,
-        @Nullable Map<String, Object> data,
-        @Nullable String reason,
-        @Nullable Long duration
+    @Nullable String issuerName,
+    @Nullable String issuerId,
+    @NotNull Integer typeOrdinal,
+    @Nullable List<CreateNoteRequest> notes,
+    @Nullable List<CreateEvidenceRequest> evidence,
+    @Nullable List<String> attachedTicketIds,
+    @Nullable String severity,
+    @Nullable String status,
+    @Nullable Map<String, Object> data,
+    @Nullable String reason,
+    @Nullable Long duration
 ) {
 }

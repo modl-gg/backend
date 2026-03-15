@@ -1,15 +1,14 @@
 package gg.modl.backend.minecraft;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import gg.modl.backend.support.ApiClient;
 import gg.modl.backend.support.JsonHelper;
 import gg.modl.backend.support.StagingCredentials;
+import java.util.Map;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class MinecraftReportApiTest {
 
@@ -44,13 +43,15 @@ class MinecraftReportApiTest {
         var listResponse = api.minecraftGet("/v1/minecraft/reports?status=open&limit=1");
         var json = JsonHelper.parseObject(listResponse.body());
         var reports = json.getAsJsonArray("reports");
-        if (reports.isEmpty()) return;
+        if (reports.isEmpty()) {
+            return;
+        }
 
         String reportId = reports.get(0).getAsJsonObject().get("id").getAsString();
 
         var response = api.minecraftPost("/v1/minecraft/reports/" + reportId + "/dismiss", Map.of(
-                "dismissedBy", "TestBot",
-                "reason", "API test - dismissed for testing"
+            "dismissedBy", "TestBot",
+            "reason", "API test - dismissed for testing"
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -60,12 +61,14 @@ class MinecraftReportApiTest {
         var listResponse = api.minecraftGet("/v1/minecraft/reports?status=open&limit=1");
         var json = JsonHelper.parseObject(listResponse.body());
         var reports = json.getAsJsonArray("reports");
-        if (reports.isEmpty()) return;
+        if (reports.isEmpty()) {
+            return;
+        }
 
         String reportId = reports.get(0).getAsJsonObject().get("id").getAsString();
 
         var response = api.minecraftPost("/v1/minecraft/reports/" + reportId + "/assign", Map.of(
-                "assignee", "TestBot"
+            "assignee", "TestBot"
         ));
         JsonHelper.assertStatus(response, 200);
     }
@@ -75,13 +78,15 @@ class MinecraftReportApiTest {
         var listResponse = api.minecraftGet("/v1/minecraft/reports?status=open&limit=1");
         var json = JsonHelper.parseObject(listResponse.body());
         var reports = json.getAsJsonArray("reports");
-        if (reports.isEmpty()) return;
+        if (reports.isEmpty()) {
+            return;
+        }
 
         String reportId = reports.get(0).getAsJsonObject().get("id").getAsString();
 
         var response = api.minecraftPost("/v1/minecraft/reports/" + reportId + "/resolve", Map.of(
-                "resolvedBy", "TestBot",
-                "resolution", "API test - resolved for testing"
+            "resolvedBy", "TestBot",
+            "resolution", "API test - resolved for testing"
         ));
         JsonHelper.assertStatus(response, 200);
     }

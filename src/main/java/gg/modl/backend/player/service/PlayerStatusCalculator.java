@@ -8,14 +8,13 @@ import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
@@ -153,47 +152,10 @@ public class PlayerStatusCalculator {
         return new Date(baseDate.getTime() + duration);
     }
 
-    /**
-     * Determine the effective enforcement category for a punishment.
-     * Core types use isBan()/isMute()/isKick().
-     * Social/gameplay types use the DurationDetail for the stored severity and offense level.
-     * @return "BAN", "MUTE", or null (for kicks and unknown types)
-     */
-    public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
-        PunishmentType pt = types.stream()
-                .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
-                .findFirst()
-                .orElse(null);
-        return getEffectiveCategory(pt, punishment.getData());
-    }
-
-    /**
-     * Determine the effective enforcement category for a punishment type with given data.
-     * @return "BAN", "MUTE", or null
-     */
-    public String getEffectiveCategory(PunishmentType pt, Map<String, Object> data) {
-        if (pt == null) return null;
-        if (pt.isKick()) return null;
-        if (pt.isBan()) return "BAN";
-        if (pt.isMute()) return "MUTE";
-
-        // Social/gameplay types: determine from DurationDetail
-        if (data != null) {
-            String severity = data.get("severity") instanceof String s ? s : "regular";
-            String offenseLevel = data.get("offenseLevel") instanceof String s ? s : "normal";
-            DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
-            if (detail != null) {
-                if (detail.isBan()) return "BAN";
-                if (detail.isMute()) return "MUTE";
-            }
-        }
-        return null;
-    }
-
     private Optional<PunishmentType> findTypeByOrdinal(List<PunishmentType> types, int ordinal) {
         return types.stream()
-                .filter(t -> t.getOrdinal() == ordinal)
-                .findFirst();
+            .filter(t -> t.getOrdinal() == ordinal)
+            .findFirst();
     }
 
     private String getStatusFromPoints(int points) {
@@ -206,6 +168,68 @@ public class PlayerStatusCalculator {
         } else {
             return "Banned";
         }
+    }
+
+    /**
+     * Determine the effective enforcement category for a punishment.
+     * Core types use isBan()/isMute()/isKick().
+     * Social/gameplay types use the DurationDetail for the stored severity and offense level.
+     *
+     * @return "BAN", "MUTE", or null (for kicks and unknown types)
+     */
+    public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
+        PunishmentType pt = types.stream()
+            .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
+            .findFirst()
+            .orElse(null);
+        return getEffectiveCategory(pt, punishment.getData());
+    }
+
+    /**
+     * Determine the effective enforcement category for a punishment type with given data.
+     *
+     * @return "BAN", "MUTE", or null
+     */
+    public String getEffectiveCategory(PunishmentType pt, Map<String, Object> data) {
+        if (pt == null) {
+            return null;
+        }
+        if (pt.isKick()) {
+            return null;
+        }
+        if (pt.isBan()) {
+            return "BAN";
+        }
+        if (pt.isMute()) {
+            return "MUTE";
+        }
+
+        // Social/gameplay types: determine from DurationDetail
+        if (data != null) {
+            String severity = data.get("severity") instanceof String s ? s : "regular";
+            String offenseLevel;
+            if (data.get("offenseLevel") instanceof String s) {
+                offenseLevel = s;
+            } else {
+                String statusVal = data.get("status") instanceof String sv ? sv.toLowerCase() : "";
+                offenseLevel = switch (statusVal) {
+                    case "low" -> "first";
+                    case "medium" -> "medium";
+                    case "habitual" -> "habitual";
+                    default -> "first";
+                };
+            }
+            DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
+            if (detail != null) {
+                if (detail.isBan()) {
+                    return "BAN";
+                }
+                if (detail.isMute()) {
+                    return "MUTE";
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -242,10 +266,10 @@ public class PlayerStatusCalculator {
     }
 
     public record PlayerStatus(
-            String social,
-            String gameplay,
-            int socialPoints,
-            int gameplayPoints
+        String social,
+        String gameplay,
+        int socialPoints,
+        int gameplayPoints
     ) {
     }
 }

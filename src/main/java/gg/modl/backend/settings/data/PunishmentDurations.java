@@ -1,10 +1,15 @@
 package gg.modl.backend.settings.data;
 
 public record PunishmentDurations(
-        OffenseLevelDurations low,
-        OffenseLevelDurations regular,
-        OffenseLevelDurations severe
+    OffenseLevelDurations low,
+    OffenseLevelDurations regular,
+    OffenseLevelDurations severe
 ) {
+    public DurationDetail getDuration(String severity, String offenseLevel) {
+        OffenseLevelDurations severityDurations = getForSeverity(severity);
+        return severityDurations != null ? severityDurations.getForOffenseLevel(offenseLevel) : null;
+    }
+
     public OffenseLevelDurations getForSeverity(String severity) {
         return switch (severity.toLowerCase()) {
             case "low" -> low;
@@ -12,10 +17,5 @@ public record PunishmentDurations(
             case "severe" -> severe;
             default -> regular;
         };
-    }
-
-    public DurationDetail getDuration(String severity, String offenseLevel) {
-        OffenseLevelDurations severityDurations = getForSeverity(severity);
-        return severityDurations != null ? severityDurations.getForOffenseLevel(offenseLevel) : null;
     }
 }

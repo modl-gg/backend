@@ -12,11 +12,9 @@ import org.springframework.web.client.RestTemplate;
 @Slf4j
 public class CrafatarProxyService {
 
+    private final RestTemplate restTemplate;
     private static final String CRAFATAR_URL = "https://crafatar.com/avatars/%s?size=%d&overlay=%s";
     private static final String MINOTAR_FALLBACK_URL = "https://minotar.net/avatar/%s/%d";
-
-    private final RestTemplate restTemplate;
-
     private static final int MIN_AVATAR_SIZE = 8;
     private static final int MAX_AVATAR_SIZE = 512;
 
@@ -27,10 +25,10 @@ public class CrafatarProxyService {
         try {
             String url = String.format(CRAFATAR_URL, uuid, clampedSize, overlay);
             ResponseEntity<byte[]> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    null,
-                    byte[].class
+                url,
+                HttpMethod.GET,
+                null,
+                byte[].class
             );
 
             if (response.getBody() != null) {
@@ -44,10 +42,10 @@ public class CrafatarProxyService {
         try {
             String fallbackUrl = String.format(MINOTAR_FALLBACK_URL, uuid, clampedSize);
             ResponseEntity<byte[]> response = restTemplate.exchange(
-                    fallbackUrl,
-                    HttpMethod.GET,
-                    null,
-                    byte[].class
+                fallbackUrl,
+                HttpMethod.GET,
+                null,
+                byte[].class
             );
 
             return response.getBody();

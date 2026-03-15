@@ -1,77 +1,109 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.DynamicMongoTemplateProvider;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
-import lombok.RequiredArgsConstructor;
+import gg.modl.backend.util.IdGenerator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-
 @Service
-@RequiredArgsConstructor
 @Slf4j
-public class ApiKeySettingsService {
+public class ApiKeySettingsService extends AbstractSettingsService {
+    private final IdGenerator idGenerator;
+    private final ServerMongoRepository serverRepository;
     private static final String SETTINGS_TYPE_API_KEYS = "apiKeys";
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final String API_KEY_FIELD = "api_key";
 
-    private final DynamicMongoTemplateProvider mongoProvider;
+    public ApiKeySettingsService(SettingsMongoRepository settingsRepository, IdGenerator idGenerator,
+                                 ServerMongoRepository serverRepository) {
+        super(settingsRepository);
+        this.idGenerator = idGenerator;
+        this.serverRepository = serverRepository;
+    }
+
+    @Nullable
+    public Server findServerByApiKey(@NotNull String apiKey) {
+        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
+        if (server != null) {
+            return server;
+        }
+
+        return findServerByApiKeyInSettings(apiKey);
+    }
+
+    @Nullable
+    private Server findServerByApiKeyInSettings(@NotNull String apiKey) {
+        List<Server> servers = serverRepository.findAll();
+        for (Server server : servers) {
+            if (server.getDatabaseName() == null) {
+                continue;
+            }
+
+            String settingsApiKey = getApiKeyFromSettings(server);
+            if (apiKey.equals(settingsApiKey)) {
+                syncApiKeyToServer(server, settingsApiKey);
+                server.setApiKey(apiKey);
+                return server;
+            }
+        }
+
+        return null;
+    }
+
+    @Nullable
+    public String getApiKeyFromSettings(@NotNull Server server) {
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
+        if (settings == null || settings.getData() == null) {
+            return null;
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) settings.getData();
+        Object apiKey = data.get(API_KEY_FIELD);
+        return apiKey instanceof String ? (String) apiKey : null;
+    }
+
+    public void syncApiKeyToServer(@NotNull Server server, @NotNull String apiKey) {
+        serverRepository.updateApiKey(server.getId(), apiKey);
+    }
 
     public String generateApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = settings != null && settings.getData() != null
-                ? new HashMap<>((Map<String, Object>) settings.getData())
-                : new HashMap<>();
+                                   ? new HashMap<>((Map<String, Object>) settings.getData())
+                                   : new HashMap<>();
 
         String newApiKey = generateSecureApiKey();
         String fieldName = getFieldNameForType(keyType);
 
         data.put(fieldName, newApiKey);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_API_KEYS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return newApiKey;
     }
 
-    public String revealApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
+    private String generateSecureApiKey() {
+        return "modl_" + idGenerator.generateToken();
+    }
 
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
-
-        if (settings == null || settings.getData() == null) {
-            return null;
-        }
-
-        String fieldName = getFieldNameForType(keyType);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) settings.getData();
-        Object apiKey = data.get(fieldName);
-        return apiKey instanceof String ? (String) apiKey : null;
+    private String getFieldNameForType(String keyType) {
+        return switch (keyType.toLowerCase()) {
+            case "ticket" -> "ticket_api_key";
+            case "minecraft" -> "minecraft_api_key";
+            default -> "api_key";
+        };
     }
 
     public boolean deleteApiKey(Server server, String keyType) {
-        MongoTemplate template = mongoProvider.getFromDatabaseName(server.getDatabaseName());
-        Query query = new Query(Criteria.where("type").is(SETTINGS_TYPE_API_KEYS));
-
-        Settings settings = template.findOne(query, Settings.class, CollectionName.SETTINGS);
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return false;
@@ -86,12 +118,7 @@ public class ApiKeySettingsService {
         }
 
         data.remove(fieldName);
-
-        Update update = new Update()
-                .set("type", SETTINGS_TYPE_API_KEYS)
-                .set("data", data);
-
-        template.upsert(query, update, Settings.class, CollectionName.SETTINGS);
+        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return true;
     }
@@ -101,17 +128,17 @@ public class ApiKeySettingsService {
         return apiKey != null && !apiKey.isBlank();
     }
 
-    private String generateSecureApiKey() {
-        byte[] bytes = new byte[32];
-        SECURE_RANDOM.nextBytes(bytes);
-        return "modl_" + Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
+    public String revealApiKey(Server server, String keyType) {
+        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
-    private String getFieldNameForType(String keyType) {
-        return switch (keyType.toLowerCase()) {
-            case "ticket" -> "ticket_api_key";
-            case "minecraft" -> "minecraft_api_key";
-            default -> "api_key";
-        };
+        if (settings == null || settings.getData() == null) {
+            return null;
+        }
+
+        String fieldName = getFieldNameForType(keyType);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) settings.getData();
+        Object apiKey = data.get(fieldName);
+        return apiKey instanceof String ? (String) apiKey : null;
     }
 }

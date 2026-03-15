@@ -4,12 +4,12 @@ import java.util.List;
 import java.util.Map;
 
 public record UpdateTicketRequest(
-        String status,
-        Boolean locked,
-        AddReplyRequest newReply,
-        AddNoteRequest newNote,
-        List<String> tags,
-        Map<String, Object> data,
-        Boolean hidden
+    String status,
+    Boolean locked,
+    AddReplyRequest newReply,
+    AddNoteRequest newNote,
+    List<String> tags,
+    Map<String, Object> data,
+    Boolean hidden
 ) {
 }
