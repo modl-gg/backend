@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +25,9 @@ class AdminAnalyticsServiceTest {
     private MetricSnapshotMongoRepository metricSnapshotRepository;
 
     @Mock
+    private ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
+
+    @Mock
     private GlobalMongoAdminRepository globalMongoAdminRepository;
 
     @Mock
@@ -36,6 +40,7 @@ class AdminAnalyticsServiceTest {
         adminAnalyticsService = new AdminAnalyticsService(
             serverRepository,
             metricSnapshotRepository,
+            serverInstanceSnapshotRepository,
             globalMongoAdminRepository,
             adminServerService
         );

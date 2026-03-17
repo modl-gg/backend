@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
@@ -43,6 +44,9 @@ class MinecraftSyncServiceTest {
     private MigrationMongoRepository migrationRepository;
 
     @Mock
+    private ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
+
+    @Mock
     private PlayerStatusCalculator statusCalculator;
 
     @Mock
@@ -68,6 +72,7 @@ class MinecraftSyncServiceTest {
             ticketRepository,
             serverRepository,
             migrationRepository,
+            serverInstanceSnapshotRepository,
             statusCalculator,
             punishmentTypeService,
             punishmentLifecycleService,
@@ -89,7 +94,9 @@ class MinecraftSyncServiceTest {
             List.of(),
             "lobby",
             List.of(),
-            List.of()
+            List.of(),
+            null,
+            null
         );
 
         assertNotNull(response.get("timestamp"));

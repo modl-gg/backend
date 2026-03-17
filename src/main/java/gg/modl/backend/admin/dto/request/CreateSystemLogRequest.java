@@ -3,11 +3,13 @@ package gg.modl.backend.admin.dto.request;
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.Map;
 
 public record CreateSystemLogRequest(
     @NotBlank
+    @Pattern(regexp = "critical|error|warning|info|debug", message = "must be one of: critical, error, warning, info, debug")
     String level,
     @NotBlank
     @Size(max = RequestValidationLimits.SYSTEM_LOG_MESSAGE_MAX_LENGTH)

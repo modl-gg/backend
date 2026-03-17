@@ -15,7 +15,6 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.staff.data.Staff;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -26,7 +25,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.mongodb.core.query.Query;
 
 @ExtendWith(MockitoExtension.class)
 class DashboardServiceTest {
@@ -64,8 +62,7 @@ class DashboardServiceTest {
 
     @Test
     void getMinecraftStatsAggregatesRepositoryResults() {
-        Staff firstStaff = Staff.builder().assignedMinecraftUuid("uuid-1").build();
-        Staff secondStaff = Staff.builder().assignedMinecraftUuid("uuid-2").build();
+        List<String> staffUuids = List.of("uuid-1", "uuid-2");
 
         Player punishedPlayer = Player.builder()
             .minecraftUuid(UUID.fromString("11111111-1111-1111-1111-111111111111"))
@@ -79,10 +76,13 @@ class DashboardServiceTest {
             .punishments(List.of(punishment("inactive-ban", 2, "expired")))
             .build();
 
-        when(ticketRepository.count(eq(server), any(Query.class))).thenReturn(3L, 4L);
-        when(staffRepository.find(eq(server), any(Query.class))).thenReturn(List.of(firstStaff, secondStaff));
-        when(playerRepository.count(eq(server), any(Query.class))).thenReturn(2L, 12L, 50L);
-        when(playerRepository.find(eq(server), any(Query.class))).thenReturn(List.of(punishedPlayer, inactivePlayer));
+        when(ticketRepository.countUnresolvedReports(server)).thenReturn(3L);
+        when(ticketRepository.countUnresolvedTickets(server)).thenReturn(4L);
+        when(staffRepository.findAssignedMinecraftUuids(server)).thenReturn(staffUuids);
+        when(playerRepository.countOnlineByUuids(eq(server), eq(staffUuids))).thenReturn(2L);
+        when(playerRepository.countOnlinePlayers(server)).thenReturn(12L);
+        when(playerRepository.countAll(server)).thenReturn(50L);
+        when(playerRepository.findWithPunishmentsProjected(server)).thenReturn(List.of(punishedPlayer, inactivePlayer));
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of(
             punishmentType("Mute", 1, "Social"),
             punishmentType("Ban", 2, "Administrative")
