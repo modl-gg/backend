@@ -13,6 +13,7 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -92,7 +93,7 @@ public class PlayerService {
     }
 
     private String calculatePlayerStatus(Server server, Player player) {
-        List<Punishment> punishments = player.getPunishments() != null ? player.getPunishments() : List.of();
+        List<Punishment> punishments = player.getPunishments();
         for (Punishment punishment : punishments) {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
@@ -187,9 +188,10 @@ public class PlayerService {
         }
     }
 
-    public Optional<PlayerDetailResponse> getPlayerDetails(Server server, UUID minecraftUuid) {
-        return findByMinecraftUuid(server, minecraftUuid)
-            .map(player -> buildPlayerDetailResponse(server, player));
+    public PlayerDetailResponse getPlayerDetails(Server server, UUID minecraftUuid) {
+        Player player = findByMinecraftUuid(server, minecraftUuid)
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
+        return buildPlayerDetailResponse(server, player);
     }
 
     public Optional<Player> findByMinecraftUuid(Server server, UUID minecraftUuid) {
@@ -197,7 +199,7 @@ public class PlayerService {
     }
 
     private PlayerDetailResponse buildPlayerDetailResponse(Server server, Player player) {
-        List<Punishment> punishments = player.getPunishments() != null ? player.getPunishments() : List.of();
+        List<Punishment> punishments = player.getPunishments();
         PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, punishments);
 
         List<PunishmentResponse> punishmentResponses = punishments.stream()
@@ -340,10 +342,8 @@ public class PlayerService {
     }
 
     public Player addUsername(Server server, UUID minecraftUuid, String username) {
-        Player player = findByMinecraftUuid(server, minecraftUuid).orElse(null);
-        if (player == null) {
-            return null;
-        }
+        Player player = findByMinecraftUuid(server, minecraftUuid)
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
         ensureUsernames(player).add(new UsernameEntry(username, new Date()));
         playerRepository.replaceUsernames(server, player);
@@ -358,10 +358,8 @@ public class PlayerService {
     }
 
     public Player addNote(Server server, UUID minecraftUuid, String text, String issuerName, String issuerId) {
-        Player player = findByMinecraftUuid(server, minecraftUuid).orElse(null);
-        if (player == null) {
-            return null;
-        }
+        Player player = findByMinecraftUuid(server, minecraftUuid)
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
         NoteEntry entry = NoteEntry.builder()
             .id(IdGenerator.generateShortId())
@@ -384,12 +382,8 @@ public class PlayerService {
     }
 
     public Player addIp(Server server, UUID minecraftUuid, String ipAddress) {
-        Optional<Player> playerOpt = findByMinecraftUuid(server, minecraftUuid);
-        if (playerOpt.isEmpty()) {
-            return null;
-        }
-
-        Player player = playerOpt.get();
+        Player player = findByMinecraftUuid(server, minecraftUuid)
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
         addIpToPlayer(player, ipAddress, null);
         playerRepository.replaceIpAddresses(server, player);
         return player;

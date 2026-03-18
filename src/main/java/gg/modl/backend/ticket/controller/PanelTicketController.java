@@ -20,14 +20,17 @@ import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketSearchService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -41,6 +44,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKETS)
 @RequiredArgsConstructor
+@Validated
 public class PanelTicketController {
     private final TicketService ticketService;
     private final TicketSearchService ticketSearchService;
@@ -49,8 +53,8 @@ public class PanelTicketController {
 
     @GetMapping
     public ResponseEntity<PaginatedTicketsResponse> searchTickets(
-        @RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
+        @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(required = false) String search,
         @RequestParam(required = false) String status,
         @RequestParam(required = false) List<String> type,
@@ -108,9 +112,7 @@ public class PanelTicketController {
             subscriptionService.markTicketAsRead(server, id, staffEmail);
         }
 
-        return ticketService.getTicketById(server, id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(ticketService.getTicketById(server, id));
     }
 
     @PostMapping
@@ -132,17 +134,16 @@ public class PanelTicketController {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        return ticketService.updateTicket(server, id, updateRequest, staffEmail)
-            .map(ticket -> ResponseEntity.ok(Map.of(
-                "id", ticket.id(),
-                "status", ticket.status(),
-                "tags", ticket.tags(),
-                "notes", ticket.notes(),
-                "messages", ticket.messages(),
-                "data", ticket.data() != null ? ticket.data() : Map.of(),
-                "locked", ticket.locked()
-            )))
-            .orElse(ResponseEntity.notFound().build());
+        TicketResponse ticket = ticketService.updateTicket(server, id, updateRequest, staffEmail);
+        return ResponseEntity.ok(Map.of(
+            "id", ticket.id(),
+            "status", ticket.status(),
+            "tags", ticket.tags(),
+            "notes", ticket.notes(),
+            "messages", ticket.messages(),
+            "data", ticket.data() != null ? ticket.data() : Map.of(),
+            "locked", ticket.locked()
+        ));
     }
 
     @PostMapping("/{id}/notes")
@@ -153,9 +154,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketReplyService.addNote(server, id, noteRequest)
-            .map(note -> ResponseEntity.status(HttpStatus.CREATED).body(note))
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.status(HttpStatus.CREATED).body(ticketReplyService.addNote(server, id, noteRequest));
     }
 
     @PostMapping("/{id}/replies")
@@ -167,17 +166,13 @@ public class PanelTicketController {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
-
-        if (replyOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+        TicketReply reply = ticketReplyService.addReply(server, id, replyRequest);
 
         if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
             subscriptionService.ensureSubscription(server, id, staffEmail);
         }
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(replyOpt.get());
+        return ResponseEntity.status(HttpStatus.CREATED).body(reply);
     }
 
     @PostMapping("/{id}/tags")
@@ -188,9 +183,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketReplyService.addTag(server, id, tagRequest.tag())
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(ticketReplyService.addTag(server, id, tagRequest.tag()));
     }
 
     @DeleteMapping("/{id}/tags/{tag}")
@@ -201,9 +194,7 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketReplyService.removeTag(server, id, tag)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(ticketReplyService.removeTag(server, id, tag));
     }
 
     @GetMapping("/player/{uuid}")

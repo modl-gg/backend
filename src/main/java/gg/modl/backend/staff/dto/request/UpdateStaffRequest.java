@@ -1,9 +1,12 @@
 package gg.modl.backend.staff.dto.request;
 
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
+import org.springframework.lang.Nullable;
 
 public record UpdateStaffRequest(
-    @Email String email,
-    String role
+    @Nullable @Email @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email,
+    @Nullable @Size(max = RequestValidationLimits.STAFF_ROLE_MAX_LENGTH) String role
 ) {
 }

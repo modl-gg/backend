@@ -1,27 +1,28 @@
 package gg.modl.backend.ticket.dto.request;
 
+import gg.modl.backend.validation.RegExpConstants;
 import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
+import org.springframework.lang.Nullable;
 
 public record MinecraftCreateTicketRequest(
-    @NotBlank String creatorUuid,
-    String creatorName,
+    @NotBlank @Pattern(regexp = RegExpConstants.UUID) String creatorUuid,
+    @Nullable @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH) String creatorName,
     @NotBlank
     @Pattern(regexp = "(?i)^(bug|bug[ _-]?report|player|player[ _-]?report|chat|chat[ _-]?report|appeal|ban[ _-]?appeal|application|staff|staff[ _-]?application|apply|support|general[ _-]?support)$")
     String type,
-    String subject,
-    String description,
-    String reportedPlayerUuid,
-    String reportedPlayerName,
-    @Size(max = RequestValidationLimits.TICKET_MAX_CHAT_MESSAGES)
-    List<String> chatMessages,
-    List<String> tags,
-    @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")
+    @Nullable @Size(max = RequestValidationLimits.TICKET_SUBJECT_MAX_LENGTH) String subject,
+    @Nullable @Size(max = RequestValidationLimits.TICKET_DESCRIPTION_MAX_LENGTH) String description,
+    @Nullable @Pattern(regexp = RegExpConstants.UUID) String reportedPlayerUuid,
+    @Nullable @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH) String reportedPlayerName,
+    @Nullable @Size(max = RequestValidationLimits.MC_TICKET_CHAT_MESSAGES_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH) String> chatMessages,
+    @Nullable @Size(max = RequestValidationLimits.TICKET_TAGS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.TICKET_TAG_MAX_LENGTH) String> tags,
+    @Nullable @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")
     String priority,
-    String createdServer,
-    String replayUrl
+    @Nullable @Size(max = RequestValidationLimits.MC_CREATE_TICKET_SERVER_MAX_LENGTH) String createdServer,
+    @Nullable @Size(max = RequestValidationLimits.MC_CREATE_TICKET_REPLAY_URL_MAX_LENGTH) String replayUrl
 ) {
 }

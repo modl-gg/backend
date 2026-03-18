@@ -249,7 +249,7 @@ public class MinecraftPlayerService {
     }
 
     private List<Punishment> safePunishments(Player player) {
-        return player.getPunishments() != null ? player.getPunishments() : List.of();
+        return player.getPunishments();
     }
 
     public Map<String, Object> disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
@@ -881,7 +881,7 @@ public class MinecraftPlayerService {
     }
 
     private boolean isAlreadyPardoned(Punishment punishment) {
-        return punishment.getModifications() != null && punishment.getModifications()
+        return punishment.getModifications()
             .stream()
             .anyMatch(modification ->
                 "MANUAL_PARDON".equals(modification.type())

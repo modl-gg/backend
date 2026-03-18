@@ -15,9 +15,9 @@ public record AcknowledgeNotificationsRequest(
 
     @NotEmpty
     @Size(max = RequestValidationLimits.NOTIFICATION_ACK_MAX_IDS)
-    List<@NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> notificationIds,
+    List<@NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> notificationIds,
 
-    @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH)
+    @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH)
     String acknowledgedAt
 ) {
 }

@@ -40,7 +40,7 @@ public class IconUploadService {
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to read file"));
         } catch (RuntimeException e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file: " + e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to upload file"));
         }
     }
 

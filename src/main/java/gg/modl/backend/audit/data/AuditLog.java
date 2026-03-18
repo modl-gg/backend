@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -38,5 +39,6 @@ public class AuditLog {
     @Field("description")
     private String description;
     @Field("metadata")
-    private Map<String, Object> metadata;
+    @Builder.Default
+    private Map<String, Object> metadata = new HashMap<>();
 }

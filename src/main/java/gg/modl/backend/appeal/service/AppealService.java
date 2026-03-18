@@ -4,6 +4,7 @@ import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -75,10 +76,11 @@ public class AppealService {
         );
     }
 
-    public Optional<TicketResponse> getAppealById(Server server, String appealId) {
-        return ticketRepository.findByTicketId(server, appealId)
+    public TicketResponse getAppealById(Server server, String appealId) {
+        Ticket ticket = ticketRepository.findByTicketId(server, appealId)
             .filter(t -> t.getType() == TicketCategory.APPEAL)
-            .map(this::toTicketResponse);
+            .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
+        return toTicketResponse(ticket);
     }
 
     public TicketResponse createAppeal(Server server, CreateAppealRequest request) {
@@ -216,14 +218,10 @@ public class AppealService {
             .replaceFirst("^.", String.valueOf(Character.toUpperCase(key.charAt(0))));
     }
 
-    public Optional<TicketReply> addReply(Server server, String appealId, AddAppealReplyRequest request) {
-        Optional<Ticket> appealOpt = ticketRepository.findByTicketId(server, appealId);
-
-        if (appealOpt.isEmpty() || appealOpt.get().getType() != TicketCategory.APPEAL) {
-            return Optional.empty();
-        }
-
-        Ticket appeal = appealOpt.get();
+    public TicketReply addReply(Server server, String appealId, AddAppealReplyRequest request) {
+        Ticket appeal = ticketRepository.findByTicketId(server, appealId)
+            .filter(t -> t.getType() == TicketCategory.APPEAL)
+            .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
 
         if (appeal.isLocked()) {
             throw new IllegalStateException("Appeal is locked and cannot accept new replies");
@@ -243,17 +241,13 @@ public class AppealService {
 
         ticketRepository.pushReply(server, appealId, newReply);
 
-        return Optional.of(newReply);
+        return newReply;
     }
 
-    public Optional<TicketResponse> updateStatus(Server server, String appealId, UpdateAppealStatusRequest request) {
-        Optional<Ticket> appealOpt = ticketRepository.findByTicketId(server, appealId);
-
-        if (appealOpt.isEmpty() || appealOpt.get().getType() != TicketCategory.APPEAL) {
-            return Optional.empty();
-        }
-
-        Ticket appeal = appealOpt.get();
+    public TicketResponse updateStatus(Server server, String appealId, UpdateAppealStatusRequest request) {
+        Ticket appeal = ticketRepository.findByTicketId(server, appealId)
+            .filter(t -> t.getType() == TicketCategory.APPEAL)
+            .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
 
         List<TicketReply> systemReplies = new ArrayList<>();
         boolean statusChanged = false;
@@ -323,7 +317,7 @@ public class AppealService {
             addAppealRejectedNote(server, appeal, request.staffUsername());
         }
 
-        return Optional.of(toTicketResponse(appeal));
+        return toTicketResponse(appeal);
     }
 
     private boolean shouldRejectPunishment(AppealWorkflowStatus workflowStatus) {

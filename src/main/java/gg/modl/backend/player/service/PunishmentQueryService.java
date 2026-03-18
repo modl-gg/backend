@@ -449,12 +449,12 @@ public class PunishmentQueryService {
     }
 
     public Optional<Map<String, Object>> getPublicPunishmentWithAppealEligibility(Server server, String punishmentId) {
-        Optional<PunishmentResponse> punishmentOpt = getPunishmentById(server, punishmentId);
-        if (punishmentOpt.isEmpty()) {
+        PunishmentContext context = findPunishmentContext(server, punishmentId).orElse(null);
+        if (context == null) {
             return Optional.empty();
         }
 
-        PunishmentResponse punishment = punishmentOpt.get();
+        PunishmentResponse punishment = toPunishmentResponseWithPlayer(server, context.punishment(), context.player());
 
         if (punishment.started() == null) {
             return Optional.of(Map.of("error", "This punishment has not been started yet and cannot be appealed at this time."));
@@ -504,9 +504,10 @@ public class PunishmentQueryService {
         return Optional.of(response);
     }
 
-    public Optional<PunishmentResponse> getPunishmentById(Server server, String punishmentId) {
-        return findPunishmentContext(server, punishmentId)
-            .map(context -> toPunishmentResponseWithPlayer(server, context.punishment(), context.player()));
+    public PunishmentResponse getPunishmentById(Server server, String punishmentId) {
+        PunishmentContext context = findPunishmentContext(server, punishmentId)
+            .orElseThrow(() -> new gg.modl.backend.exception.ResourceNotFoundException("Punishment not found"));
+        return toPunishmentResponseWithPlayer(server, context.punishment(), context.player());
     }
 
     public enum PunishmentOperationStatus {

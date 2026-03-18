@@ -8,12 +8,16 @@ import gg.modl.backend.player.service.MinecraftChatLogService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class MinecraftChatLogController {
 
     private final MinecraftChatLogService minecraftChatLogService;
@@ -77,7 +82,7 @@ public class MinecraftChatLogController {
     @GetMapping("/{uuid}/chat-logs")
     public ResponseEntity<Map<String, Object>> getChatLogs(
         @PathVariable String uuid,
-        @RequestParam(defaultValue = "200") int limit,
+        @RequestParam(defaultValue = "200") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) int limit,
         HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         return ResponseEntity.ok(Map.of(
@@ -88,7 +93,7 @@ public class MinecraftChatLogController {
     @GetMapping("/{uuid}/command-logs")
     public ResponseEntity<Map<String, Object>> getCommandLogs(
         @PathVariable String uuid,
-        @RequestParam(defaultValue = "200") int limit,
+        @RequestParam(defaultValue = "200") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) int limit,
         HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         return ResponseEntity.ok(Map.of(

@@ -48,9 +48,7 @@ public class PanelAppealController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        return appealService.getAppealById(server, id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(appealService.getAppealById(server, id));
     }
 
     @PostMapping("/{id}/replies")
@@ -60,10 +58,7 @@ public class PanelAppealController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-
-        return appealService.addReply(server, id, replyRequest)
-            .map(reply -> ResponseEntity.status(HttpStatus.CREATED).body(reply))
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.status(HttpStatus.CREATED).body(appealService.addReply(server, id, replyRequest));
     }
 
     @PatchMapping("/{id}/status")
@@ -73,9 +68,6 @@ public class PanelAppealController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-
-        return appealService.updateStatus(server, id, statusRequest)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(appealService.updateStatus(server, id, statusRequest));
     }
 }

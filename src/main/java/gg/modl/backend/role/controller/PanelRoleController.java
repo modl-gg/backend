@@ -3,9 +3,8 @@ package gg.modl.backend.role.controller;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.data.Permission;
-import gg.modl.backend.role.dto.request.CreateRoleRequest;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
-import gg.modl.backend.role.dto.request.UpdateRoleRequest;
+import gg.modl.backend.role.dto.request.RoleRequest;
 import gg.modl.backend.role.dto.response.PermissionsResponse;
 import gg.modl.backend.role.dto.response.RoleListResponse;
 import gg.modl.backend.role.dto.response.RoleResponse;
@@ -67,7 +66,7 @@ public class PanelRoleController {
 
     @PostMapping
     public ResponseEntity<?> createRole(
-        @RequestBody @Valid CreateRoleRequest createRequest,
+        @RequestBody @Valid RoleRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -90,7 +89,7 @@ public class PanelRoleController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateRole(
         @PathVariable String id,
-        @RequestBody @Valid UpdateRoleRequest updateRequest,
+        @RequestBody @Valid RoleRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

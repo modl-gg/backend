@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -42,6 +43,9 @@ class TicketServiceTest {
     private TicketMongoRepository ticketRepository;
 
     @Mock
+    private StaffMongoRepository staffRepository;
+
+    @Mock
     private QuickResponseSettingsService quickResponseSettingsService;
 
     @Mock
@@ -55,7 +59,7 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, quickResponseSettingsService, notificationService, ticketIdGenerator);
+        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, notificationService, ticketIdGenerator);
         minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 
@@ -77,7 +81,8 @@ class TicketServiceTest {
             List.of("hello world"),
             List.of("report"),
             null,
-            "survival"
+            "survival",
+            null
         ));
 
         assertEquals(TicketCategory.CHAT, ticket.getType());
@@ -259,7 +264,7 @@ class TicketServiceTest {
             )
         );
 
-        assertTrue(response.isPresent());
+        assertNotNull(response);
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());

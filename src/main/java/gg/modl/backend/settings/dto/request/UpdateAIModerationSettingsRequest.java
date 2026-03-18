@@ -43,6 +43,7 @@ public record UpdateAIModerationSettingsRequest(
 
     public record AIPunishmentConfigRequest(
         @NotBlank
+        @Size(max = RequestValidationLimits.AI_PUNISHMENT_ID_MAX_LENGTH)
         String id,
         @NotBlank
         @Size(max = RequestValidationLimits.AI_PUNISHMENT_NAME_MAX_LENGTH)

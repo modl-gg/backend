@@ -21,6 +21,7 @@ import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import gg.modl.backend.util.DateRangeUtil;
 import gg.modl.backend.util.PlayerDataUtils;
 import java.util.ArrayList;
 import java.util.Date;
@@ -85,7 +86,7 @@ public class DashboardService {
         long totalPunishments = 0;
 
         for (Player player : playerRepository.findWithPunishmentsProjected(server)) {
-            if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
+            if (player.getPunishments().isEmpty()) {
                 continue;
             }
 
@@ -130,10 +131,8 @@ public class DashboardService {
     }
 
     public DashboardMetricsResponse getMetrics(Server server) {
-        long now = System.currentTimeMillis();
-        long thirtyDaysMs = 30L * 24 * 60 * 60 * 1000;
-        Date thirtyDaysAgo = new Date(now - thirtyDaysMs);
-        Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
+        Date thirtyDaysAgo = DateRangeUtil.daysAgo(30);
+        Date sixtyDaysAgo = DateRangeUtil.daysAgo(60);
 
         long totalTickets = ticketRepository.countAll(server);
         long openTickets = ticketRepository.countByStatus(server, TicketStatus.OPEN);
@@ -193,7 +192,7 @@ public class DashboardService {
 
     public List<RecentPunishmentResponse> getRecentPunishments(Server server, int limit) {
         int safeLimit = clampLimit(limit, MAX_RECENT_PUNISHMENTS_LIMIT);
-        Date cutoff = new Date(System.currentTimeMillis() - (RECENT_PUNISHMENT_WINDOW_DAYS * 24L * 60 * 60 * 1000));
+        Date cutoff = DateRangeUtil.daysAgo(RECENT_PUNISHMENT_WINDOW_DAYS);
 
         Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
         List<Document> punishmentRows = playerRepository.fetchRecentPunishmentRows(server, cutoff, safeLimit);
@@ -204,8 +203,6 @@ public class DashboardService {
             if (punishment == null || punishment.getIssued() == null || punishment.getIssued().before(cutoff)) {
                 continue;
             }
-
-            normalizePunishmentCollections(punishment);
 
             String reason = "";
             if (punishment.getData() != null && punishment.getData().get("reason") != null) {
@@ -255,20 +252,6 @@ public class DashboardService {
         return names;
     }
 
-    private void normalizePunishmentCollections(Punishment punishment) {
-        if (punishment.getModifications() == null) {
-            punishment.setModifications(new ArrayList<>());
-        }
-        if (punishment.getNotes() == null) {
-            punishment.setNotes(new ArrayList<>());
-        }
-        if (punishment.getEvidence() == null) {
-            punishment.setEvidence(new ArrayList<>());
-        }
-        if (punishment.getAttachedTicketIds() == null) {
-            punishment.setAttachedTicketIds(new ArrayList<>());
-        }
-    }
 
     public List<ActivityItemResponse> getRecentActivity(Server server, String staffEmail, int limit, int days) {
         List<ActivityItemResponse> activities = new ArrayList<>();
@@ -281,7 +264,7 @@ public class DashboardService {
             return activities;
         }
 
-        Date cutoffDate = new Date(System.currentTimeMillis() - (long) safeDays * 24 * 60 * 60 * 1000);
+        Date cutoffDate = DateRangeUtil.daysAgo(safeDays);
 
         fetchTicketActivities(server, staffUsername, cutoffDate, activities);
         fetchPunishmentActivities(server, staffUsername, cutoffDate, activities);
@@ -362,7 +345,6 @@ public class DashboardService {
                     continue;
                 }
 
-                normalizePunishmentCollections(punishment);
 
                 String username = PlayerDataUtils.extractLatestUsername(row.get(PlayerFields.USERNAMES));
                 String punishmentTypeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");

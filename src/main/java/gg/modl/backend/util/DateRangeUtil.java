@@ -24,4 +24,22 @@ public class DateRangeUtil {
     public Date daysAgo(int days) {
         return new Date(System.currentTimeMillis() - days * DAY_MS);
     }
+
+    public Date parseEpochMillis(String value) {
+        return value == null ? null : new Date(Long.parseLong(value));
+    }
+
+    public int resolveRangeDays(String range) {
+        String normalized = (range == null || range.isBlank()) ? "30d" : range;
+        return switch (normalized) {
+            case "7d" -> 7;
+            case "90d" -> 90;
+            case "365d", "1y" -> 365;
+            default -> 30;
+        };
+    }
+
+    public String normalizeAllFilter(String value) {
+        return "all".equalsIgnoreCase(value) ? null : value;
+    }
 }

@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.data;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -20,6 +21,7 @@ public class TicketReply {
     private Date created;
     private boolean staff;
     private String action;
-    private List<Object> attachments;
+    @Builder.Default
+    private List<Object> attachments = new ArrayList<>();
     private String creatorIdentifier;
 }

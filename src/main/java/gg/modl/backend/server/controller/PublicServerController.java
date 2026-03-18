@@ -57,10 +57,10 @@ public class PublicServerController {
         return ResponseEntity.ok(new RegisterResponse(true, ServerResponseMessage.REGISTER_SUCCESS));
     }
 
-    public record RegisterRequest(@Email @NotBlank String email,
+    public record RegisterRequest(@Email @NotBlank @Size(max = 254) String email,
                                   @Size(min = 3, max = 50) @NotBlank @Pattern(regexp = "^[a-zA-Z0-9 -]+$") String serverName,
                                   @Size(min = 3, max = 20) @NotBlank @Pattern(regexp = "^[a-z0-9-]+$") String customDomain,
-                                  @NotBlank String turnstileToken) {}
+                                  @NotBlank @Size(max = 4096) String turnstileToken) {}
 
     public record RegisterResponse(boolean success, String message) {}
 }

@@ -12,9 +12,11 @@ import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
@@ -165,9 +167,9 @@ public class AdminAuthController {
     }
 
     // Request/Response records
-    public record RequestCodeRequest(@Email @NotBlank String email) {}
+    public record RequestCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
 
-    public record LoginRequest(@Email @NotBlank String email, @NotBlank String code) {}
+    public record LoginRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email, @NotBlank @Size(max = RequestValidationLimits.TICKET_VERIFY_CODE_MAX_LENGTH) String code) {}
 
     public record ApiResponse(boolean success, String message) {}
 

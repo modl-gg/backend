@@ -6,7 +6,10 @@ import gg.modl.backend.admin.dto.request.ResolveLogRequest;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository.MonitoringServerStats;
+import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository.MonitoringLogStats;
 import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.util.DateRangeUtil;
 import gg.modl.backend.util.PaginationHelper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -34,31 +37,17 @@ public class AdminMonitoringService {
         Date oneWeekAgo = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
         Date fiveMinutesAgo = Date.from(Instant.now().minus(5, ChronoUnit.MINUTES));
 
-        long totalServers = serverRepository.countAll();
-        long activeServers = serverRepository.countCompletedAndVerified();
-        long concurrentServers = serverRepository.countActiveSince(fiveMinutesAgo);
-        long concurrentPlayers = serverRepository.sumOnlinePlayersSince(fiveMinutesAgo);
-        long pendingServers = serverRepository.countByProvisioningStatuses(ProvisioningStatus.PENDING, ProvisioningStatus.IN_PROGRESS);
-        long failedServers = serverRepository.countByProvisioningStatus(ProvisioningStatus.FAILED);
-
-        long criticalLogs24h = systemLogRepository.countByLevelSince("critical", oneDayAgo);
-        long errorLogs24h = systemLogRepository.countByLevelSince("error", oneDayAgo);
-        long warningLogs24h = systemLogRepository.countByLevelSince("warning", oneDayAgo);
-        long totalLogs24h = systemLogRepository.countSince(oneDayAgo);
-
-        long unresolvedCritical = systemLogRepository.countUnresolvedByLevel("critical");
-        long unresolvedErrors = systemLogRepository.countUnresolvedByLevel("error");
-
-        long recentServers = serverRepository.countCreatedSince(oneWeekAgo);
+        MonitoringServerStats serverStats = serverRepository.aggregateMonitoringServerStats(fiveMinutesAgo, oneWeekAgo);
+        MonitoringLogStats logStats = systemLogRepository.aggregateMonitoringLogStats(oneDayAgo);
 
         int healthScore = calculateHealthScore(
-            totalServers,
-            activeServers,
-            failedServers,
-            criticalLogs24h,
-            errorLogs24h,
-            unresolvedCritical,
-            unresolvedErrors
+            serverStats.total(),
+            serverStats.active(),
+            serverStats.failed(),
+            logStats.critical24h(),
+            logStats.error24h(),
+            logStats.unresolvedCritical(),
+            logStats.unresolvedError()
         );
         String healthStatus = healthScore >= 95 ? "excellent"
                                                 : healthScore >= 85 ? "good"
@@ -69,24 +58,24 @@ public class AdminMonitoringService {
             "success", true,
             "data", Map.of(
                 "servers", Map.of(
-                    "total", totalServers,
-                    "active", activeServers,
-                    "pending", pendingServers,
-                    "failed", failedServers,
-                    "recentRegistrations", recentServers,
-                    "concurrentServers", concurrentServers,
-                    "concurrentPlayers", concurrentPlayers
+                    "total", serverStats.total(),
+                    "active", serverStats.active(),
+                    "pending", serverStats.pending(),
+                    "failed", serverStats.failed(),
+                    "recentRegistrations", serverStats.recentRegistrations(),
+                    "concurrentServers", serverStats.concurrent(),
+                    "concurrentPlayers", serverStats.concurrentPlayers()
                 ),
                 "logs", Map.of(
                     "last24h", Map.of(
-                        "total", totalLogs24h,
-                        "critical", criticalLogs24h,
-                        "error", errorLogs24h,
-                        "warning", warningLogs24h
+                        "total", logStats.total24h(),
+                        "critical", logStats.critical24h(),
+                        "error", logStats.error24h(),
+                        "warning", logStats.warning24h()
                     ),
                     "unresolved", Map.of(
-                        "critical", unresolvedCritical,
-                        "error", unresolvedErrors
+                        "critical", logStats.unresolvedCritical(),
+                        "error", logStats.unresolvedError()
                     )
                 ),
                 "systemHealth", Map.of("score", healthScore, "status", healthStatus),
@@ -125,8 +114,8 @@ public class AdminMonitoringService {
         int pageNum = PaginationHelper.normalizePage(page);
         int limitNum = PaginationHelper.normalizeLimit(limit, 100);
         int skip = PaginationHelper.calculateSkip(page, limitNum);
-        Date start = parseEpochMillis(startDate);
-        Date end = parseEpochMillis(endDate);
+        Date start = DateRangeUtil.parseEpochMillis(startDate);
+        Date end = DateRangeUtil.parseEpochMillis(endDate);
 
         List<SystemLog> logs = systemLogRepository.findLogs(
             level,
@@ -160,15 +149,11 @@ public class AdminMonitoringService {
                     "page", pageNum,
                     "limit", limitNum,
                     "total", total,
-                    "pages", (int) Math.ceil((double) total / limitNum)
+                    "pages", PaginationHelper.calculateTotalPages(total, limitNum)
                 ),
                 "filters", filters
             )
         );
-    }
-
-    private Date parseEpochMillis(String value) {
-        return value == null ? null : new Date(Long.parseLong(value));
     }
 
     public SystemLog createLog(CreateSystemLogRequest request) {
@@ -278,14 +263,14 @@ public class AdminMonitoringService {
         String endDate
     ) {
         List<SystemLog> logs = systemLogRepository.findLogsForExport(
-            normalizeAllFilter(level),
-            normalizeAllFilter(source),
+            DateRangeUtil.normalizeAllFilter(level),
+            DateRangeUtil.normalizeAllFilter(source),
             null,
-            normalizeAllFilter(category),
-            normalizeAllFilter(resolved),
+            DateRangeUtil.normalizeAllFilter(category),
+            DateRangeUtil.normalizeAllFilter(resolved),
             search,
-            parseEpochMillis(startDate),
-            parseEpochMillis(endDate),
+            DateRangeUtil.parseEpochMillis(startDate),
+            DateRangeUtil.parseEpochMillis(endDate),
             10000
         );
 
@@ -300,10 +285,6 @@ public class AdminMonitoringService {
             csv.append("\"").append(logEntry.getResolvedBy() != null ? logEntry.getResolvedBy() : "").append("\"\n");
         }
         return csv.toString();
-    }
-
-    private String normalizeAllFilter(String value) {
-        return "all".equalsIgnoreCase(value) ? null : value;
     }
 
     public long clearAllLogs() {

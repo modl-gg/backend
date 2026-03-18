@@ -2,6 +2,7 @@ package gg.modl.backend.analytics.data;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -19,10 +20,10 @@ public class ServerInstanceSnapshot {
     private String id;
 
     @Field
-    private Date date; // truncated to 5-min boundary
+    private Date date;
 
     @Field
-    private List<ServerEntry> servers;
+    private List<ServerEntry> servers = new ArrayList<>();
 
     @Field
     private Date createdAt;
@@ -34,9 +35,9 @@ public class ServerInstanceSnapshot {
         private String serverId;
         private String serverName;
         private int playerCount;
-        private String platform; // "spigot", "velocity", "bungee"
-        private String version;  // e.g. "1.21", "3.3.0"
+        private String platform;
+        private String version;
         private String ipAddress;
-        private String pluginVersion; // modl plugin version e.g. "2.0.5"
+        private String pluginVersion;
     }
 }

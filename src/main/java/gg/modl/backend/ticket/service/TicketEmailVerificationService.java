@@ -51,7 +51,7 @@ public class TicketEmailVerificationService {
             EmailHTMLTemplate.HTMLEmail emailContent = EmailHTMLTemplate.TICKET_VERIFICATION_CODE.build(serverName, code);
             emailService.send(email, emailContent);
         } catch (Exception e) {
-            log.error("Failed to send verification code email for ticket {}: {}", ticket.getId(), e.getMessage());
+            log.error("Failed to send verification code email for ticket {}", ticket.getId(), e);
             throw new ExternalServiceException("Failed to send verification email", e);
         }
 
@@ -82,7 +82,7 @@ public class TicketEmailVerificationService {
             byte[] hash = digest.digest(code.getBytes());
             return HexFormat.of().formatHex(hash);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to hash code", e);
+            throw new ExternalServiceException("Failed to hash code", e);
         }
     }
 

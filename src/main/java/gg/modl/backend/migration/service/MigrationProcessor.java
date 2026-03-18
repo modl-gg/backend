@@ -191,7 +191,7 @@ public class MigrationProcessor {
                 }
                 processed++;
             } catch (Exception e) {
-                log.warn("Error processing player {}: {}", uuid, e.getMessage());
+                log.warn("Error processing player {}", uuid, e);
                 skipped++;
             }
         }
@@ -221,7 +221,7 @@ public class MigrationProcessor {
 
             return player;
         } catch (Exception e) {
-            log.warn("Error building new player for UUID {}: {}", uuid, e.getMessage());
+            log.warn("Error building new player for UUID {}", uuid, e);
             return null;
         }
     }

@@ -2,6 +2,7 @@ package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
 import gg.modl.backend.replay.data.ReplayDocument;
+import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.backend.replay.dto.InitReplayUploadResponse;
 import gg.modl.backend.replay.dto.PublicReplayResponse;
 import gg.modl.backend.server.data.Server;
@@ -9,6 +10,7 @@ import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -70,12 +72,25 @@ public class ReplayService {
         replayRepository.saveEntity(server, doc);
 
         if (exists) {
-            log.info("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
+            log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
         } else {
             log.warn("Replay {} upload not found in storage for server {}", replayId, server.getDatabaseName());
         }
 
         return exists;
+    }
+
+    public boolean submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
+        Optional<ReplayDocument> opt = replayRepository.findByReplayId(server, replayId);
+        if (opt.isEmpty()) {
+            return false;
+        }
+
+        ReplayDocument doc = opt.get();
+        doc.setLabels(labels);
+        replayRepository.saveEntity(server, doc);
+        log.debug("Saved {} labels for replay {} on server {}", labels.size(), replayId, server.getDatabaseName());
+        return true;
     }
 
     public Optional<PublicReplayResponse> getPublicReplay(Server server, String replayId) {

@@ -216,8 +216,7 @@ public class StaffService {
     public List<MinecraftStaffSummaryResponse> getMinecraftStaffSummary(Server server) {
         List<Staff> allStaff = staffRepository.findAll(server);
 
-        Map<String, Long> playerPlaytimeMap = loadPlayerPlaytimeMap(server, allStaff);
-        Map<String, String> playerLastServerMap = loadPlayerLastServerMap(server, allStaff);
+        PlayerStaffData playerStaffData = loadPlayerStaffData(server, allStaff);
         Map<String, Integer> punishmentCounts = loadPunishmentCounts(server);
         Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, allStaff);
 
@@ -239,8 +238,8 @@ public class StaffService {
                     staff.getAssignedMinecraftUsername(),
                     permissionsByRole.getOrDefault(staff.getRole(), List.of()),
                     staff.getLastSeen(),
-                    playerPlaytimeMap.getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
-                    playerLastServerMap.get(staff.getAssignedMinecraftUuid()),
+                    playerStaffData.playtimeMap().getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
+                    playerStaffData.lastServerMap().get(staff.getAssignedMinecraftUuid()),
                     punishmentsIssuedCount,
                     staff.getCreatedAt(),
                     staff.getUpdatedAt()
@@ -249,7 +248,9 @@ public class StaffService {
             .toList();
     }
 
-    private Map<String, Long> loadPlayerPlaytimeMap(Server server, List<Staff> allStaff) {
+    private record PlayerStaffData(Map<String, Long> playtimeMap, Map<String, String> lastServerMap) {}
+
+    private PlayerStaffData loadPlayerStaffData(Server server, List<Staff> allStaff) {
         List<String> assignedUuids = allStaff.stream()
             .map(Staff::getAssignedMinecraftUuid)
             .filter(uuid -> uuid != null && !uuid.isBlank())
@@ -257,52 +258,38 @@ public class StaffService {
             .toList();
 
         if (assignedUuids.isEmpty()) {
-            return Map.of();
+            return new PlayerStaffData(Map.of(), Map.of());
         }
 
-        Map<String, Long> playerPlaytimeMap = new HashMap<>();
+        Map<String, Long> playtimeMap = new HashMap<>();
+        Map<String, String> lastServerMap = new HashMap<>();
+
         for (Player player : playerRepository.findByMinecraftUuids(server, assignedUuids)) {
             if (player.getMinecraftUuid() == null || player.getData() == null) {
                 continue;
             }
+
+            String uuid = player.getMinecraftUuid().toString();
 
             Object playtimeObj = player.getData().get("totalPlaytimeSeconds");
             if (playtimeObj instanceof Number playtimeSeconds) {
-                playerPlaytimeMap.put(player.getMinecraftUuid().toString(), playtimeSeconds.longValue() * 1000L);
-            }
-        }
-        return playerPlaytimeMap;
-    }
-
-    private Map<String, String> loadPlayerLastServerMap(Server server, List<Staff> allStaff) {
-        List<String> assignedUuids = allStaff.stream()
-            .map(Staff::getAssignedMinecraftUuid)
-            .filter(uuid -> uuid != null && !uuid.isBlank())
-            .distinct()
-            .toList();
-
-        if (assignedUuids.isEmpty()) {
-            return Map.of();
-        }
-
-        Map<String, String> playerLastServerMap = new HashMap<>();
-        for (Player player : playerRepository.findByMinecraftUuids(server, assignedUuids)) {
-            if (player.getMinecraftUuid() == null || player.getData() == null) {
-                continue;
+                playtimeMap.put(uuid, playtimeSeconds.longValue() * 1000L);
             }
 
             Object lastServerObj = player.getData().get("lastServer");
             if (lastServerObj instanceof String lastServer) {
-                playerLastServerMap.put(player.getMinecraftUuid().toString(), lastServer);
+                lastServerMap.put(uuid, lastServer);
             }
         }
-        return playerLastServerMap;
+
+        return new PlayerStaffData(playtimeMap, lastServerMap);
     }
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {
         try {
             return playerRepository.countPunishmentsByIssuerName(server);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to load punishment counts for server {}", server.getDatabaseName(), e);
             return Map.of();
         }
     }

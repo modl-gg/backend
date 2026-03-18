@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,6 +33,7 @@ public class AdminServerService {
         return serverRepository.countAdminServers(search, plan, status);
     }
 
+    @Async
     public void refreshUsageStatsForActiveServers(int maxServers) {
         int boundedLimit = Math.max(1, Math.min(maxServers, 500));
         Date now = new Date();
@@ -168,14 +170,14 @@ public class AdminServerService {
     public long bulkActivate(List<String> serverIds) {
         long modified = serverRepository.bulkActivate(serverIds, new Date());
 
-        for (String id : serverIds) {
+        List<Server> servers = serverRepository.findProvisioningCandidatesByIds(serverIds);
+        for (Server server : servers) {
             try {
-                Server server = serverRepository.findById(id).orElse(null);
-                if (server != null && server.getDatabaseName() != null) {
+                if (server.getDatabaseName() != null) {
                     provisioningService.provision(server);
                 }
             } catch (Exception e) {
-                log.warn("Failed to provision server {}: {}", id, e.getMessage());
+                log.warn("Failed to provision server {}", server.getId(), e);
             }
         }
 

@@ -7,11 +7,15 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.dto.response.SubscriptionUpdateResponse;
 import gg.modl.backend.ticket.dto.response.TicketSubscriptionResponse;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)
 @RequiredArgsConstructor
+@Validated
 public class TicketSubscriptionController {
     private final TicketSubscriptionService subscriptionService;
 
@@ -51,16 +56,15 @@ public class TicketSubscriptionController {
             throw new UnauthorizedException("Not authenticated");
         }
 
-        boolean result = subscriptionService.unsubscribe(server, staffEmail, ticketId);
-        if (result) {
-            return ResponseEntity.ok(Map.of("message", "Successfully unsubscribed from ticket"));
+        if (!subscriptionService.unsubscribe(server, staffEmail, ticketId)) {
+            throw new gg.modl.backend.exception.ResourceNotFoundException("Subscription not found");
         }
-        return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(Map.of("message", "Successfully unsubscribed from ticket"));
     }
 
     @GetMapping("/updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getUpdates(
-        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -108,7 +112,7 @@ public class TicketSubscriptionController {
 
     @GetMapping("/assigned-updates")
     public ResponseEntity<List<SubscriptionUpdateResponse>> getAssignedUpdates(
-        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

@@ -2,6 +2,7 @@ package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -53,7 +54,7 @@ class MinecraftChatLogServiceTest {
     @Test
     void getCommandLogsMapsTypedDocumentsToApiView() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(commandLogRepository.find(any(Server.class), any())).thenReturn(List.of(
+        when(commandLogRepository.findByUuidRecent(any(Server.class), any(), anyInt())).thenReturn(List.of(
             CommandLogDocument.builder()
                 .uuid("uuid-2")
                 .username("PlayerTwo")

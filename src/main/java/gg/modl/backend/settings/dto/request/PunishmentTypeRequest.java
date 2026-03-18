@@ -10,6 +10,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record PunishmentTypeRequest(
@@ -20,6 +21,8 @@ public record PunishmentTypeRequest(
     )
     String name,
     @NotBlank
+    @Pattern(regexp = "(?i)Administrative|Social|Gameplay", message = "must be one of: Administrative, Social, Gameplay")
+    @Size(max = RequestValidationLimits.PUNISHMENT_CATEGORY_MAX_LENGTH)
     String category,
     @Valid
     PunishmentDurations durations,

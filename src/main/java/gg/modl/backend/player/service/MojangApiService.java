@@ -44,7 +44,7 @@ public class MojangApiService {
 
             return parseProfile(response.body());
         } catch (Exception e) {
-            log.warn("Mojang API lookup by username '{}' failed: {}", username, e.getMessage());
+            log.warn("Mojang API lookup by username '{}' failed", username, e);
             return Optional.empty();
         }
     }
@@ -92,7 +92,7 @@ public class MojangApiService {
 
             return parseProfile(response.body());
         } catch (Exception e) {
-            log.warn("Mojang API lookup by UUID '{}' failed: {}", uuid, e.getMessage());
+            log.warn("Mojang API lookup by UUID '{}' failed", uuid, e);
             return Optional.empty();
         }
     }

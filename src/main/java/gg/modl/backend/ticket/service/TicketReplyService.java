@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketNote;
@@ -10,7 +11,6 @@ import gg.modl.backend.ticket.dto.request.AddReplyRequest;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,11 +21,9 @@ public class TicketReplyService {
     private final TicketMongoRepository ticketRepository;
     private final TicketNotificationService notificationService;
 
-    public Optional<TicketReply> addReply(Server server, String ticketId, AddReplyRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public TicketReply addReply(Server server, String ticketId, AddReplyRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         if (ticket.isLocked()) {
             throw new IllegalStateException("Ticket is locked and cannot accept new replies");
@@ -51,14 +49,12 @@ public class TicketReplyService {
             notificationService.notifyTicketReply(server, saved, newReply);
         }
 
-        return Optional.of(newReply);
+        return newReply;
     }
 
-    public Optional<TicketNote> addNote(Server server, String ticketId, AddNoteRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public TicketNote addNote(Server server, String ticketId, AddNoteRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         TicketNote newNote = TicketNote.builder()
             .text(request.text())
@@ -70,14 +66,12 @@ public class TicketReplyService {
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
 
-        return Optional.of(newNote);
+        return newNote;
     }
 
-    public Optional<List<String>> addTag(Server server, String ticketId, String tag) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public List<String> addTag(Server server, String ticketId, String tag) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (!tags.contains(tag)) {
@@ -87,14 +81,12 @@ public class TicketReplyService {
             ticketRepository.saveEntity(server, ticket);
         }
 
-        return Optional.of(tags);
+        return tags;
     }
 
-    public Optional<List<String>> removeTag(Server server, String ticketId, String tag) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public List<String> removeTag(Server server, String ticketId, String tag) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (tags.remove(tag)) {
@@ -103,7 +95,7 @@ public class TicketReplyService {
             ticketRepository.saveEntity(server, ticket);
         }
 
-        return Optional.of(tags);
+        return tags;
     }
 
 }

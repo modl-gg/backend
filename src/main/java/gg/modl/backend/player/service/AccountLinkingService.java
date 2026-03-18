@@ -164,14 +164,9 @@ public class AccountLinkingService {
         if (!linkedUuids.isEmpty()) {
             updateLinkedAccounts(server, player, linkedUuids);
 
-            for (String linkedUuid : linkedUuids) {
-                try {
-                    Player linkedPlayer = findPlayerByUuid(server, UUID.fromString(linkedUuid));
-                    if (linkedPlayer != null) {
-                        updateLinkedAccounts(server, linkedPlayer, Set.of(playerUuid.toString()));
-                    }
-                } catch (IllegalArgumentException ignored) {
-                }
+            List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, linkedUuids);
+            for (Player linkedPlayer : linkedPlayers) {
+                updateLinkedAccounts(server, linkedPlayer, Set.of(playerUuid.toString()));
             }
         }
 

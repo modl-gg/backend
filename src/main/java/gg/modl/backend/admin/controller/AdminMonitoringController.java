@@ -7,11 +7,15 @@ import gg.modl.backend.admin.dto.request.ResolveLogRequest;
 import gg.modl.backend.admin.dto.request.TogglePm2Request;
 import gg.modl.backend.admin.service.AdminMonitoringService;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.Date;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.ADMIN_MONITORING)
 @RequiredArgsConstructor
+@Validated
 public class AdminMonitoringController {
     private final AdminMonitoringService adminMonitoringService;
 
@@ -34,8 +39,8 @@ public class AdminMonitoringController {
 
     @GetMapping("/logs")
     public ResponseEntity<?> getLogs(
-        @RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
+        @RequestParam(defaultValue = "50") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(required = false) String level,
         @RequestParam(required = false) String source,
         @RequestParam(required = false) String serverId,

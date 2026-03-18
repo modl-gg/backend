@@ -26,12 +26,8 @@ public class PublicPunishmentController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        var resultOpt = punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, punishmentId);
-        if (resultOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
-
-        Map<String, Object> result = resultOpt.get();
+        var result = punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, punishmentId)
+            .orElseThrow(() -> new gg.modl.backend.exception.ResourceNotFoundException("Punishment not found"));
         if (result.containsKey("error")) {
             return ResponseEntity.badRequest().body(result);
         }

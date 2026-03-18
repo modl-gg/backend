@@ -13,7 +13,6 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,9 +36,8 @@ public class PublicAppealController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return appealService.getAppealById(server, id)
-            .map(appeal -> ResponseEntity.ok((Object) PublicAppealResponse.fromTicketResponse(appeal)))
-            .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
+        TicketResponse appeal = appealService.getAppealById(server, id);
+        return ResponseEntity.ok((Object) PublicAppealResponse.fromTicketResponse(appeal));
     }
 
     @PostMapping
@@ -76,16 +74,12 @@ public class PublicAppealController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<TicketReply> replyOpt = appealService.addReply(server, id, replyRequest);
-
-        if (replyOpt.isEmpty()) {
-            throw new ResourceNotFoundException("Appeal not found");
-        }
+        TicketReply reply = appealService.addReply(server, id, replyRequest);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
             "success", true,
             "message", "Reply added successfully",
-            "reply", replyOpt.get()
+            "reply", reply
         ));
     }
 }

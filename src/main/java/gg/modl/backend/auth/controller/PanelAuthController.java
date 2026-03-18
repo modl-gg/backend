@@ -16,9 +16,11 @@ import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Collections;
@@ -283,13 +285,17 @@ public class PanelAuthController {
 
     public record AuthResponse(boolean success, String message) {}
 
-    public record SendEmailCodeRequest(@Email @NotBlank String email) {}
+    public record SendEmailCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
 
-    public record VerifyCodeRequest(@Email @NotBlank String email, @NotBlank String code) {}
+    public record VerifyCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email, @NotBlank @Size(max = RequestValidationLimits.TICKET_VERIFY_CODE_MAX_LENGTH) String code) {}
 
-    public record UpdateProfileRequest(String username, String language, String dateFormat) {}
+    public record UpdateProfileRequest(
+        @Size(max = RequestValidationLimits.STAFF_USERNAME_MAX_LENGTH) String username,
+        @Size(max = RequestValidationLimits.ADMIN_DEFAULT_LANGUAGE_MAX_LENGTH) String language,
+        @Size(max = RequestValidationLimits.TIMEZONE_MAX_LENGTH) String dateFormat
+    ) {}
 
-    public record UpdateEmailRequest(@Email @NotBlank String newEmail) {}
+    public record UpdateEmailRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String newEmail) {}
 
     public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
 

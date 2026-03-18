@@ -28,6 +28,7 @@ public class RateLimitConfig {
         "/appeals", "/tickets"
     );
     private static final List<PathRule> PREFIX_RULES = List.of(
+        new PathRule("/v1/webhooks/", RateLimitTier.WEBHOOK),
         new PathRule("/v1/minecraft/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
@@ -153,6 +154,7 @@ public class RateLimitConfig {
         AUTH_SEND_CODE(2, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
+        WEBHOOK(50, Duration.ofMinutes(1)),
         MIGRATION(5, Duration.ofHours(1)),
         MIGRATION_STATUS(60, Duration.ofMinutes(1));
 

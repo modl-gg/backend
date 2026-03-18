@@ -32,7 +32,7 @@ class RequestDtoValidationTest {
             "message",
             "monitor",
             "infra",
-            null,
+            "server-1",
             Map.of("cpu", 95)
         );
 

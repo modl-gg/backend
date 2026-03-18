@@ -7,8 +7,13 @@ import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
 import gg.modl.backend.staff.service.StaffService;
 import jakarta.servlet.http.HttpServletRequest;
+import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -92,11 +97,11 @@ public class MinecraftStaffController {
     }
 
     public record UpdateRoleRequest(
-        @NotBlank String role
+        @NotBlank @Size(max = RequestValidationLimits.STAFF_ROLE_MAX_LENGTH) String role
     ) {}
 
     public record StaffDisconnectRequest(
-        @NotBlank String minecraftUuid,
-        long sessionDurationMs
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+        @Min(0) long sessionDurationMs
     ) {}
 }

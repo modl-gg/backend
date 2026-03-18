@@ -7,14 +7,18 @@ import gg.modl.backend.ticket.dto.request.AssignReportRequest;
 import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,13 +31,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_REPORTS)
 @RequiredArgsConstructor
+@Validated
 public class MinecraftReportsController {
     private final MinecraftTicketService minecraftTicketService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllReports(
         @RequestParam(defaultValue = "open") String status,
-        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "50") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -92,7 +97,7 @@ public class MinecraftReportsController {
     public ResponseEntity<Map<String, Object>> getPlayerReports(
         @PathVariable String uuid,
         @RequestParam(defaultValue = "all") String status,
-        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "50") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);

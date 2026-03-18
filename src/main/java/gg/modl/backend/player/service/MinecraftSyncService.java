@@ -31,9 +31,11 @@ import java.util.Set;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class MinecraftSyncService {
     private final PlayerMongoRepository playerRepository;
     private final StaffMongoRepository staffRepository;
@@ -345,7 +347,8 @@ public class MinecraftSyncService {
                     .toList());
                 staffRepository.clearPendingTwoFactorDelivery(server);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to process 2FA verifications during sync", e);
         }
 
         try {
@@ -354,7 +357,8 @@ public class MinecraftSyncService {
                 "taskId", migration.getTaskId(),
                 "type", migration.getType()
             )));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to check active migration during sync", e);
         }
 
         try {
@@ -375,7 +379,8 @@ public class MinecraftSyncService {
                 pluginVersion,
                 Date.from(now)
             );
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to upsert server instance snapshot during sync", e);
         }
 
         return Map.of(
@@ -464,7 +469,8 @@ public class MinecraftSyncService {
                 notification.put("data", ticketData);
                 notifications.add(notification);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to collect ticket notifications during sync", e);
         }
 
         try {
@@ -507,7 +513,8 @@ public class MinecraftSyncService {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to collect punishment notifications during sync", e);
         }
 
         for (Map<String, Object> modified : recentlyModifiedPunishments) {
@@ -586,10 +593,11 @@ public class MinecraftSyncService {
     private List<Map<String, Object>> getActiveStaffMembers(Server server, Map<String, String> onlinePlayerIps) {
         List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
 
+        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (Staff staff : staffWithMinecraft) {
-            StaffRole role = staffRoleRepository.findByName(server, staff.getRole()).orElse(null);
-            List<String> permissions = role != null ? role.getPermissions() : List.of();
+            List<String> permissions = permissionsByRole.getOrDefault(staff.getRole(), List.of());
 
             String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
             boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null
@@ -609,6 +617,23 @@ public class MinecraftSyncService {
             result.add(entry);
         }
 
+        return result;
+    }
+
+    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
+        Set<String> roleNames = new HashSet<>();
+        for (Staff staff : staffMembers) {
+            if (staff.getRole() != null && !staff.getRole().isBlank()) {
+                roleNames.add(staff.getRole());
+            }
+        }
+        if (roleNames.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<String>> result = new HashMap<>();
+        for (StaffRole role : staffRoleRepository.findByNames(server, roleNames)) {
+            result.put(role.getName(), role.getPermissions() != null ? role.getPermissions() : List.of());
+        }
         return result;
     }
 
