@@ -22,7 +22,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Document(collection = CollectionName.PLAYERS)
 @Data
-@NoArgsConstructor
+@NoArgsConstructor(force = true)
 @AllArgsConstructor
 @Builder
 @GenerateMongoFields
@@ -65,10 +65,9 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 public class Player {
     @Id
     @Field(targetType = FieldType.STRING)
-    private String id;
+    private final String id;
 
     @Field(name = "minecraftUuid", targetType = FieldType.STRING)
-
     private UUID minecraftUuid;
 
     @Field(name = "usernames")

@@ -5,6 +5,7 @@ import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.server.ServerField;
 import java.util.Date;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,44 +17,40 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Document(collection = CollectionName.MODL_SERVERS)
 @Data
+@NoArgsConstructor(force = true)
 @RequiredArgsConstructor
 @GenerateMongoFields
 public class Server {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-
     private final String serverName;
+
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-
     private final String customDomain;
+
     @Nullable
     @Field(name = "databaseName", targetType = FieldType.STRING)
     private final String databaseName;
-    // Core Identifiers
+
     @Id
     @Field(targetType = FieldType.OBJECT_ID)
     private String id;
-    // Admin & Verification
+
     @NotNull
     @Field(name = ServerField.ADMIN_EMAIL, targetType = FieldType.STRING)
-
     private String adminEmail;
 
     @NotNull
     @Field(name = "emailVerified", targetType = FieldType.BOOLEAN)
-
     private Boolean emailVerified;
 
     @Nullable
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
-
     private String emailVerificationToken;
 
-    // Provisioning & Status
     @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
-
     private ProvisioningStatus provisioningStatus;
 
     @Nullable
@@ -62,14 +59,12 @@ public class Server {
 
     @Nullable
     @Field(name = "provisioningSignInToken", targetType = FieldType.STRING)
-
     private String provisioningSignInToken;
 
     @Nullable
     @Field(name = "provisioningSignInTokenExpiresAt", targetType = FieldType.DATE_TIME)
     private Date provisioningSignInTokenExpiresAt;
 
-    // Plan & Billing
     @NotNull
     @Field(name = "plan", targetType = FieldType.STRING)
     private ServerPlan plan;
@@ -88,15 +83,12 @@ public class Server {
 
     @Nullable
     @Field(name = "stripeCustomerId", targetType = FieldType.STRING)
-
     private String stripeCustomerId;
 
     @Nullable
     @Field(name = "stripeSubscriptionId", targetType = FieldType.STRING)
-
     private String stripeSubscriptionId;
 
-    // Usage Tracking & Billing
     @Nullable
     @Field(name = "cdnUsageCurrentPeriod", targetType = FieldType.DOUBLE)
     private Double cdnUsageCurrentPeriod; // GB used in current billing period
@@ -121,15 +113,12 @@ public class Server {
     @Field(name = "maxAiOverageRequests", targetType = FieldType.INT64)
     private Long maxAiOverageRequests;
 
-    // Migration Settings
     @Nullable
     @Field(name = "migrationFileSizeLimit", targetType = FieldType.INT64)
     private Long migrationFileSizeLimit; // Custom migration file size limit in bytes
 
-    // Custom Domain Management
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
-
     private String customDomainOverride;
 
     @Nullable
@@ -146,53 +135,42 @@ public class Server {
 
     @Nullable
     @Field(name = "customDomainCloudflareId", targetType = FieldType.STRING)
-
     private String customDomainCloudflareId;
 
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN_GRANDFATHERED, targetType = FieldType.BOOLEAN)
     private Boolean customDomainGrandfathered;
 
-    // CLI Setup
     @Nullable
     @Field(name = "cliSetupToken", targetType = FieldType.STRING)
-
     private String cliSetupToken;
 
-    // API Key
     @Nullable
     @Field(name = "apiKey", targetType = FieldType.STRING)
-
     private String apiKey;
 
-    // Analytics/Stats
     @Nullable
     @Field(name = "onlinePlayerCount", targetType = FieldType.INT64)
     private Long onlinePlayerCount;
 
     @Nullable
     @Field(name = "userCount", targetType = FieldType.INT64)
-
     private Long userCount;
 
     @Nullable
     @Field(name = "ticketCount", targetType = FieldType.INT64)
-
     private Long ticketCount;
 
     @Nullable
     @Field(name = "lastStatsUpdatedAt", targetType = FieldType.DATE_TIME)
-
     private Date lastStatsUpdatedAt;
 
     @Nullable
     @Field(name = "lastActivityAt", targetType = FieldType.DATE_TIME)
     private Date lastActivityAt;
 
-    // Timestamps
     @Nullable
     @Field(name = "createdAt", targetType = FieldType.DATE_TIME)
-
     private Date createdAt;
 
     @Nullable
