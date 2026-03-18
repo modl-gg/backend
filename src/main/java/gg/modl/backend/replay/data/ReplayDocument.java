@@ -1,6 +1,7 @@
 package gg.modl.backend.replay.data;
 
 import java.util.Date;
+import java.util.List;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
@@ -17,6 +18,7 @@ public class ReplayDocument {
     private String storageKey;
     private String status;
     private Date createdAt;
+    private List<ReplayLabel> labels;
 
     public static final String STATUS_PENDING = "PENDING";
     public static final String STATUS_COMPLETE = "COMPLETE";

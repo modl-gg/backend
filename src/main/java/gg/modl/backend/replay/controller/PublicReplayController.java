@@ -1,17 +1,21 @@
 package gg.modl.backend.replay.controller;
 
 import gg.modl.backend.replay.dto.PublicReplayResponse;
+import gg.modl.backend.replay.dto.SubmitReplayLabelsRequest;
 import gg.modl.backend.replay.service.ReplayService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,5 +45,24 @@ public class PublicReplayController {
                 "status", 404,
                 "message", "Replay not found"
             )));
+    }
+
+    @PostMapping("/{replayId}/label")
+    public ResponseEntity<?> submitLabels(
+        @PathVariable String replayId,
+        @RequestBody @Valid SubmitReplayLabelsRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+
+        boolean saved = replayService.submitLabels(server, replayId, request.players());
+        if (!saved) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Replay not found"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of("status", "ok"));
     }
 }
