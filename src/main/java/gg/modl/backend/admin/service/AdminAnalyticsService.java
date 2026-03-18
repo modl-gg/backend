@@ -33,8 +33,9 @@ public class AdminAnalyticsService {
 
     public Map<String, Object> getDashboard(String range) {
         int days = resolveRangeDays(range);
-        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-        Date previousStartDate = Date.from(Instant.now().minus(days * 2L, ChronoUnit.DAYS));
+        Instant now = Instant.now();
+        Date startDate = Date.from(now.minus(days, ChronoUnit.DAYS));
+        Date previousStartDate = Date.from(now.minus(days * 2L, ChronoUnit.DAYS));
 
         long totalServers = serverRepository.countAll();
         int refreshLimit = totalServers <= 200 ? (int) Math.max(totalServers, 1) : 50;
@@ -60,6 +61,49 @@ public class AdminAnalyticsService {
         double avgPlayersPerServer = serversWithData > 0 ? (double) totalUsers / serversWithData : 0;
         double avgTicketsPerServer = serversWithData > 0 ? (double) totalTickets / serversWithData : 0;
 
+        Date snapshotCutoff = Date.from(now.minus(10, ChronoUnit.MINUTES));
+        Date last24h = Date.from(now.minus(24, ChronoUnit.HOURS));
+
+        List<MetricSnapshot> metricSnapshots = metricSnapshotRepository.findSinceOrdered(last24h);
+        List<Map<String, Object>> serverActivity = metricSnapshots.stream().map(s -> Map.<String, Object>of(
+            "date", s.getDate().toInstant().toString(),
+            "activeServers", s.getActiveServers()
+        )).toList();
+
+        List<ServerInstanceSnapshot> instanceSnapshots = serverInstanceSnapshotRepository.findSinceOrdered(last24h);
+
+        ServerInstanceSnapshot latestSnapshot = !instanceSnapshots.isEmpty()
+            && !instanceSnapshots.getLast().getDate().before(snapshotCutoff)
+            ? instanceSnapshots.getLast()
+            : null;
+
+        List<Map<String, Object>> liveServers = latestSnapshot != null && latestSnapshot.getServers() != null
+            ? latestSnapshot.getServers().stream().map(srv -> Map.<String, Object>of(
+                "serverId", srv.getServerId(),
+                "serverName", srv.getServerName(),
+                "playerCount", srv.getPlayerCount(),
+                "platform", srv.getPlatform(),
+                "version", srv.getVersion(),
+                "pluginVersion", srv.getPluginVersion()
+            )).toList()
+            : List.of();
+
+        int totalPlayerCount = latestSnapshot != null
+            ? sumPlayerCount(latestSnapshot)
+            : 0;
+
+        List<Map<String, Object>> playerActivity = instanceSnapshots.stream().map(s -> Map.<String, Object>of(
+            "date", s.getDate().toInstant().toString(),
+            "players", sumPlayerCount(s)
+        )).toList();
+
+        Map<String, Object> usageStatistics = new HashMap<>();
+        usageStatistics.put("topServersByUsers", topServers);
+        usageStatistics.put("serverActivity", serverActivity);
+        usageStatistics.put("liveServers", liveServers);
+        usageStatistics.put("totalPlayerCount", totalPlayerCount);
+        usageStatistics.put("playerActivity", playerActivity);
+
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("data", Map.of(
@@ -78,16 +122,16 @@ public class AdminAnalyticsService {
                 "byStatus", statusResults,
                 "registrationTrend", registrationTrend
             ),
-            "usageStatistics", Map.of(
-                "topServersByUsers", topServers,
-                "serverActivity", Collections.emptyList(),
-                "geographicDistribution", Collections.emptyList(),
-                "playerGrowth", Collections.emptyList(),
-                "ticketVolume", Collections.emptyList()
-            ),
+            "usageStatistics", usageStatistics,
             "systemHealth", Map.of("errorRates", Collections.emptyList())
         ));
         return response;
+    }
+
+    private int sumPlayerCount(ServerInstanceSnapshot snapshot) {
+        return snapshot.getServers() != null
+            ? snapshot.getServers().stream().mapToInt(ServerInstanceSnapshot.ServerEntry::getPlayerCount).sum()
+            : 0;
     }
 
     private int resolveRangeDays(String range) {
@@ -110,32 +154,28 @@ public class AdminAnalyticsService {
         List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
         List<ServerInstanceSnapshot> instanceSnapshots = serverInstanceSnapshotRepository.findSinceOrdered(startDate);
 
-        List<Map<String, Object>> metricData = snapshots.stream().map(s -> Map.<String, Object>of(
-            "date", s.getDate().toInstant().toString(),
-            "activeServers", s.getActiveServers()
-        )).toList();
+        long totalServers = serverRepository.countAll();
+        long totalPlayers = serverRepository.getUsageTotals().totalUsers();
 
-        List<Map<String, Object>> serverInstances = instanceSnapshots.stream().map(s -> {
-            Map<String, Object> entry = new HashMap<>();
-            entry.put("date", s.getDate().toInstant().toString());
-            List<Map<String, Object>> servers = s.getServers() != null
-                ? s.getServers().stream().map(srv -> {
-                    Map<String, Object> srvMap = new HashMap<>();
-                    srvMap.put("serverId", srv.getServerId());
-                    srvMap.put("serverName", srv.getServerName());
-                    srvMap.put("playerCount", srv.getPlayerCount());
-                    srvMap.put("platform", srv.getPlatform());
-                    srvMap.put("version", srv.getVersion());
-                    srvMap.put("ipAddress", srv.getIpAddress());
-                    srvMap.put("pluginVersion", srv.getPluginVersion());
-                    return srvMap;
-                }).toList()
-                : List.of();
-            entry.put("servers", servers);
-            return entry;
+        Map<String, Integer> playersByHour = new HashMap<>();
+        for (ServerInstanceSnapshot inst : instanceSnapshots) {
+            String hourKey = inst.getDate().toInstant().truncatedTo(ChronoUnit.HOURS).toString();
+            int players = sumPlayerCount(inst);
+            playersByHour.merge(hourKey, players, Math::max);
+        }
+
+        List<Map<String, Object>> activityData = snapshots.stream().map(s -> {
+            String dateKey = s.getDate().toInstant().toString();
+            int onlinePlayers = playersByHour.getOrDefault(dateKey, 0);
+            return Map.<String, Object>of(
+                "date", dateKey,
+                "activeServers", s.getActiveServers(),
+                "onlinePlayers", onlinePlayers
+            );
         }).toList();
 
-        return Map.of("success", true, "data", metricData, "serverInstances", serverInstances);
+        return Map.of("success", true, "data", activityData,
+            "totalPlayers", totalPlayers, "totalServers", totalServers);
     }
 
     public Map<String, Object> getUsage() {
