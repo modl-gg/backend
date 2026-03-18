@@ -204,7 +204,7 @@ public class TicketService {
             .replies(replies)
             .notes(new ArrayList<>())
             .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : sanitizeChatMessages(request.chatMessages()))
-            .formData(request.formData())
+            .formData(sanitizeMapKeysForMongo(request.formData()))
             .data(data)
             .locked(ticketStatus.isTerminal())
             .priority(TicketPriority.resolveOrDefault(request.priority()))
@@ -437,7 +437,7 @@ public class TicketService {
                 existingData.put("emailAuthEnabled", emailAuth);
             }
 
-            ticket.setFormData(request.formData());
+            ticket.setFormData(sanitizeMapKeysForMongo(request.formData()));
         }
 
         String creatorEmail = resolveCreatorEmail(request);
@@ -517,6 +517,28 @@ public class TicketService {
         Map<String, Object> sanitized = new LinkedHashMap<>(formData);
         sanitized.remove("creatorEmail");
         sanitized.remove("creatorIdentifier");
+        return sanitized;
+    }
+
+    /**
+     * Sanitize map keys for MongoDB storage by replacing dots with the Unicode
+     * full-width full stop (U+FF0E). MongoDB does not allow dots in map keys
+     * because dots are used as path separators in field names.
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sanitizeMapKeysForMongo(Map<String, Object> map) {
+        if (map == null) {
+            return null;
+        }
+        Map<String, Object> sanitized = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            String key = entry.getKey().replace('.', '\uFF0E');
+            Object value = entry.getValue();
+            if (value instanceof Map) {
+                value = sanitizeMapKeysForMongo((Map<String, Object>) value);
+            }
+            sanitized.put(key, value);
+        }
         return sanitized;
     }
 
