@@ -5,16 +5,21 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class MinecraftPlayerController {
     private final MinecraftPlayerService minecraftPlayerService;
 
@@ -144,8 +150,8 @@ public class MinecraftPlayerController {
     @GetMapping("/{uuid}/linked-accounts")
     public ResponseEntity<Map<String, Object>> getLinkedAccounts(
         @PathVariable String uuid,
-        @RequestParam(required = false) Integer page,
-        @RequestParam(required = false) Integer limit,
+        @RequestParam(required = false) @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) Integer page,
+        @RequestParam(required = false) @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) Integer limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -156,8 +162,8 @@ public class MinecraftPlayerController {
     @GetMapping("/{uuid}/punishments")
     public ResponseEntity<Map<String, Object>> getPlayerPunishments(
         @PathVariable String uuid,
-        @RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "7") int limit,
+        @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
+        @RequestParam(defaultValue = "7") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -168,8 +174,8 @@ public class MinecraftPlayerController {
     @GetMapping("/{uuid}/notes")
     public ResponseEntity<Map<String, Object>> getPlayerNotes(
         @PathVariable String uuid,
-        @RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "7") int limit,
+        @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
+        @RequestParam(defaultValue = "7") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -226,21 +232,21 @@ public class MinecraftPlayerController {
     }
 
     public record LoginRequest(
-        @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
-        @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
-        @Pattern(regexp = RegExpConstants.IP) String ip,
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
+        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
         Map<String, Object> ipInfo,
-        String skinHash,
-        String serverName
+        @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String skinHash,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
     ) {
     }
 
     public record SubmitIpInfoRequest(
-        @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
-        @Pattern(regexp = RegExpConstants.IP) String ip,
-        String country,
-        String region,
-        String asn,
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
+        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String country,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String region,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String asn,
         boolean proxy,
         boolean hosting
     ) {
@@ -248,35 +254,38 @@ public class MinecraftPlayerController {
 
     public record DisconnectRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
-        long sessionDurationMs
+        @Min(0) long sessionDurationMs
     ) {
     }
 
     public record UpdateServerRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
-        @NotBlank String serverName
+        @NotBlank @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
     ) {
     }
 
-    public record LookupRequest(@NotBlank String query, Boolean queryMojang) {
+    public record LookupRequest(
+        @NotBlank @Size(max = RequestValidationLimits.ADMIN_SEARCH_QUERY_MAX_LENGTH) String query,
+        Boolean queryMojang
+    ) {
         public boolean shouldQueryMojang() {
             return queryMojang == null || queryMojang;
         }
     }
 
     public record CreateNoteRequest(
-        @NotBlank String text,
-        String issuerName,
-        String issuerId
+        @NotBlank @Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String text,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId
     ) {
     }
 
     public record PardonPlayerRequest(
-        @NotBlank String playerName,
-        String issuerName,
-        String issuerId,
-        String punishmentType,
-        String reason
+        @NotBlank @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH) String playerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @Size(max = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MAX_LENGTH) String punishmentType,
+        @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_REASON_MAX_LENGTH) String reason
     ) {
     }
 }

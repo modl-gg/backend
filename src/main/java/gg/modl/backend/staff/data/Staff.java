@@ -33,10 +33,8 @@ public class Staff {
     @Id
     private String id;
 
-
     @Field("email")
     private String email;
-
 
     @Field("username")
     private String username;
@@ -66,42 +64,22 @@ public class Staff {
     @Field("ticketSubscriptionSettings")
     private TicketSubscriptionSettings ticketSubscriptionSettings;
 
-    // --- Staff 2FA ---
-
-    /**
-     * Current pending 2FA verification token (cleared after verification).
-     */
     @Field("twoFactorToken")
     private String twoFactorToken;
 
-    /**
-     * IP address associated with the pending token.
-     */
     @Field("twoFactorTokenIp")
     private String twoFactorTokenIp;
 
-    /**
-     * Timestamp (epoch millis) when the pending token was created.
-     */
     @Field("twoFactorTokenCreatedAt")
     private Long twoFactorTokenCreatedAt;
 
-    /**
-     * True when a verification has completed but the plugin hasn't been notified yet.
-     */
     @Field("twoFactorPendingDelivery")
     @Builder.Default
     private boolean twoFactorPendingDelivery = false;
 
-    /**
-     * IP address the session is bound to (set on verification).
-     */
     @Field("twoFactorSessionIp")
     private String twoFactorSessionIp;
 
-    /**
-     * Epoch millis when the current 2FA session expires (7-day TTL set on verification).
-     */
     @Field("twoFactorSessionExpiresAt")
     private Long twoFactorSessionExpiresAt;
 
@@ -170,6 +148,7 @@ public class Staff {
         @Builder.Default
         private boolean ticketAssignments = false;
         @Field("subscribedTypes")
-        private List<String> subscribedTypes;
+        @Builder.Default
+        private List<String> subscribedTypes = new ArrayList<>();
     }
 }

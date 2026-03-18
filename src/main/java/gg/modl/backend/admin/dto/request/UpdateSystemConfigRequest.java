@@ -63,6 +63,7 @@ public record UpdateSystemConfigRequest(
         @Size(max = RequestValidationLimits.TIMEZONE_MAX_LENGTH)
         String timezone,
 
+        @Size(max = RequestValidationLimits.ADMIN_DEFAULT_LANGUAGE_MAX_LENGTH)
         String defaultLanguage,
 
         Boolean maintenanceMode,

@@ -1,5 +1,7 @@
 package gg.modl.backend.settings.data;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
@@ -23,8 +25,10 @@ public class TicketFormSettings {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TicketForm {
-        private List<FormField> fields;
-        private List<FormSection> sections;
+        @Builder.Default
+        private List<FormField> fields = new ArrayList<>();
+        @Builder.Default
+        private List<FormSection> sections = new ArrayList<>();
     }
 
     @Data
@@ -37,11 +41,13 @@ public class TicketFormSettings {
         private String label;
         private String description;
         private boolean required;
-        private List<String> options;
+        @Builder.Default
+        private List<String> options = new ArrayList<>();
         private int order;
         private String sectionId;
         private String goToSection;
-        private Map<String, String> optionSectionMapping;
+        @Builder.Default
+        private Map<String, String> optionSectionMapping = new HashMap<>();
     }
 
     @Data
@@ -55,7 +61,8 @@ public class TicketFormSettings {
         private int order;
         private String showIfFieldId;
         private String showIfValue;
-        private List<String> showIfValues;
+        @Builder.Default
+        private List<String> showIfValues = new ArrayList<>();
         private boolean hideByDefault;
     }
 }

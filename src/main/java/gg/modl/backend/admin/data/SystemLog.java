@@ -2,6 +2,7 @@ package gg.modl.backend.admin.data;
 
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
@@ -15,7 +16,7 @@ public class SystemLog {
     @Id
     private String id;
     @Field("level")
-    private String level; // critical, error, warning, info, debug
+    private String level;
     @Field("message")
     private String message;
     @Field("source")
@@ -25,7 +26,7 @@ public class SystemLog {
     @Field("serverId")
     private String serverId;
     @Field("metadata")
-    private Map<String, Object> metadata;
+    private Map<String, Object> metadata = new HashMap<>();
     @Field("resolved")
     private boolean resolved;
     @Field("resolvedBy")

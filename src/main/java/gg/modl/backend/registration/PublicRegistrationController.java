@@ -91,7 +91,7 @@ public class PublicRegistrationController {
 
         // Validate Turnstile token
         if (!turnstileService.validateToken(requestData.turnstileToken(), clientIp)) {
-            log.warn("Turnstile validation failed for IP: {}", clientIp);
+            log.warn("Turnstile validation failed for registration attempt");
             return ResponseEntity.badRequest().body(new RegisterResponse(
                 false,
                 "Security verification failed. Please try again.",
@@ -494,20 +494,20 @@ public class PublicRegistrationController {
     }
 
     public record CliRegisterRequest(
-        @Email @NotBlank String email,
+        @Email @NotBlank @Size(max = 254) String email,
         @NotBlank @Size(min = 3, max = 100) String serverName,
         @NotBlank @Size(min = 3, max = 50) @Pattern(regexp = "^[a-z0-9-]+$", message = "Subdomain can only contain lowercase letters, numbers, and hyphens") String customDomain,
-        String plan
+        @Size(max = 32) String plan
     ) {}
 
     public record ApiKeyResponse(boolean success, String apiKey, String panelUrl, String message) {}
 
     public record RegisterRequest(
-        @Email @NotBlank String email,
+        @Email @NotBlank @Size(max = 254) String email,
         @NotBlank @Size(min = 3, max = 100) String serverName,
         @NotBlank @Size(min = 3, max = 50) @Pattern(regexp = "^[a-z0-9-]+$", message = "Subdomain can only contain lowercase letters, numbers, and hyphens") String customDomain,
-        String plan,
-        @NotBlank String turnstileToken
+        @Size(max = 32) String plan,
+        @NotBlank @Size(max = 4096) String turnstileToken
     ) {}
 
     public record RegisterResponse(boolean success, String message, ServerInfo server) {}
@@ -518,9 +518,9 @@ public class PublicRegistrationController {
 
     public record SetupStatusResponse(String subdomain, String serverName, Boolean emailVerified, String provisioningStatus, String message) {}
 
-    public record TokenRequest(@NotBlank String token) {}
+    public record TokenRequest(@NotBlank @Size(max = 512) String token) {}
 
-    public record AutoLoginRequest(@NotBlank String token) {}
+    public record AutoLoginRequest(@NotBlank @Size(max = 512) String token) {}
 
     public record AutoLoginResponse(boolean success, String message, String redirectUrl) {}
 

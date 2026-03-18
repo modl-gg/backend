@@ -47,7 +47,8 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_servers_userCount", doc("userCount", 1), false, false),
             IndexSpec.standard("idx_servers_ticketCount", doc("ticketCount", 1), false, false),
             IndexSpec.standard("idx_servers_lastStatsUpdatedAt", doc("lastStatsUpdatedAt", 1), false, false),
-            IndexSpec.standard("idx_servers_createdAt", doc("createdAt", 1), false, false)
+            IndexSpec.standard("idx_servers_createdAt", doc("createdAt", 1), false, false),
+            IndexSpec.standard("idx_servers_lastActivityAt", doc("lastActivityAt", -1), false, true)
         ));
 
         ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
@@ -74,7 +75,12 @@ public class MongoIndexBootstrapService {
                 doc("punishments.issuerId", 1).append("punishments.issued", -1),
                 false,
                 true
-            )
+            ),
+            IndexSpec.standard("idx_players_ipAddresses_ipAddress", doc("ipAddresses.ipAddress", 1), false, false),
+            IndexSpec.standard("idx_players_usernames_username", doc("usernames.username", 1), false, false),
+            IndexSpec.standard("idx_players_punishments_id", doc("punishments.id", 1), false, true),
+            IndexSpec.standard("idx_players_data_isOnline", doc("data.isOnline", 1), false, true),
+            IndexSpec.standard("idx_players_ipAddresses_firstLogin", doc("ipAddresses.firstLogin", -1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.STAFF, List.of(

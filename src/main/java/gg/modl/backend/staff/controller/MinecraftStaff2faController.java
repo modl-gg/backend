@@ -5,8 +5,10 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffTwoFactorService;
 import jakarta.servlet.http.HttpServletRequest;
+import gg.modl.backend.validation.RegExpConstants;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +44,7 @@ public class MinecraftStaff2faController {
     }
 
     public record Generate2faRequest(
-        @NotBlank String minecraftUuid,
-        @NotBlank String ip
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
+        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip
     ) {}
 }

@@ -28,5 +28,9 @@ public class PaginationHelper {
         return Math.max(1, page);
     }
 
+    public int calculateTotalPages(long total, int limit) {
+        return (int) Math.ceil((double) total / limit);
+    }
+
     public record PageResult<T>(List<T> items, int totalCount, int page, boolean hasMore) {}
 }

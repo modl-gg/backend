@@ -160,8 +160,6 @@ public class RoleService {
             .orElseThrow(() -> new ForbiddenException("You do not have authority to perform this action"));
     }
 
-    // --- Authorization helpers ---
-
     private List<String> filterToGrantablePermissions(StaffRole performerRole, List<String> permissions) {
         return permissions.stream()
             .filter(p -> performerHasPermission(performerRole, p))

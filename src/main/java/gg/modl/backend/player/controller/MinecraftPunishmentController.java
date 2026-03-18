@@ -14,16 +14,21 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PUNISHMENTS)
 @RequiredArgsConstructor
+@Validated
 public class MinecraftPunishmentController {
     private final PunishmentQueryService punishmentQueryService;
     private final PunishmentLifecycleService punishmentLifecycleService;
@@ -108,7 +114,7 @@ public class MinecraftPunishmentController {
 
     @GetMapping("/recent")
     public ResponseEntity<Map<String, Object>> getRecentPunishments(
-        @RequestParam(defaultValue = "48") int hours,
+        @RequestParam(defaultValue = "48") @Min(1) @Max(8760) int hours,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -379,78 +385,78 @@ public class MinecraftPunishmentController {
     }
 
     public record MinecraftCreatePunishmentRequest(
-        @NotBlank String targetUuid,
-        String issuerName,
-        String issuerId,
-        @JsonProperty("type_ordinal") int typeOrdinal,
-        String reason,
-        Long duration,
-        Map<String, Object> data,
-        List<String> notes,
-        List<String> attachedTicketIds,
-        String severity,
-        String status
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String targetUuid,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @JsonProperty("type_ordinal") @Min(0) int typeOrdinal,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_REASON_MAX_LENGTH) String reason,
+        @Min(0) Long duration,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_DATA_MAX_ENTRIES) Map<String, Object> data,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_NOTES_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String> notes,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> attachedTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_SEVERITY_MAX_LENGTH) String severity,
+        @Size(max = RequestValidationLimits.PLAYER_STATUS_MAX_LENGTH) String status
     ) {
     }
 
     public record AcknowledgeRequest(
-        @NotBlank String punishmentId,
+        @NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String punishmentId,
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
-        String executedAt,
+        @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String executedAt,
         boolean success,
-        String errorMessage
+        @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_REASON_MAX_LENGTH) String errorMessage
     ) {
     }
 
     public record PardonRequest(
-        String issuerName,
-        String issuerId,
-        String reason,
-        String expectedType
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_REASON_MAX_LENGTH) String reason,
+        @Size(max = RequestValidationLimits.PUNISHMENT_TYPE_NAME_MAX_LENGTH) String expectedType
     ) {
     }
 
     public record AddNoteRequest(
-        String issuerName,
-        String issuerId,
-        @NotBlank String note
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @NotBlank @Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String note
     ) {
     }
 
     public record AddEvidenceRequest(
-        String issuerName,
-        String issuerId,
-        @NotBlank String evidenceUrl
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @NotBlank @Size(max = RequestValidationLimits.EVIDENCE_URL_MAX_LENGTH) String evidenceUrl
     ) {
     }
 
     public record ChangeDurationRequest(
-        String issuerName,
-        String issuerId,
-        Long newDuration
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @Min(0) Long newDuration
     ) {
     }
 
     public record ToggleOptionRequest(
-        String issuerName,
-        String issuerId,
-        @NotBlank String option,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @NotBlank @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_TYPE_MAX_LENGTH) String option,
         boolean enabled
     ) {
     }
 
     public record StatWipeAcknowledgeRequest(
-        @NotBlank String punishmentId,
-        String serverName,
+        @NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String punishmentId,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
         boolean success
     ) {
     }
 
     public record ModifyTicketsRequest(
-        String issuerName,
-        String issuerId,
-        List<String> addTicketIds,
-        List<String> removeTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> addTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> removeTicketIds,
         boolean modifyAssociatedTickets
     ) {
     }

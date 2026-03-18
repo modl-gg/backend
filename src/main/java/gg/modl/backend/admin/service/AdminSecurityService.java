@@ -2,6 +2,7 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
+import gg.modl.backend.util.DateRangeUtil;
 import gg.modl.backend.util.PaginationHelper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -30,8 +31,8 @@ public class AdminSecurityService {
         int pageNum = PaginationHelper.normalizePage(page);
         int limitNum = PaginationHelper.normalizeLimit(limit, 100);
         int skip = PaginationHelper.calculateSkip(page, limitNum);
-        Date start = parseEpochMillis(startDate);
-        Date end = parseEpochMillis(endDate);
+        Date start = DateRangeUtil.parseEpochMillis(startDate);
+        Date end = DateRangeUtil.parseEpochMillis(endDate);
 
         List<SecurityEvent> events = securityEventRepository.findSecurityEvents(type, severity, source, search, start, end, skip, limitNum);
         long total = securityEventRepository.countSecurityEvents(type, severity, source, search, start, end);
@@ -44,14 +45,10 @@ public class AdminSecurityService {
                     "page", pageNum,
                     "limit", limitNum,
                     "total", total,
-                    "pages", (int) Math.ceil((double) total / limitNum)
+                    "pages", PaginationHelper.calculateTotalPages(total, limitNum)
                 )
             )
         );
-    }
-
-    private Date parseEpochMillis(String value) {
-        return value == null ? null : new Date(Long.parseLong(value));
     }
 
     public Map<String, Object> getSecuritySummary() {

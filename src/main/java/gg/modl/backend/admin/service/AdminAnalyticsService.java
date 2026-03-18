@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.util.DateRangeUtil;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
@@ -32,22 +33,23 @@ public class AdminAnalyticsService {
     private final AdminServerService adminServerService;
 
     public Map<String, Object> getDashboard(String range) {
-        int days = resolveRangeDays(range);
+        int days = DateRangeUtil.resolveRangeDays(range);
         Instant now = Instant.now();
         Date startDate = Date.from(now.minus(days, ChronoUnit.DAYS));
         Date previousStartDate = Date.from(now.minus(days * 2L, ChronoUnit.DAYS));
 
-        long totalServers = serverRepository.countAll();
+        ServerMongoRepository.DashboardStats stats = serverRepository.aggregateDashboardStats(startDate, previousStartDate);
+
+        long totalServers = stats.totalServers();
         int refreshLimit = totalServers <= 200 ? (int) Math.max(totalServers, 1) : 50;
         adminServerService.refreshUsageStatsForActiveServers(refreshLimit);
 
-        long activeServers = serverRepository.countCompletedAndVerified();
-        ServerMongoRepository.UsageTotals usageTotals = serverRepository.getUsageTotals();
-        long totalUsers = usageTotals.totalUsers();
-        long totalTickets = usageTotals.totalTickets();
+        long activeServers = stats.activeServers();
+        long totalUsers = stats.totalUsers();
+        long totalTickets = stats.totalTickets();
 
-        long currentPeriodServers = serverRepository.countCreatedSince(startDate);
-        long previousPeriodServers = serverRepository.countCreatedBetween(previousStartDate, startDate);
+        long currentPeriodServers = stats.currentPeriodServers();
+        long previousPeriodServers = stats.previousPeriodServers();
         double serverGrowthRate = previousPeriodServers > 0
                                   ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
                                   : (currentPeriodServers > 0 ? 100 : 0);
@@ -57,7 +59,7 @@ public class AdminAnalyticsService {
         List<DateServersResult> registrationTrend = serverRepository.findRegistrationTrend(startDate);
         List<Server> topServers = serverRepository.findTopCompletedVerifiedByUserCount(10);
 
-        long serversWithData = serverRepository.countCompletedWithUsers();
+        long serversWithData = stats.serversWithData();
         double avgPlayersPerServer = serversWithData > 0 ? (double) totalUsers / serversWithData : 0;
         double avgTicketsPerServer = serversWithData > 0 ? (double) totalTickets / serversWithData : 0;
 
@@ -134,21 +136,8 @@ public class AdminAnalyticsService {
             : 0;
     }
 
-    private int resolveRangeDays(String range) {
-        return switch (normalizeRange(range)) {
-            case "7d" -> 7;
-            case "90d" -> 90;
-            case "365d", "1y" -> 365;
-            default -> 30;
-        };
-    }
-
-    private String normalizeRange(String range) {
-        return range == null || range.isBlank() ? "30d" : range;
-    }
-
     public Map<String, Object> getActivity(String range) {
-        int days = resolveRangeDays(range);
+        int days = DateRangeUtil.resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
 
         List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
@@ -204,7 +193,7 @@ public class AdminAnalyticsService {
             return Map.of("success", false, "error", "Invalid metric type");
         }
 
-        int days = resolveRangeDays(range);
+        int days = DateRangeUtil.resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
         List<DateValueResult> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
 
@@ -212,7 +201,7 @@ public class AdminAnalyticsService {
             "success", true,
             "data", Map.of(
                 "metric", metric,
-                "range", normalizeRange(range),
+                "range", range != null && !range.isBlank() ? range : "30d",
                 "data", results
             )
         );
@@ -220,7 +209,7 @@ public class AdminAnalyticsService {
 
     public Object exportAnalytics(String type, String range) {
         String normalizedType = type != null ? type : "json";
-        String normalizedRange = normalizeRange(range);
+        String normalizedRange = range != null && !range.isBlank() ? range : "30d";
 
         if ("csv".equals(normalizedType)) {
             return "Date,Servers,Users,Tickets\n2024-01-01,100,1500,820";

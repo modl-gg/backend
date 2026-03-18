@@ -1,7 +1,9 @@
 package gg.modl.backend.admin.dto.request;
 
+import gg.modl.backend.validation.RequestValidationLimits;
+import jakarta.validation.constraints.Size;
 import org.springframework.lang.Nullable;
 
 public record ResolveLogRequest(
-    @Nullable String resolvedBy
+    @Nullable @Size(max = RequestValidationLimits.RESOLVE_LOG_RESOLVED_BY_MAX_LENGTH) String resolvedBy
 ) {}

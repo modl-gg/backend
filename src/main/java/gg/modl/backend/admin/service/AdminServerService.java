@@ -168,14 +168,14 @@ public class AdminServerService {
     public long bulkActivate(List<String> serverIds) {
         long modified = serverRepository.bulkActivate(serverIds, new Date());
 
-        for (String id : serverIds) {
+        List<Server> servers = serverRepository.findProvisioningCandidatesByIds(serverIds);
+        for (Server server : servers) {
             try {
-                Server server = serverRepository.findById(id).orElse(null);
-                if (server != null && server.getDatabaseName() != null) {
+                if (server.getDatabaseName() != null) {
                     provisioningService.provision(server);
                 }
             } catch (Exception e) {
-                log.warn("Failed to provision server {}: {}", id, e.getMessage());
+                log.warn("Failed to provision server {}", server.getId(), e);
             }
         }
 

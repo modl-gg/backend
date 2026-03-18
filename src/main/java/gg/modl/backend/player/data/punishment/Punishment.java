@@ -3,7 +3,9 @@ package gg.modl.backend.player.data.punishment;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
 import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.AllArgsConstructor;
@@ -45,17 +47,17 @@ public class Punishment {
     private Date started;
 
     @NotNull
-    private List<PunishmentModification> modifications;
+    private List<PunishmentModification> modifications = new ArrayList<>();
 
     @NotNull
-    private List<PunishmentNote> notes;
+    private List<PunishmentNote> notes = new ArrayList<>();
 
     @NotNull
-    private List<PunishmentEvidence> evidence;
+    private List<PunishmentEvidence> evidence = new ArrayList<>();
 
     @NotNull
-    private List<String> attachedTicketIds;
+    private List<String> attachedTicketIds = new ArrayList<>();
 
     @Nullable
-    private Map<String, Object> data;
+    private Map<String, Object> data = new HashMap<>();
 }

@@ -31,9 +31,11 @@ import java.util.Set;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
+@Slf4j
 public class MinecraftSyncService {
     private final PlayerMongoRepository playerRepository;
     private final StaffMongoRepository staffRepository;
@@ -345,7 +347,8 @@ public class MinecraftSyncService {
                     .toList());
                 staffRepository.clearPendingTwoFactorDelivery(server);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to process 2FA verifications during sync", e);
         }
 
         try {
@@ -354,7 +357,8 @@ public class MinecraftSyncService {
                 "taskId", migration.getTaskId(),
                 "type", migration.getType()
             )));
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to check active migration during sync", e);
         }
 
         try {
@@ -375,7 +379,8 @@ public class MinecraftSyncService {
                 pluginVersion,
                 Date.from(now)
             );
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to upsert server instance snapshot during sync", e);
         }
 
         return Map.of(
@@ -464,7 +469,8 @@ public class MinecraftSyncService {
                 notification.put("data", ticketData);
                 notifications.add(notification);
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to collect ticket notifications during sync", e);
         }
 
         try {
@@ -507,7 +513,8 @@ public class MinecraftSyncService {
                     }
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            log.warn("Failed to collect punishment notifications during sync", e);
         }
 
         for (Map<String, Object> modified : recentlyModifiedPunishments) {

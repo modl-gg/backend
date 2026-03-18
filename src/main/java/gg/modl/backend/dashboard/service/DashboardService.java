@@ -85,7 +85,7 @@ public class DashboardService {
         long totalPunishments = 0;
 
         for (Player player : playerRepository.findWithPunishmentsProjected(server)) {
-            if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
+            if (player.getPunishments().isEmpty()) {
                 continue;
             }
 
@@ -205,8 +205,6 @@ public class DashboardService {
                 continue;
             }
 
-            normalizePunishmentCollections(punishment);
-
             String reason = "";
             if (punishment.getData() != null && punishment.getData().get("reason") != null) {
                 reason = String.valueOf(punishment.getData().get("reason"));
@@ -255,20 +253,6 @@ public class DashboardService {
         return names;
     }
 
-    private void normalizePunishmentCollections(Punishment punishment) {
-        if (punishment.getModifications() == null) {
-            punishment.setModifications(new ArrayList<>());
-        }
-        if (punishment.getNotes() == null) {
-            punishment.setNotes(new ArrayList<>());
-        }
-        if (punishment.getEvidence() == null) {
-            punishment.setEvidence(new ArrayList<>());
-        }
-        if (punishment.getAttachedTicketIds() == null) {
-            punishment.setAttachedTicketIds(new ArrayList<>());
-        }
-    }
 
     public List<ActivityItemResponse> getRecentActivity(Server server, String staffEmail, int limit, int days) {
         List<ActivityItemResponse> activities = new ArrayList<>();
@@ -362,7 +346,6 @@ public class DashboardService {
                     continue;
                 }
 
-                normalizePunishmentCollections(punishment);
 
                 String username = PlayerDataUtils.extractLatestUsername(row.get(PlayerFields.USERNAMES));
                 String punishmentTypeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");

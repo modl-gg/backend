@@ -5,8 +5,12 @@ import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -96,6 +100,6 @@ public class MinecraftRolesController {
     }
 
     public record UpdatePermissionsRequest(
-        List<String> permissions
+        @NotNull @Size(max = RequestValidationLimits.ROLE_PERMISSIONS_MAX_ENTRIES) List<@NotBlank @Size(max = RequestValidationLimits.ROLE_PERMISSION_MAX_LENGTH) String> permissions
     ) {}
 }

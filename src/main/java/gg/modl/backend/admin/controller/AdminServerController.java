@@ -5,15 +5,21 @@ import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.util.PaginationHelper;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,13 +35,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.ADMIN_SERVERS)
 @RequiredArgsConstructor
 @Slf4j
+@Validated
 public class AdminServerController {
     private final AdminServerService serverService;
 
     @GetMapping
     public ResponseEntity<?> getServers(
-        @RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "20") int limit,
+        @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
+        @RequestParam(defaultValue = "20") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(required = false) String search,
         @RequestParam(required = false) String plan,
         @RequestParam(required = false) String status,
@@ -57,7 +64,7 @@ public class AdminServerController {
                     "page", pageNum,
                     "limit", limitNum,
                     "total", total,
-                    "pages", (int) Math.ceil((double) total / limitNum)
+                    "pages", PaginationHelper.calculateTotalPages(total, limitNum)
                 )
             )
         ));
@@ -274,21 +281,37 @@ public class AdminServerController {
         ));
     }
 
-    // Request records
-    public record SearchRequest(String query, Map<String, Object> filters) {}
-
-    public record ExportRequest(String format, Map<String, Object> filters) {}
-
-    public record UsageBatchRequest(List<String> serverIds, Boolean forceRefresh) {}
-
-    public record CreateServerRequest(
-        @NotBlank String serverName,
-        @NotBlank String customDomain,
-        @Email @NotBlank String adminEmail,
-        String plan
+    public record SearchRequest(
+        @Size(max = RequestValidationLimits.ADMIN_SEARCH_QUERY_MAX_LENGTH) String query,
+        Map<String, Object> filters
     ) {}
 
-    public record UpdateStatsRequest(Integer userCount, Integer ticketCount, Date lastActivityAt) {}
+    public record ExportRequest(
+        @Size(max = RequestValidationLimits.EXPORT_FORMAT_MAX_LENGTH) String format,
+        Map<String, Object> filters
+    ) {}
 
-    public record BulkOperationRequest(String action, List<String> serverIds, Map<String, Object> parameters) {}
+    public record UsageBatchRequest(
+        @NotEmpty @Size(max = RequestValidationLimits.ADMIN_BULK_SERVER_IDS_MAX_ENTRIES) List<@NotBlank String> serverIds,
+        Boolean forceRefresh
+    ) {}
+
+    public record CreateServerRequest(
+        @NotBlank @Size(max = RequestValidationLimits.ADMIN_SERVER_NAME_MAX_LENGTH) String serverName,
+        @NotBlank @Size(max = RequestValidationLimits.DOMAIN_MAX_LENGTH) String customDomain,
+        @Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String adminEmail,
+        @Size(max = RequestValidationLimits.ADMIN_PLAN_MAX_LENGTH) String plan
+    ) {}
+
+    public record UpdateStatsRequest(
+        @Min(0) Integer userCount,
+        @Min(0) Integer ticketCount,
+        Date lastActivityAt
+    ) {}
+
+    public record BulkOperationRequest(
+        @NotBlank @Size(max = RequestValidationLimits.ADMIN_BULK_ACTION_MAX_LENGTH) String action,
+        @NotEmpty @Size(max = RequestValidationLimits.ADMIN_BULK_SERVER_IDS_MAX_ENTRIES) List<@NotBlank String> serverIds,
+        Map<String, Object> parameters
+    ) {}
 }

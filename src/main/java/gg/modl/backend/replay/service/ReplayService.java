@@ -70,7 +70,7 @@ public class ReplayService {
         replayRepository.saveEntity(server, doc);
 
         if (exists) {
-            log.info("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
+            log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
         } else {
             log.warn("Replay {} upload not found in storage for server {}", replayId, server.getDatabaseName());
         }

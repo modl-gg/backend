@@ -12,13 +12,17 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUDIT)
 @RequiredArgsConstructor
+@Validated
 public class AuditController {
     private final AuditService auditService;
 
@@ -83,7 +88,7 @@ public class AuditController {
 
     @GetMapping("/punishments")
     public ResponseEntity<List<PunishmentAuditResponse>> getPunishments(
-        @RequestParam(defaultValue = "50") int limit,
+        @RequestParam(defaultValue = "50") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(defaultValue = "false") boolean canRollback,
         HttpServletRequest request
     ) {
@@ -165,8 +170,8 @@ public class AuditController {
     @GetMapping("/database/{table}")
     public ResponseEntity<?> getDatabaseTable(
         @PathVariable String table,
-        @RequestParam(defaultValue = "100") int limit,
-        @RequestParam(defaultValue = "0") int skip,
+        @RequestParam(defaultValue = "100") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
+        @RequestParam(defaultValue = "0") @Min(0) int skip,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

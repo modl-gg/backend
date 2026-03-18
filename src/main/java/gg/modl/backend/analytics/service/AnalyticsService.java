@@ -256,7 +256,6 @@ public class AnalyticsService {
                 String hourLabel = String.format("%02d:00", ldt.getHour());
                 hourlyMap.merge(hourLabel, count, Integer::sum);
             } catch (Exception ignored) {
-                // skip malformed entries
             }
         }
 

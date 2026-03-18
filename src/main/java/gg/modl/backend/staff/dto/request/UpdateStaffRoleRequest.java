@@ -1,8 +1,10 @@
 package gg.modl.backend.staff.dto.request;
 
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public record UpdateStaffRoleRequest(
-    @NotBlank String role
+    @NotBlank @Size(max = RequestValidationLimits.STAFF_ROLE_MAX_LENGTH) String role
 ) {
 }

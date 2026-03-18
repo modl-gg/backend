@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.data;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,7 +12,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class QuickResponseSettings {
-    private List<Category> categories;
+    @Builder.Default
+    private List<Category> categories = new ArrayList<>();
 
     @Data
     @NoArgsConstructor
@@ -20,8 +22,10 @@ public class QuickResponseSettings {
     public static class Category {
         private String id;
         private String name;
-        private List<String> ticketTypes;
-        private List<Action> actions;
+        @Builder.Default
+        private List<String> ticketTypes = new ArrayList<>();
+        @Builder.Default
+        private List<Action> actions = new ArrayList<>();
         private Integer order;
     }
 

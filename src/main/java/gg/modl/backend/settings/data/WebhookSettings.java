@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.data;
 
+import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -47,7 +48,8 @@ public class WebhookSettings {
         private String title;
         private String description;
         private String color;
-        private List<EmbedField> fields;
+        @Builder.Default
+        private List<EmbedField> fields = new ArrayList<>();
     }
 
     @Data

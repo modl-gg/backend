@@ -10,6 +10,7 @@ import java.util.List;
 public record UpdateWebhookSettingsRequest(
     @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
     String discordWebhookUrl,
+    @Size(max = RequestValidationLimits.DISCORD_ADMIN_ROLE_ID_MAX_LENGTH)
     String discordAdminRoleId,
     @Size(max = RequestValidationLimits.DISCORD_BOT_NAME_MAX_LENGTH)
     String botName,
@@ -64,6 +65,7 @@ public record UpdateWebhookSettingsRequest(
         String title,
         @Size(max = RequestValidationLimits.EMBED_DESCRIPTION_MAX_LENGTH)
         String description,
+        @Size(max = RequestValidationLimits.EMBED_COLOR_MAX_LENGTH)
         String color,
         @Size(max = RequestValidationLimits.EMBED_FIELDS_MAX_ENTRIES)
         List<@Valid EmbedFieldRequest> fields

@@ -76,7 +76,7 @@ public class OffenderThresholdSettingsService {
             }
             return normalizeSettings(mapped);
         } catch (Exception e) {
-            log.warn("Failed to parse status thresholds, using defaults: {}", e.getMessage());
+            log.warn("Failed to parse status thresholds, using defaults", e);
             return OffenderThresholdSettings.defaults();
         }
     }

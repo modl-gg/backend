@@ -5,10 +5,14 @@ import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -64,35 +68,47 @@ public class MinecraftSyncController {
     }
 
     public record SyncRequest(
-        String lastSyncTimestamp,
-        @Valid List<OnlinePlayer> onlinePlayers,
-        ServerStatus serverStatus,
-        String serverName,
-        List<ChatLogEntry> chatLogs,
-        List<CommandLogEntry> commandLogs
+        @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String lastSyncTimestamp,
+        @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<OnlinePlayer> onlinePlayers,
+        @Valid ServerStatus serverStatus,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
+        @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<ChatLogEntry> chatLogs,
+        @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<CommandLogEntry> commandLogs
     ) {
     }
 
-    public record ChatLogEntry(String uuid, String username, String message, long timestamp, String server) {
+    public record ChatLogEntry(
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+        @NotBlank @Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH) String message,
+        @PositiveOrZero long timestamp,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String server
+    ) {
     }
 
-    public record CommandLogEntry(String uuid, String username, String command, long timestamp, String server) {
+    public record CommandLogEntry(
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+        @NotBlank @Size(max = RequestValidationLimits.COMMAND_LOG_MAX_LENGTH) String command,
+        @PositiveOrZero long timestamp,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String server
+    ) {
     }
 
     public record OnlinePlayer(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
-        @NotBlank String username,
-        String ipAddress
+        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+        @Pattern(regexp = RegExpConstants.IP) String ipAddress
     ) {
     }
 
     public record ServerStatus(
-        int onlinePlayerCount,
-        int maxPlayers,
-        String serverVersion,
-        String timestamp,
-        String platformType,
-        String pluginVersion
+        @Min(0) int onlinePlayerCount,
+        @Min(0) int maxPlayers,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverVersion,
+        @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String timestamp,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String platformType,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String pluginVersion
     ) {
     }
 }

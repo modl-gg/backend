@@ -234,6 +234,12 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         ));
         query.with(Sort.by(Sort.Direction.DESC, ServerFields.USER_COUNT));
         query.limit(limit);
+        query.fields()
+            .include(ServerFields.SERVER_NAME)
+            .include(ServerFields.CUSTOM_DOMAIN)
+            .include(ServerFields.USER_COUNT)
+            .include(ServerFields.TICKET_COUNT)
+            .include(ServerFields.PLAN);
         return find(query);
     }
 
@@ -353,6 +359,14 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             .include(ServerFields.LAST_STATS_UPDATED_AT)
             .include(ServerFields.LAST_ACTIVITY_AT)
             .include(ServerFields.UPDATED_AT);
+        return find(query);
+    }
+
+    public List<Server> findProvisioningCandidatesByIds(List<String> serverIds) {
+        Query query = Query.query(new Criteria().andOperator(
+            MongoQueries.where(ServerFields.ID).in(serverIds),
+            Criteria.where(ServerFields.DATABASE_NAME).exists(true).ne(null)
+        ));
         return find(query);
     }
 
@@ -637,6 +651,78 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
         return aggregate(aggregation, DateValueResult.class).getMappedResults();
     }
+
+    public DashboardStats aggregateDashboardStats(Date startDate, Date previousStartDate) {
+        Document facet = new Document()
+            .append("total", List.of(new Document("$count", "n")))
+            .append("active", List.of(
+                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
+                    .append("emailVerified", true)),
+                new Document("$count", "n")
+            ))
+            .append("withUsers", List.of(
+                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
+                    .append("userCount", new Document("$gt", 0))),
+                new Document("$count", "n")
+            ))
+            .append("currentPeriod", List.of(
+                new Document("$match", new Document("createdAt", new Document("$gte", startDate))),
+                new Document("$count", "n")
+            ))
+            .append("previousPeriod", List.of(
+                new Document("$match", new Document("createdAt",
+                    new Document("$gte", previousStartDate).append("$lt", startDate))),
+                new Document("$count", "n")
+            ))
+            .append("usage", List.of(
+                new Document("$group", new Document("_id", null)
+                    .append("totalUsers", new Document("$sum", "$userCount"))
+                    .append("totalTickets", new Document("$sum", "$ticketCount")))
+            ));
+
+        List<Document> pipeline = List.of(new Document("$facet", facet));
+        List<Document> results = globalTemplate().getCollection(collectionName())
+            .aggregate(pipeline)
+            .into(new java.util.ArrayList<>());
+
+        if (results.isEmpty()) {
+            return new DashboardStats(0, 0, 0, 0, 0, 0, 0);
+        }
+
+        Document doc = results.get(0);
+        long total = extractFacetCount(doc, "total");
+        long active = extractFacetCount(doc, "active");
+        long withUsers = extractFacetCount(doc, "withUsers");
+        long currentPeriod = extractFacetCount(doc, "currentPeriod");
+        long previousPeriod = extractFacetCount(doc, "previousPeriod");
+
+        long totalUsers = 0;
+        long totalTickets = 0;
+        List<?> usageList = doc.getList("usage", Document.class, List.of());
+        if (!usageList.isEmpty() && usageList.getFirst() instanceof Document usageDoc) {
+            totalUsers = extractLong(usageDoc, "totalUsers");
+            totalTickets = extractLong(usageDoc, "totalTickets");
+        }
+
+        return new DashboardStats(total, active, withUsers, currentPeriod, previousPeriod, totalUsers, totalTickets);
+    }
+
+    private long extractFacetCount(Document facets, String key) {
+        List<?> list = facets.getList(key, Document.class, List.of());
+        if (list.isEmpty()) {
+            return 0;
+        }
+        Object first = list.getFirst();
+        if (first instanceof Document doc) {
+            Number n = doc.get("n", Number.class);
+            return n != null ? n.longValue() : 0;
+        }
+        return 0;
+    }
+
+    public record DashboardStats(long totalServers, long activeServers, long serversWithData,
+                                  long currentPeriodServers, long previousPeriodServers,
+                                  long totalUsers, long totalTickets) {}
 
     public record AIUsageSnapshot(long aiRequestsCurrentPeriod, long maxAiOverageRequests) {}
 

@@ -1,7 +1,6 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.PlayerService;
-import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.dto.request.AddEvidenceRequest;
 import gg.modl.backend.player.dto.request.AddIpRequest;
 import gg.modl.backend.player.dto.request.AddModificationRequest;
@@ -32,8 +31,6 @@ import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,6 +38,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_PLAYERS)
 @RequiredArgsConstructor
+@Validated
 public class PanelPlayerController {
     private final PlayerService playerService;
     private final PunishmentQueryService punishmentQueryService;
@@ -74,9 +73,7 @@ public class PanelPlayerController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return playerService.getPlayerDetails(server, UUID.fromString(uuid))
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(playerService.getPlayerDetails(server, UUID.fromString(uuid)));
     }
 
     @PostMapping
@@ -101,11 +98,7 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = playerService.addUsername(server, UUID.fromString(uuid), addRequest.username());
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
+        playerService.addUsername(server, UUID.fromString(uuid), addRequest.username());
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -116,17 +109,13 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = playerService.addNote(
+        playerService.addNote(
             server,
             UUID.fromString(uuid),
             addRequest.text(),
             addRequest.issuerName(),
             addRequest.issuerId()
         );
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -137,11 +126,7 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = playerService.addIp(server, UUID.fromString(uuid), addRequest.ipAddress());
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
+        playerService.addIp(server, UUID.fromString(uuid), addRequest.ipAddress());
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -164,16 +149,12 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentMutationService.addModification(
+        punishmentMutationService.addModification(
             server,
             UUID.fromString(uuid),
             punishmentId,
             modRequest
         );
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -198,9 +179,7 @@ public class PanelPlayerController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return punishmentQueryService.getPunishmentById(server, punishmentId)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(punishmentQueryService.getPunishmentById(server, punishmentId));
     }
 
     @GetMapping("/punishments/search")
@@ -222,7 +201,7 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentEvidenceService.addPunishmentNote(
+        punishmentEvidenceService.addPunishmentNote(
             server,
             UUID.fromString(uuid),
             punishmentId,
@@ -230,10 +209,6 @@ public class PanelPlayerController {
             noteRequest.issuerName(),
             noteRequest.issuerId()
         );
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -245,16 +220,12 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentEvidenceService.addEvidence(
+        punishmentEvidenceService.addEvidence(
             server,
             UUID.fromString(uuid),
             punishmentId,
             evidenceRequest
         );
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -266,16 +237,12 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        Player player = punishmentMutationService.modifyPunishmentTickets(
+        punishmentMutationService.modifyPunishmentTickets(
             server,
             UUID.fromString(uuid),
             punishmentId,
             ticketRequest
         );
-        if (player == null) {
-            return ResponseEntity.notFound().build();
-        }
-
         return ResponseEntity.ok(new SimpleResponse(true));
     }
 
@@ -321,9 +288,5 @@ public class PanelPlayerController {
         ));
     }
 
-    @Data
-    @AllArgsConstructor
-    public static final class SimpleResponse {
-        boolean success;
-    }
+    public record SimpleResponse(boolean success) {}
 }

@@ -22,6 +22,7 @@ public record PunishmentTypeRequest(
     String name,
     @NotBlank
     @Pattern(regexp = "(?i)Administrative|Social|Gameplay", message = "must be one of: Administrative, Social, Gameplay")
+    @Size(max = RequestValidationLimits.PUNISHMENT_CATEGORY_MAX_LENGTH)
     String category,
     @Valid
     PunishmentDurations durations,

@@ -1,16 +1,19 @@
 package gg.modl.backend.player.dto.request;
 
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import org.jetbrains.annotations.Nullable;
 
 public record AddEvidenceRequest(
-    @Nullable String text,
-    @NotBlank String type,
-    @Nullable String issuerName,
-    @Nullable String issuerId,
-    @Nullable String url,
-    @Nullable String fileName,
-    @Nullable String fileType,
-    @Nullable Long fileSize
+    @Nullable @Size(max = RequestValidationLimits.EVIDENCE_TEXT_MAX_LENGTH) String text,
+    @NotBlank @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_TYPE_MAX_LENGTH) String type,
+    @Nullable @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
+    @Nullable @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
+    @Nullable @Size(max = RequestValidationLimits.EVIDENCE_URL_MAX_LENGTH) String url,
+    @Nullable @Size(max = RequestValidationLimits.FILE_NAME_MAX_LENGTH) String fileName,
+    @Nullable @Size(max = RequestValidationLimits.CONTENT_TYPE_MAX_LENGTH) String fileType,
+    @Nullable @PositiveOrZero Long fileSize
 ) {
 }

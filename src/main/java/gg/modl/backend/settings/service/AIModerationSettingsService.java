@@ -38,7 +38,7 @@ public class AIModerationSettingsService extends AbstractSettingsService {
                 Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
                 settingsRepository.saveEntity(server, new Settings(null, SETTINGS_TYPE_AI_MODERATION, data));
             } catch (Exception e) {
-                log.warn("Failed to create default AI moderation settings for server {}: {}", server.getDatabaseName(), e.getMessage());
+                log.warn("Failed to create default AI moderation settings for server {}", server.getDatabaseName(), e);
             }
             return defaults;
         }

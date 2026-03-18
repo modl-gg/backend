@@ -101,12 +101,10 @@ public class PublicTicketController {
 
         Ticket ticket = rawTicket.get();
 
-        // Hidden tickets return 404 for public access
         if (ticket.isHidden()) {
             return ResponseEntity.notFound().build();
         }
 
-        // Email auth check
         if (ticket.isEmailAuthEnabled()) {
             if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
                 String emailHint = ticketService.getEmailHint(ticket);
@@ -118,37 +116,33 @@ public class PublicTicketController {
             }
         }
 
-        return ticketService.getTicketById(server, id)
-            .map(ticketResponse -> {
-                Map<String, Object> response = new HashMap<>();
-                response.put("id", ticketResponse.id());
-                response.put("_id", ticketResponse.id());
-                response.put("type", ticketResponse.type());
-                response.put("subject", ticketResponse.subject());
-                response.put("status", ticketResponse.status());
-                String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
-                response.put("creatorName", creatorName);
-                response.put("creator", creatorName);
-                response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
-                response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
-                response.put("created", ticketResponse.date());
-                response.put("date", ticketResponse.date());
-                response.put("category", ticketResponse.category());
-                response.put("locked", ticketResponse.locked());
-                response.put("replies", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-                response.put("messages", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-                response.put("notes", ticketResponse.notes() != null ? ticketResponse.notes() : Collections.emptyList());
-                response.put("tags", ticketResponse.tags() != null ? ticketResponse.tags() : Collections.emptyList());
-                response.put("data", ticketResponse.data() != null ? ticketResponse.data() : Map.of());
-                response.put("formData", ticketResponse.formData() != null ? ticketResponse.formData() : Map.of());
-                response.put("reportedPlayer", ticketResponse.reportedPlayer() != null ? ticketResponse.reportedPlayer() : "");
-                response.put("reportedPlayerUuid", ticketResponse.reportedPlayerUuid() != null ? ticketResponse.reportedPlayerUuid() : "");
-                response.put("chatMessages", ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
-                response.put("emailAuthEnabled", ticketResponse.emailAuthEnabled());
-                return ResponseEntity.ok(response);
-            })
-            .<ResponseEntity<?>>map(r -> r)
-            .orElse(ResponseEntity.notFound().build());
+        TicketResponse ticketResponse = ticketService.getTicketById(server, id);
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", ticketResponse.id());
+        response.put("_id", ticketResponse.id());
+        response.put("type", ticketResponse.type());
+        response.put("subject", ticketResponse.subject());
+        response.put("status", ticketResponse.status());
+        String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
+        response.put("creatorName", creatorName);
+        response.put("creator", creatorName);
+        response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
+        response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
+        response.put("created", ticketResponse.date());
+        response.put("date", ticketResponse.date());
+        response.put("category", ticketResponse.category());
+        response.put("locked", ticketResponse.locked());
+        response.put("replies", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
+        response.put("messages", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
+        response.put("notes", ticketResponse.notes() != null ? ticketResponse.notes() : Collections.emptyList());
+        response.put("tags", ticketResponse.tags() != null ? ticketResponse.tags() : Collections.emptyList());
+        response.put("data", ticketResponse.data() != null ? ticketResponse.data() : Map.of());
+        response.put("formData", ticketResponse.formData() != null ? ticketResponse.formData() : Map.of());
+        response.put("reportedPlayer", ticketResponse.reportedPlayer() != null ? ticketResponse.reportedPlayer() : "");
+        response.put("reportedPlayerUuid", ticketResponse.reportedPlayerUuid() != null ? ticketResponse.reportedPlayerUuid() : "");
+        response.put("chatMessages", ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
+        response.put("emailAuthEnabled", ticketResponse.emailAuthEnabled());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{id}/status")
@@ -164,16 +158,15 @@ public class PublicTicketController {
             return ResponseEntity.notFound().build();
         }
 
-        return ticketService.getTicketById(server, id)
-            .map(ticket -> ResponseEntity.ok(Map.of(
-                "id", ticket.id(),
-                "type", ticket.type(),
-                "subject", ticket.subject(),
-                "status", ticket.status(),
-                "created", ticket.date(),
-                "locked", ticket.locked()
-            )))
-            .orElse(ResponseEntity.notFound().build());
+        TicketResponse ticketResp = ticketService.getTicketById(server, id);
+        return ResponseEntity.ok(Map.of(
+            "id", ticketResp.id(),
+            "type", ticketResp.type(),
+            "subject", ticketResp.subject(),
+            "status", ticketResp.status(),
+            "created", ticketResp.date(),
+            "locked", ticketResp.locked()
+        ));
     }
 
     @PostMapping("/{id}/replies")
@@ -198,16 +191,12 @@ public class PublicTicketController {
             }
         }
 
-        Optional<TicketReply> replyOpt = ticketReplyService.addReply(server, id, replyRequest);
-
-        if (replyOpt.isEmpty()) {
-            return ResponseEntity.notFound().build();
-        }
+        TicketReply reply = ticketReplyService.addReply(server, id, replyRequest);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
             "success", true,
             "message", "Reply added successfully",
-            "reply", replyOpt.get()
+            "reply", reply
         ));
     }
 
@@ -219,17 +208,16 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ticketService.submitTicketForm(server, id, submitRequest)
-            .map(ticket -> ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Ticket submitted successfully",
-                "ticket", Map.of(
-                    "id", ticket.id(),
-                    "subject", ticket.subject(),
-                    "status", ticket.status()
-                )
-            )))
-            .orElse(ResponseEntity.notFound().build());
+        TicketResponse ticketResp = ticketService.submitTicketForm(server, id, submitRequest);
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "message", "Ticket submitted successfully",
+            "ticket", Map.of(
+                "id", ticketResp.id(),
+                "subject", ticketResp.subject(),
+                "status", ticketResp.status()
+            )
+        ));
     }
 
     @PostMapping("/{id}/request-verification")

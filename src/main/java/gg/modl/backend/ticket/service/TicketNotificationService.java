@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -48,13 +49,13 @@ public class TicketNotificationService {
 
     private void sendEmailNotification(Server server, Ticket ticket, TicketReply reply, String toEmail) {
         try {
-            String serverName = server.getServerName() != null ? server.getServerName() : "Server";
-            String playerName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-            String ticketType = resolveTicketLabel(ticket);
-            String ticketId = ticket.getId();
-            String ticketSubject = ticket.getSubject() != null ? ticket.getSubject() : "No Subject";
-            String replyAuthor = reply.getName() != null ? reply.getName() : "Staff";
-            String replyContent = reply.getContent() != null ? reply.getContent() : "";
+            String serverName = HtmlUtils.htmlEscape(server.getServerName() != null ? server.getServerName() : "Server");
+            String playerName = HtmlUtils.htmlEscape(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player");
+            String ticketType = HtmlUtils.htmlEscape(resolveTicketLabel(ticket));
+            String ticketId = HtmlUtils.htmlEscape(ticket.getId());
+            String ticketSubject = HtmlUtils.htmlEscape(ticket.getSubject() != null ? ticket.getSubject() : "No Subject");
+            String replyAuthor = HtmlUtils.htmlEscape(reply.getName() != null ? reply.getName() : "Staff");
+            String replyContent = HtmlUtils.htmlEscape(reply.getContent() != null ? reply.getContent() : "");
             String ticketUrl = buildTicketUrl(server, ticketId);
 
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_REPLY_TEMPLATE.build(
@@ -177,19 +178,19 @@ public class TicketNotificationService {
 
     private void sendTranscriptEmail(Server server, Ticket ticket, String toEmail) {
         try {
-            String serverName = server.getServerName() != null ? server.getServerName() : "Server";
-            String playerName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-            String ticketType = resolveTicketLabel(ticket);
-            String ticketId = ticket.getId();
-            String ticketSubject = ticket.getSubject() != null ? ticket.getSubject() : "No Subject";
+            String serverName = HtmlUtils.htmlEscape(server.getServerName() != null ? server.getServerName() : "Server");
+            String playerName = HtmlUtils.htmlEscape(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player");
+            String ticketType = HtmlUtils.htmlEscape(resolveTicketLabel(ticket));
+            String ticketId = HtmlUtils.htmlEscape(ticket.getId());
+            String ticketSubject = HtmlUtils.htmlEscape(ticket.getSubject() != null ? ticket.getSubject() : "No Subject");
             String ticketUrl = buildTicketUrl(server, ticketId);
 
             StringBuilder messagesHtml = new StringBuilder();
             if (ticket.getReplies() != null) {
                 for (TicketReply reply : ticket.getReplies()) {
-                    String author = reply.getName() != null ? reply.getName() : (reply.isStaff() ? "Staff" : "Player");
-                    String date = reply.getCreated() != null ? reply.getCreated().toString() : "";
-                    String content = reply.getContent() != null ? reply.getContent().replace("\n", "<br>") : "";
+                    String author = HtmlUtils.htmlEscape(reply.getName() != null ? reply.getName() : (reply.isStaff() ? "Staff" : "Player"));
+                    String date = HtmlUtils.htmlEscape(reply.getCreated() != null ? reply.getCreated().toString() : "");
+                    String content = HtmlUtils.htmlEscape(reply.getContent() != null ? reply.getContent() : "").replace("\n", "<br>");
                     String roleLabel = reply.isStaff() ? " (Staff)" : "";
 
                     messagesHtml.append("""

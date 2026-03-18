@@ -47,7 +47,7 @@ public class MetricSnapshotService {
             Date oneDayAgo = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
             metricSnapshotRepository.deleteOlderThan(oneDayAgo);
             serverInstanceSnapshotRepository.deleteOlderThan(oneDayAgo);
-            log.info("Purged metric snapshots and server instance snapshots older than 24 hours");
+            log.debug("Purged metric snapshots and server instance snapshots older than 24 hours");
         } catch (Exception e) {
             log.error("Failed to purge old snapshots", e);
         }

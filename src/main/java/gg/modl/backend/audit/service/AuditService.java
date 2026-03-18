@@ -10,6 +10,7 @@ import gg.modl.backend.database.mongo.repository.AuditMongoRepository;
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.IdCountResult;
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.OrdinalCountResult;
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.StaffActivityResult;
+import gg.modl.backend.exception.ExternalServiceException;
 import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
@@ -671,9 +672,8 @@ public class AuditService {
             }
             return rollbackCount;
         } catch (Exception e) {
-            log.error("Error during bulk rollback for staff {}: {}",
-                staffUsername, e.getMessage());
-            throw new RuntimeException("Failed to rollback punishments: " + e.getMessage());
+            log.error("Error during bulk rollback for staff {}", staffUsername, e);
+            throw new ExternalServiceException("Failed to rollback punishments", e);
         }
     }
 

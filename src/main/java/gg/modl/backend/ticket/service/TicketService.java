@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.staff.data.Staff;
@@ -60,8 +61,10 @@ public class TicketService {
         return new Date();
     }
 
-    public Optional<TicketResponse> getTicketById(Server server, String ticketId) {
-        return ticketRepository.findById(server, ticketId).map(ticket -> toTicketResponse(server, ticket));
+    public TicketResponse getTicketById(Server server, String ticketId) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+        return toTicketResponse(server, ticket);
     }
 
     private TicketResponse toTicketResponse(Server server, Ticket ticket) {
@@ -215,11 +218,9 @@ public class TicketService {
         return toTicketResponse(server, ticket);
     }
 
-    public Optional<TicketResponse> updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public TicketResponse updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
         boolean wasClosed = ticket.getStatus() != null && ticket.getStatus().isTerminal();
         ticket.setUpdatedAt(new Date());
 
@@ -286,7 +287,7 @@ public class TicketService {
             notificationService.notifyTicketClosed(server, saved);
         }
 
-        return Optional.of(toTicketResponse(server, saved));
+        return toTicketResponse(server, saved);
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
@@ -405,11 +406,9 @@ public class TicketService {
         );
     }
 
-    public Optional<TicketResponse> submitTicketForm(Server server, String ticketId, SubmitTicketFormRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return Optional.empty();
-        }
+    public TicketResponse submitTicketForm(Server server, String ticketId, SubmitTicketFormRequest request) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
         ticket.applyLifecycleStatus(TicketStatus.OPEN);
         ticket.setUpdatedAt(new Date());
 
@@ -475,7 +474,7 @@ public class TicketService {
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
 
-        return Optional.of(toTicketResponse(server, saved));
+        return toTicketResponse(server, saved);
     }
 
     public String getEmailHint(Ticket ticket) {

@@ -264,7 +264,7 @@ class TicketServiceTest {
             )
         );
 
-        assertTrue(response.isPresent());
+        assertNotNull(response);
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());

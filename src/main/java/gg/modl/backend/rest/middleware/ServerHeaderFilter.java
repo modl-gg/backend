@@ -99,7 +99,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
         Server server = serverService.getServerFromDomain(normalizedServerDomain);
         if (server == null) {
-            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid server domain: " + normalizedServerDomain);
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Invalid server domain");
             return;
         }
 

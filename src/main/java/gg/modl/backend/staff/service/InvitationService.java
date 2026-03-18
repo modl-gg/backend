@@ -91,7 +91,7 @@ public class InvitationService {
                     success.add(email);
                 }
             } catch (Exception e) {
-                log.error("Error processing invitation for {}: {}", email, e.getMessage());
+                log.error("Error processing invitation for {}", email, e);
                 failed.add(new InviteResultResponse.FailedInvite(email, "Internal server error"));
             }
         }
@@ -153,7 +153,7 @@ public class InvitationService {
                 invitationLink
             );
         } catch (Exception e) {
-            log.error("Failed to send invitation email to {}: {}", normalizedEmail, e.getMessage());
+            log.error("Failed to send invitation email to {}", normalizedEmail, e);
             invitationRepository.deleteById(server, invitation.getId());
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Failed to send invitation email."));
         }

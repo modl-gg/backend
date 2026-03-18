@@ -1,6 +1,7 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
@@ -11,7 +12,6 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
 import gg.modl.backend.server.data.Server;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -33,7 +33,6 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         Date now = new Date();
-        ensurePunishmentCollections(context.punishment());
         context.punishment().getEvidence().add(new PunishmentEvidence(
             null,
             evidenceUrl,
@@ -52,48 +51,23 @@ public class PunishmentEvidenceService {
             resolvedIssuerName,
             issuerId
         ));
-        persistPlayerPunishments(server, context.player());
+        playerRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
     }
 
-    private void ensurePunishmentCollections(Punishment punishment) {
-        if (punishment.getModifications() == null) {
-            punishment.setModifications(new ArrayList<>());
-        }
-        if (punishment.getNotes() == null) {
-            punishment.setNotes(new ArrayList<>());
-        }
-        if (punishment.getEvidence() == null) {
-            punishment.setEvidence(new ArrayList<>());
-        }
-        if (punishment.getAttachedTicketIds() == null) {
-            punishment.setAttachedTicketIds(new ArrayList<>());
-        }
-    }
-
-    private void persistPlayerPunishments(Server server, Player player) {
-        if (player.getPunishments() == null) {
-            player.setPunishments(new ArrayList<>());
-        }
-        playerRepository.replacePunishments(server, player);
-    }
-
     public Player addEvidence(Server server, UUID playerUuid, String punishmentId, AddEvidenceRequest request) {
-        Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
-        if (player == null) {
-            return null;
-        }
+        Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
         Punishment punishment = findPunishment(player, punishmentId);
         if (punishment == null) {
-            return null;
+            throw new ResourceNotFoundException("Punishment not found");
         }
 
         String evIssuerId = request.issuerId();
         String evIssuerName = evIssuerId != null ? null : (request.issuerName() != null ? request.issuerName() : "System");
 
-        ensurePunishmentCollections(punishment);
         punishment.getEvidence().add(new PunishmentEvidence(
             request.text(),
             request.url(),
@@ -106,12 +80,12 @@ public class PunishmentEvidenceService {
             request.fileSize()
         ));
 
-        persistPlayerPunishments(server, player);
+        playerRepository.replacePunishments(server, player);
         return player;
     }
 
     private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments() == null || player.getPunishments().isEmpty()) {
+        if (player.getPunishments().isEmpty()) {
             return null;
         }
         return player.getPunishments()
@@ -129,7 +103,6 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         Date now = new Date();
-        ensurePunishmentCollections(context.punishment());
         for (UploadedEvidenceItem evidenceItem : evidenceItems) {
             context.punishment().getEvidence().add(new PunishmentEvidence(
                 null,
@@ -150,7 +123,7 @@ public class PunishmentEvidenceService {
             resolvedIssuerName,
             issuerId
         ));
-        persistPlayerPunishments(server, context.player());
+        playerRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence uploaded successfully", true, evidenceItems.size());
     }
@@ -162,28 +135,24 @@ public class PunishmentEvidenceService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        ensurePunishmentCollections(context.punishment());
         context.punishment().getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        persistPlayerPunishments(server, context.player());
+        playerRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
     }
 
     public Player addPunishmentNote(Server server, UUID playerUuid, String punishmentId, String text, String issuerName, String issuerId) {
-        Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
-        if (player == null) {
-            return null;
-        }
+        Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
+            .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
         Punishment punishment = findPunishment(player, punishmentId);
         if (punishment == null) {
-            return null;
+            throw new ResourceNotFoundException("Punishment not found");
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        ensurePunishmentCollections(punishment);
         punishment.getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        persistPlayerPunishments(server, player);
+        playerRepository.replacePunishments(server, player);
         return player;
     }
 }

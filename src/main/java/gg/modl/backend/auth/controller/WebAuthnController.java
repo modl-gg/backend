@@ -16,8 +16,10 @@ import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +45,6 @@ public class WebAuthnController {
     private final ObjectMapper objectMapper;
     private final CookieUtil cookieUtil;
 
-    // --- Registration (requires session) ---
 
     @PostMapping("/register/options")
     public ResponseEntity<?> registerOptions(HttpServletRequest request) throws JsonProcessingException {
@@ -62,7 +63,6 @@ public class WebAuthnController {
         return (String) request.getAttribute(RequestAttribute.SERVER_DOMAIN);
     }
 
-    // --- Credential management (requires session) ---
 
     @PostMapping("/register/verify")
     public ResponseEntity<?> registerVerify(
@@ -108,7 +108,6 @@ public class WebAuthnController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
-    // --- Login (no session required) ---
 
     @DeleteMapping("/credentials/{id}")
     public ResponseEntity<?> deleteCredential(
@@ -160,7 +159,6 @@ public class WebAuthnController {
         ));
     }
 
-    // --- Helpers ---
 
     private boolean isAuthorizedEmail(Server server, String email) {
         if (permissionService.isSuperAdmin(server, email)) {
@@ -188,13 +186,19 @@ public class WebAuthnController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
-    // --- Request DTOs ---
 
-    public record RegisterVerifyRequest(@NotBlank String challengeId, @NotBlank String response, String name) {}
+    public record RegisterVerifyRequest(
+        @NotBlank @Size(max = 256) String challengeId,
+        @NotBlank @Size(max = 10_000) String response,
+        @Size(max = 128) String name
+    ) {}
 
-    public record RenameCredentialRequest(@NotBlank String name) {}
+    public record RenameCredentialRequest(@NotBlank @Size(max = 128) String name) {}
 
-    public record LoginOptionsRequest(@Email @NotBlank String email) {}
+    public record LoginOptionsRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
 
-    public record LoginVerifyRequest(@NotBlank String challengeId, @NotBlank String response) {}
+    public record LoginVerifyRequest(
+        @NotBlank @Size(max = 256) String challengeId,
+        @NotBlank @Size(max = 10_000) String response
+    ) {}
 }

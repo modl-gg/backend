@@ -10,11 +10,15 @@ import gg.modl.backend.dashboard.service.DashboardService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
 @RequiredArgsConstructor
+@Validated
 public class DashboardController {
     private final DashboardService dashboardService;
 
@@ -35,7 +40,7 @@ public class DashboardController {
 
     @GetMapping("/recent-tickets")
     public ResponseEntity<List<RecentTicketResponse>> getRecentTickets(
-        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -45,7 +50,7 @@ public class DashboardController {
 
     @GetMapping("/recent-punishments")
     public ResponseEntity<List<RecentPunishmentResponse>> getRecentPunishments(
-        @RequestParam(defaultValue = "10") int limit,
+        @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -55,8 +60,8 @@ public class DashboardController {
 
     @GetMapping("/activity/recent")
     public ResponseEntity<?> getRecentActivity(
-        @RequestParam(defaultValue = "20") int limit,
-        @RequestParam(defaultValue = "7") int days,
+        @RequestParam(defaultValue = "20") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
+        @RequestParam(defaultValue = "7") @Min(1) @Max(365) int days,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
