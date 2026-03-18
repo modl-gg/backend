@@ -14,7 +14,7 @@ public record ReorderRolesRequest(
     List<@Valid RoleOrderItem> roleOrder
 ) {
     public record RoleOrderItem(
-        @NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String id,
+        @NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String id,
         @PositiveOrZero int order
     ) {
     }

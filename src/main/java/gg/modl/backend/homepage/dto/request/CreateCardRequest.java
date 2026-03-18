@@ -13,7 +13,7 @@ public record CreateCardRequest(
     @Nullable @Size(max = RequestValidationLimits.HOMEPAGE_CARD_ACTION_TYPE_MAX_LENGTH) String actionType,
     @Nullable @Size(max = RequestValidationLimits.HOMEPAGE_CARD_URL_MAX_LENGTH) String actionUrl,
     @Nullable @Size(max = RequestValidationLimits.HOMEPAGE_CARD_BUTTON_TEXT_MAX_LENGTH) String actionButtonText,
-    @Nullable @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String categoryId,
+    @Nullable @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String categoryId,
     @Nullable @Size(max = RequestValidationLimits.HOMEPAGE_CARD_COLOR_MAX_LENGTH) String backgroundColor,
     @Nullable Boolean isEnabled
 ) {

@@ -720,6 +720,67 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return 0;
     }
 
+    public MonitoringServerStats aggregateMonitoringServerStats(Date fiveMinutesAgo, Date oneWeekAgo) {
+        Document facet = new Document()
+            .append("total", List.of(new Document("$count", "n")))
+            .append("active", List.of(
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED.name())
+                    .append(ServerFields.EMAIL_VERIFIED, true)),
+                new Document("$count", "n")
+            ))
+            .append("concurrent", List.of(
+                new Document("$match", new Document(ServerFields.LAST_ACTIVITY_AT, new Document("$gte", fiveMinutesAgo))),
+                new Document("$count", "n")
+            ))
+            .append("concurrentPlayers", List.of(
+                new Document("$match", new Document(ServerFields.LAST_ACTIVITY_AT, new Document("$gte", fiveMinutesAgo))),
+                new Document("$group", new Document("_id", null)
+                    .append("sum", new Document("$sum", "$" + ServerFields.ONLINE_PLAYER_COUNT)))
+            ))
+            .append("pending", List.of(
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS,
+                    new Document("$in", List.of(ProvisioningStatus.PENDING.name(), ProvisioningStatus.IN_PROGRESS.name())))),
+                new Document("$count", "n")
+            ))
+            .append("failed", List.of(
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.FAILED.name())),
+                new Document("$count", "n")
+            ))
+            .append("recentRegistrations", List.of(
+                new Document("$match", new Document(ServerFields.CREATED_AT, new Document("$gte", oneWeekAgo))),
+                new Document("$count", "n")
+            ));
+
+        List<Document> pipeline = List.of(new Document("$facet", facet));
+        List<Document> results = globalTemplate().getCollection(collectionName())
+            .aggregate(pipeline)
+            .into(new ArrayList<>());
+
+        if (results.isEmpty()) {
+            return new MonitoringServerStats(0, 0, 0, 0, 0, 0, 0);
+        }
+
+        Document doc = results.get(0);
+        long concurrentPlayers = 0;
+        List<?> cpList = doc.getList("concurrentPlayers", Document.class, List.of());
+        if (!cpList.isEmpty() && cpList.getFirst() instanceof Document cpDoc) {
+            concurrentPlayers = extractLong(cpDoc, "sum");
+        }
+
+        return new MonitoringServerStats(
+            extractFacetCount(doc, "total"),
+            extractFacetCount(doc, "active"),
+            extractFacetCount(doc, "concurrent"),
+            concurrentPlayers,
+            extractFacetCount(doc, "pending"),
+            extractFacetCount(doc, "failed"),
+            extractFacetCount(doc, "recentRegistrations")
+        );
+    }
+
+    public record MonitoringServerStats(long total, long active, long concurrent, long concurrentPlayers,
+                                         long pending, long failed, long recentRegistrations) {}
+
     public record DashboardStats(long totalServers, long activeServers, long serversWithData,
                                   long currentPeriodServers, long previousPeriodServers,
                                   long totalUsers, long totalTickets) {}

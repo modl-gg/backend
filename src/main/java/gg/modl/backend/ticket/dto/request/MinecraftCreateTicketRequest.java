@@ -18,7 +18,7 @@ public record MinecraftCreateTicketRequest(
     @Nullable @Size(max = RequestValidationLimits.TICKET_DESCRIPTION_MAX_LENGTH) String description,
     @Nullable @Pattern(regexp = RegExpConstants.UUID) String reportedPlayerUuid,
     @Nullable @Size(max = RequestValidationLimits.LOG_USERNAME_MAX_LENGTH) String reportedPlayerName,
-    @Nullable @Size(max = RequestValidationLimits.TICKET_MAX_CHAT_MESSAGES) List<@Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH) String> chatMessages,
+    @Nullable @Size(max = RequestValidationLimits.MC_TICKET_CHAT_MESSAGES_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.CHAT_LOG_MESSAGE_MAX_LENGTH) String> chatMessages,
     @Nullable @Size(max = RequestValidationLimits.TICKET_TAGS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.TICKET_TAG_MAX_LENGTH) String> tags,
     @Nullable @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")
     String priority,

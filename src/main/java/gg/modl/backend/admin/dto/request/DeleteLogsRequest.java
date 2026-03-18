@@ -9,5 +9,5 @@ import java.util.List;
 public record DeleteLogsRequest(
     @NotEmpty
     @Size(max = RequestValidationLimits.DELETE_LOGS_MAX_IDS)
-    List<@NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> logIds
+    List<@NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> logIds
 ) {}

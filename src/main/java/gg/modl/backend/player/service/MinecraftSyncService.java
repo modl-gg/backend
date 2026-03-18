@@ -593,10 +593,11 @@ public class MinecraftSyncService {
     private List<Map<String, Object>> getActiveStaffMembers(Server server, Map<String, String> onlinePlayerIps) {
         List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
 
+        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
+
         List<Map<String, Object>> result = new ArrayList<>();
         for (Staff staff : staffWithMinecraft) {
-            StaffRole role = staffRoleRepository.findByName(server, staff.getRole()).orElse(null);
-            List<String> permissions = role != null ? role.getPermissions() : List.of();
+            List<String> permissions = permissionsByRole.getOrDefault(staff.getRole(), List.of());
 
             String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
             boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null
@@ -616,6 +617,23 @@ public class MinecraftSyncService {
             result.add(entry);
         }
 
+        return result;
+    }
+
+    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
+        Set<String> roleNames = new HashSet<>();
+        for (Staff staff : staffMembers) {
+            if (staff.getRole() != null && !staff.getRole().isBlank()) {
+                roleNames.add(staff.getRole());
+            }
+        }
+        if (roleNames.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, List<String>> result = new HashMap<>();
+        for (StaffRole role : staffRoleRepository.findByNames(server, roleNames)) {
+            result.put(role.getName(), role.getPermissions() != null ? role.getPermissions() : List.of());
+        }
         return result;
     }
 

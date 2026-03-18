@@ -393,16 +393,16 @@ public class MinecraftPunishmentController {
         @Min(0) Long duration,
         @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_DATA_MAX_ENTRIES) Map<String, Object> data,
         @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_NOTES_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String> notes,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> attachedTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> attachedTicketIds,
         @Size(max = RequestValidationLimits.PLAYER_SEVERITY_MAX_LENGTH) String severity,
         @Size(max = RequestValidationLimits.PLAYER_STATUS_MAX_LENGTH) String status
     ) {
     }
 
     public record AcknowledgeRequest(
-        @NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String punishmentId,
+        @NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String punishmentId,
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String playerUuid,
-        @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String executedAt,
+        @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String executedAt,
         boolean success,
         @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_REASON_MAX_LENGTH) String errorMessage
     ) {
@@ -446,7 +446,7 @@ public class MinecraftPunishmentController {
     }
 
     public record StatWipeAcknowledgeRequest(
-        @NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String punishmentId,
+        @NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String punishmentId,
         @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
         boolean success
     ) {
@@ -455,8 +455,8 @@ public class MinecraftPunishmentController {
     public record ModifyTicketsRequest(
         @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
         @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> addTicketIds,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> removeTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> addTicketIds,
+        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> removeTicketIds,
         boolean modifyAssociatedTickets
     ) {
     }

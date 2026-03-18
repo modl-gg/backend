@@ -9,6 +9,6 @@ import java.util.List;
 public record ReorderRequest(
     @NotEmpty
     @Size(max = RequestValidationLimits.KB_REORDER_MAX_IDS)
-    List<@NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> ids
+    List<@NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> ids
 ) {
 }

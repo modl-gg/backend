@@ -59,8 +59,8 @@ public final class RequestValidationLimits {
     public static final int REPORT_ASSIGNEE_MAX_LENGTH = 256;
     public static final int REPORT_PUNISHMENT_ID_MAX_LENGTH = 32;
     public static final int NOTIFICATION_ACK_MAX_IDS = 100;
-    public static final int NOTIFICATION_ID_MAX_LENGTH = 64;
-    public static final int ACK_TIMESTAMP_MAX_LENGTH = 64;
+    public static final int ID_MAX_LENGTH = 64;
+    public static final int TIMESTAMP_MAX_LENGTH = 64;
     public static final int CHAT_LOG_BATCH_MAX_ENTRIES = 500;
     public static final int CHAT_LOG_MESSAGE_MAX_LENGTH = 512;
     public static final int COMMAND_LOG_MAX_LENGTH = 512;
@@ -71,7 +71,7 @@ public final class RequestValidationLimits {
     public static final int EVIDENCE_TEXT_MAX_LENGTH = 4_000;
     public static final int FILE_NAME_MAX_LENGTH = 255;
     public static final int CONTENT_TYPE_MAX_LENGTH = 128;
-    public static final int TICKET_MAX_CHAT_MESSAGES = 50;
+    public static final int MC_TICKET_CHAT_MESSAGES_MAX_ENTRIES = 50;
     public static final int TICKET_SUBJECT_MAX_LENGTH = 256;
     public static final int TICKET_DESCRIPTION_MAX_LENGTH = 10_000;
     public static final int TICKET_CREATOR_IDENTIFIER_MAX_LENGTH = 256;
@@ -125,6 +125,7 @@ public final class RequestValidationLimits {
     public static final int PLAYER_MODIFICATION_REASON_MAX_LENGTH = 500;
     public static final int PLAYER_SEVERITY_MAX_LENGTH = 32;
     public static final int PLAYER_STATUS_MAX_LENGTH = 32;
+    public static final int TICKET_STATUS_MAX_LENGTH = 32;
     public static final int PLAYER_PUNISHMENT_REASON_MAX_LENGTH = 1_000;
     public static final int PLAYER_PUNISHMENT_NOTES_MAX_ENTRIES = 50;
     public static final int PLAYER_PUNISHMENT_EVIDENCE_MAX_ENTRIES = 50;

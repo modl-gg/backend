@@ -205,7 +205,7 @@ public class MongoIndexBootstrapService {
         if (value instanceof Number number) {
             return number.intValue() < 0 ? Sort.Direction.DESC : Sort.Direction.ASC;
         }
-        throw new IllegalArgumentException("Unsupported index direction value: " + value);
+        throw new gg.modl.backend.exception.ValidationException("Unsupported index direction value: " + value);
     }
 
     private Document doc(String field, int direction) {

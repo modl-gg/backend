@@ -198,11 +198,7 @@ public class PunishmentMutationService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Failed to modify punishment tickets", false, 0);
         }
 
-        Player updated = modifyPunishmentTickets(server, context.player().getMinecraftUuid(), punishmentId, request);
-        if (updated == null) {
-            return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Failed to modify punishment tickets", false, 0);
-        }
-
+        applyPunishmentTicketModifications(server, context.player(), context.punishment(), request);
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment tickets modified", true, 1);
     }
 
@@ -215,6 +211,12 @@ public class PunishmentMutationService {
             .filter(p -> p.getId().equals(punishmentId))
             .findFirst()
             .orElseThrow(() -> new ResourceNotFoundException("Punishment not found"));
+
+        applyPunishmentTicketModifications(server, player, punishment, request);
+        return player;
+    }
+
+    private void applyPunishmentTicketModifications(Server server, Player player, Punishment punishment, ModifyPunishmentTicketsRequest request) {
 
         List<String> currentIds = new ArrayList<>(punishment.getAttachedTicketIds());
 
@@ -242,8 +244,6 @@ public class PunishmentMutationService {
                 reopenAttachedTickets(server, request.removeTicketIds(), ticketIssuerName);
             }
         }
-
-        return player;
     }
 
     private void closeAttachedTickets(Server server, List<String> ticketIds, String issuerName) {

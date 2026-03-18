@@ -9,6 +9,6 @@ import java.util.List;
 public record MinecraftTicketsByIdsRequest(
     @NotEmpty
     @Size(max = RequestValidationLimits.TICKET_IDS_MAX_ENTRIES)
-    List<@NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> ids
+    List<@NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> ids
 ) {
 }

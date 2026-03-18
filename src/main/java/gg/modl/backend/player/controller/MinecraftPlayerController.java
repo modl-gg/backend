@@ -236,7 +236,7 @@ public class MinecraftPlayerController {
         @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
         @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
         Map<String, Object> ipInfo,
-        @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String skinHash,
+        @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String skinHash,
         @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
     ) {
     }

@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,6 +33,7 @@ public class AdminServerService {
         return serverRepository.countAdminServers(search, plan, status);
     }
 
+    @Async
     public void refreshUsageStatsForActiveServers(int maxServers) {
         int boundedLimit = Math.max(1, Math.min(maxServers, 500));
         Date now = new Date();

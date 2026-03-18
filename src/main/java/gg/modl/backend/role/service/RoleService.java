@@ -7,9 +7,8 @@ import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
-import gg.modl.backend.role.dto.request.CreateRoleRequest;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
-import gg.modl.backend.role.dto.request.UpdateRoleRequest;
+import gg.modl.backend.role.dto.request.RoleRequest;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
@@ -103,7 +102,7 @@ public class RoleService {
         return true;
     }
 
-    public RoleResponse createRole(Server server, CreateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
+    public RoleResponse createRole(Server server, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         String roleName = request.name() != null ? request.name().trim() : "";
         ensureRoleNameAvailable(server, roleName, null);
 
@@ -194,7 +193,7 @@ public class RoleService {
         }
     }
 
-    public Optional<RoleResponse> updateRole(Server server, String id, UpdateRoleRequest request, String performerRoleName, boolean isSuperAdmin) {
+    public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         // Cannot update Super Admin role
         if (id.contains("super-admin")) {
             throw new ForbiddenException("Cannot modify Super Admin role");

@@ -291,13 +291,10 @@ public class TicketService {
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
+        List<Ticket> tickets = ticketRepository.findByIds(server, request.ticketIds());
         int updatedCount = 0;
 
-        for (String ticketId : request.ticketIds()) {
-            Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-            if (ticket == null) {
-                continue;
-            }
+        for (Ticket ticket : tickets) {
             Date now = new Date();
             ticket.setUpdatedAt(now);
             boolean hasChanges = false;

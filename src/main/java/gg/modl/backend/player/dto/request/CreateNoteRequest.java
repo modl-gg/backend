@@ -9,6 +9,6 @@ public record CreateNoteRequest(
     @NotBlank @Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String text,
     @Nullable @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
     @Nullable @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
-    @Nullable @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String date
+    @Nullable @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String date
 ) {
 }

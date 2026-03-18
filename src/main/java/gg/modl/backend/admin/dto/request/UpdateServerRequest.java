@@ -12,5 +12,5 @@ public record UpdateServerRequest(
     @Nullable @Size(max = RequestValidationLimits.ADMIN_PROVISIONING_NOTES_MAX_LENGTH) String provisioningNotes,
     @Nullable @Size(max = RequestValidationLimits.ADMIN_PLAN_MAX_LENGTH) String plan,
     @Nullable @Size(max = RequestValidationLimits.ADMIN_SUBSCRIPTION_STATUS_MAX_LENGTH) String subscriptionStatus,
-    @Nullable @Size(max = RequestValidationLimits.ACK_TIMESTAMP_MAX_LENGTH) String lastActivityAt
+    @Nullable @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String lastActivityAt
 ) {}

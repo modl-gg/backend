@@ -12,6 +12,6 @@ public record AddModificationRequest(
     @Nullable @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
     @Nullable @PositiveOrZero Long effectiveDuration,
     @Nullable @Size(max = RequestValidationLimits.PLAYER_MODIFICATION_REASON_MAX_LENGTH) String reason,
-    @Nullable @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String appealTicketId
+    @Nullable @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String appealTicketId
 ) {
 }

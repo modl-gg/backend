@@ -8,7 +8,7 @@ import java.util.Map;
 import org.springframework.lang.Nullable;
 
 public record UpdateTicketRequest(
-    @Nullable @Size(max = RequestValidationLimits.PLAYER_STATUS_MAX_LENGTH) String status,
+    @Nullable @Size(max = RequestValidationLimits.TICKET_STATUS_MAX_LENGTH) String status,
     @Nullable Boolean locked,
     @Nullable @Valid AddReplyRequest newReply,
     @Nullable @Valid AddNoteRequest newNote,

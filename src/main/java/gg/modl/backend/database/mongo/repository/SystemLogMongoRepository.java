@@ -215,6 +215,74 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         return find(query);
     }
 
+    public MonitoringLogStats aggregateMonitoringLogStats(Date oneDayAgo) {
+        Document facet = new Document()
+            .append("critical24h", List.of(
+                new Document("$match", new Document(SystemLogFields.LEVEL, "critical")
+                    .append(SystemLogFields.TIMESTAMP, new Document("$gte", oneDayAgo))),
+                new Document("$count", "n")
+            ))
+            .append("error24h", List.of(
+                new Document("$match", new Document(SystemLogFields.LEVEL, "error")
+                    .append(SystemLogFields.TIMESTAMP, new Document("$gte", oneDayAgo))),
+                new Document("$count", "n")
+            ))
+            .append("warning24h", List.of(
+                new Document("$match", new Document(SystemLogFields.LEVEL, "warning")
+                    .append(SystemLogFields.TIMESTAMP, new Document("$gte", oneDayAgo))),
+                new Document("$count", "n")
+            ))
+            .append("total24h", List.of(
+                new Document("$match", new Document(SystemLogFields.TIMESTAMP, new Document("$gte", oneDayAgo))),
+                new Document("$count", "n")
+            ))
+            .append("unresolvedCritical", List.of(
+                new Document("$match", new Document(SystemLogFields.LEVEL, "critical")
+                    .append(SystemLogFields.RESOLVED, false)),
+                new Document("$count", "n")
+            ))
+            .append("unresolvedError", List.of(
+                new Document("$match", new Document(SystemLogFields.LEVEL, "error")
+                    .append(SystemLogFields.RESOLVED, false)),
+                new Document("$count", "n")
+            ));
+
+        List<Document> pipeline = List.of(new Document("$facet", facet));
+        List<Document> results = globalTemplate().getCollection(COLLECTION_NAME)
+            .aggregate(pipeline)
+            .into(new java.util.ArrayList<>());
+
+        if (results.isEmpty()) {
+            return new MonitoringLogStats(0, 0, 0, 0, 0, 0);
+        }
+
+        Document doc = results.get(0);
+        return new MonitoringLogStats(
+            extractFacetCount(doc, "critical24h"),
+            extractFacetCount(doc, "error24h"),
+            extractFacetCount(doc, "warning24h"),
+            extractFacetCount(doc, "total24h"),
+            extractFacetCount(doc, "unresolvedCritical"),
+            extractFacetCount(doc, "unresolvedError")
+        );
+    }
+
+    private long extractFacetCount(Document facets, String key) {
+        List<?> list = facets.getList(key, Document.class, List.of());
+        if (list.isEmpty()) {
+            return 0;
+        }
+        Object first = list.getFirst();
+        if (first instanceof Document doc) {
+            Number n = doc.get("n", Number.class);
+            return n != null ? n.longValue() : 0;
+        }
+        return 0;
+    }
+
+    public record MonitoringLogStats(long critical24h, long error24h, long warning24h,
+                                      long total24h, long unresolvedCritical, long unresolvedError) {}
+
     public List<Document> findLogTrends(Date startDate) {
         Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)),

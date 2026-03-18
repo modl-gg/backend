@@ -40,18 +40,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponseDTO> handleIllegalArgument(IllegalArgumentException ex) {
-        log.warn("Untyped IllegalArgumentException — should be replaced with a typed exception", ex);
-        String message = ex.getMessage();
-        String safeMessage = (message != null && message.length() <= 200 && !containsInternalDetails(message))
-            ? message : "Invalid argument";
+        log.warn("Unhandled IllegalArgumentException — consider replacing with a typed exception at the throw site", ex);
         return ResponseEntity.badRequest()
-            .body(new ErrorResponseDTO(400, safeMessage));
-    }
-
-    private boolean containsInternalDetails(String message) {
-        String lower = message.toLowerCase();
-        return lower.contains("unknown") && (lower.contains("status") || lower.contains("plan"))
-            || lower.contains("index") || lower.contains("direction value");
+            .body(new ErrorResponseDTO(400, "Invalid argument"));
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)

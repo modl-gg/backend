@@ -50,10 +50,8 @@ public class AnalyticsService {
 
     @NotNull
     public OverviewResponse getOverview(@NotNull Server server) {
-        final long now = System.currentTimeMillis();
-        final long thirtyDaysMs = 30L * 24 * 60 * 60 * 1000;
-        final Date thirtyDaysAgo = new Date(now - thirtyDaysMs);
-        final Date sixtyDaysAgo = new Date(now - 2 * thirtyDaysMs);
+        final Date thirtyDaysAgo = DateRangeUtil.daysAgo(30);
+        final Date sixtyDaysAgo = DateRangeUtil.daysAgo(60);
         final AnalyticsMongoRepository.OverviewStats stats = analyticsRepository.loadOverviewStats(server, thirtyDaysAgo, sixtyDaysAgo);
 
         final int ticketChange = stats.previousTickets() > 0
@@ -242,8 +240,7 @@ public class AnalyticsService {
             .toList();
 
         long now = System.currentTimeMillis();
-        long twentyFourHoursMs = 24 * 60 * 60 * 1000L;
-        Date since = new Date(now - twentyFourHoursMs);
+        Date since = DateRangeUtil.daysAgo(1);
 
         List<Document> hourlyResults = analyticsRepository.aggregateHourlyAuditLogCounts(server, since, ANALYTICS_TIME_ZONE);
 

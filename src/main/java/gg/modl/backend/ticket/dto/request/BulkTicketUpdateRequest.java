@@ -10,7 +10,7 @@ import org.springframework.lang.Nullable;
 public record BulkTicketUpdateRequest(
     @NotEmpty
     @Size(max = RequestValidationLimits.TICKET_IDS_MAX_ENTRIES)
-    List<@NotBlank @Size(max = RequestValidationLimits.NOTIFICATION_ID_MAX_LENGTH) String> ticketIds,
+    List<@NotBlank @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> ticketIds,
     @Nullable Boolean locked,
     @Nullable @Size(max = RequestValidationLimits.TICKET_LABELS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.TICKET_TAG_MAX_LENGTH) String> addLabels,
     @Nullable @Size(max = RequestValidationLimits.TICKET_LABELS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.TICKET_TAG_MAX_LENGTH) String> removeLabels,
