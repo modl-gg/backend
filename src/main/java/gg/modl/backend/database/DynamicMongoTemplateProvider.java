@@ -28,6 +28,9 @@ public class DynamicMongoTemplateProvider {
     }
 
     public MongoTemplate getFromDatabaseName(String databaseName) {
+        if (databaseName == null) {
+            throw new IllegalArgumentException("Database name must not be null");
+        }
         return mongoTemplateCache.computeIfAbsent(databaseName, dbName -> {
             SimpleMongoClientDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(mongoClient, databaseName);
             return new MongoTemplate(factory, mongoConverter);
