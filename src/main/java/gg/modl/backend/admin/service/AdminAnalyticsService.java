@@ -80,14 +80,16 @@ public class AdminAnalyticsService {
             : null;
 
         List<Map<String, Object>> liveServers = latestSnapshot != null && latestSnapshot.getServers() != null
-            ? latestSnapshot.getServers().stream().map(srv -> Map.<String, Object>of(
-                "serverId", srv.getServerId(),
-                "serverName", srv.getServerName(),
-                "playerCount", srv.getPlayerCount(),
-                "platform", srv.getPlatform(),
-                "version", srv.getVersion(),
-                "pluginVersion", srv.getPluginVersion()
-            )).toList()
+            ? latestSnapshot.getServers().stream().map(srv -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("serverId", srv.getServerId());
+                map.put("serverName", srv.getServerName());
+                map.put("playerCount", srv.getPlayerCount());
+                map.put("platform", srv.getPlatform());
+                map.put("version", srv.getVersion());
+                map.put("pluginVersion", srv.getPluginVersion());
+                return map;
+            }).toList()
             : List.of();
 
         int totalPlayerCount = latestSnapshot != null
