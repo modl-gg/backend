@@ -5,7 +5,6 @@ import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.server.ServerField;
 import java.util.Date;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -17,21 +16,20 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Document(collection = CollectionName.MODL_SERVERS)
 @Data
-@NoArgsConstructor
 @RequiredArgsConstructor
 @GenerateMongoFields
 public class Server {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-    private String serverName;
+    private final String serverName;
 
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    private String customDomain;
+    private final String customDomain;
 
     @Nullable
     @Field(name = "databaseName", targetType = FieldType.STRING)
-    private String databaseName;
+    private final String databaseName;
 
     @Id
     @Field(targetType = FieldType.OBJECT_ID)
