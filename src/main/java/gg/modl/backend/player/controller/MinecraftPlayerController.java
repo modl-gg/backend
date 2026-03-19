@@ -231,13 +231,23 @@ public class MinecraftPlayerController {
         return ResponseEntity.ok(response);
     }
 
+    //public record LoginRequest(
+    //    @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
+    //    @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+    //    @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
+    //    Map<String, Object> ipInfo,
+    //    @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String skinHash,
+    //    @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
+    //) {
+    //}
+
     public record LoginRequest(
-        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
-        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
-        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
+        @NotBlank String minecraftUUID,
+        @NotBlank String username,
+        @NotBlank String ip,
         Map<String, Object> ipInfo,
-        @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String skinHash,
-        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
+        String skinHash,
+        String serverName
     ) {
     }
 
