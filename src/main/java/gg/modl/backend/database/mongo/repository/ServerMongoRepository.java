@@ -234,12 +234,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         ));
         query.with(Sort.by(Sort.Direction.DESC, ServerFields.USER_COUNT));
         query.limit(limit);
-        query.fields()
-            .include(ServerFields.SERVER_NAME)
-            .include(ServerFields.CUSTOM_DOMAIN)
-            .include(ServerFields.USER_COUNT)
-            .include(ServerFields.TICKET_COUNT)
-            .include(ServerFields.PLAN);
         return find(query);
     }
 
