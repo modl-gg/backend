@@ -17,21 +17,21 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Document(collection = CollectionName.MODL_SERVERS)
 @Data
-@NoArgsConstructor(force = true)
+@NoArgsConstructor
 @RequiredArgsConstructor
 @GenerateMongoFields
 public class Server {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
-    private final String serverName;
+    private String serverName;
 
     @NotNull
     @Field(name = ServerField.SUBDOMAIN, targetType = FieldType.STRING)
-    private final String customDomain;
+    private String customDomain;
 
     @Nullable
     @Field(name = "databaseName", targetType = FieldType.STRING)
-    private final String databaseName;
+    private String databaseName;
 
     @Id
     @Field(targetType = FieldType.OBJECT_ID)
