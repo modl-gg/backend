@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateServersResult;
@@ -79,18 +80,27 @@ public class AdminAnalyticsService {
             ? instanceSnapshots.getLast()
             : null;
 
-        List<Map<String, Object>> liveServers = latestSnapshot != null && latestSnapshot.getServers() != null
-            ? latestSnapshot.getServers().stream().map(srv -> {
+        List<Map<String, Object>> liveServers;
+        if (latestSnapshot != null && latestSnapshot.getServers() != null && !latestSnapshot.getServers().isEmpty()) {
+            List<String> serverIds = latestSnapshot.getServers().stream()
+                .map(ServerInstanceSnapshot.ServerEntry::getServerId)
+                .collect(Collectors.toList());
+            Map<String, String> serverNameMap = serverRepository.findUsageTargetsByIds(serverIds).stream()
+                .collect(Collectors.toMap(Server::getId, Server::getServerName, (a, b) -> a));
+
+            liveServers = latestSnapshot.getServers().stream().map(srv -> {
                 Map<String, Object> map = new HashMap<>();
                 map.put("serverId", srv.getServerId());
-                map.put("serverName", srv.getServerName());
+                map.put("serverName", serverNameMap.getOrDefault(srv.getServerId(), srv.getServerName()));
                 map.put("playerCount", srv.getPlayerCount());
                 map.put("platform", srv.getPlatform());
                 map.put("version", srv.getVersion());
                 map.put("pluginVersion", srv.getPluginVersion());
                 return map;
-            }).toList()
-            : List.of();
+            }).toList();
+        } else {
+            liveServers = List.of();
+        }
 
         int totalPlayerCount = latestSnapshot != null
             ? sumPlayerCount(latestSnapshot)
