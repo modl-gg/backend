@@ -64,7 +64,7 @@ class PlayerServicePersistenceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
 
-        Player updated = playerService.loginPlayer(
+        PlayerService.LoginResult result = playerService.loginPlayer(
             server,
             playerUuid,
             "NewName",
@@ -74,7 +74,8 @@ class PlayerServicePersistenceTest {
             "hub"
         );
 
-        assertNotNull(updated);
+        assertNotNull(result);
+        Player updated = result.player();
         verify(playerRepository).updateLoginState(eq(server), eq(updated));
         Player savedPlayer = updated;
         assertEquals(2, savedPlayer.getUsernames().size());

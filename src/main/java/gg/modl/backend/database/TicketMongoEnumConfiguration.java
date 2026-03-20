@@ -1,9 +1,11 @@
 package gg.modl.backend.database;
 
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
+import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketStatus;
+import java.util.Date;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,7 +26,8 @@ public class TicketMongoEnumConfiguration {
             new TicketStatusWriteConverter(),
             new TicketStatusReadConverter(),
             new AppealWorkflowStatusWriteConverter(),
-            new AppealWorkflowStatusReadConverter()
+            new AppealWorkflowStatusReadConverter(),
+            new ChatMessageReadConverter()
         ));
     }
 
@@ -89,6 +92,14 @@ public class TicketMongoEnumConfiguration {
         @Override
         public AppealWorkflowStatus convert(String source) {
             return AppealWorkflowStatus.fromCanonicalId(source);
+        }
+    }
+
+    @ReadingConverter
+    static class ChatMessageReadConverter implements Converter<String, Ticket.ChatMessage> {
+        @Override
+        public Ticket.ChatMessage convert(String source) {
+            return new Ticket.ChatMessage(source, new Date(0));
         }
     }
 }

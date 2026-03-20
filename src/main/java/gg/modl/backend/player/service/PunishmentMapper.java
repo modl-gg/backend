@@ -189,7 +189,7 @@ public final class PunishmentMapper {
         long hours = minutes / 60;
         long days = hours / 24;
         long weeks = days / 7;
-        long months = days / 30;
+        long months = (days + 2) / 30;
 
         if (months > 0) {
             return months + (months == 1 ? " month" : " months");

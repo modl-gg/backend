@@ -67,7 +67,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.setContentType("application/json");
             response.getWriter().write("{\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":" + waitTimeSeconds + "}");
 
-            log.warn("Rate limit exceeded for client {} on path {} (tier: {})", clientKey, path, tier.name());
+            log.debug("Rate limit exceeded for client {} on path {} (tier: {})", clientKey, path, tier.name());
         }
     }
 
