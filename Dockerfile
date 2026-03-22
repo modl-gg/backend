@@ -1,9 +1,6 @@
 # Build stage
 FROM eclipse-temurin:21-jdk-alpine AS builder
 
-ARG GITHUB_ACTOR
-ARG GITHUB_TOKEN
-
 WORKDIR /app
 
 # Copy gradle files first for dependency caching
@@ -16,7 +13,10 @@ RUN chmod +x gradlew
 
 # Download dependencies (cached unless build.gradle changes)
 RUN --mount=type=cache,target=/root/.gradle \
-    GITHUB_ACTOR=${GITHUB_ACTOR} GITHUB_TOKEN=${GITHUB_TOKEN} \
+    --mount=type=secret,id=GITHUB_ACTOR \
+    --mount=type=secret,id=GITHUB_TOKEN \
+    GITHUB_ACTOR=$(cat /run/secrets/GITHUB_ACTOR) \
+    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) \
     ./gradlew dependencies --no-daemon
 
 # Copy source and build
@@ -25,7 +25,10 @@ COPY mongo-fields-annotations/src mongo-fields-annotations/src
 COPY mongo-fields-processor/src mongo-fields-processor/src
 
 RUN --mount=type=cache,target=/root/.gradle \
-    GITHUB_ACTOR=${GITHUB_ACTOR} GITHUB_TOKEN=${GITHUB_TOKEN} \
+    --mount=type=secret,id=GITHUB_ACTOR \
+    --mount=type=secret,id=GITHUB_TOKEN \
+    GITHUB_ACTOR=$(cat /run/secrets/GITHUB_ACTOR) \
+    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) \
     ./gradlew bootJar --no-daemon -x test
 
 # Runtime stage
