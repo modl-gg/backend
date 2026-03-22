@@ -2,3 +2,5 @@ rootProject.name = 'backend'
 
 include 'mongo-fields-annotations'
 include 'mongo-fields-processor'
+
+includeBuild('../replay/modl-replay-format')

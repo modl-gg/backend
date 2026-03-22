@@ -6,5 +6,6 @@ public record PublicReplayResponse(
     long fileSize,
     long timestamp,
     String replayUrl,
-    String status
+    String status,
+    boolean labeled
 ) {}

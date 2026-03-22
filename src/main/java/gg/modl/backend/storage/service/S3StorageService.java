@@ -22,7 +22,9 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
@@ -58,6 +60,15 @@ public class S3StorageService {
         if (s3Client == null) {
             log.warn("S3 storage is not configured. File storage features will be disabled.");
         }
+    }
+
+    public byte[] downloadBytes(String key) {
+        if (s3Client == null) {
+            throw new IllegalStateException("S3 not configured");
+        }
+        ResponseBytes<GetObjectResponse> response = s3Client.getObjectAsBytes(
+            GetObjectRequest.builder().bucket(s3Configuration.getBucketName()).key(key).build());
+        return response.asByteArray();
     }
 
     public boolean isConfigured() {

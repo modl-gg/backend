@@ -22,7 +22,12 @@ import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.rest.RESTMappingV1;
 import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.validation.RegExpConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -54,6 +59,9 @@ public class PanelPlayerController {
     private final PunishmentEvidenceService punishmentEvidenceService;
     private final PunishmentMutationService punishmentMutationService;
     private final AccountLinkingService accountLinkingService;
+    private final PermissionService permissionService;
+    private final StaffService staffService;
+    private final PunishmentTypeService punishmentTypeService;
 
     @GetMapping
     public ResponseEntity<List<PlayerSearchResult>> searchPlayers(
@@ -131,12 +139,30 @@ public class PanelPlayerController {
     }
 
     @PostMapping("/{uuid}/punishments")
-    public ResponseEntity<SimpleResponse> createPunishment(
+    public ResponseEntity<?> createPunishment(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestBody @Valid CreatePunishmentRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+
+        // Check punishment.apply.<type> permission (super admins bypass via filter)
+        if (email != null && !permissionService.isSuperAdmin(server, email)) {
+            PunishmentType type = punishmentTypeService.getPunishmentTypeByOrdinal(server, createRequest.typeOrdinal()).orElse(null);
+            if (type == null) {
+                return ResponseEntity.badRequest().body(Map.of("success", false, "message", "Invalid punishment type"));
+            }
+
+            String applyPermission = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
+            String role = staffService.getStaffByEmail(server, email).map(Staff::getRole).orElse(null);
+
+            if (!permissionService.hasPermission(server, role, applyPermission)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("success", false, "message", "You do not have permission to apply this punishment type"));
+            }
+        }
+
         punishmentLifecycleService.createPunishment(server, UUID.fromString(uuid), createRequest);
         return ResponseEntity.ok(new SimpleResponse(true));
     }
