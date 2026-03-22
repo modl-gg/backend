@@ -9,14 +9,13 @@ COPY gradlew build.gradle settings.gradle ./
 COPY mongo-fields-annotations/build.gradle mongo-fields-annotations/build.gradle
 COPY mongo-fields-processor/build.gradle mongo-fields-processor/build.gradle
 
+# Copy local libs (replay-format jar)
+COPY libs libs
+
 RUN chmod +x gradlew
 
 # Download dependencies (cached unless build.gradle changes)
 RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=secret,id=GITHUB_ACTOR \
-    --mount=type=secret,id=GITHUB_TOKEN \
-    GITHUB_ACTOR=$(cat /run/secrets/GITHUB_ACTOR) \
-    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) \
     ./gradlew dependencies --no-daemon
 
 # Copy source and build
@@ -25,10 +24,6 @@ COPY mongo-fields-annotations/src mongo-fields-annotations/src
 COPY mongo-fields-processor/src mongo-fields-processor/src
 
 RUN --mount=type=cache,target=/root/.gradle \
-    --mount=type=secret,id=GITHUB_ACTOR \
-    --mount=type=secret,id=GITHUB_TOKEN \
-    GITHUB_ACTOR=$(cat /run/secrets/GITHUB_ACTOR) \
-    GITHUB_TOKEN=$(cat /run/secrets/GITHUB_TOKEN) \
     ./gradlew bootJar --no-daemon -x test
 
 # Runtime stage

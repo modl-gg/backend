@@ -22,15 +22,7 @@ configurations {
 
 repositories {
 	mavenCentral()
-	mavenLocal()
-	maven {
-		name = 'GitHubPackages'
-		url = uri('https://maven.pkg.github.com/modl-gg/replay')
-		credentials {
-			username = System.getenv('GITHUB_ACTOR') ?: findProperty('gpr.user') ?: ''
-			password = System.getenv('GITHUB_TOKEN') ?: findProperty('gpr.key') ?: ''
-		}
-	}
+	flatDir { dirs 'libs' }
 }
 
 subprojects {
