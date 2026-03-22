@@ -42,7 +42,9 @@ class MinecraftPlayerApiTest {
             "ip", "127.0.0.1",
             "serverName", "lobby"
         ));
-        JsonHelper.assertStatus(response, 200);
+        // 201 for new player, 200 for returning player
+        int status = Integer.parseInt(JsonHelper.parseObject(response.body()).get("status").getAsString());
+        assertTrue(status == 200 || status == 201, "Expected 200 or 201 but got " + status);
         var json = JsonHelper.parseObject(response.body());
         assertTrue(json.has("activePunishments"));
 

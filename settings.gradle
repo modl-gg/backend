@@ -3,4 +3,8 @@ rootProject.name = 'backend'
 include 'mongo-fields-annotations'
 include 'mongo-fields-processor'
 
-includeBuild('../replay/modl-replay-format')
+// Local dev: use composite build if replay-format is available as a sibling
+def replayFormatDir = file('../replay/modl-replay-format')
+if (replayFormatDir.exists()) {
+    includeBuild(replayFormatDir)
+}

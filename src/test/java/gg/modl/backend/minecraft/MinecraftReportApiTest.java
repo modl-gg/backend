@@ -86,7 +86,8 @@ class MinecraftReportApiTest {
 
         var response = api.minecraftPost("/v1/minecraft/reports/" + reportId + "/resolve", Map.of(
             "resolvedBy", "TestBot",
-            "resolution", "API test - resolved for testing"
+            "resolution", "API test - resolved for testing",
+            "punishmentId", "test-punishment-id"
         ));
         JsonHelper.assertStatus(response, 200);
     }
