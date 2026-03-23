@@ -35,7 +35,8 @@ class PublicAppealResponseTest {
             null,
             false,
             false,
-            null
+            null,
+            List.of()
         );
 
         PublicAppealResponse publicAppealResponse = PublicAppealResponse.fromTicketResponse(ticketResponse);
