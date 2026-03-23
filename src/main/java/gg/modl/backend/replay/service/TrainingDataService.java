@@ -37,6 +37,15 @@ public class TrainingDataService {
 
     private static final int BLOCK_FILTER_RADIUS = 16;
 
+    /**
+     * Asynchronously generates and persists training data segments for the given replay and labels.
+     * Each "cheating" label's time ranges and each "legit" label produce one segment each.
+     * Exceptions are caught and logged; callers are not notified of failures.
+     *
+     * @param server the server context owning the replay
+     * @param doc    the replay document whose S3-stored bytes will be downloaded and sliced
+     * @param labels the human-provided labels to convert into training segments
+     */
     @Async
     public void generateSegmentsAsync(Server server, ReplayDocument doc, List<ReplayLabel> labels) {
         try {
@@ -165,7 +174,7 @@ public class TrainingDataService {
         }
 
         // Write segment as valid .modlreplay
-        int timestampOffset = (int) startMs;
+        long timestampOffset = startMs;
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (ReplayWriter writer = new ReplayWriter(baos)) {
             writer.writeHeader(header);

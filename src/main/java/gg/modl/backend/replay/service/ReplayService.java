@@ -81,19 +81,17 @@ public class ReplayService {
         return exists;
     }
 
-    public static final int RESULT_OK = 0;
-    public static final int RESULT_NOT_FOUND = 1;
-    public static final int RESULT_ALREADY_LABELED = 2;
+    public enum SubmitLabelsResult { OK, NOT_FOUND, ALREADY_LABELED }
 
-    public int submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
+    public SubmitLabelsResult submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
         Optional<ReplayDocument> opt = replayRepository.findByReplayId(server, replayId);
         if (opt.isEmpty()) {
-            return RESULT_NOT_FOUND;
+            return SubmitLabelsResult.NOT_FOUND;
         }
 
         ReplayDocument doc = opt.get();
         if (doc.getLabels() != null && !doc.getLabels().isEmpty()) {
-            return RESULT_ALREADY_LABELED;
+            return SubmitLabelsResult.ALREADY_LABELED;
         }
 
         doc.setLabels(labels);
@@ -102,7 +100,7 @@ public class ReplayService {
 
         trainingDataService.generateSegmentsAsync(server, doc, labels);
 
-        return RESULT_OK;
+        return SubmitLabelsResult.OK;
     }
 
     public Optional<PublicReplayResponse> getPublicReplay(Server server, String replayId) {

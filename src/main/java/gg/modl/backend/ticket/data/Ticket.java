@@ -123,7 +123,6 @@ public class Ticket {
         @NotNull
         private String content;
 
-        @NotNull
         private Date timestamp;
     }
 }

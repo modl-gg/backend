@@ -5,7 +5,6 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketStatus;
-import java.util.Date;
 import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -99,7 +98,7 @@ public class TicketMongoEnumConfiguration {
     static class ChatMessageReadConverter implements Converter<String, Ticket.ChatMessage> {
         @Override
         public Ticket.ChatMessage convert(String source) {
-            return new Ticket.ChatMessage(source, new Date(0));
+            return new Ticket.ChatMessage(source, null);
         }
     }
 }
