@@ -7,7 +7,9 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
+import gg.modl.backend.settings.data.TicketFormSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.settings.service.TicketFormSettingsService;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
@@ -45,6 +47,7 @@ public class TicketService {
     private final TicketMongoRepository ticketRepository;
     private final StaffMongoRepository staffRepository;
     private final QuickResponseSettingsService quickResponseSettingsService;
+    private final TicketFormSettingsService ticketFormSettingsService;
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
     private static final String AVATAR_URL_FORMAT = "https://mc-heads.net/avatar/%s/32";
@@ -94,7 +97,8 @@ public class TicketService {
             ticket.getAiAnalysis(),
             ticket.isEmailAuthEnabled(),
             ticket.isHidden(),
-            ticket.getReplayUrl()
+            ticket.getReplayUrl(),
+            ticket.getAssignedTo()
         );
     }
 
@@ -190,6 +194,12 @@ public class TicketService {
 
         boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
 
+        // Override emailAuth from form settings if configured
+        TicketFormSettings.TicketForm formSettings = ticketFormSettingsService.getFormByType(server, ticketCategory.getId());
+        if (formSettings != null && formSettings.isRequireEmailAuth()) {
+            emailAuth = true;
+        }
+
         Ticket ticket = Ticket.builder()
             .id(ticketId)
             .type(ticketCategory)
@@ -241,6 +251,10 @@ public class TicketService {
 
         if (request.hidden() != null) {
             ticket.setHidden(request.hidden());
+        }
+
+        if (request.assignedTo() != null) {
+            ticket.setAssignedTo(TicketAssigneeUtil.normalizeCollection(request.assignedTo()));
         }
 
         if (request.data() != null && !request.data().isEmpty()) {
@@ -432,6 +446,13 @@ public class TicketService {
                 boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
                 ticket.setEmailAuthEnabled(emailAuth);
                 existingData.put("emailAuthEnabled", emailAuth);
+            }
+
+            // Override emailAuth from form settings if configured
+            TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
+            if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
+                ticket.setEmailAuthEnabled(true);
+                existingData.put("emailAuthEnabled", true);
             }
 
             ticket.setFormData(sanitizeMapKeysForMongo(request.formData()));
