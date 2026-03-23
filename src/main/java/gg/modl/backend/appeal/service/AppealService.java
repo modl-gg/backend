@@ -72,7 +72,8 @@ public class AppealService {
             ticket.getAiAnalysis(),
             ticket.isEmailAuthEnabled(),
             ticket.isHidden(),
-            ticket.getReplayUrl()
+            ticket.getReplayUrl(),
+            ticket.getAssignedTo()
         );
     }
 
