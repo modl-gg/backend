@@ -30,6 +30,8 @@ public class TicketFormSettings {
         @Builder.Default
         private boolean requireEmailAuth = false;
         @Builder.Default
+        private boolean allowEmailNotifications = true;
+        @Builder.Default
         private List<FormField> fields = new ArrayList<>();
         @Builder.Default
         private List<FormSection> sections = new ArrayList<>();

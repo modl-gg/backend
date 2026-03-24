@@ -180,7 +180,7 @@ public class TrainingDataService {
             writer.writeHeader(header);
             writer.writeSnapshot(filteredBlocks);
             for (ReplayEvent event : segmentEvents) {
-                writer.writeEvent(event, timestampOffset);
+                writer.writeEvent(event, (int) timestampOffset);
             }
             writer.flush();
         }
