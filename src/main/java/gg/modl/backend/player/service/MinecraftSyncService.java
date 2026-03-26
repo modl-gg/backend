@@ -1,5 +1,6 @@
 package gg.modl.backend.player.service;
 
+import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
@@ -18,6 +19,7 @@ import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.util.PlayerDataUtils;
+import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
@@ -37,6 +39,7 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class MinecraftSyncService {
+    private final ModlProperties modlProperties;
     private final PlayerMongoRepository playerRepository;
     private final StaffMongoRepository staffRepository;
     private final StaffRoleMongoRepository staffRoleRepository;
@@ -51,6 +54,7 @@ public class MinecraftSyncService {
     private final IssuerNameResolver issuerNameResolver;
 
     public MinecraftSyncService(
+        ModlProperties modlProperties,
         PlayerMongoRepository playerRepository,
         StaffMongoRepository staffRepository,
         StaffRoleMongoRepository staffRoleRepository,
@@ -64,6 +68,7 @@ public class MinecraftSyncService {
         MinecraftChatLogService minecraftChatLogService,
         IssuerNameResolver issuerNameResolver
     ) {
+        this.modlProperties = modlProperties;
         this.playerRepository = playerRepository;
         this.staffRepository = staffRepository;
         this.staffRoleRepository = staffRoleRepository;
@@ -361,26 +366,24 @@ public class MinecraftSyncService {
             log.warn("Failed to check active migration during sync", e);
         }
 
-        try {
-            long epochSeconds = now.getEpochSecond();
-            Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
-            int playerCount = serverStatus != null ? serverStatus.onlinePlayerCount() : (onlinePlayers != null ? onlinePlayers.size() : 0);
-            String platform = serverStatus != null ? serverStatus.platformType() : null;
-            String version = serverStatus != null ? serverStatus.serverVersion() : null;
-            String pluginVersion = serverStatus != null ? serverStatus.pluginVersion() : null;
-            serverInstanceSnapshotRepository.upsertServerEntry(
-                fiveMinBoundary,
-                server.getId(),
-                serverName,
-                playerCount,
-                platform,
-                version,
-                clientIp,
-                pluginVersion,
-                Date.from(now)
-            );
-        } catch (Exception e) {
-            log.warn("Failed to upsert server instance snapshot during sync", e);
+        if (serverStatus != null) {
+            try {
+                long epochSeconds = now.getEpochSecond();
+                Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
+                serverInstanceSnapshotRepository.upsertServerEntry(
+                    fiveMinBoundary,
+                    server.getId(),
+                    serverName,
+                    serverStatus.onlinePlayerCount(),
+                    serverStatus.platformType(),
+                    serverStatus.serverVersion(),
+                    clientIp,
+                    serverStatus.pluginVersion(),
+                    Date.from(now)
+                );
+            } catch (Exception e) {
+                log.warn("Failed to upsert server instance snapshot during sync", e);
+            }
         }
 
         return Map.of(
@@ -457,7 +460,7 @@ public class MinecraftSyncService {
 
                 String domain = server.getCustomDomainOverride();
                 if (domain == null || domain.isBlank()) {
-                    domain = server.getCustomDomain() + ".modl.gg";
+                    domain = server.getCustomDomain() + "." + modlProperties.getDomain();
                 }
                 ticketData.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
                 ticketData.put("ticketType", ticketType != null ? ticketType.getId() : "");
@@ -635,6 +638,70 @@ public class MinecraftSyncService {
             result.put(role.getName(), role.getPermissions() != null ? role.getPermissions() : List.of());
         }
         return result;
+    }
+
+    public Map<String, Object> syncV2(
+        Server server,
+        String lastSyncTimestamp,
+        List<OnlinePlayerInput> onlinePlayers,
+        String serverName,
+        List<ChatLogInput> chatLogs,
+        List<CommandLogInput> commandLogs,
+        String clientIp
+    ) {
+        Map<String, Object> result = sync(
+            server,
+            lastSyncTimestamp,
+            onlinePlayers,
+            serverName,
+            chatLogs,
+            commandLogs,
+            null,
+            clientIp
+        );
+
+        convertUrlsToRelativePaths(result);
+
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void convertUrlsToRelativePaths(Map<String, Object> result) {
+        Object dataObj = result.get("data");
+        if (!(dataObj instanceof Map<?, ?> data)) {
+            return;
+        }
+
+        convertTicketUrlsInNotifications((List<Map<String, Object>>) data.get("staffNotifications"));
+        convertTicketUrlsInNotifications((List<Map<String, Object>>) data.get("playerNotifications"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void convertTicketUrlsInNotifications(List<Map<String, Object>> notifications) {
+        if (notifications == null) {
+            return;
+        }
+
+        for (Map<String, Object> notification : notifications) {
+            Object dataObj = notification.get("data");
+            if (!(dataObj instanceof Map<?, ?> rawData)) {
+                continue;
+            }
+            Map<String, Object> data = (Map<String, Object>) rawData;
+            Object ticketUrl = data.get("ticketUrl");
+            if (ticketUrl instanceof String url) {
+                data.put("ticketUrl", extractRelativePath(url));
+            }
+        }
+    }
+
+    private String extractRelativePath(String fullUrl) {
+        try {
+            return URI.create(fullUrl).getPath();
+        } catch (Exception e) {
+            int idx = fullUrl.indexOf("/", fullUrl.indexOf("://") + 3);
+            return idx >= 0 ? fullUrl.substring(idx) : fullUrl;
+        }
     }
 
     public record ServerStatusInput(int onlinePlayerCount, int maxPlayers, String serverVersion, String platformType, String pluginVersion) {
