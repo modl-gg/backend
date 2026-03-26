@@ -4,6 +4,7 @@ import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -38,6 +39,7 @@ import org.springframework.stereotype.Service;
 public class AppealService {
     private final TicketMongoRepository ticketRepository;
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final TicketIdGenerator ticketIdGenerator;
 
@@ -166,7 +168,7 @@ public class AppealService {
             null
         );
 
-        playerRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, appealOpenedNote);
+        punishmentRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, appealOpenedNote);
     }
 
     private String buildInitialContent(CreateAppealRequest request) {
@@ -354,7 +356,7 @@ public class AppealService {
             "data.appealTicketId", appeal.getId()
         );
 
-        playerRepository.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
+        punishmentRepository.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
     }
 
     private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
@@ -397,7 +399,7 @@ public class AppealService {
             null
         );
 
-        playerRepository.applyAppealApproval(server, playerUuid, punishmentId,
+        punishmentRepository.applyAppealApproval(server, playerUuid, punishmentId,
             modification, appealAcceptedNote, "Approved", appeal.getId());
 
         playerRepository.findByMinecraftUuid(server, playerUuid)

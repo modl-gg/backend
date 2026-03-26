@@ -6,6 +6,7 @@ import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
@@ -43,6 +44,7 @@ public class StaffService {
     private final StaffMongoRepository staffRepository;
     private final StaffRoleMongoRepository staffRoleRepository;
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final ServerMongoRepository serverRepository;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
@@ -287,7 +289,7 @@ public class StaffService {
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {
         try {
-            return playerRepository.countPunishmentsByIssuerName(server);
+            return punishmentRepository.countPunishmentsByIssuerName(server);
         } catch (Exception e) {
             log.warn("Failed to load punishment counts for server {}", server.getDatabaseName(), e);
             return Map.of();

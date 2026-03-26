@@ -1,6 +1,7 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -33,6 +34,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class PunishmentMutationService {
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final TicketMongoRepository ticketRepository;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
@@ -71,7 +73,7 @@ public class PunishmentMutationService {
             }
         }
 
-        playerRepository.replacePunishments(server, player);
+        punishmentRepository.replacePunishments(server, player);
         return player;
     }
 
@@ -124,7 +126,7 @@ public class PunishmentMutationService {
             punishment.setStarted(now);
         }
 
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         if (Boolean.TRUE.equals(punishment.getData().get("altBlocking"))) {
             int cascaded = punishmentLifecycleService.cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
@@ -163,7 +165,7 @@ public class PunishmentMutationService {
             resolvedIssuerName,
             issuerId
         ));
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Option toggled", true, 1);
     }
@@ -187,7 +189,7 @@ public class PunishmentMutationService {
         Map<String, Object> updatedData = context.punishment().getData();
         updatedData.put("statWipeCompleted", true);
         updatedData.put("statWipeCompletedAt", new Date());
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Stat wipe acknowledged", true, 1);
     }
@@ -233,7 +235,7 @@ public class PunishmentMutationService {
         }
 
         punishment.setAttachedTicketIds(currentIds);
-        playerRepository.replacePunishments(server, player);
+        punishmentRepository.replacePunishments(server, player);
 
         if (request.modifyAssociatedTickets()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server, staffRepository);

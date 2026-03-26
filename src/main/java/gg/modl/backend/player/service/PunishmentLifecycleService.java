@@ -1,6 +1,7 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.exception.ResourceNotFoundException;
@@ -47,6 +48,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class PunishmentLifecycleService {
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final TicketMongoRepository ticketRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
@@ -378,7 +380,7 @@ public class PunishmentLifecycleService {
     }
 
     private void persistPlayerPunishments(Server server, Player player) {
-        playerRepository.replacePunishments(server, player);
+        punishmentRepository.replacePunishments(server, player);
     }
 
     public PunishmentOperationResult acknowledgePunishment(Server server, UUID playerUuid, String punishmentId) {
@@ -474,7 +476,7 @@ public class PunishmentLifecycleService {
 
     public int cascadePardonLinkedBans(Server server, String parentPunishmentId) {
         return cascadePardonLinkedBansInternal(
-            playerRepository.findByLinkedBanId(server, parentPunishmentId),
+            punishmentRepository.findByLinkedBanId(server, parentPunishmentId),
             parentPunishmentId,
             player -> persistPlayerPunishments(server, player)
         );
@@ -550,20 +552,20 @@ public class PunishmentLifecycleService {
 
     public int cascadePardonLinkedBans(String databaseName, String parentPunishmentId) {
         return cascadePardonLinkedBansInternal(
-            playerRepository.findByLinkedBanId(databaseName, parentPunishmentId),
+            punishmentRepository.findByLinkedBanId(databaseName, parentPunishmentId),
             parentPunishmentId,
             player -> persistPlayerPunishments(databaseName, player)
         );
     }
 
     private void persistPlayerPunishments(String databaseName, Player player) {
-        playerRepository.replacePunishments(databaseName, player);
+        punishmentRepository.replacePunishments(databaseName, player);
     }
 
     public int cascadeDurationChangeToLinkedBans(Server server, String parentPunishmentId, Long newDuration, String issuerName) {
         int count = 0;
 
-        for (Player player : playerRepository.findByLinkedBanId(server, parentPunishmentId)) {
+        for (Player player : punishmentRepository.findByLinkedBanId(server, parentPunishmentId)) {
             int updatedPunishments = applyLinkedBanDurationChange(player, parentPunishmentId, newDuration);
             if (updatedPunishments <= 0) {
                 continue;

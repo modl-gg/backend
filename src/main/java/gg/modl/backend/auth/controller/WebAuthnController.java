@@ -12,7 +12,6 @@ import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.util.CookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -40,7 +39,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class WebAuthnController {
     private final WebAuthnService webAuthnService;
     private final SessionService sessionService;
-    private final StaffService staffService;
     private final PermissionService permissionService;
     private final ObjectMapper objectMapper;
     private final CookieUtil cookieUtil;
@@ -141,7 +139,7 @@ public class WebAuthnController {
         Server server = RequestUtil.getRequestServer(request);
 
         // Prevent email enumeration: check if email is authorized first
-        if (!isAuthorizedEmail(server, body.email())) {
+        if (!permissionService.isAuthorizedEmail(server, body.email())) {
             return ResponseEntity.ok(Map.of("hasPasskeys", false));
         }
 
@@ -160,13 +158,6 @@ public class WebAuthnController {
     }
 
 
-    private boolean isAuthorizedEmail(Server server, String email) {
-        if (permissionService.isSuperAdmin(server, email)) {
-            return true;
-        }
-        return staffService.getStaffByEmail(server, email).isPresent();
-    }
-
     @PostMapping("/login/verify")
     public ResponseEntity<?> loginVerify(
         HttpServletRequest request,
@@ -176,7 +167,7 @@ public class WebAuthnController {
 
         String email = webAuthnService.finishAuthentication(server, getRequestDomain(request), body.challengeId(), body.response());
 
-        if (!isAuthorizedEmail(server, email)) {
+        if (!permissionService.isAuthorizedEmail(server, email)) {
             throw new ValidationException("Not authorized");
         }
 

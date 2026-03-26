@@ -1,5 +1,6 @@
 package gg.modl.backend.role.service;
 
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class PermissionService {
     private final StaffRoleMongoRepository staffRoleRepository;
     private final PunishmentTypeService punishmentTypeService;
+    private final StaffMongoRepository staffRepository;
 
     private static final List<Permission> BASE_PERMISSIONS = List.of(
         // Admin permissions
@@ -153,8 +155,14 @@ public class PermissionService {
     }
 
     public boolean isSuperAdmin(Server server, String staffEmail) {
-        // Super Admin is the server admin email
         return server.getAdminEmail() != null &&
                server.getAdminEmail().equalsIgnoreCase(staffEmail);
+    }
+
+    public boolean isAuthorizedEmail(Server server, String email) {
+        if (isSuperAdmin(server, email)) {
+            return true;
+        }
+        return staffRepository.findByEmailIgnoreCase(server, email).isPresent();
     }
 }

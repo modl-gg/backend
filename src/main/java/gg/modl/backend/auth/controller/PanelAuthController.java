@@ -59,20 +59,13 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
 
         // Always return generic success to prevent email enumeration
-        if (!isAuthorizedEmail(server, requestData.email())) {
+        if (!permissionService.isAuthorizedEmail(server, requestData.email())) {
             return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
 
         authService.sendUserLoginCode(server, requestData.email());
 
         return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
-    }
-
-    private boolean isAuthorizedEmail(Server server, String email) {
-        if (permissionService.isSuperAdmin(server, email)) {
-            return true;
-        }
-        return staffService.getStaffByEmail(server, email).isPresent();
     }
 
     @PostMapping("/verify-email-code")
@@ -84,7 +77,7 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
 
         // Return same error as invalid code to prevent email enumeration
-        if (!isAuthorizedEmail(server, requestData.email())) {
+        if (!permissionService.isAuthorizedEmail(server, requestData.email())) {
             return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 

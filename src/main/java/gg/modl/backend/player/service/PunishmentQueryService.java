@@ -2,6 +2,7 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -38,6 +39,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PunishmentQueryService {
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
@@ -186,7 +188,7 @@ public class PunishmentQueryService {
     }
 
     public Optional<PunishmentContext> findPunishmentContext(Server server, String punishmentId) {
-        return playerRepository.findByPunishmentId(server, punishmentId)
+        return punishmentRepository.findByPunishmentId(server, punishmentId)
             .flatMap(player -> player.getPunishments()
                 .stream()
                 .filter(punishment -> punishmentId.equals(punishment.getId()))
@@ -205,7 +207,7 @@ public class PunishmentQueryService {
         List<PunishmentSearchResult> results = new ArrayList<>();
 
         Pattern pattern = Pattern.compile(Pattern.quote(searchQuery), Pattern.CASE_INSENSITIVE);
-        List<Player> players = playerRepository.findPlayersWithPunishments(server, 50);
+        List<Player> players = punishmentRepository.findPlayersWithPunishments(server, 50);
 
         Set<String> allIssuerIds = new HashSet<>();
         for (Player player : players) {
@@ -263,7 +265,7 @@ public class PunishmentQueryService {
 
     public List<Map<String, Object>> getRecentPunishments(Server server, int hours) {
         Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
-        List<Player> players = playerRepository.findWithPunishmentsIssuedAfter(server, cutoff);
+        List<Player> players = punishmentRepository.findWithPunishmentsIssuedAfter(server, cutoff);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
         List<Punishment> recentPunishments = new ArrayList<>();
@@ -308,7 +310,7 @@ public class PunishmentQueryService {
 
     public List<Map<String, Object>> getLinkedBansForParent(Server server, String parentPunishmentId) {
         List<Map<String, Object>> results = new ArrayList<>();
-        List<Player> players = playerRepository.findByLinkedBanId(server, parentPunishmentId);
+        List<Player> players = punishmentRepository.findByLinkedBanId(server, parentPunishmentId);
 
         for (Player player : players) {
             String username = player.getUsernames().isEmpty() ? "Unknown" :

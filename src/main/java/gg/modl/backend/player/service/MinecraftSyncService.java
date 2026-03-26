@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
@@ -41,6 +42,7 @@ import org.springframework.stereotype.Service;
 public class MinecraftSyncService {
     private final ModlProperties modlProperties;
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final StaffMongoRepository staffRepository;
     private final StaffRoleMongoRepository staffRoleRepository;
     private final TicketMongoRepository ticketRepository;
@@ -56,6 +58,7 @@ public class MinecraftSyncService {
     public MinecraftSyncService(
         ModlProperties modlProperties,
         PlayerMongoRepository playerRepository,
+        PunishmentMongoRepository punishmentRepository,
         StaffMongoRepository staffRepository,
         StaffRoleMongoRepository staffRoleRepository,
         TicketMongoRepository ticketRepository,
@@ -70,6 +73,7 @@ public class MinecraftSyncService {
     ) {
         this.modlProperties = modlProperties;
         this.playerRepository = playerRepository;
+        this.punishmentRepository = punishmentRepository;
         this.staffRepository = staffRepository;
         this.staffRoleRepository = staffRoleRepository;
         this.ticketRepository = ticketRepository;
@@ -477,7 +481,7 @@ public class MinecraftSyncService {
         }
 
         try {
-            List<Player> playersWithNewPunishments = playerRepository.findWithPunishmentsIssuedAfter(server, Date.from(lastSync), 50);
+            List<Player> playersWithNewPunishments = punishmentRepository.findWithPunishmentsIssuedAfter(server, Date.from(lastSync), 50);
 
             Set<String> issuerIds = new HashSet<>();
             for (Player player : playersWithNewPunishments) {

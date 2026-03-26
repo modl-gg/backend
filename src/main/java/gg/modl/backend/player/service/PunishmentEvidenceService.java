@@ -1,6 +1,7 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.exception.ResourceNotFoundException;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PunishmentEvidenceService {
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final PunishmentQueryService punishmentQueryService;
 
     public PunishmentOperationResult addEvidence(Server server, String punishmentId, String evidenceUrl, String issuerName, String issuerId) {
@@ -51,7 +53,7 @@ public class PunishmentEvidenceService {
             resolvedIssuerName,
             issuerId
         ));
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
     }
@@ -80,7 +82,7 @@ public class PunishmentEvidenceService {
             request.fileSize()
         ));
 
-        playerRepository.replacePunishments(server, player);
+        punishmentRepository.replacePunishments(server, player);
         return player;
     }
 
@@ -123,7 +125,7 @@ public class PunishmentEvidenceService {
             resolvedIssuerName,
             issuerId
         ));
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence uploaded successfully", true, evidenceItems.size());
     }
@@ -136,7 +138,7 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         context.punishment().getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        playerRepository.replacePunishments(server, context.player());
+        punishmentRepository.replacePunishments(server, context.player());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
     }
@@ -152,7 +154,7 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         punishment.getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        playerRepository.replacePunishments(server, player);
+        punishmentRepository.replacePunishments(server, player);
         return player;
     }
 }

@@ -7,6 +7,7 @@ import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -40,6 +41,7 @@ import org.springframework.stereotype.Service;
 public class DashboardService {
     private final TicketMongoRepository ticketRepository;
     private final PlayerMongoRepository playerRepository;
+    private final PunishmentMongoRepository punishmentRepository;
     private final StaffMongoRepository staffRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final PlayerStatusCalculator statusCalculator;
@@ -85,7 +87,7 @@ public class DashboardService {
         long activeMutes = 0;
         long totalPunishments = 0;
 
-        for (Player player : playerRepository.findWithPunishmentsProjected(server)) {
+        for (Player player : punishmentRepository.findWithPunishmentsProjected(server)) {
             if (player.getPunishments().isEmpty()) {
                 continue;
             }
@@ -195,7 +197,7 @@ public class DashboardService {
         Date cutoff = DateRangeUtil.daysAgo(RECENT_PUNISHMENT_WINDOW_DAYS);
 
         Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
-        List<Document> punishmentRows = playerRepository.fetchRecentPunishmentRows(server, cutoff, safeLimit);
+        List<Document> punishmentRows = punishmentRepository.fetchRecentPunishmentRows(server, cutoff, safeLimit);
 
         List<RecentPunishmentResponse> results = new ArrayList<>();
         for (Document row : punishmentRows) {
@@ -238,7 +240,7 @@ public class DashboardService {
         }
 
         try {
-            return playerRepository.readPunishment(server, punishmentDocument);
+            return punishmentRepository.readPunishment(server, punishmentDocument);
         } catch (Exception exception) {
             log.warn("Failed to parse punishment document for dashboard response", exception);
             return null;
@@ -337,7 +339,7 @@ public class DashboardService {
     private void fetchPunishmentActivities(Server server, String staffUsername, Date cutoffDate, List<ActivityItemResponse> activities) {
         try {
             Map<Integer, String> punishmentTypeNameByOrdinal = buildPunishmentTypeNameByOrdinal(server);
-            List<Document> punishmentRows = playerRepository.fetchRecentPunishmentRowsByIssuer(server, staffUsername, cutoffDate, MAX_QUERY_RESULTS);
+            List<Document> punishmentRows = punishmentRepository.fetchRecentPunishmentRowsByIssuer(server, staffUsername, cutoffDate, MAX_QUERY_RESULTS);
 
             for (Document row : punishmentRows) {
                 Punishment punishment = readPunishment(server, row.get("punishment", Document.class));

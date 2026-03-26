@@ -134,5 +134,15 @@ public class MediaValidationService {
         return key != null && serverDatabaseName != null && key.startsWith(serverDatabaseName + "/");
     }
 
+    public String extractUploadType(String key) {
+        String[] parts = key.split("/");
+        return parts.length >= 2 ? parts[1] : "";
+    }
+
+    public String extractEntityId(String key) {
+        String[] parts = key.split("/");
+        return parts.length >= 4 ? parts[2] : null;
+    }
+
     public record ValidationResult(boolean valid, String error) {}
 }

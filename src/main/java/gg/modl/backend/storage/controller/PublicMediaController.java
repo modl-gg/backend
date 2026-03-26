@@ -140,8 +140,8 @@ public class PublicMediaController {
             throw new ForbiddenException("Access denied");
         }
 
-        String uploadType = extractUploadType(key);
-        String entityId = extractEntityId(key);
+        String uploadType = validationService.extractUploadType(key);
+        String entityId = validationService.extractEntityId(key);
         if (!PUBLIC_ALLOWED_UPLOAD_TYPES.contains(uploadType)) {
             return ResponseEntity.status(403).body(Map.of(
                 "error", "Upload type not allowed for public confirmation"
@@ -170,15 +170,5 @@ public class PublicMediaController {
         }
 
         return ResponseEntity.ok(uploadDetails);
-    }
-
-    private String extractUploadType(String key) {
-        String[] parts = key.split("/");
-        return parts.length >= 2 ? parts[1] : "";
-    }
-
-    private String extractEntityId(String key) {
-        String[] parts = key.split("/");
-        return parts.length >= 4 ? parts[2] : null;
     }
 }
