@@ -57,7 +57,10 @@ public class PunishmentLifecycleService {
     private final PermissionService permissionService;
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
-        if (email == null || permissionService.isSuperAdmin(server, email)) {
+        if (email == null) {
+            throw new ForbiddenException("No authenticated user found for permission check");
+        }
+        if (permissionService.isSuperAdmin(server, email)) {
             return;
         }
 
