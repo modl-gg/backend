@@ -73,7 +73,9 @@ public class MinecraftPlayerService {
         String skinHash,
         String serverName
     ) {
-        Player player = playerService.loginPlayer(server, playerUuid, username, ip, ipInfo, skinHash, serverName);
+        PlayerService.LoginResult loginResult = playerService.loginPlayer(server, playerUuid, username, ip, ipInfo, skinHash, serverName);
+        Player player = loginResult.player();
+        boolean isNewIp = loginResult.isNewIp();
         accountLinkingService.findAndLinkAccounts(server, playerUuid);
 
         player = findPlayerByUuid(server, playerUuid.toString()).orElse(player);
@@ -84,7 +86,7 @@ public class MinecraftPlayerService {
         Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
         List<Map<String, Object>> activePunishments = collectActivePunishments(player, punishmentTypes, resolvedIssuers);
 
-        return buildLoginResponse(server, player, playerUuid, ip, username, activePunishments);
+        return buildLoginResponse(server, player, playerUuid, ip, username, activePunishments, isNewIp);
     }
 
     private Player promotePunishments(Server server, Player player, UUID playerUuid, String username, String skinHash) {
@@ -163,12 +165,13 @@ public class MinecraftPlayerService {
         UUID playerUuid,
         String ip,
         String username,
-        List<Map<String, Object>> activePunishments
+        List<Map<String, Object>> activePunishments,
+        boolean isNewIp
     ) {
         List<Map<String, Object>> pendingNotifications = extractPendingNotifications(player);
 
         List<String> pendingIpLookups = new ArrayList<>();
-        if (ip != null) {
+        if (ip != null && isNewIp) {
             boolean ipNeedsLookup = player.getIpAddresses()
                 .stream()
                 .anyMatch(playerIp -> playerIp.getIpAddress().equals(ip) && playerIp.getCountry() == null);

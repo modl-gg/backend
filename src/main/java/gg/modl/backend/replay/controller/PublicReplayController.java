@@ -39,7 +39,8 @@ public class PublicReplayController {
                 "fileSize", replay.fileSize(),
                 "timestamp", replay.timestamp(),
                 "replayUrl", replay.replayUrl(),
-                "status", replay.status()
+                "status", replay.status(),
+                "labeled", replay.labeled()
             )))
             .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
@@ -55,11 +56,17 @@ public class PublicReplayController {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
 
-        boolean saved = replayService.submitLabels(server, replayId, request.players());
-        if (!saved) {
+        ReplayService.SubmitLabelsResult result = replayService.submitLabels(server, replayId, request.players());
+        if (result == ReplayService.SubmitLabelsResult.NOT_FOUND) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Replay not found"
+            ));
+        }
+        if (result == ReplayService.SubmitLabelsResult.ALREADY_LABELED) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "status", 409,
+                "message", "This replay has already been labeled"
             ));
         }
 

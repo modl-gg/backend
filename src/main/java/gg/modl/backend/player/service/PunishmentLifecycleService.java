@@ -35,6 +35,10 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import gg.modl.backend.exception.ForbiddenException;
+import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
@@ -50,6 +54,28 @@ public class PunishmentLifecycleService {
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
+    private final PermissionService permissionService;
+
+    public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
+        if (email == null) {
+            throw new ForbiddenException("No authenticated user found for permission check");
+        }
+        if (permissionService.isSuperAdmin(server, email)) {
+            return;
+        }
+
+        PunishmentType type = punishmentTypeService.getPunishmentTypeByOrdinal(server, typeOrdinal)
+            .orElseThrow(() -> new ValidationException("Invalid punishment type"));
+
+        String applyPermission = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
+        String role = staffRepository.findByEmailIgnoreCase(server, email)
+            .map(Staff::getRole)
+            .orElse(null);
+
+        if (!permissionService.hasPermission(server, role, applyPermission)) {
+            throw new ForbiddenException("You do not have permission to apply this punishment type");
+        }
+    }
 
     public String createMinecraftPunishment(Server server, MinecraftCreatePunishmentRequest request) {
         UUID playerUuid = UUID.fromString(request.targetUuid());

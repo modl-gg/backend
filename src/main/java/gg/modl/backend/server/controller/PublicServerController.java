@@ -57,6 +57,46 @@ public class PublicServerController {
         return ResponseEntity.ok(new RegisterResponse(true, ServerResponseMessage.REGISTER_SUCCESS));
     }
 
+    @PostMapping("/check-availability")
+    public ResponseEntity<AvailabilityResponse> checkAvailability(@RequestBody @Valid AvailabilityRequest request) {
+        boolean emailAvailable = true;
+        boolean nameAvailable = true;
+        boolean subdomainAvailable = true;
+        String message = null;
+
+        if (request.customDomain != null && !request.customDomain.isBlank() && RESERVED_SUBDOMAINS.contains(request.customDomain)) {
+            subdomainAvailable = false;
+            message = ServerResponseMessage.REGISTER_RESERVED_SUBDOMAIN;
+        }
+
+        ServerService.ServerExistResult existResult = serverService.doesServerExist(
+                request.email != null ? request.email : "",
+                request.serverName != null ? request.serverName : "",
+                request.customDomain != null ? request.customDomain : "");
+
+        if (existResult.emailMatch()) {
+            emailAvailable = false;
+            if (message == null) message = ServerResponseMessage.REGISTER_EMAIL_EXISTS;
+        }
+        if (existResult.nameMatch()) {
+            nameAvailable = false;
+            if (message == null) message = ServerResponseMessage.REGISTER_NAME_EXISTS;
+        }
+        if (existResult.domainMatch()) {
+            subdomainAvailable = false;
+            if (message == null) message = ServerResponseMessage.REGISTER_DOMAIN_EXISTS;
+        }
+
+        return ResponseEntity.ok(new AvailabilityResponse(emailAvailable, nameAvailable, subdomainAvailable, message));
+    }
+
+    public record AvailabilityRequest(
+            @Size(max = 254) String email,
+            @Size(max = 100) String serverName,
+            @Size(max = 50) String customDomain) {}
+
+    public record AvailabilityResponse(boolean emailAvailable, boolean nameAvailable, boolean subdomainAvailable, String message) {}
+
     public record RegisterRequest(@Email @NotBlank @Size(max = 254) String email,
                                   @Size(min = 3, max = 50) @NotBlank @Pattern(regexp = "^[a-zA-Z0-9 -]+$") String serverName,
                                   @Size(min = 3, max = 20) @NotBlank @Pattern(regexp = "^[a-z0-9-]+$") String customDomain,

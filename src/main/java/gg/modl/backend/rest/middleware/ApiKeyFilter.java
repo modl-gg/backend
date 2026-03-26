@@ -1,6 +1,7 @@
 package gg.modl.backend.rest.middleware;
 
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RESTMappingV2;
 import gg.modl.backend.rest.RESTSecurityRole;
 import gg.modl.backend.rest.RequestAttribute;
 import gg.modl.backend.rest.RequestHeader;
@@ -29,7 +30,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         final String path = request.getRequestURI();
 
-        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT);
+        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT) && !path.startsWith(RESTMappingV2.PREFIX_MINECRAFT);
     }
 
     @Override

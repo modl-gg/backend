@@ -145,7 +145,7 @@ public class TicketSubscriptionService {
     public void ensureSubscription(Server server, String ticketId, String staffEmail) {
         Staff staff = staffRepository.findByEmailExact(server, staffEmail).orElse(null);
         if (staff == null) {
-            log.warn("Staff member {} not found", staffEmail);
+            log.debug("Staff member {} not found for ticket subscription", staffEmail);
             return;
         }
 

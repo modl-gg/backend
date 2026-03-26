@@ -4,6 +4,7 @@ import gg.modl.backend.admin.filter.AdminAuthFilter;
 import gg.modl.backend.auth.filter.SessionAuthenticationFilter;
 import gg.modl.backend.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.rest.RESTMappingV2;
 import gg.modl.backend.rest.RESTSecurityRole;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -54,6 +55,7 @@ public class V1SecurityConfig {
                 .requestMatchers(RESTMappingV1.PREFIX_ADMIN + "/**").hasAuthority(RESTSecurityRole.ADMIN)
                 .requestMatchers(RESTMappingV1.PREFIX_PANEL + "/**").hasAuthority(RESTSecurityRole.USER)
                 .requestMatchers(RESTMappingV1.PREFIX_MINECRAFT + "/**").hasAuthority(RESTSecurityRole.MINECRAFT)
+                .requestMatchers(RESTMappingV2.PREFIX_MINECRAFT + "/**").hasAuthority(RESTSecurityRole.MINECRAFT)
                 .anyRequest().authenticated()
             )
             .addFilterBefore(apiKeyFilter, UsernamePasswordAuthenticationFilter.class)

@@ -9,6 +9,9 @@ COPY gradlew build.gradle settings.gradle ./
 COPY mongo-fields-annotations/build.gradle mongo-fields-annotations/build.gradle
 COPY mongo-fields-processor/build.gradle mongo-fields-processor/build.gradle
 
+# Copy local libs (replay-format jar)
+COPY libs libs
+
 RUN chmod +x gradlew
 
 # Download dependencies (cached unless build.gradle changes)

@@ -31,6 +31,7 @@ public record TicketResponse(
     AIAnalysisResult aiAnalysis,
     boolean emailAuthEnabled,
     boolean hidden,
-    String replayUrl
+    String replayUrl,
+    List<String> assignedTo
 ) {
 }

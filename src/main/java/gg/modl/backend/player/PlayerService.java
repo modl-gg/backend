@@ -313,32 +313,34 @@ public class PlayerService {
             .build();
     }
 
-    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip) {
+    public record LoginResult(Player player, boolean isNewIp) {}
+
+    public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip) {
         return loginPlayer(server, minecraftUuid, username, ip, null, null, null);
     }
 
-    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo) {
+    public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo) {
         return loginPlayer(server, minecraftUuid, username, ip, ipInfo, null, null);
     }
 
-    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash) {
+    public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash) {
         return loginPlayer(server, minecraftUuid, username, ip, ipInfo, skinHash, null);
     }
 
-    public Player loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
+    public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
 
         if (existingPlayer.isPresent()) {
             Player player = existingPlayer.get();
-            updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
+            boolean isNewIp = updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
             playerRepository.updateLoginState(server, player);
-            return player;
+            return new LoginResult(player, isNewIp);
         }
 
         Player player = newPlayer(minecraftUuid, username);
-        addIpToPlayer(player, ip, ipInfo);
+        boolean isNewIp = addIpToPlayer(player, ip, ipInfo);
         updatePlayerDataOnLogin(player, skinHash, serverName);
-        return playerRepository.saveEntity(server, player);
+        return new LoginResult(playerRepository.saveEntity(server, player), isNewIp);
     }
 
     public Player addUsername(Server server, UUID minecraftUuid, String username) {
@@ -389,9 +391,12 @@ public class PlayerService {
         return player;
     }
 
-    private void addIpToPlayer(Player player, String ipAddress, Map<String, Object> ipInfo) {
+    /**
+     * @return true if this IP was newly added, false if it already existed
+     */
+    private boolean addIpToPlayer(Player player, String ipAddress, Map<String, Object> ipInfo) {
         if (ipAddress == null || ipAddress.isBlank()) {
-            return;
+            return false;
         }
 
         Date now = new Date();
@@ -410,7 +415,7 @@ public class PlayerService {
             if (ipInfo != null) {
                 applyIpMetadata(entry, ipInfo);
             }
-            return;
+            return false;
         }
 
         IPEntry.IPEntryBuilder builder = IPEntry.builder()
@@ -427,6 +432,7 @@ public class PlayerService {
         }
 
         ipAddresses.add(builder.build());
+        return true;
     }
 
     private void applyIpMetadata(IPEntry ipEntry, Map<String, Object> ipInfo) {
@@ -469,7 +475,7 @@ public class PlayerService {
         playerRepository.replaceIpAddresses(server, player);
     }
 
-    private void updatePlayerOnLogin(Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
+    private boolean updatePlayerOnLogin(Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         List<UsernameEntry> usernames = ensureUsernames(player);
         String currentUsername = usernames.isEmpty() ? null :
                                  usernames.get(usernames.size() - 1).username();
@@ -478,8 +484,9 @@ public class PlayerService {
             usernames.add(new UsernameEntry(username, new Date()));
         }
 
-        addIpToPlayer(player, ip, ipInfo);
+        boolean isNewIp = addIpToPlayer(player, ip, ipInfo);
         updatePlayerDataOnLogin(player, skinHash, serverName);
+        return isNewIp;
     }
 
     private void updatePlayerDataOnLogin(Player player, String skinHash, String serverName) {

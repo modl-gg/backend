@@ -42,4 +42,7 @@ public final class CollectionName {
 
     // Replays
     public static final String REPLAYS = "replays";
+
+    // Training
+    public static final String TRAINING_SEGMENTS = "training_segments";
 }

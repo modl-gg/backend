@@ -24,6 +24,7 @@ public class ReplayService {
     private final ReplayMongoRepository replayRepository;
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
+    private final TrainingDataService trainingDataService;
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
 
@@ -80,17 +81,26 @@ public class ReplayService {
         return exists;
     }
 
-    public boolean submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
+    public enum SubmitLabelsResult { OK, NOT_FOUND, ALREADY_LABELED }
+
+    public SubmitLabelsResult submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
         Optional<ReplayDocument> opt = replayRepository.findByReplayId(server, replayId);
         if (opt.isEmpty()) {
-            return false;
+            return SubmitLabelsResult.NOT_FOUND;
         }
 
         ReplayDocument doc = opt.get();
+        if (doc.getLabels() != null && !doc.getLabels().isEmpty()) {
+            return SubmitLabelsResult.ALREADY_LABELED;
+        }
+
         doc.setLabels(labels);
         replayRepository.saveEntity(server, doc);
         log.debug("Saved {} labels for replay {} on server {}", labels.size(), replayId, server.getDatabaseName());
-        return true;
+
+        trainingDataService.generateSegmentsAsync(server, doc, labels);
+
+        return SubmitLabelsResult.OK;
     }
 
     public Optional<PublicReplayResponse> getPublicReplay(Server server, String replayId) {
@@ -102,7 +112,8 @@ public class ReplayService {
                 doc.getFileSize(),
                 doc.getCreatedAt().getTime(),
                 s3StorageService.getCdnUrl(doc.getStorageKey()),
-                doc.getStatus()
+                doc.getStatus(),
+                doc.getLabels() != null && !doc.getLabels().isEmpty()
             ));
     }
 }

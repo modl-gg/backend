@@ -142,7 +142,8 @@ public class PanelTicketController {
             "notes", ticket.notes(),
             "messages", ticket.messages(),
             "data", ticket.data() != null ? ticket.data() : Map.of(),
-            "locked", ticket.locked()
+            "locked", ticket.locked(),
+            "assignedTo", ticket.assignedTo() != null ? ticket.assignedTo() : List.of()
         ));
     }
 

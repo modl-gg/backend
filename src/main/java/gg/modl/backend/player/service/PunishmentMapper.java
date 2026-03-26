@@ -184,25 +184,18 @@ public final class PunishmentMapper {
             return "Instant";
         }
 
-        long seconds = durationMs / 1000;
-        long minutes = seconds / 60;
-        long hours = minutes / 60;
-        long days = hours / 24;
-        long weeks = days / 7;
-        long months = days / 30;
+        long totalSeconds = durationMs / 1000;
+        long days = totalSeconds / 86400;
+        long hours = (totalSeconds % 86400) / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
 
-        if (months > 0) {
-            return months + (months == 1 ? " month" : " months");
-        } else if (weeks > 0) {
-            return weeks + (weeks == 1 ? " week" : " weeks");
-        } else if (days > 0) {
-            return days + (days == 1 ? " day" : " days");
-        } else if (hours > 0) {
-            return hours + (hours == 1 ? " hour" : " hours");
-        } else if (minutes > 0) {
-            return minutes + (minutes == 1 ? " minute" : " minutes");
-        } else {
-            return seconds + (seconds == 1 ? " second" : " seconds");
-        }
+        StringBuilder sb = new StringBuilder();
+        if (days > 0) sb.append(days).append("d");
+        if (hours > 0) { if (!sb.isEmpty()) sb.append(" "); sb.append(hours).append("h"); }
+        if (minutes > 0) { if (!sb.isEmpty()) sb.append(" "); sb.append(minutes).append("m"); }
+        if (seconds > 0 && days == 0) { if (!sb.isEmpty()) sb.append(" "); sb.append(seconds).append("s"); }
+
+        return sb.isEmpty() ? "0s" : sb.toString();
     }
 }

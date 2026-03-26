@@ -22,6 +22,7 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Date;
@@ -63,6 +64,9 @@ class PunishmentServiceTest {
     @Mock
     private PunishmentQueryService punishmentQueryService;
 
+    @Mock
+    private PermissionService permissionService;
+
     private PunishmentLifecycleService punishmentLifecycleService;
 
     private PunishmentMutationService punishmentMutationService;
@@ -77,7 +81,8 @@ class PunishmentServiceTest {
             thresholdSettingsService,
             issuerNameResolver,
             staffRepository,
-            punishmentQueryService
+            punishmentQueryService,
+            permissionService
         );
         punishmentMutationService = new PunishmentMutationService(
             playerRepository,

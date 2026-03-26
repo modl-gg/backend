@@ -13,6 +13,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.settings.service.TicketFormSettingsService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
@@ -49,6 +50,9 @@ class TicketServiceTest {
     private QuickResponseSettingsService quickResponseSettingsService;
 
     @Mock
+    private TicketFormSettingsService ticketFormSettingsService;
+
+    @Mock
     private TicketNotificationService notificationService;
 
     @Mock
@@ -59,7 +63,7 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, notificationService, ticketIdGenerator);
+        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator);
         minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 
@@ -241,6 +245,7 @@ class TicketServiceTest {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         Ticket ticket = Ticket.builder()
             .id("SUPPORT-2")
+            .type(TicketCategory.SUPPORT)
             .status(TicketStatus.UNFINISHED)
             .creatorName("PlayerOne")
             .replies(new ArrayList<>())

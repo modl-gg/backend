@@ -131,12 +131,15 @@ public class PanelPlayerController {
     }
 
     @PostMapping("/{uuid}/punishments")
-    public ResponseEntity<SimpleResponse> createPunishment(
+    public ResponseEntity<?> createPunishment(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestBody @Valid CreatePunishmentRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String email = RequestUtil.getSessionEmail(request);
+
+        punishmentLifecycleService.validatePunishmentPermission(server, email, createRequest.typeOrdinal());
         punishmentLifecycleService.createPunishment(server, UUID.fromString(uuid), createRequest);
         return ResponseEntity.ok(new SimpleResponse(true));
     }

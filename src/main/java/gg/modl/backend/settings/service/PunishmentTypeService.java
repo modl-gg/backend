@@ -124,12 +124,16 @@ public class PunishmentTypeService extends AbstractSettingsService {
         List<PunishmentType> types = new java.util.ArrayList<>(getPunishmentTypes(server));
 
         int maxOrdinal = types.stream()
-            .mapToInt(PunishmentType::getOrdinal)
+            .map(PunishmentType::getOrdinal)
+            .filter(o -> o != null)
+            .mapToInt(Integer::intValue)
             .max()
             .orElse(5);
 
         int maxId = types.stream()
-            .mapToInt(PunishmentType::getId)
+            .map(PunishmentType::getId)
+            .filter(i -> i != null)
+            .mapToInt(Integer::intValue)
             .max()
             .orElse(5);
 

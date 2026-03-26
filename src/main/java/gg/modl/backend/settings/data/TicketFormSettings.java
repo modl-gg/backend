@@ -26,6 +26,12 @@ public class TicketFormSettings {
     @AllArgsConstructor
     public static class TicketForm {
         @Builder.Default
+        private boolean requireEmail = false;
+        @Builder.Default
+        private boolean requireEmailAuth = false;
+        @Builder.Default
+        private boolean allowEmailNotifications = true;
+        @Builder.Default
         private List<FormField> fields = new ArrayList<>();
         @Builder.Default
         private List<FormSection> sections = new ArrayList<>();
