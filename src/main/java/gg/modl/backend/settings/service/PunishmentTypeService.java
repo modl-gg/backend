@@ -73,7 +73,8 @@ public class PunishmentTypeService extends AbstractSettingsService {
             PunishmentType existing = types.get(i);
             if (existing.getOrdinal() == ordinal) {
                 if (existing.isCustomizable()) {
-                    // Custom type: full replacement, preserve ordinal and customizable flag
+                    // Custom type: full replacement, preserve identity fields
+                    updatedType.setId(existing.getId());
                     updatedType.setOrdinal(ordinal);
                     updatedType.setCustomizable(true);
                     types.set(i, updatedType);
