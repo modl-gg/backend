@@ -13,6 +13,7 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
+import java.util.Objects;
 
 @Service
 @Slf4j
@@ -29,7 +30,7 @@ public class PunishmentTypeService extends AbstractSettingsService {
 
     public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
         return getPunishmentTypes(server).stream()
-            .filter(pt -> pt.getId() == id)
+            .filter(pt -> pt.getId() != null && pt.getId() == id)
             .findFirst();
     }
 
@@ -73,9 +74,10 @@ public class PunishmentTypeService extends AbstractSettingsService {
             PunishmentType existing = types.get(i);
             if (existing.getOrdinal() == ordinal) {
                 if (existing.isCustomizable()) {
-                    // Custom type: full replacement, preserve ordinal and customizable flag
+                    updatedType.setId(existing.getId());
                     updatedType.setOrdinal(ordinal);
                     updatedType.setCustomizable(true);
+                    updatedType.setName(existing.getName());
                     types.set(i, updatedType);
                 } else {
                     // Core type: only update configurable fields, preserve identity
@@ -132,7 +134,7 @@ public class PunishmentTypeService extends AbstractSettingsService {
 
         int maxId = types.stream()
             .map(PunishmentType::getId)
-            .filter(i -> i != null)
+            .filter(Objects::nonNull)
             .mapToInt(Integer::intValue)
             .max()
             .orElse(5);
