@@ -2,7 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
@@ -32,7 +32,7 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     public Optional<Player> findByPunishmentId(Server server, String punishmentId) {
-        return findOne(server, Query.query(MongoQueries.where(PlayerFields.PUNISHMENT_ID).is(punishmentId)));
+        return findOne(server, Query.query(Criteria.where(PlayerFields.PUNISHMENT_ID).is(punishmentId)));
     }
 
     public List<Player> findByLinkedBanId(Server server, String parentPunishmentId) {
@@ -44,20 +44,20 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     private Query linkedBanQuery(String parentPunishmentId) {
-        return Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+        return Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where(PunishmentFields.TYPE_ORDINAL).is(4)
                 .and(PunishmentFields.DATA_LINKED_BAN_ID).is(parentPunishmentId)
         ));
     }
 
     public void replacePunishments(Server server, Player player) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
         Update update = new Update().set(PlayerFields.PUNISHMENTS, player.getPunishments());
         updateFirst(server, query, update);
     }
 
     public void replacePunishments(String databaseName, Player player) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
         Update update = new Update().set(PlayerFields.PUNISHMENTS, player.getPunishments());
         updateFirst(databaseName, query, update);
     }
@@ -103,12 +103,12 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     public List<Document> fetchRecentPunishmentRows(Server server, Date issuedAfter, int limit) {
-        Criteria criteria = MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(issuedAfter);
+        Criteria criteria = Criteria.where(PlayerFields.PUNISHMENT_ISSUED).gte(issuedAfter);
         return fetchPunishmentRowsByCriteria(server, criteria, limit);
     }
 
     public List<Document> fetchRecentPunishmentRowsByIssuer(Server server, String issuerName, Date issuedAfter, int limit) {
-        Criteria criteria = MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_NAME).is(issuerName)
+        Criteria criteria = Criteria.where(PlayerFields.PUNISHMENT_ISSUER_NAME).is(issuerName)
             .and(PlayerFields.PUNISHMENT_ISSUED).gte(issuedAfter);
         return fetchPunishmentRowsByCriteria(server, criteria, limit);
     }
@@ -118,7 +118,7 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
             Aggregation.match(punishmentCriteria),
             Aggregation.unwind(PlayerFields.PUNISHMENTS),
             Aggregation.match(punishmentCriteria),
-            Aggregation.sort(MongoQueries.sort(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED)),
+            Aggregation.sort(Sort.by(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED)),
             Aggregation.limit(limit),
             Aggregation.project(PlayerFields.MINECRAFT_UUID, PlayerFields.USERNAMES)
                 .and(PlayerFields.PUNISHMENTS).as("punishment")
@@ -147,17 +147,17 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     public List<Player> findWithPunishmentsProjected(Server server) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true));
-        MongoQueries.include(query, PlayerFields.PUNISHMENTS);
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).exists(true));
+        query.fields().include(PlayerFields.PUNISHMENTS);
         return find(server, query);
     }
 
     public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff) {
-        return find(server, Query.query(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff)));
+        return find(server, Query.query(Criteria.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff)));
     }
 
     public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff, int limit) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where("issued").gte(cutoff)
         ));
         query.limit(limit);
@@ -165,7 +165,7 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     public List<Player> findPlayersWithPunishments(Server server, int limit) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true));
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).exists(true));
         query.limit(limit);
         return find(server, query);
     }

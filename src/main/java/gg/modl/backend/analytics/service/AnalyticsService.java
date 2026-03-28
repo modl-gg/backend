@@ -15,7 +15,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
-import gg.modl.backend.util.DateRangeUtil;
+import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -153,7 +153,7 @@ public class AnalyticsService {
                 potentialIds.add(s);
             }
         }
-        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, server, staffRepository);
+        Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, server);
 
         Map<String, Integer> staffCountMap = new HashMap<>();
         for (Document document : byStaffDocs) {

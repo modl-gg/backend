@@ -110,7 +110,7 @@ public class PunishmentQueryService {
         if (ids.isEmpty()) {
             return Map.of();
         }
-        return issuerNameResolver.batchResolve(ids, server, staffRepository);
+        return issuerNameResolver.batchResolve(ids, server);
     }
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
@@ -219,7 +219,7 @@ public class PunishmentQueryService {
         }
         Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
                                               ? Map.of()
-                                              : issuerNameResolver.batchResolve(allIssuerIds, server, staffRepository);
+                                              : issuerNameResolver.batchResolve(allIssuerIds, server);
 
         for (Player player : players) {
             String username = player.getUsernames().isEmpty() ? "Unknown" :
@@ -305,7 +305,7 @@ public class PunishmentQueryService {
         if (ids.isEmpty()) {
             return Map.of();
         }
-        return issuerNameResolver.batchResolve(ids, server, staffRepository);
+        return issuerNameResolver.batchResolve(ids, server);
     }
 
     public List<Map<String, Object>> getLinkedBansForParent(Server server, String parentPunishmentId) {
@@ -317,7 +317,7 @@ public class PunishmentQueryService {
                               player.getUsernames().get(player.getUsernames().size() - 1).username();
 
             for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getTypeOrdinal() == 4 &&
+                if (punishment.getTypeOrdinal() == Punishment.LINKED_BAN_TYPE_ORDINAL &&
                     punishment.getData() != null &&
                     parentPunishmentId.equals(punishment.getData().get("linkedBanId"))) {
 

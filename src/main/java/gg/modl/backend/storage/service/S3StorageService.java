@@ -1,6 +1,6 @@
 package gg.modl.backend.storage.service;
 
-import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.config.S3Configuration;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;

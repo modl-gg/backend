@@ -13,7 +13,7 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -25,7 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service

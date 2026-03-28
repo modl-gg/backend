@@ -2,11 +2,11 @@ package gg.modl.backend.appeal.controller;
 
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.appeal.dto.response.PublicAppealResponse;
 import gg.modl.backend.appeal.service.AppealService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;

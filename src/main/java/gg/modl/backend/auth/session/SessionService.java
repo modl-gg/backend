@@ -1,13 +1,13 @@
 package gg.modl.backend.auth.session;
 
 import gg.modl.backend.auth.AuthConfiguration;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.database.mongo.repository.AuthSessionMongoRepository;
 import gg.modl.backend.server.data.Server;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +38,7 @@ public class SessionService {
 
         AuthSessionData session = new AuthSessionData();
         session.setId(generateSecureToken());
-        session.setEmail(email.trim().toLowerCase(Locale.ROOT));
+        session.setEmail(EmailAddressUtil.normalize(email));
         session.setIpAddress(ipAddress);
         session.setUserAgent(userAgent);
 

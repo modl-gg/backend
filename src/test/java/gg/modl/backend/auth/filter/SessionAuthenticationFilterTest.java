@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.rest.RequestAttribute;
+import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import jakarta.servlet.http.Cookie;

@@ -1,13 +1,13 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.data.WebhookSettings;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -17,28 +17,24 @@ import org.springframework.web.client.RestTemplate;
 
 @Service
 @Slf4j
-public class WebhookSettingsService extends AbstractSettingsService {
+@RequiredArgsConstructor
+public class WebhookSettingsService {
+    private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private static final String SETTINGS_TYPE_WEBHOOKS = "webhookSettings";
-
-    public WebhookSettingsService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper, RestTemplate restTemplate) {
-        super(settingsRepository);
-        this.objectMapper = objectMapper;
-        this.restTemplate = restTemplate;
-    }
 
     public WebhookSettings updateWebhookSettings(Server server, WebhookSettings newSettings) {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
 
-        upsertSettings(server, SETTINGS_TYPE_WEBHOOKS, data);
+        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_WEBHOOKS, data);
 
         return getWebhookSettings(server);
     }
 
     public WebhookSettings getWebhookSettings(Server server) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_WEBHOOKS).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_WEBHOOKS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return getDefaultWebhookSettings();

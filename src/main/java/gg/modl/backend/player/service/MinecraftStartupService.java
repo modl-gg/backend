@@ -1,6 +1,6 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.player.controller.MinecraftStartupController.StartupRequest;

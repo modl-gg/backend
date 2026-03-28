@@ -1,6 +1,6 @@
 package gg.modl.backend.storage.service;
 
-import gg.modl.backend.util.ByteFormatUtil;
+import gg.modl.backend.infrastructure.util.ByteFormatUtil;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

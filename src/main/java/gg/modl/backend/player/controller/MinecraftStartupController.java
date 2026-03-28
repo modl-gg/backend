@@ -1,8 +1,8 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.service.MinecraftStartupService;
-import gg.modl.backend.rest.RESTMappingV2;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV2;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;

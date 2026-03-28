@@ -2,7 +2,6 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.HomepageCardFields;
 import gg.modl.backend.homepage.data.HomepageCard;
@@ -31,12 +30,12 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
     }
 
     public List<HomepageCard> findAllOrdered(Server server) {
-        return find(server, new Query().with(MongoQueries.sort(Sort.Direction.ASC, HomepageCardFields.ORDINAL)));
+        return find(server, new Query().with(Sort.by(Sort.Direction.ASC, HomepageCardFields.ORDINAL)));
     }
 
     public List<HomepageCard> findVisibleOrdered(Server server) {
-        Query query = Query.query(MongoQueries.where(HomepageCardFields.IS_ENABLED).is(true))
-            .with(MongoQueries.sort(Sort.Direction.ASC, HomepageCardFields.ORDINAL));
+        Query query = Query.query(Criteria.where(HomepageCardFields.IS_ENABLED).is(true))
+            .with(Sort.by(Sort.Direction.ASC, HomepageCardFields.ORDINAL));
         return find(server, query);
     }
 
@@ -46,7 +45,7 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
 
     public int findMaxOrdinal(Server server) {
         Query query = new Query()
-            .with(MongoQueries.sort(Sort.Direction.DESC, HomepageCardFields.ORDINAL))
+            .with(Sort.by(Sort.Direction.DESC, HomepageCardFields.ORDINAL))
             .limit(1);
         return findOne(server, query)
             .map(HomepageCard::getOrdinal)
@@ -102,7 +101,7 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
 
         HomepageCard updated = findAndModify(
             server,
-            Query.query(MongoQueries.where(HomepageCardFields.ID).is(id)),
+            Query.query(Criteria.where(HomepageCardFields.ID).is(id)),
             update,
             FindAndModifyOptions.options().returnNew(true)
         );
@@ -110,7 +109,7 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
     }
 
     public boolean deleteByCardId(Server server, String id) {
-        return remove(server, Query.query(MongoQueries.where(HomepageCardFields.ID).is(id))).getDeletedCount() > 0;
+        return remove(server, Query.query(Criteria.where(HomepageCardFields.ID).is(id))).getDeletedCount() > 0;
     }
 
     public void reorderCards(Server server, List<String> ids) {

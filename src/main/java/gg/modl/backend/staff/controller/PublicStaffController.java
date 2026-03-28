@@ -1,6 +1,6 @@
 package gg.modl.backend.staff.controller;
 
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.request.AcceptInvitationRequest;
 import gg.modl.backend.staff.dto.response.StaffResponse;

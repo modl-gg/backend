@@ -1,7 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketNote;

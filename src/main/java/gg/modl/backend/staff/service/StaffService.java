@@ -1,9 +1,9 @@
 package gg.modl.backend.staff.service;
 
-import gg.modl.backend.exception.ConflictException;
-import gg.modl.backend.exception.ForbiddenException;
-import gg.modl.backend.exception.ResourceNotFoundException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;

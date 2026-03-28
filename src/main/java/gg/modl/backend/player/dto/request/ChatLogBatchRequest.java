@@ -1,6 +1,6 @@
 package gg.modl.backend.player.dto.request;
 
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;

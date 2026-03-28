@@ -1,7 +1,7 @@
 package gg.modl.backend.admin.dto.request;
 
 import gg.modl.backend.admin.data.SystemConfig;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;

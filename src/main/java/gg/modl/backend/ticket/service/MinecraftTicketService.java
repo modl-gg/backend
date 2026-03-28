@@ -48,7 +48,7 @@ public class MinecraftTicketService {
                     continue;
                 }
                 chatMessages.add(new Ticket.ChatMessage(
-                    message.substring(0, Math.min(message.length(), TicketService.MAX_CHAT_MESSAGE_LENGTH)),
+                    message.substring(0, Math.min(message.length(), TicketContentService.MAX_CHAT_MESSAGE_LENGTH)),
                     now
                 ));
             }

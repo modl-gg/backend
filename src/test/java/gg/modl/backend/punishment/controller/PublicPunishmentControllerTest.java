@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.player.service.PunishmentQueryService;
-import gg.modl.backend.rest.RequestAttribute;
+import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import jakarta.servlet.http.HttpServletRequest;

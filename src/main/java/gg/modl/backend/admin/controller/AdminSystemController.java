@@ -7,7 +7,7 @@ import gg.modl.backend.admin.dto.request.UpdatePromptRequest;
 import gg.modl.backend.admin.dto.request.UpdateRateLimitsRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.admin.service.GlobalSystemService;
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import jakarta.validation.Valid;
 import java.util.Date;
 import java.util.List;

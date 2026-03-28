@@ -1,7 +1,6 @@
 package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
@@ -94,7 +93,7 @@ public class AnalyticsMongoRepository {
     }
 
     public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
+        Criteria criteria = Criteria.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
@@ -110,7 +109,7 @@ public class AnalyticsMongoRepository {
     }
 
     public List<IdCountResult> aggregateTicketCategoryCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
+        Criteria criteria = Criteria.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
@@ -126,7 +125,7 @@ public class AnalyticsMongoRepository {
     }
 
     public List<IdCountResult> aggregateDailyTicketCounts(Server server, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
+        Criteria criteria = Criteria.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
@@ -184,7 +183,7 @@ public class AnalyticsMongoRepository {
     public List<IdCountResult> aggregateAuditLogLevelCounts(Server server, Date startDate) {
         Criteria criteria = new Criteria();
         if (startDate != null) {
-            criteria = MongoQueries.where(AuditLogFields.CREATED).gte(startDate);
+            criteria = Criteria.where(AuditLogFields.CREATED).gte(startDate);
         }
 
         final Aggregation aggregation = Aggregation.newAggregation(

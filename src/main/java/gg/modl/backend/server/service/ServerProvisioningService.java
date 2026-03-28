@@ -24,6 +24,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class ServerProvisioningService {
+    private static final String AI_CHAT_ABUSE_CONFIG_ID = "6";
+    private static final String AI_ANTI_SOCIAL_CONFIG_ID = "7";
+
     private final TenantMongoAccess tenantMongoAccess;
     private final MongoIndexBootstrapService mongoIndexBootstrapService;
     private final SettingsMongoRepository settingsRepository;
@@ -53,22 +56,22 @@ public class ServerProvisioningService {
         }
 
         Map<String, Object> chatAbuseConfig = new LinkedHashMap<>();
-        chatAbuseConfig.put("id", "6");
+        chatAbuseConfig.put("id", AI_CHAT_ABUSE_CONFIG_ID);
         chatAbuseConfig.put("name", "Chat Abuse");
         chatAbuseConfig.put("aiDescription",
             "Chat abuse is the act of spamming, excessive profanity, abusive language, inappropriate topics or jokes, and misleading information");
         chatAbuseConfig.put("enabled", true);
 
         Map<String, Object> antiSocialConfig = new LinkedHashMap<>();
-        antiSocialConfig.put("id", "7");
+        antiSocialConfig.put("id", AI_ANTI_SOCIAL_CONFIG_ID);
         antiSocialConfig.put("name", "Anti Social");
         antiSocialConfig.put("aiDescription",
             "Anti social is the act of harassing, threatening, black-mailing, or otherwise abusing another player or group of players. This includes bigotry and other forms of discrimination against protected classes.");
         antiSocialConfig.put("enabled", true);
 
         Map<String, Object> aiPunishmentConfigs = new LinkedHashMap<>();
-        aiPunishmentConfigs.put("6", chatAbuseConfig);
-        aiPunishmentConfigs.put("7", antiSocialConfig);
+        aiPunishmentConfigs.put(AI_CHAT_ABUSE_CONFIG_ID, chatAbuseConfig);
+        aiPunishmentConfigs.put(AI_ANTI_SOCIAL_CONFIG_ID, antiSocialConfig);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("enableAIReview", false);

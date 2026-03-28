@@ -2,7 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SystemLogFields;
 import java.util.ArrayList;
@@ -46,28 +46,28 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
     }
 
     public long countSince(Date startDate) {
-        return count(Query.query(MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)));
+        return count(Query.query(Criteria.where(SystemLogFields.TIMESTAMP).gte(startDate)));
     }
 
     public long countByLevelSince(String level, Date startDate) {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(SystemLogFields.LEVEL).is(level),
-            MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
+            Criteria.where(SystemLogFields.LEVEL).is(level),
+            Criteria.where(SystemLogFields.TIMESTAMP).gte(startDate)
         )));
     }
 
     public long countUnresolvedByLevel(String level) {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(SystemLogFields.LEVEL).is(level),
-            MongoQueries.where(SystemLogFields.RESOLVED).is(false)
+            Criteria.where(SystemLogFields.LEVEL).is(level),
+            Criteria.where(SystemLogFields.RESOLVED).is(false)
         )));
     }
 
     public long countUnresolvedByLevelSince(String level, Date startDate) {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(SystemLogFields.LEVEL).is(level),
-            MongoQueries.where(SystemLogFields.RESOLVED).is(false),
-            MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)
+            Criteria.where(SystemLogFields.LEVEL).is(level),
+            Criteria.where(SystemLogFields.RESOLVED).is(false),
+            Criteria.where(SystemLogFields.TIMESTAMP).gte(startDate)
         )));
     }
 
@@ -105,25 +105,25 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         List<Criteria> criteriaList = new ArrayList<>();
 
         if (hasText(level)) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.LEVEL).is(level));
+            criteriaList.add(Criteria.where(SystemLogFields.LEVEL).is(level));
         }
         if (hasText(source)) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.SOURCE).is(source));
+            criteriaList.add(Criteria.where(SystemLogFields.SOURCE).is(source));
         }
         if (hasText(serverId)) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.SERVER_ID).is(serverId));
+            criteriaList.add(Criteria.where(SystemLogFields.SERVER_ID).is(serverId));
         }
         if (hasText(category)) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.CATEGORY).is(category));
+            criteriaList.add(Criteria.where(SystemLogFields.CATEGORY).is(category));
         }
         if (resolved != null) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.RESOLVED).is(RESOLVED_TRUE.equals(resolved)));
+            criteriaList.add(Criteria.where(SystemLogFields.RESOLVED).is(RESOLVED_TRUE.equals(resolved)));
         }
         if (hasText(search)) {
-            criteriaList.add(MongoQueries.where(SystemLogFields.MESSAGE).regex(Pattern.quote(search), "i"));
+            criteriaList.add(Criteria.where(SystemLogFields.MESSAGE).regex(Pattern.quote(search), "i"));
         }
         if (startDate != null || endDate != null) {
-            Criteria dateCriteria = MongoQueries.where(SystemLogFields.TIMESTAMP);
+            Criteria dateCriteria = Criteria.where(SystemLogFields.TIMESTAMP);
             if (startDate != null) {
                 dateCriteria = dateCriteria.gte(startDate);
             }
@@ -182,7 +182,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
     }
 
     public SystemLog resolveById(String id, String resolvedBy, Date resolvedAt) {
-        Query query = Query.query(MongoQueries.where(SystemLogFields.ID).is(id));
+        Query query = Query.query(Criteria.where(SystemLogFields.ID).is(id));
         Update update = new Update()
             .set(SystemLogFields.RESOLVED, true)
             .set(SystemLogFields.RESOLVED_BY, resolvedBy)
@@ -191,7 +191,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
     }
 
     public long deleteByIds(List<String> logIds) {
-        return remove(Query.query(MongoQueries.where(SystemLogFields.ID).in(logIds))).getDeletedCount();
+        return remove(Query.query(Criteria.where(SystemLogFields.ID).in(logIds))).getDeletedCount();
     }
 
     public long deleteAllLogs() {
@@ -285,7 +285,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
 
     public List<Document> findLogTrends(Date startDate) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(MongoQueries.where(SystemLogFields.TIMESTAMP).gte(startDate)),
+            Aggregation.match(Criteria.where(SystemLogFields.TIMESTAMP).gte(startDate)),
             Aggregation.project()
                 .and(DateOperators.DateToString.dateOf(SystemLogFields.TIMESTAMP).toString("%Y-%m-%d")).as(ALIAS_DATE)
                 .and(SystemLogFields.LEVEL).as(ALIAS_LEVEL),

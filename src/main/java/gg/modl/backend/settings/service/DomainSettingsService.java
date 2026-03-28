@@ -1,46 +1,34 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.cors.DynamicCorsConfigurationSource;
+import gg.modl.backend.infrastructure.cors.DynamicCorsConfigurationSource;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
-import gg.modl.backend.domain.external.CloudflareClient;
-import gg.modl.backend.exception.ConflictException;
-import gg.modl.backend.exception.ResourceNotFoundException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.cloudflare.external.CloudflareClient;
+import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-public class DomainSettingsService extends AbstractSettingsService {
+@RequiredArgsConstructor
+public class DomainSettingsService {
+    private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final ServerMongoRepository serverRepository;
     private final CloudflareClient cloudflareClient;
     private final DynamicCorsConfigurationSource corsConfigurationSource;
     private final CustomDomainAccessService customDomainAccessService;
     private static final String SETTINGS_TYPE_DOMAIN = "domain";
 
-    public DomainSettingsService(
-        SettingsMongoRepository settingsRepository,
-        ServerMongoRepository serverRepository,
-        CloudflareClient cloudflareClient,
-        DynamicCorsConfigurationSource corsConfigurationSource,
-        CustomDomainAccessService customDomainAccessService
-    ) {
-        super(settingsRepository);
-        this.serverRepository = serverRepository;
-        this.cloudflareClient = cloudflareClient;
-        this.corsConfigurationSource = corsConfigurationSource;
-        this.customDomainAccessService = customDomainAccessService;
-    }
-
     public DomainSettings getDomainSettings(Server server, String requestHost) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         String modlSubdomainUrl = "https://" + server.getCustomDomain() + ".modl.gg";
         boolean canManageCustomDomain = customDomainAccessService.canManageCustomDomain(server);
@@ -147,7 +135,7 @@ public class DomainSettingsService extends AbstractSettingsService {
         data.put("status", buildDomainStatusMap(status));
         data.put("cloudflareHostnameId", cloudflareHostnameId);
 
-        upsertSettings(server, SETTINGS_TYPE_DOMAIN, data);
+        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_DOMAIN, data);
 
         updateServerDocument(server.getId(), customDomain, initialStatus, cloudflareHostnameId, error);
 
@@ -164,7 +152,7 @@ public class DomainSettingsService extends AbstractSettingsService {
     private String extractCurrentDomain(Server server) {
         String currentDomain = server.getCustomDomainOverride();
         if (currentDomain == null) {
-            Settings existingSettings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+            Settings existingSettings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
             if (existingSettings != null && existingSettings.getData() != null) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
@@ -210,7 +198,7 @@ public class DomainSettingsService extends AbstractSettingsService {
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             throw new ResourceNotFoundException("No domain configured");
@@ -273,7 +261,7 @@ public class DomainSettingsService extends AbstractSettingsService {
             data.put("cloudflareHostnameId", cloudflareHostnameId);
         }
 
-        updateDataSettings(server, SETTINGS_TYPE_DOMAIN, data);
+        settingsRepositoryAccess.updateDataSettings(server, SETTINGS_TYPE_DOMAIN, data);
 
         updateServerDocument(server.getId(), domain, verifiedStatus, cloudflareHostnameId, error);
 
@@ -281,7 +269,7 @@ public class DomainSettingsService extends AbstractSettingsService {
     }
 
     public void removeDomain(Server server) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         String customDomain = null;
 
@@ -308,7 +296,7 @@ public class DomainSettingsService extends AbstractSettingsService {
             customDomain = server.getCustomDomainOverride();
         }
 
-        removeSettings(server, SETTINGS_TYPE_DOMAIN);
+        settingsRepositoryAccess.removeSettings(server, SETTINGS_TYPE_DOMAIN);
 
         clearServerDomainFields(server.getId());
 

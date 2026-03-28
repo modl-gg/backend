@@ -2,7 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.KnowledgebaseCategoryFields;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
@@ -31,12 +31,12 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
     }
 
     public List<KnowledgebaseCategory> findAllOrdered(Server server) {
-        return find(server, new Query().with(MongoQueries.sort(Sort.Direction.ASC, KnowledgebaseCategoryFields.ORDINAL)));
+        return find(server, new Query().with(Sort.by(Sort.Direction.ASC, KnowledgebaseCategoryFields.ORDINAL)));
     }
 
     public List<KnowledgebaseCategory> findVisibleOrdered(Server server) {
-        Query query = Query.query(MongoQueries.where(KnowledgebaseCategoryFields.IS_VISIBLE).is(true))
-            .with(MongoQueries.sort(Sort.Direction.ASC, KnowledgebaseCategoryFields.ORDINAL));
+        Query query = Query.query(Criteria.where(KnowledgebaseCategoryFields.IS_VISIBLE).is(true))
+            .with(Sort.by(Sort.Direction.ASC, KnowledgebaseCategoryFields.ORDINAL));
         return find(server, query);
     }
 
@@ -46,7 +46,7 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
 
     public int findMaxOrdinal(Server server) {
         Query query = new Query()
-            .with(MongoQueries.sort(Sort.Direction.DESC, KnowledgebaseCategoryFields.ORDINAL))
+            .with(Sort.by(Sort.Direction.DESC, KnowledgebaseCategoryFields.ORDINAL))
             .limit(1);
         return findOne(server, query)
             .map(KnowledgebaseCategory::getOrdinal)
@@ -78,7 +78,7 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
 
         KnowledgebaseCategory updated = findAndModify(
             server,
-            Query.query(MongoQueries.where(KnowledgebaseCategoryFields.ID).is(id)),
+            Query.query(Criteria.where(KnowledgebaseCategoryFields.ID).is(id)),
             update,
             FindAndModifyOptions.options().returnNew(true)
         );
@@ -86,7 +86,7 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
     }
 
     public boolean deleteByCategoryId(Server server, String id) {
-        return remove(server, Query.query(MongoQueries.where(KnowledgebaseCategoryFields.ID).is(id))).getDeletedCount() > 0;
+        return remove(server, Query.query(Criteria.where(KnowledgebaseCategoryFields.ID).is(id))).getDeletedCount() > 0;
     }
 
     public void reorderCategories(Server server, List<String> ids) {

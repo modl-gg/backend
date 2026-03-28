@@ -2,10 +2,10 @@ package gg.modl.backend.log.controller;
 
 import gg.modl.backend.log.dto.response.SystemLogResponse;
 import gg.modl.backend.log.service.LogService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

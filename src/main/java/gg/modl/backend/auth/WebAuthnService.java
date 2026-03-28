@@ -29,10 +29,11 @@ import com.yubico.webauthn.data.UserVerificationRequirement;
 import com.yubico.webauthn.data.exception.Base64UrlException;
 import com.yubico.webauthn.exception.AssertionFailedException;
 import com.yubico.webauthn.exception.RegistrationFailedException;
-import gg.modl.backend.exception.ExternalServiceException;
-import gg.modl.backend.exception.ResourceNotFoundException;
-import gg.modl.backend.exception.UnauthorizedException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.email.EmailAddressUtil;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.UnauthorizedException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.auth.data.WebAuthnChallenge;
 import gg.modl.backend.auth.data.WebAuthnCredential;
 import gg.modl.backend.database.mongo.repository.WebAuthnChallengeMongoRepository;
@@ -44,7 +45,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -147,7 +147,7 @@ public class WebAuthnService {
     }
 
     private String normalizeEmail(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+        return EmailAddressUtil.normalize(email);
     }
 
     private Date challengeExpiry() {

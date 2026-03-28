@@ -5,13 +5,17 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import java.util.Map;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class IssuerNameResolver {
 
-    public String resolve(@Nullable String issuerId, @Nullable String issuerName, Server server, StaffMongoRepository staffRepository) {
+    private final StaffMongoRepository staffRepository;
+
+    public String resolve(@Nullable String issuerId, @Nullable String issuerName, Server server) {
         if (issuerId != null) {
             Staff staff = staffRepository.findById(server, issuerId).orElse(null);
             if (staff != null && staff.getUsername() != null) {
@@ -35,7 +39,7 @@ public class IssuerNameResolver {
         return issuerId != null ? "Unknown Staff" : "Console";
     }
 
-    public Map<String, String> batchResolve(Set<String> issuerIds, Server server, StaffMongoRepository staffRepository) {
+    public Map<String, String> batchResolve(Set<String> issuerIds, Server server) {
         if (issuerIds == null || issuerIds.isEmpty()) {
             return Map.of();
         }

@@ -1,7 +1,7 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.external.CrafatarProxyService;
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;

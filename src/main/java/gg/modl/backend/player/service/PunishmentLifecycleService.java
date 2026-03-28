@@ -3,8 +3,8 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.ticket.service.TicketService;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.player.controller.MinecraftPunishmentController.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -18,15 +18,9 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentContext;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.data.DefaultPunishmentTypes;
-import gg.modl.backend.settings.data.DurationDetail;
-import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
-import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -36,11 +30,11 @@ import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import gg.modl.backend.exception.ForbiddenException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -49,10 +43,11 @@ import org.springframework.stereotype.Service;
 public class PunishmentLifecycleService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
-    private final TicketMongoRepository ticketRepository;
+    private final TicketService ticketService;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
     private final OffenderThresholdSettingsService thresholdSettingsService;
+    private final PunishmentDurationCalculator durationCalculator;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
@@ -128,54 +123,12 @@ public class PunishmentLifecycleService {
 
         Long calculatedDuration = request.duration();
         if (calculatedDuration == null && request.severity() != null) {
-            List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-            PunishmentType punishmentType = types.stream()
-                .filter(t -> t.getOrdinal() == request.typeOrdinal())
-                .findFirst()
-                .orElse(null);
+            PunishmentDurationCalculator.DurationResult result =
+                durationCalculator.calculate(server, player.getPunishments(), request.typeOrdinal(), request.severity());
+            calculatedDuration = result.duration();
 
-            if (punishmentType != null) {
-                OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
-                PlayerStatusCalculator.PlayerStatus currentStatus = statusCalculator.calculateStatus(server, player.getPunishments());
-
-                boolean isSocial = punishmentType.isSocial();
-                int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
-                String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
-
-                String internalSeverity = switch (request.severity().toLowerCase()) {
-                    case "low", "lenient" -> "low";
-                    case "regular" -> "regular";
-                    case "aggravated", "severe" -> "severe";
-                    default -> "regular";
-                };
-
-                DurationDetail durationDetail = punishmentType.getDurationDetail(internalSeverity, offenseLevel);
-
-                if (durationDetail == null) {
-                    PunishmentType defaultType = DefaultPunishmentTypes.getAll()
-                        .stream()
-                        .filter(t -> t.getOrdinal() == request.typeOrdinal())
-                        .findFirst()
-                        .orElse(null);
-                    if (defaultType != null) {
-                        durationDetail = defaultType.getDurationDetail(internalSeverity, offenseLevel);
-                    }
-                }
-
-                if (!data.containsKey("status") || data.get("status") == null) {
-                    String displayStatus = switch (offenseLevel) {
-                        case "first" -> "low";
-                        default -> offenseLevel; // "medium" and "habitual" stay as-is
-                    };
-                    data.put("status", displayStatus);
-                }
-
-                if (durationDetail != null) {
-                    long durationMs = durationDetail.toMilliseconds();
-                    if (durationMs != 0) {
-                        calculatedDuration = durationMs;
-                    }
-                }
+            if (result.status() != null && (!data.containsKey("status") || data.get("status") == null)) {
+                data.put("status", result.status());
             }
         }
 
@@ -315,7 +268,7 @@ public class PunishmentLifecycleService {
         persistPlayerPunishments(server, player);
 
         if (request.attachedTicketIds() != null && !request.attachedTicketIds().isEmpty()) {
-            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server, staffRepository);
+            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
             closeAttachedTickets(server, request.attachedTicketIds(), ticketIssuerName);
         }
 
@@ -325,39 +278,11 @@ public class PunishmentLifecycleService {
     private void closeAttachedTickets(Server server, List<String> ticketIds, String issuerName) {
         for (String ticketId : ticketIds) {
             try {
-                Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-                if (ticket == null || ticket.isLocked()) {
-                    continue;
-                }
-
-                if (ticket.getReplies() == null) {
-                    ticket.setReplies(new ArrayList<>());
-                }
-
-                TicketReply systemReply = TicketReply.builder()
-                    .id(UUID.randomUUID().toString())
-                    .name(issuerName)
-                    .content("Report accepted - punishment has been issued.")
-                    .type("public")
-                    .created(new Date())
-                    .staff(true)
-                    .action("report_accepted")
-                    .attachments(new ArrayList<>())
-                    .build();
-
-                ticket.getReplies().add(systemReply);
-                applyTicketLifecycleStatus(ticket, TicketStatus.CLOSED);
-                ticket.setUpdatedAt(new Date());
-                ticketRepository.updateState(server, ticket);
+                ticketService.closeTicketForPunishment(server, ticketId, issuerName);
             } catch (Exception e) {
                 log.error("[TICKET_CLOSE] Failed to close ticket {}", ticketId, e);
             }
         }
-    }
-
-    private void applyTicketLifecycleStatus(Ticket ticket, TicketStatus status) {
-        ticket.setStatus(status);
-        ticket.setLocked(status != null && status.isTerminal());
     }
 
     private boolean isUnstarted(Punishment punishment) {
@@ -506,7 +431,7 @@ public class PunishmentLifecycleService {
         int count = 0;
 
         for (Punishment punishment : player.getPunishments()) {
-            if (punishment.getTypeOrdinal() != 4
+            if (punishment.getTypeOrdinal() != Punishment.LINKED_BAN_TYPE_ORDINAL
                 || punishment.getData() == null
                 || !parentPunishmentId.equals(punishment.getData().get("linkedBanId"))
                 || !statusCalculator.isPunishmentActive(punishment)) {
@@ -582,7 +507,7 @@ public class PunishmentLifecycleService {
         int count = 0;
 
         for (Punishment punishment : player.getPunishments()) {
-            if (punishment.getTypeOrdinal() != 4
+            if (punishment.getTypeOrdinal() != Punishment.LINKED_BAN_TYPE_ORDINAL
                 || punishment.getData() == null
                 || !parentPunishmentId.equals(punishment.getData().get("linkedBanId"))
                 || !statusCalculator.isPunishmentActive(punishment)) {
@@ -766,7 +691,7 @@ public class PunishmentLifecycleService {
 
         Punishment punishment = new Punishment(
             punishmentId,
-            4,
+            Punishment.LINKED_BAN_TYPE_ORDINAL,
             "System",
             null,
             now,

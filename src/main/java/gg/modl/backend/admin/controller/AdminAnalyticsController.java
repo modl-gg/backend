@@ -3,7 +3,7 @@ package gg.modl.backend.admin.controller;
 import gg.modl.backend.admin.dto.request.ExportAnalyticsRequest;
 import gg.modl.backend.admin.dto.request.GenerateReportRequest;
 import gg.modl.backend.admin.service.AdminAnalyticsService;
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;

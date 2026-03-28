@@ -7,7 +7,7 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
-import gg.modl.backend.util.PaginationHelper;
+import gg.modl.backend.infrastructure.util.PaginationHelper;
 import gg.modl.backend.ticket.dto.response.TicketListItemResponse;
 import java.util.ArrayList;
 import java.util.HashMap;

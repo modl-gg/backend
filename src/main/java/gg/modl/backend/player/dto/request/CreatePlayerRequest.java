@@ -1,6 +1,6 @@
 package gg.modl.backend.player.dto.request;
 
-import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 

@@ -1,8 +1,8 @@
 package gg.modl.backend.punishment.controller;
 
 import gg.modl.backend.player.service.PunishmentQueryService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;

@@ -2,7 +2,6 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SecurityEventFields;
 import java.util.ArrayList;
@@ -50,19 +49,19 @@ public class SecurityEventMongoRepository extends AbstractGlobalMongoRepository<
         List<Criteria> criteriaList = new ArrayList<>();
 
         if (hasText(type)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.TYPE).is(type));
+            criteriaList.add(Criteria.where(SecurityEventFields.TYPE).is(type));
         }
         if (hasText(severity)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.SEVERITY).is(severity));
+            criteriaList.add(Criteria.where(SecurityEventFields.SEVERITY).is(severity));
         }
         if (hasText(source)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.SOURCE).is(source));
+            criteriaList.add(Criteria.where(SecurityEventFields.SOURCE).is(source));
         }
         if (hasText(search)) {
-            criteriaList.add(MongoQueries.where(SecurityEventFields.DESCRIPTION).regex(Pattern.quote(search), "i"));
+            criteriaList.add(Criteria.where(SecurityEventFields.DESCRIPTION).regex(Pattern.quote(search), "i"));
         }
         if (startDate != null || endDate != null) {
-            Criteria dateCriteria = MongoQueries.where(SecurityEventFields.TIMESTAMP);
+            Criteria dateCriteria = Criteria.where(SecurityEventFields.TIMESTAMP);
             if (startDate != null) {
                 dateCriteria = dateCriteria.gte(startDate);
             }
@@ -94,13 +93,13 @@ public class SecurityEventMongoRepository extends AbstractGlobalMongoRepository<
 
     public long countBySeveritySince(String severity, Date startDate) {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(SecurityEventFields.SEVERITY).is(severity),
-            MongoQueries.where(SecurityEventFields.TIMESTAMP).gte(startDate)
+            Criteria.where(SecurityEventFields.SEVERITY).is(severity),
+            Criteria.where(SecurityEventFields.TIMESTAMP).gte(startDate)
         )));
     }
 
     public long countSince(Date startDate) {
-        return count(Query.query(MongoQueries.where(SecurityEventFields.TIMESTAMP).gte(startDate)));
+        return count(Query.query(Criteria.where(SecurityEventFields.TIMESTAMP).gte(startDate)));
     }
 }
 

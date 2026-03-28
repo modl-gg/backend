@@ -2,7 +2,6 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.auth.data.AuthCode;
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuthCodeFields;
 import gg.modl.backend.server.data.Server;
@@ -36,7 +35,7 @@ public class AuthCodeMongoRepository {
     }
 
     private Query emailQuery(String normalizedEmail) {
-        return Query.query(MongoQueries.where(AuthCodeFields.EMAIL).is(normalizedEmail));
+        return Query.query(Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail));
     }
 
     public void replaceForGlobal(String normalizedEmail, String codeHash, Date expiresAt) {
@@ -49,8 +48,8 @@ public class AuthCodeMongoRepository {
 
     private Optional<AuthCode> findActive(MongoTemplate template, String normalizedEmail, Date now) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(AuthCodeFields.EMAIL).is(normalizedEmail),
-            MongoQueries.where(AuthCodeFields.EXPIRES_AT).gt(now)
+            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
+            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now)
         ));
         return Optional.ofNullable(template.findOne(query, AuthCode.class, CollectionName.AUTH_CODES));
     }
@@ -73,8 +72,8 @@ public class AuthCodeMongoRepository {
 
     private boolean incrementFailedAttempts(MongoTemplate template, String normalizedEmail, Date now) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(AuthCodeFields.EMAIL).is(normalizedEmail),
-            MongoQueries.where(AuthCodeFields.EXPIRES_AT).gt(now)
+            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
+            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now)
         ));
         Update update = new Update().inc(AuthCodeFields.FAILED_ATTEMPTS, 1);
         return template.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), AuthCode.class, CollectionName.AUTH_CODES) != null;

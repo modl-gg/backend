@@ -1,9 +1,17 @@
 package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.AdminUser;
+import gg.modl.backend.auth.session.AuthSessionData;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.database.mongo.repository.AdminUserMongoRepository;
+import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -13,6 +21,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class AdminAuthService {
     private final AdminUserMongoRepository adminUserRepository;
+    private final SessionService sessionService;
 
     public Optional<AdminUser> findByEmail(String email) {
         return adminUserRepository.findByEmailIgnoreCase(email);
@@ -21,4 +30,48 @@ public class AdminAuthService {
     public void updateLastActivity(String email, String clientIp) {
         adminUserRepository.updateLastActivity(email, clientIp, new Date());
     }
+
+    public Optional<AdminSession> getAuthenticatedSession(HttpServletRequest request) {
+        String sessionId = extractSessionId(request);
+        if (sessionId == null) {
+            return Optional.empty();
+        }
+
+        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
+        if (sessionOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AuthSessionData session = sessionOpt.get();
+        return findByEmail(session.getEmail())
+            .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
+    }
+
+    String extractSessionId(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+        for (Cookie cookie : cookies) {
+            if (RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+        return null;
+    }
+
+    Set<String> extractSessionIds(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return Set.of();
+        }
+
+        return Arrays.stream(cookies)
+            .filter(cookie -> RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName()))
+            .map(Cookie::getValue)
+            .filter(value -> value != null && !value.isBlank())
+            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    public record AdminSession(String adminId, String email, Date createdAt) {}
 }

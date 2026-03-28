@@ -1,13 +1,13 @@
 package gg.modl.backend.settings.service;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -15,18 +15,13 @@ import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-public class ApiKeySettingsService extends AbstractSettingsService {
+@RequiredArgsConstructor
+public class ApiKeySettingsService {
+    private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final IdGenerator idGenerator;
     private final ServerMongoRepository serverRepository;
     private static final String SETTINGS_TYPE_API_KEYS = "apiKeys";
     private static final String API_KEY_FIELD = "api_key";
-
-    public ApiKeySettingsService(SettingsMongoRepository settingsRepository, IdGenerator idGenerator,
-                                 ServerMongoRepository serverRepository) {
-        super(settingsRepository);
-        this.idGenerator = idGenerator;
-        this.serverRepository = serverRepository;
-    }
 
     @Nullable
     public Server findServerByApiKey(@NotNull String apiKey) {
@@ -59,7 +54,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
 
     @Nullable
     public String getApiKeyFromSettings(@NotNull Server server) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
         if (settings == null || settings.getData() == null) {
             return null;
         }
@@ -75,7 +70,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
     }
 
     public String generateApiKey(Server server, String keyType) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
         @SuppressWarnings("unchecked")
         Map<String, Object> data = settings != null && settings.getData() != null
                                    ? new HashMap<>((Map<String, Object>) settings.getData())
@@ -85,7 +80,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
         String fieldName = getFieldNameForType(keyType);
 
         data.put(fieldName, newApiKey);
-        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
+        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return newApiKey;
     }
@@ -103,7 +98,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
     }
 
     public boolean deleteApiKey(Server server, String keyType) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return false;
@@ -118,7 +113,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
         }
 
         data.remove(fieldName);
-        upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
+        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
 
         return true;
     }
@@ -129,7 +124,7 @@ public class ApiKeySettingsService extends AbstractSettingsService {
     }
 
     public String revealApiKey(Server server, String keyType) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_API_KEYS).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return null;

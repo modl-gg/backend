@@ -1,6 +1,7 @@
 package gg.modl.backend.admin.data;
 
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.email.EmailAddressUtil;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -26,7 +27,7 @@ public class AdminUser {
 
     public AdminUser(String email) {
         this();
-        this.email = email.toLowerCase().trim();
+        this.email = EmailAddressUtil.normalize(email);
     }
 
     public AdminUser() {

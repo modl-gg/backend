@@ -2,17 +2,18 @@ package gg.modl.backend.audit.controller;
 
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
 import gg.modl.backend.audit.dto.response.StaffDetailsResponse;
 import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.audit.service.AuditService;
+import gg.modl.backend.audit.service.StaffPerformanceService;
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -37,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 public class AuditController {
     private final AuditService auditService;
+    private final StaffPerformanceService staffPerformanceService;
 
     private static final Set<String> ALLOWED_TABLES = Set.of(
         CollectionName.MODL_SERVERS,
@@ -61,7 +63,7 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<StaffPerformanceResponse> performance = auditService.getStaffPerformance(server, period);
+        List<StaffPerformanceResponse> performance = staffPerformanceService.getStaffPerformance(server, period);
         return ResponseEntity.ok(performance);
     }
 
@@ -72,7 +74,7 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        StaffDetailsResponse details = auditService.getStaffDetails(server, username, period);
+        StaffDetailsResponse details = staffPerformanceService.getStaffDetails(server, username, period);
         return ResponseEntity.ok(details);
     }
 

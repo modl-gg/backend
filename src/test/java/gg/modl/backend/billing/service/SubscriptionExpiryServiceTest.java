@@ -11,7 +11,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
-import gg.modl.backend.util.ServerMutationHelper;
+import gg.modl.backend.infrastructure.util.ServerMutationHelper;
 import java.util.Date;
 import java.util.List;
 import java.util.function.Consumer;

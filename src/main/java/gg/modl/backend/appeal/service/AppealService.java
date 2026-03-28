@@ -4,14 +4,14 @@ import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
+import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
@@ -20,17 +20,16 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.TicketIdGenerator;
-import gg.modl.backend.util.PlayerDataUtils;
+import gg.modl.backend.player.service.PlayerDataUtils;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -39,7 +38,7 @@ import org.springframework.stereotype.Service;
 public class AppealService {
     private final TicketMongoRepository ticketRepository;
     private final PlayerMongoRepository playerRepository;
-    private final PunishmentMongoRepository punishmentRepository;
+    private final PunishmentMutationService punishmentMutationService;
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final TicketIdGenerator ticketIdGenerator;
 
@@ -168,7 +167,7 @@ public class AppealService {
             null
         );
 
-        punishmentRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, appealOpenedNote);
+        punishmentMutationService.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, appealOpenedNote);
     }
 
     private String buildInitialContent(CreateAppealRequest request) {
@@ -356,7 +355,7 @@ public class AppealService {
             "data.appealTicketId", appeal.getId()
         );
 
-        punishmentRepository.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
+        punishmentMutationService.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
     }
 
     private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
@@ -399,7 +398,7 @@ public class AppealService {
             null
         );
 
-        punishmentRepository.applyAppealApproval(server, playerUuid, punishmentId,
+        punishmentMutationService.applyAppealApproval(server, playerUuid, punishmentId,
             modification, appealAcceptedNote, "Approved", appeal.getId());
 
         playerRepository.findByMinecraftUuid(server, playerUuid)

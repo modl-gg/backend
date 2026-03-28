@@ -1,6 +1,6 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
@@ -19,7 +19,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.util.PlayerDataUtils;
+import gg.modl.backend.player.service.PlayerDataUtils;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -144,7 +144,7 @@ public class MinecraftSyncService {
             }
             Map<String, String> resolvedIssuers = allIssuerIds.isEmpty()
                                                   ? Map.of()
-                                                  : issuerNameResolver.batchResolve(allIssuerIds, server, staffRepository);
+                                                  : issuerNameResolver.batchResolve(allIssuerIds, server);
 
             for (Player player : players) {
                 List<String> promoted = punishmentLifecycleService.promoteUnstartedPunishments(server, player);
@@ -493,7 +493,7 @@ public class MinecraftSyncService {
             }
             Map<String, String> resolvedIssuers = issuerIds.isEmpty()
                                                   ? Map.of()
-                                                  : issuerNameResolver.batchResolve(issuerIds, server, staffRepository);
+                                                  : issuerNameResolver.batchResolve(issuerIds, server);
 
             for (Player player : playersWithNewPunishments) {
                 String playerName = PlayerDataUtils.extractLatestUsername(player.getUsernames());

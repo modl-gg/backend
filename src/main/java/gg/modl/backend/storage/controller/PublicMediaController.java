@@ -1,9 +1,9 @@
 package gg.modl.backend.storage.controller;
 
-import gg.modl.backend.exception.ForbiddenException;
-import gg.modl.backend.exception.ValidationException;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;

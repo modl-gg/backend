@@ -27,6 +27,8 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
     @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
 })
 public class Punishment {
+    public static final int LINKED_BAN_TYPE_ORDINAL = 4;
+
     @NotNull
     @Field(value = "id", targetType = FieldType.STRING)
     private String id;

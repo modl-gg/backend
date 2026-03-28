@@ -2,13 +2,12 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
-import gg.modl.backend.database.mongo.MongoUpdates;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SystemPromptFields;
 import java.util.Date;
 import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
@@ -22,16 +21,16 @@ public class SystemPromptMongoRepository extends AbstractGlobalMongoRepository<S
     }
 
     public Optional<SystemPrompt> findActive() {
-        return findOne(Query.query(MongoQueries.where(SystemPromptFields.IS_ACTIVE).is(true)));
+        return findOne(Query.query(Criteria.where(SystemPromptFields.IS_ACTIVE).is(true)));
     }
 
     public SystemPrompt upsertPrompt(String prompt, Date now) {
-        Query query = Query.query(MongoQueries.where(SystemPromptFields.IS_ACTIVE).is(true));
+        Query query = Query.query(Criteria.where(SystemPromptFields.IS_ACTIVE).is(true));
         Update update = new Update();
-        MongoUpdates.set(update, SystemPromptFields.PROMPT, prompt);
-        MongoUpdates.set(update, SystemPromptFields.UPDATED_AT, now);
-        MongoUpdates.setOnInsert(update, SystemPromptFields.IS_ACTIVE, true);
-        MongoUpdates.setOnInsert(update, SystemPromptFields.CREATED_AT, now);
+        update.set(SystemPromptFields.PROMPT, prompt);
+        update.set(SystemPromptFields.UPDATED_AT, now);
+        update.setOnInsert(SystemPromptFields.IS_ACTIVE, true);
+        update.setOnInsert(SystemPromptFields.CREATED_AT, now);
         return findAndModify(query, update, FindAndModifyOptions.options().upsert(true).returnNew(true));
     }
 }

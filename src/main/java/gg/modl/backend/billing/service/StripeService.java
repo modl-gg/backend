@@ -11,7 +11,7 @@ import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.billingportal.SessionCreateParams;
 import com.stripe.param.checkout.SessionCreateParams.ConsentCollection;
 import gg.modl.backend.billing.config.StripeConfiguration;
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import lombok.RequiredArgsConstructor;

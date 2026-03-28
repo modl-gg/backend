@@ -7,7 +7,7 @@ import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.util.DateRangeUtil;
+import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;

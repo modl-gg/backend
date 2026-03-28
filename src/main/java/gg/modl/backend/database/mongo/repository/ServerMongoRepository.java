@@ -2,7 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.server.data.CustomDomainStatus;
@@ -75,101 +75,101 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public Optional<Server> findByCustomDomain(String customDomain) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.CUSTOM_DOMAIN).is(customDomain)));
+        return findOne(Query.query(Criteria.where(ServerFields.CUSTOM_DOMAIN).is(customDomain)));
     }
 
     public Optional<Server> findByActiveCustomDomainOverride(String domain) {
         Criteria criteria = new Criteria().andOperator(
-            MongoQueries.where(ServerFields.CUSTOM_DOMAIN_OVERRIDE).is(domain),
-            MongoQueries.where(ServerFields.CUSTOM_DOMAIN_STATUS).is(DOMAIN_STATUS_ACTIVE)
+            Criteria.where(ServerFields.CUSTOM_DOMAIN_OVERRIDE).is(domain),
+            Criteria.where(ServerFields.CUSTOM_DOMAIN_STATUS).is(DOMAIN_STATUS_ACTIVE)
         );
         return findOne(new Query(criteria));
     }
 
     public Optional<Server> findMatchingIdentity(String email, String serverName, String subdomain) {
         Criteria criteria = new Criteria().orOperator(
-            MongoQueries.where(ServerFields.ADMIN_EMAIL).is(email),
-            MongoQueries.where(ServerFields.SERVER_NAME).is(serverName),
-            MongoQueries.where(ServerFields.CUSTOM_DOMAIN).is(subdomain)
+            Criteria.where(ServerFields.ADMIN_EMAIL).is(email),
+            Criteria.where(ServerFields.SERVER_NAME).is(serverName),
+            Criteria.where(ServerFields.CUSTOM_DOMAIN).is(subdomain)
         );
         return findOne(new Query(criteria));
     }
 
     public Optional<Server> findByDatabaseName(String databaseName) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.DATABASE_NAME).is(databaseName)));
+        return findOne(Query.query(Criteria.where(ServerFields.DATABASE_NAME).is(databaseName)));
     }
 
     public Optional<Server> findByApiKey(String apiKey) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.API_KEY).is(apiKey)));
+        return findOne(Query.query(Criteria.where(ServerFields.API_KEY).is(apiKey)));
     }
 
     public boolean existsByAdminEmailExcludingId(String adminEmail, String excludedServerId) {
-        Criteria criteria = MongoQueries.where(ServerFields.ADMIN_EMAIL)
+        Criteria criteria = Criteria.where(ServerFields.ADMIN_EMAIL)
             .regex("^" + Pattern.quote(adminEmail) + "$", "i")
             .and(ServerFields.ID).ne(excludedServerId);
         return exists(Query.query(criteria));
     }
 
     public Optional<Server> findByEmailVerificationToken(String token) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token)));
+        return findOne(Query.query(Criteria.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token)));
     }
 
     public Optional<Server> findByProvisioningSignInToken(String token) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token)));
+        return findOne(Query.query(Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token)));
     }
 
     public Optional<Server> findByCliSetupToken(String token) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.CLI_SETUP_TOKEN).is(token)));
+        return findOne(Query.query(Criteria.where(ServerFields.CLI_SETUP_TOKEN).is(token)));
     }
 
     public Optional<Server> findByStripeCustomerId(String customerId) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)));
+        return findOne(Query.query(Criteria.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)));
     }
 
     public Optional<Server> findByStripeSubscriptionId(String subscriptionId) {
-        return findOne(Query.query(MongoQueries.where(ServerFields.STRIPE_SUBSCRIPTION_ID).is(subscriptionId)));
+        return findOne(Query.query(Criteria.where(ServerFields.STRIPE_SUBSCRIPTION_ID).is(subscriptionId)));
     }
 
     public long countCompletedAndVerified() {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
-            MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(true)
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(true)
         )));
     }
 
     public long countByProvisioningStatus(ProvisioningStatus status) {
-        return count(Query.query(MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(status)));
+        return count(Query.query(Criteria.where(ServerFields.PROVISIONING_STATUS).is(status)));
     }
 
     public long countByProvisioningStatuses(ProvisioningStatus... statuses) {
-        return count(Query.query(MongoQueries.where(ServerFields.PROVISIONING_STATUS).in((Object[]) statuses)));
+        return count(Query.query(Criteria.where(ServerFields.PROVISIONING_STATUS).in((Object[]) statuses)));
     }
 
     public long countActiveSince(Date activityCutoff) {
-        return count(Query.query(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(activityCutoff)));
+        return count(Query.query(Criteria.where(ServerFields.LAST_ACTIVITY_AT).gte(activityCutoff)));
     }
 
     public long countCompletedWithUsers() {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
-            MongoQueries.where(ServerFields.USER_COUNT).gt(0)
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
+            Criteria.where(ServerFields.USER_COUNT).gt(0)
         )));
     }
 
     public long countCreatedSince(Date startDate) {
-        return count(Query.query(MongoQueries.where(ServerFields.CREATED_AT).gte(startDate)));
+        return count(Query.query(Criteria.where(ServerFields.CREATED_AT).gte(startDate)));
     }
 
     public long countCreatedBetween(Date startDate, Date endDate) {
         return count(Query.query(new Criteria().andOperator(
-            MongoQueries.where(ServerFields.CREATED_AT).gte(startDate),
-            MongoQueries.where(ServerFields.CREATED_AT).lt(endDate)
+            Criteria.where(ServerFields.CREATED_AT).gte(startDate),
+            Criteria.where(ServerFields.CREATED_AT).lt(endDate)
         )));
     }
 
     public long sumOnlinePlayersSince(Date activityCutoff) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(MongoQueries.where(ServerFields.LAST_ACTIVITY_AT).gte(activityCutoff)),
+            Aggregation.match(Criteria.where(ServerFields.LAST_ACTIVITY_AT).gte(activityCutoff)),
             Aggregation.group().sum(ServerFields.ONLINE_PLAYER_COUNT).as(ALIAS_TOTAL)
         );
         Document result = aggregate(aggregation, Document.class).getUniqueMappedResult();
@@ -216,7 +216,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public List<DateServersResult> findRegistrationTrend(Date startDate) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(MongoQueries.where(ServerFields.CREATED_AT).gte(startDate)),
+            Aggregation.match(Criteria.where(ServerFields.CREATED_AT).gte(startDate)),
             Aggregation.project()
                 .and(DateOperators.DateToString.dateOf(ServerFields.CREATED_AT).toString("%Y-%m-%d")).as(ALIAS_DATE),
             Aggregation.group(ALIAS_DATE).count().as(ALIAS_SERVERS),
@@ -228,9 +228,9 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public List<Server> findTopCompletedVerifiedByUserCount(int limit) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
-            MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(true),
-            MongoQueries.where(ServerFields.USER_COUNT).gt(0)
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(true),
+            Criteria.where(ServerFields.USER_COUNT).gt(0)
         ));
         query.with(Sort.by(Sort.Direction.DESC, ServerFields.USER_COUNT));
         query.limit(limit);
@@ -271,22 +271,22 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
         if (plan != null && !FILTER_ALL.equals(plan)) {
             try {
-                criteriaList.add(MongoQueries.where(ServerFields.PLAN).is(ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT))));
+                criteriaList.add(Criteria.where(ServerFields.PLAN).is(ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT))));
             } catch (IllegalArgumentException ignored) {
-                criteriaList.add(MongoQueries.where(ServerFields.PLAN).is(INVALID_PLAN_SENTINEL));
+                criteriaList.add(Criteria.where(ServerFields.PLAN).is(INVALID_PLAN_SENTINEL));
             }
         }
 
         if (status != null && !FILTER_ALL.equals(status)) {
             switch (status) {
                 case FILTER_ACTIVE -> {
-                    criteriaList.add(MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED));
-                    criteriaList.add(MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(true));
+                    criteriaList.add(Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED));
+                    criteriaList.add(Criteria.where(ServerFields.EMAIL_VERIFIED).is(true));
                 }
-                case FILTER_PENDING -> criteriaList.add(MongoQueries.where(ServerFields.PROVISIONING_STATUS)
+                case FILTER_PENDING -> criteriaList.add(Criteria.where(ServerFields.PROVISIONING_STATUS)
                     .in(ProvisioningStatus.PENDING, ProvisioningStatus.IN_PROGRESS));
-                case FILTER_FAILED -> criteriaList.add(MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.FAILED));
-                case FILTER_UNVERIFIED -> criteriaList.add(MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(false));
+                case FILTER_FAILED -> criteriaList.add(Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.FAILED));
+                case FILTER_UNVERIFIED -> criteriaList.add(Criteria.where(ServerFields.EMAIL_VERIFIED).is(false));
                 default -> {
                 }
             }
@@ -318,8 +318,8 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where(ServerFields.DATABASE_NAME).ne(null),
-            MongoQueries.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
-            MongoQueries.where(ServerFields.EMAIL_VERIFIED).is(true),
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(true),
             staleCriteria
         ));
         query.with(Sort.by(Sort.Direction.ASC, ServerFields.LAST_STATS_UPDATED_AT));
@@ -340,7 +340,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public List<Server> findUsageTargetsByIds(List<String> serverIds) {
-        Query query = Query.query(MongoQueries.where(ServerFields.ID).in(serverIds));
+        Query query = Query.query(Criteria.where(ServerFields.ID).in(serverIds));
         query.fields()
             .include(ServerFields.SERVER_NAME)
             .include(ServerFields.CUSTOM_DOMAIN)
@@ -358,7 +358,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public List<Server> findProvisioningCandidatesByIds(List<String> serverIds) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(ServerFields.ID).in(serverIds),
+            Criteria.where(ServerFields.ID).in(serverIds),
             Criteria.where(ServerFields.DATABASE_NAME).exists(true).ne(null)
         ));
         return find(query);
@@ -366,7 +366,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public List<Server> findCancelledWithPeriodEnd() {
         Criteria criteria = new Criteria().andOperator(
-            MongoQueries.where(ServerFields.SUBSCRIPTION_STATUS).is(SubscriptionStatus.CANCELED),
+            Criteria.where(ServerFields.SUBSCRIPTION_STATUS).is(SubscriptionStatus.CANCELED),
             Criteria.where(ServerFields.CURRENT_PERIOD_END).exists(true).ne(null)
         );
         return find(new Query(criteria));
@@ -374,20 +374,20 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void incrementCdnUsage(String serverId, double additionalGb) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().inc(ServerFields.CDN_USAGE_CURRENT_PERIOD, additionalGb)
         );
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().inc(ServerFields.AI_REQUESTS_CURRENT_PERIOD, additionalRequests)
         );
     }
 
     public Optional<AIUsageSnapshot> findAIUsageSnapshotById(String serverId) {
-        Query query = Query.query(MongoQueries.where(ServerFields.ID).is(serverId));
+        Query query = Query.query(Criteria.where(ServerFields.ID).is(serverId));
         query.fields()
             .include(ServerFields.AI_REQUESTS_CURRENT_PERIOD)
             .include(ServerFields.MAX_AI_OVERAGE_REQUESTS);
@@ -405,7 +405,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void resetUsageCounters(String serverId) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.CDN_USAGE_CURRENT_PERIOD, 0.0)
                 .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
@@ -414,7 +414,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void updateAdminEmail(String serverId, String adminEmail) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.ADMIN_EMAIL, adminEmail)
                 .set(ServerFields.UPDATED_AT, new java.util.Date())
@@ -423,7 +423,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void updateApiKey(String serverId, String apiKey) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().set(ServerFields.API_KEY, apiKey)
         );
     }
@@ -482,7 +482,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         }
 
         Server updated = findAndModify(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             update,
             FindAndModifyOptions.options().returnNew(true)
         );
@@ -511,18 +511,18 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public boolean deleteByServerId(String serverId) {
-        return remove(Query.query(MongoQueries.where(ServerFields.ID).is(serverId))).getDeletedCount() > 0;
+        return remove(Query.query(Criteria.where(ServerFields.ID).is(serverId))).getDeletedCount() > 0;
     }
 
     public long deleteByServerIds(List<String> serverIds) {
-        return remove(Query.query(MongoQueries.where(ServerFields.ID).in(serverIds))).getDeletedCount();
+        return remove(Query.query(Criteria.where(ServerFields.ID).in(serverIds))).getDeletedCount();
     }
 
     public long bulkSuspend(List<String> serverIds, Date updatedAt) {
         Update update = new Update()
             .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.FAILED)
             .set(ServerFields.UPDATED_AT, updatedAt);
-        return updateMulti(Query.query(MongoQueries.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+        return updateMulti(Query.query(Criteria.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
     }
 
     public long bulkActivate(List<String> serverIds, Date updatedAt) {
@@ -530,14 +530,14 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
             .set(ServerFields.EMAIL_VERIFIED, true)
             .set(ServerFields.UPDATED_AT, updatedAt);
-        return updateMulti(Query.query(MongoQueries.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+        return updateMulti(Query.query(Criteria.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
     }
 
     public long bulkUpdatePlan(List<String> serverIds, ServerPlan plan, Date updatedAt) {
         Update update = new Update()
             .set(ServerFields.PLAN, plan)
             .set(ServerFields.UPDATED_AT, updatedAt);
-        return updateMulti(Query.query(MongoQueries.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+        return updateMulti(Query.query(Criteria.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
     }
 
     public void updateCustomDomain(String serverId, String customDomain, String status,
@@ -549,7 +549,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             default -> CustomDomainStatus.PENDING;
         };
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.CUSTOM_DOMAIN_OVERRIDE, customDomain)
                 .set(ServerFields.CUSTOM_DOMAIN_STATUS, domainStatus.name())
@@ -562,7 +562,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void clearCustomDomain(String serverId) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .unset(ServerFields.CUSTOM_DOMAIN_OVERRIDE)
                 .unset(ServerFields.CUSTOM_DOMAIN_STATUS)
@@ -575,7 +575,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void updateStaffPermissionsTimestamp(String serverId, Date timestamp) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.STAFF_PERMISSIONS_UPDATED_AT, timestamp)
                 .set(ServerFields.UPDATED_AT, timestamp)
@@ -584,7 +584,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void updatePunishmentTypesTimestamp(String serverId, Date timestamp) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.PUNISHMENT_TYPES_UPDATED_AT, timestamp)
                 .set(ServerFields.UPDATED_AT, timestamp)
@@ -593,7 +593,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public void updateLastActivity(String serverId, Date lastActivityAt, long onlinePlayerCount) {
         updateFirst(
-            Query.query(MongoQueries.where(ServerFields.ID).is(serverId)),
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.LAST_ACTIVITY_AT, lastActivityAt)
                 .set(ServerFields.ONLINE_PLAYER_COUNT, onlinePlayerCount)
@@ -605,7 +605,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             .set(ServerFields.USER_COUNT, userCount)
             .set(ServerFields.TICKET_COUNT, ticketCount)
             .set(ServerFields.LAST_STATS_UPDATED_AT, updatedAt);
-        updateFirst(Query.query(MongoQueries.where(ServerFields.ID).is(serverId)), update);
+        updateFirst(Query.query(Criteria.where(ServerFields.ID).is(serverId)), update);
     }
 
     public void resetAfterDatabaseDrop(String serverId, Date updatedAt) {
@@ -617,7 +617,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             .unset(ServerFields.CUSTOM_DOMAIN_LAST_CHECKED)
             .unset(ServerFields.CUSTOM_DOMAIN_ERROR)
             .set(ServerFields.UPDATED_AT, updatedAt);
-        updateFirst(Query.query(MongoQueries.where(ServerFields.ID).is(serverId)), update);
+        updateFirst(Query.query(Criteria.where(ServerFields.ID).is(serverId)), update);
     }
 
     public List<DateValueResult> aggregateHistoricalMetric(String metric, Date startDate) {
@@ -627,7 +627,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         if (METRIC_USERS.equals(metric) || METRIC_TICKETS.equals(metric)) {
             String sumField = METRIC_USERS.equals(metric) ? ServerFields.USER_COUNT : ServerFields.TICKET_COUNT;
             Aggregation aggregation = Aggregation.newAggregation(
-                Aggregation.match(MongoQueries.where(ServerFields.CREATED_AT).gte(startDate)),
+                Aggregation.match(Criteria.where(ServerFields.CREATED_AT).gte(startDate)),
                 projectDateStage.and(sumField).as(ALIAS_VALUE_SOURCE),
                 Aggregation.group(ALIAS_DATE).sum(ALIAS_VALUE_SOURCE).as(ALIAS_VALUE),
                 Aggregation.sort(Sort.Direction.ASC, "_id"),
@@ -637,7 +637,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         }
 
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(MongoQueries.where(ServerFields.CREATED_AT).gte(startDate)),
+            Aggregation.match(Criteria.where(ServerFields.CREATED_AT).gte(startDate)),
             projectDateStage,
             Aggregation.group(ALIAS_DATE).count().as(ALIAS_VALUE),
             Aggregation.sort(Sort.Direction.ASC, "_id"),

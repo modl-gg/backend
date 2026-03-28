@@ -2,8 +2,8 @@ package gg.modl.backend.dashboard.controller;
 
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
 import gg.modl.backend.dashboard.service.DashboardService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;

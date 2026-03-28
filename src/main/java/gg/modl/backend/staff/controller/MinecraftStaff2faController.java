@@ -1,11 +1,11 @@
 package gg.modl.backend.staff.controller;
 
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffTwoFactorService;
 import jakarta.servlet.http.HttpServletRequest;
-import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;

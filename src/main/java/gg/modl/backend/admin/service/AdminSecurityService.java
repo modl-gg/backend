@@ -2,8 +2,8 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.admin.data.SecurityEvent;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
-import gg.modl.backend.util.DateRangeUtil;
-import gg.modl.backend.util.PaginationHelper;
+import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import gg.modl.backend.infrastructure.util.PaginationHelper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;

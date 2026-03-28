@@ -2,6 +2,7 @@ package gg.modl.backend.auth;
 
 import gg.modl.backend.auth.data.AuthCode;
 import gg.modl.backend.database.mongo.repository.AuthCodeMongoRepository;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.server.data.Server;
@@ -42,7 +43,7 @@ public class AuthService {
     private String prepareAndStoreCode(String email, CodeStorageAction storageAction) {
         String code = generateNumericCode(authConfiguration.getEmailCodeLength());
         String codeHash = hashCode(code);
-        String normalizedEmail = email.toLowerCase();
+        String normalizedEmail = EmailAddressUtil.normalize(email);
         Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
 
         storageAction.store(normalizedEmail, codeHash, expiresAt);
@@ -85,7 +86,7 @@ public class AuthService {
     }
 
     public boolean verifyCode(Server server, String email, String code) {
-        String normalizedEmail = email.toLowerCase();
+        String normalizedEmail = EmailAddressUtil.normalize(email);
         Date now = new Date();
         return verifyCodeInternal(
             code,
@@ -127,7 +128,7 @@ public class AuthService {
     }
 
     public boolean verifyAdminCode(String email, String code) {
-        String normalizedEmail = email.toLowerCase();
+        String normalizedEmail = EmailAddressUtil.normalize(email);
         Date now = new Date();
         return verifyCodeInternal(
             code,

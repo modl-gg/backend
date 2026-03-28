@@ -2,7 +2,6 @@ package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
@@ -10,6 +9,7 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.Settings;
 import java.util.List;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
@@ -17,16 +17,12 @@ import java.util.Objects;
 
 @Service
 @Slf4j
-public class PunishmentTypeService extends AbstractSettingsService {
+@RequiredArgsConstructor
+public class PunishmentTypeService {
+    private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final ObjectMapper objectMapper;
     private final ServerTimestampService serverTimestampService;
     private static final String SETTINGS_TYPE_PUNISHMENT_TYPES = "punishmentTypes";
-
-    public PunishmentTypeService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper, ServerTimestampService serverTimestampService) {
-        super(settingsRepository);
-        this.objectMapper = objectMapper;
-        this.serverTimestampService = serverTimestampService;
-    }
 
     public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
         return getPunishmentTypes(server).stream()
@@ -35,7 +31,7 @@ public class PunishmentTypeService extends AbstractSettingsService {
     }
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             return initializeDefaultTypes(server);
@@ -58,7 +54,7 @@ public class PunishmentTypeService extends AbstractSettingsService {
     }
 
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
-        upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
+        settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
         serverTimestampService.updatePunishmentTypesTimestamp(server);
         return types;
     }
@@ -80,7 +76,6 @@ public class PunishmentTypeService extends AbstractSettingsService {
                     updatedType.setName(existing.getName());
                     types.set(i, updatedType);
                 } else {
-                    // Core type: only update configurable fields, preserve identity
                     existing.setStaffDescription(updatedType.getStaffDescription());
                     existing.setPlayerDescription(updatedType.getPlayerDescription());
                     existing.setAppealable(updatedType.getAppealable());

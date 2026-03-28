@@ -2,14 +2,13 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.auth.data.WebAuthnCredential;
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.WebAuthnCredentialFields;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -28,12 +27,8 @@ public class WebAuthnCredentialMongoRepository extends AbstractServerMongoReposi
     }
 
     private Query emailQuery(String email) {
-        return Query.query(MongoQueries.where(WebAuthnCredentialFields.EMAIL)
-            .regex("^" + Pattern.quote(normalize(email)) + "$", "i"));
-    }
-
-    private String normalize(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
+        return Query.query(Criteria.where(WebAuthnCredentialFields.EMAIL)
+            .regex("^" + Pattern.quote(EmailAddressUtil.normalize(email)) + "$", "i"));
     }
 
     public List<WebAuthnCredential> findByEmail(Server server, String email) {
@@ -41,29 +36,29 @@ public class WebAuthnCredentialMongoRepository extends AbstractServerMongoReposi
     }
 
     public Optional<WebAuthnCredential> findByCredentialId(Server server, String credentialId) {
-        return findOne(server, Query.query(MongoQueries.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)));
+        return findOne(server, Query.query(Criteria.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)));
     }
 
     public List<WebAuthnCredential> findAllByCredentialId(Server server, String credentialId) {
-        return find(server, Query.query(MongoQueries.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)));
+        return find(server, Query.query(Criteria.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)));
     }
 
     public Optional<WebAuthnCredential> findByUserHandle(Server server, String userHandle) {
-        return findOne(server, Query.query(MongoQueries.where(WebAuthnCredentialFields.USER_HANDLE).is(userHandle)));
+        return findOne(server, Query.query(Criteria.where(WebAuthnCredentialFields.USER_HANDLE).is(userHandle)));
     }
 
     public boolean updateUsage(Server server, String credentialId, long signatureCount, Date lastUsedAt) {
         Update update = new Update()
             .set(WebAuthnCredentialFields.SIGNATURE_COUNT, signatureCount)
             .set(WebAuthnCredentialFields.LAST_USED_AT, lastUsedAt);
-        return updateFirst(server, Query.query(MongoQueries.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)), update)
+        return updateFirst(server, Query.query(Criteria.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)), update)
                    .getMatchedCount() > 0;
     }
 
     public boolean renameByIdAndEmail(Server server, String credentialMongoId, String email, String newName) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(WebAuthnCredentialFields.ID).is(credentialMongoId),
-            MongoQueries.where(WebAuthnCredentialFields.EMAIL).is(normalize(email))
+            Criteria.where(WebAuthnCredentialFields.ID).is(credentialMongoId),
+            Criteria.where(WebAuthnCredentialFields.EMAIL).is(EmailAddressUtil.normalize(email))
         ));
         return updateFirst(server, query, new Update().set(WebAuthnCredentialFields.NAME, newName.trim()))
                    .getModifiedCount() > 0;
@@ -71,8 +66,8 @@ public class WebAuthnCredentialMongoRepository extends AbstractServerMongoReposi
 
     public boolean deleteByIdAndEmail(Server server, String credentialMongoId, String email) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(WebAuthnCredentialFields.ID).is(credentialMongoId),
-            MongoQueries.where(WebAuthnCredentialFields.EMAIL).is(normalize(email))
+            Criteria.where(WebAuthnCredentialFields.ID).is(credentialMongoId),
+            Criteria.where(WebAuthnCredentialFields.EMAIL).is(EmailAddressUtil.normalize(email))
         ));
         return remove(server, query).getDeletedCount() > 0;
     }

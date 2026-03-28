@@ -2,7 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.audit.data.AuditLog;
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
@@ -70,7 +70,7 @@ public class AuditMongoRepository {
     }
 
     public List<StaffActivityResult> aggregateLogActivityBySource(Server server, Date startDate) {
-        Criteria logCriteria = MongoQueries.where(AuditLogFields.SOURCE).ne(SOURCE_SYSTEM);
+        Criteria logCriteria = Criteria.where(AuditLogFields.SOURCE).ne(SOURCE_SYSTEM);
         if (startDate != null) {
             logCriteria = logCriteria.and(AuditLogFields.CREATED).gte(startDate);
         }
@@ -79,12 +79,12 @@ public class AuditMongoRepository {
             Aggregation.match(logCriteria),
             Aggregation.group(AuditLogFields.SOURCE)
                 .count().as(TOTAL_ACTIONS)
-                .sum(ConditionalOperators.when(MongoQueries.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ticket", Pattern.CASE_INSENSITIVE)))
+                .sum(ConditionalOperators.when(Criteria.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ticket", Pattern.CASE_INSENSITIVE)))
                     .then(1)
                     .otherwise(0)).as(ALIAS_TICKET_ACTIONS)
                 .sum(ConditionalOperators.when(new Criteria().orOperator(
-                    MongoQueries.where(AuditLogFields.LEVEL).is(LEVEL_MODERATION),
-                    MongoQueries.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ban|mute|kick|punishment", Pattern.CASE_INSENSITIVE))
+                    Criteria.where(AuditLogFields.LEVEL).is(LEVEL_MODERATION),
+                    Criteria.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ban|mute|kick|punishment", Pattern.CASE_INSENSITIVE))
                 )).then(1).otherwise(0)).as(ALIAS_MODERATION_ACTIONS)
                 .max(AuditLogFields.CREATED).as(ALIAS_LAST_ACTIVE),
             Aggregation.sort(Sort.Direction.DESC, TOTAL_ACTIONS)
@@ -96,7 +96,7 @@ public class AuditMongoRepository {
     }
 
     public List<IdCountResult> aggregateTicketResponseCounts(Server server, Date startDate) {
-        Criteria replyCriteria = MongoQueries.where(TicketFields.REPLY_STAFF).is(true);
+        Criteria replyCriteria = Criteria.where(TicketFields.REPLY_STAFF).is(true);
         if (startDate != null) {
             replyCriteria = replyCriteria.and(TicketFields.REPLY_CREATED).gte(startDate);
         }
@@ -116,7 +116,7 @@ public class AuditMongoRepository {
         List<AggregationOperation> stages = new ArrayList<>();
         stages.add(Aggregation.unwind(PlayerFields.PUNISHMENTS));
         if (startDate != null) {
-            stages.add(Aggregation.match(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUED).gte(startDate)));
+            stages.add(Aggregation.match(Criteria.where(PlayerFields.PUNISHMENT_ISSUED).gte(startDate)));
         }
         stages.add(context -> new Document("$addFields", new Document(ALIAS_EFFECTIVE_ISSUER,
             new Document("$ifNull", List.of("$" + PlayerFields.PUNISHMENT_ISSUER_ID, "$" + PlayerFields.PUNISHMENT_ISSUER_NAME)))));
@@ -132,7 +132,7 @@ public class AuditMongoRepository {
             return Map.of();
         }
 
-        Query query = Query.query(MongoQueries.where(StaffFields.ID).in(staffIds));
+        Query query = Query.query(Criteria.where(StaffFields.ID).in(staffIds));
         List<Staff> staffMembers = tenantMongoAccess.forServer(server).find(query, Staff.class, CollectionName.STAFF);
         Map<String, String> usernamesById = new HashMap<>();
         for (Staff staff : staffMembers) {
@@ -144,10 +144,10 @@ public class AuditMongoRepository {
     }
 
     public List<AuditLog> findPunishmentLogs(Server server, Date startDate, int limit, boolean canRollbackOnly) {
-        Criteria criteria = MongoQueries.where(AuditLogFields.CREATED).gte(startDate)
+        Criteria criteria = Criteria.where(AuditLogFields.CREATED).gte(startDate)
             .orOperator(
-                MongoQueries.where(AuditLogFields.LEVEL).is(LEVEL_MODERATION),
-                MongoQueries.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ban|mute|kick|warn", Pattern.CASE_INSENSITIVE))
+                Criteria.where(AuditLogFields.LEVEL).is(LEVEL_MODERATION),
+                Criteria.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("ban|mute|kick|warn", Pattern.CASE_INSENSITIVE))
             );
 
         if (canRollbackOnly) {
@@ -155,7 +155,7 @@ public class AuditMongoRepository {
         }
 
         Query query = Query.query(criteria)
-            .with(MongoQueries.sort(Sort.Direction.DESC, AuditLogFields.CREATED))
+            .with(Sort.by(Sort.Direction.DESC, AuditLogFields.CREATED))
             .limit(limit);
 
         return tenantMongoAccess.forServer(server).find(query, AuditLog.class, CollectionName.LOGS);
@@ -163,9 +163,9 @@ public class AuditMongoRepository {
 
     public List<Document> aggregatePunishmentRows(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.match(MongoQueries.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
             Aggregation.unwind(PlayerFields.PUNISHMENTS),
-            Aggregation.match(MongoQueries.where(PlayerFields.PUNISHMENT_TYPE_ORDINAL).ne(0)
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENT_TYPE_ORDINAL).ne(0)
                 .and(PlayerFields.PUNISHMENT_DATA_STATUS).ne(STATUS_UNSTARTED)),
             Aggregation.project()
                 .and(PlayerFields.PUNISHMENT_ID).as(ALIAS_PUNISHMENT_ID)
@@ -189,7 +189,7 @@ public class AuditMongoRepository {
 
     public AuditLog findAuditLogById(Server server, String logId) {
         return tenantMongoAccess.forServer(server)
-            .findOne(Query.query(MongoQueries.where(AuditLogFields.ID).is(logId)), AuditLog.class, CollectionName.LOGS);
+            .findOne(Query.query(Criteria.where(AuditLogFields.ID).is(logId)), AuditLog.class, CollectionName.LOGS);
     }
 
     public void saveAuditLog(Server server, AuditLog auditLog) {
@@ -202,7 +202,7 @@ public class AuditMongoRepository {
             .set(AuditLogFields.METADATA_ROLLBACK_DATE, rollbackDate)
             .set(AuditLogFields.METADATA_ROLLBACK_BY, performerUsername);
         tenantMongoAccess.forServer(server).updateFirst(
-            Query.query(MongoQueries.where(AuditLogFields.ID).is(logId)),
+            Query.query(Criteria.where(AuditLogFields.ID).is(logId)),
             update,
             AuditLog.class,
             CollectionName.LOGS
@@ -228,7 +228,7 @@ public class AuditMongoRepository {
             issuerMatch.add(Criteria.where(PunishmentFields.ISSUER_ID).is(staffId));
         }
 
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             new Criteria().orOperator(issuerMatch.toArray(new Criteria[0]))
         ));
 
@@ -237,7 +237,7 @@ public class AuditMongoRepository {
 
     public void appendRollbackModification(Server server, String playerId, String punishmentId, Map<String, Object> rollbackModification) {
         Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, rollbackModification);
-        Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
+        Query query = Query.query(Criteria.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
         tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
     }
 
@@ -272,16 +272,16 @@ public class AuditMongoRepository {
     private Criteria buildIssuerCriteria(List<String> usernames, String staffId) {
         List<Criteria> parts = new ArrayList<>();
         for (String username : usernames) {
-            parts.add(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_NAME).regex("^" + Pattern.quote(username) + "$", "i"));
+            parts.add(Criteria.where(PlayerFields.PUNISHMENT_ISSUER_NAME).regex("^" + Pattern.quote(username) + "$", "i"));
         }
         if (staffId != null) {
-            parts.add(MongoQueries.where(PlayerFields.PUNISHMENT_ISSUER_ID).is(staffId));
+            parts.add(Criteria.where(PlayerFields.PUNISHMENT_ISSUER_ID).is(staffId));
         }
         return new Criteria().orOperator(parts.toArray(new Criteria[0]));
     }
 
     public List<Document> aggregateTicketDetails(Server server, String username, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.REPLY_STAFF).is(true)
+        Criteria criteria = Criteria.where(TicketFields.REPLY_STAFF).is(true)
             .and(TicketFields.REPLY_NAME).regex("^" + Pattern.quote(username) + "$", "i");
         if (startDate != null) {
             criteria = criteria.and(TicketFields.REPLY_CREATED).gte(startDate);
@@ -325,7 +325,7 @@ public class AuditMongoRepository {
     }
 
     public List<IdCountResult> aggregateDailyTicketResponseCounts(Server server, String username, Date startDate) {
-        Criteria criteria = MongoQueries.where(TicketFields.REPLY_STAFF).is(true)
+        Criteria criteria = Criteria.where(TicketFields.REPLY_STAFF).is(true)
             .and(TicketFields.REPLY_NAME).regex("^" + Pattern.quote(username) + "$", "i");
         if (startDate != null) {
             criteria = criteria.and(TicketFields.REPLY_CREATED).gte(startDate);
@@ -362,15 +362,15 @@ public class AuditMongoRepository {
     }
 
     public long countEvidenceUploads(Server server, String username, Date startDate) {
-        Criteria baseCriteria = MongoQueries.where(AuditLogFields.SOURCE).is(username);
+        Criteria baseCriteria = Criteria.where(AuditLogFields.SOURCE).is(username);
         if (startDate != null) {
             baseCriteria = baseCriteria.and(AuditLogFields.CREATED).gte(startDate);
         }
 
         Query query = Query.query(
             baseCriteria.orOperator(
-                MongoQueries.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("evidence|upload|file", Pattern.CASE_INSENSITIVE)),
-                MongoQueries.where(AuditLogFields.LEVEL)
+                Criteria.where(AuditLogFields.DESCRIPTION).regex(Pattern.compile("evidence|upload|file", Pattern.CASE_INSENSITIVE)),
+                Criteria.where(AuditLogFields.LEVEL)
                     .is(LEVEL_INFO)
                     .and(AuditLogFields.DESCRIPTION)
                     .regex(Pattern.compile("uploaded|attachment", Pattern.CASE_INSENSITIVE))

@@ -1,7 +1,7 @@
 package gg.modl.backend.ticket.dto.request;
 
-import gg.modl.backend.validation.RegExpConstants;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RegExpConstants;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;

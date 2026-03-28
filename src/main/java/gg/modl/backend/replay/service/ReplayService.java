@@ -13,24 +13,32 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class ReplayService {
     private final ReplayMongoRepository replayRepository;
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
     private final TrainingDataService trainingDataService;
 
-    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
+    @Value("${modl.replay.max-file-size:10485760}")
+    private long maxFileSize;
+
+    public ReplayService(ReplayMongoRepository replayRepository, S3StorageService s3StorageService,
+                         StorageQuotaService storageQuotaService, TrainingDataService trainingDataService) {
+        this.replayRepository = replayRepository;
+        this.s3StorageService = s3StorageService;
+        this.storageQuotaService = storageQuotaService;
+        this.trainingDataService = trainingDataService;
+    }
 
     public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
-        if (fileSize > MAX_FILE_SIZE) {
-            throw new IllegalArgumentException("File size exceeds maximum of 10 MB");
+        if (fileSize > maxFileSize) {
+            throw new IllegalArgumentException("File size exceeds maximum of " + (maxFileSize / 1024 / 1024) + " MB");
         }
 
         if (!storageQuotaService.canUpload(server, fileSize)) {

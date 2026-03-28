@@ -1,6 +1,6 @@
 package gg.modl.backend.admin.dto.request;
 
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import org.springframework.lang.Nullable;

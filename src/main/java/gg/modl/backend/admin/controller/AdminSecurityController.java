@@ -1,8 +1,8 @@
 package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.service.AdminSecurityService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;

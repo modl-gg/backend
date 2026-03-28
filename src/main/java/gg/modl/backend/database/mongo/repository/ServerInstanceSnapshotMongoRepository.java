@@ -4,7 +4,7 @@ import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.analytics.data.ServerInstanceSnapshot;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
+
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerInstanceSnapshotFields;
 import java.util.Date;
@@ -29,7 +29,7 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
 
         // Try to update existing server entry in the array
         Query updateQuery = Query.query(
-            MongoQueries.where(ServerInstanceSnapshotFields.DATE).is(date)
+            Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
                 .and("servers.serverId").is(serverId)
                 .and("servers.serverName").is(serverName)
         );
@@ -44,7 +44,7 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
 
         if (result.getMatchedCount() == 0) {
             // Entry doesn't exist yet — upsert document and push to array
-            Query upsertQuery = Query.query(MongoQueries.where(ServerInstanceSnapshotFields.DATE).is(date));
+            Query upsertQuery = Query.query(Criteria.where(ServerInstanceSnapshotFields.DATE).is(date));
             Update pushNew = new Update()
                 .push(ServerInstanceSnapshotFields.SERVERS, entry)
                 .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
@@ -53,12 +53,12 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
     }
 
     public List<ServerInstanceSnapshot> findSinceOrdered(Date startDate) {
-        Query query = Query.query(MongoQueries.where(ServerInstanceSnapshotFields.DATE).gte(startDate));
-        query.with(MongoQueries.sort(Sort.Direction.ASC, ServerInstanceSnapshotFields.DATE));
+        Query query = Query.query(Criteria.where(ServerInstanceSnapshotFields.DATE).gte(startDate));
+        query.with(Sort.by(Sort.Direction.ASC, ServerInstanceSnapshotFields.DATE));
         return find(query);
     }
 
     public void deleteOlderThan(Date cutoff) {
-        remove(Query.query(MongoQueries.where(ServerInstanceSnapshotFields.DATE).lt(cutoff)));
+        remove(Query.query(Criteria.where(ServerInstanceSnapshotFields.DATE).lt(cutoff)));
     }
 }

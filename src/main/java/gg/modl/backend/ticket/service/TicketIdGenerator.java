@@ -3,7 +3,7 @@ package gg.modl.backend.ticket.service;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 

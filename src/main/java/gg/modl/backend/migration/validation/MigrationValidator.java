@@ -1,6 +1,6 @@
 package gg.modl.backend.migration.validation;
 
-import gg.modl.backend.validation.RegExpConstants;
+import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import java.net.InetAddress;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;

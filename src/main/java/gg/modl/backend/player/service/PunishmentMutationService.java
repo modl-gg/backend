@@ -2,9 +2,8 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
@@ -15,9 +14,7 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentContext;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.data.TicketStatus;
+import gg.modl.backend.ticket.service.TicketService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -26,7 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,7 +32,7 @@ import org.springframework.stereotype.Service;
 public class PunishmentMutationService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
-    private final TicketMongoRepository ticketRepository;
+    private final TicketService ticketService;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
@@ -238,7 +235,7 @@ public class PunishmentMutationService {
         punishmentRepository.replacePunishments(server, player);
 
         if (request.modifyAssociatedTickets()) {
-            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server, staffRepository);
+            String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
             if (request.addTicketIds() != null && !request.addTicketIds().isEmpty()) {
                 closeAttachedTickets(server, request.addTicketIds(), ticketIssuerName);
             }
@@ -251,72 +248,38 @@ public class PunishmentMutationService {
     private void closeAttachedTickets(Server server, List<String> ticketIds, String issuerName) {
         for (String ticketId : ticketIds) {
             try {
-                Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-                if (ticket == null || ticket.isLocked()) {
-                    continue;
-                }
-
-                if (ticket.getReplies() == null) {
-                    ticket.setReplies(new ArrayList<>());
-                }
-
-                TicketReply systemReply = TicketReply.builder()
-                    .id(UUID.randomUUID().toString())
-                    .name(issuerName)
-                    .content("Report accepted - punishment has been issued.")
-                    .type("public")
-                    .created(new Date())
-                    .staff(true)
-                    .action("report_accepted")
-                    .attachments(new ArrayList<>())
-                    .build();
-
-                ticket.getReplies().add(systemReply);
-                applyTicketLifecycleStatus(ticket, TicketStatus.CLOSED);
-                ticket.setUpdatedAt(new Date());
-                ticketRepository.updateState(server, ticket);
+                ticketService.closeTicketForPunishment(server, ticketId, issuerName);
             } catch (Exception e) {
                 log.error("[TICKET_CLOSE] Failed to close ticket {}", ticketId, e);
             }
         }
     }
 
-    private void applyTicketLifecycleStatus(Ticket ticket, TicketStatus status) {
-        ticket.setStatus(status);
-        ticket.setLocked(status != null && status.isTerminal());
-    }
-
     private void reopenAttachedTickets(Server server, List<String> ticketIds, String issuerName) {
         for (String ticketId : ticketIds) {
             try {
-                Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-                if (ticket == null || !ticket.isLocked()) {
-                    continue;
-                }
-
-                if (ticket.getReplies() == null) {
-                    ticket.setReplies(new ArrayList<>());
-                }
-
-                TicketReply systemReply = TicketReply.builder()
-                    .id(UUID.randomUUID().toString())
-                    .name(issuerName)
-                    .content("Ticket reopened - punishment association removed.")
-                    .type("public")
-                    .created(new Date())
-                    .staff(true)
-                    .action("report_reopened")
-                    .attachments(new ArrayList<>())
-                    .build();
-
-                ticket.getReplies().add(systemReply);
-                applyTicketLifecycleStatus(ticket, TicketStatus.OPEN);
-                ticket.setUpdatedAt(new Date());
-                ticketRepository.updateState(server, ticket);
+                ticketService.reopenTicketForPunishment(server, ticketId, issuerName);
             } catch (Exception e) {
                 log.error("[TICKET_REOPEN] Failed to reopen ticket {}", ticketId, e);
             }
         }
+    }
+
+    public void linkAppealToPunishment(Server server, String playerUuid, String punishmentId,
+                                       String appealId, PunishmentNote note) {
+        punishmentRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, note);
+    }
+
+    public void addPunishmentNote(Server server, String playerUuid, String punishmentId,
+                                  PunishmentNote note, Map<String, Object> dataUpdates) {
+        punishmentRepository.addPunishmentNote(server, playerUuid, punishmentId, note, dataUpdates);
+    }
+
+    public void applyAppealApproval(Server server, String playerUuid, String punishmentId,
+                                    PunishmentModification modification, PunishmentNote note,
+                                    String appealOutcome, String appealTicketId) {
+        punishmentRepository.applyAppealApproval(server, playerUuid, punishmentId,
+            modification, note, appealOutcome, appealTicketId);
     }
 
     private enum PunishmentToggleOption {

@@ -2,13 +2,12 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.mongo.MongoQueries;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuthSessionDataFields;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -31,19 +30,15 @@ public class AuthSessionMongoRepository {
     }
 
     public List<AuthSessionData> findActiveByEmail(Server server, String email, Date now) {
-        return findActiveByEmail(tenantMongoAccess.forServer(server), normalize(email), now);
+        return findActiveByEmail(tenantMongoAccess.forServer(server), EmailAddressUtil.normalize(email), now);
     }
 
     private List<AuthSessionData> findActiveByEmail(MongoTemplate template, String normalizedEmail, Date now) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail),
-            MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
+            Criteria.where(AuthSessionDataFields.EMAIL).is(normalizedEmail),
+            Criteria.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
         ));
         return template.find(query, AuthSessionData.class, CollectionName.SESSIONS);
-    }
-
-    private String normalize(String email) {
-        return email.trim().toLowerCase(Locale.ROOT);
     }
 
     public void deleteByEmail(Server server, String email) {
@@ -56,10 +51,10 @@ public class AuthSessionMongoRepository {
             return;
         }
 
-        String normalizedEmail = normalize(rawEmail);
+        String normalizedEmail = EmailAddressUtil.normalize(rawEmail);
         Query query = rawEmail.equals(normalizedEmail)
-                      ? Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).is(normalizedEmail))
-                      : Query.query(MongoQueries.where(AuthSessionDataFields.EMAIL).in(rawEmail, normalizedEmail));
+                      ? Query.query(Criteria.where(AuthSessionDataFields.EMAIL).is(normalizedEmail))
+                      : Query.query(Criteria.where(AuthSessionDataFields.EMAIL).in(rawEmail, normalizedEmail));
         template.remove(query, AuthSessionData.class, CollectionName.SESSIONS);
     }
 
@@ -73,8 +68,8 @@ public class AuthSessionMongoRepository {
 
     private Optional<AuthSessionData> findActiveById(MongoTemplate template, String sessionId, Date now) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(AuthSessionDataFields.ID).is(sessionId),
-            MongoQueries.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
+            Criteria.where(AuthSessionDataFields.ID).is(sessionId),
+            Criteria.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
         ));
         return Optional.ofNullable(template.findOne(query, AuthSessionData.class, CollectionName.SESSIONS));
     }
@@ -93,7 +88,7 @@ public class AuthSessionMongoRepository {
     }
 
     private Query idQuery(String sessionId) {
-        return Query.query(MongoQueries.where(AuthSessionDataFields.ID).is(sessionId));
+        return Query.query(Criteria.where(AuthSessionDataFields.ID).is(sessionId));
     }
 
     public boolean refreshExpiresAtGlobal(String sessionId, Date expiresAt) {

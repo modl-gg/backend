@@ -1,9 +1,9 @@
 package gg.modl.backend.registration;
 
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;

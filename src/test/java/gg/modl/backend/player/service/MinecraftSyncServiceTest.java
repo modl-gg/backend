@@ -11,7 +11,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;

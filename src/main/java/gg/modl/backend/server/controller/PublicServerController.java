@@ -1,6 +1,6 @@
 package gg.modl.backend.server.controller;
 
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerResponseMessage;
 import gg.modl.backend.server.ServerService;
 import jakarta.validation.Valid;

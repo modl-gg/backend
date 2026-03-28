@@ -1,6 +1,6 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import lombok.Getter;
 
 @Getter

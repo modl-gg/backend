@@ -2,10 +2,10 @@ package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.dto.request.UpdateServerRequest;
 import gg.modl.backend.admin.service.AdminServerService;
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.util.PaginationHelper;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.util.PaginationHelper;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;

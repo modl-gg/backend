@@ -1,6 +1,6 @@
 package gg.modl.backend.email;
 
-import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.io.UnsupportedEncodingException;

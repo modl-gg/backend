@@ -1,11 +1,11 @@
 package gg.modl.backend.migration.controller;
 
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.migration.service.MigrationProcessor;
 import gg.modl.backend.migration.service.MigrationService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;

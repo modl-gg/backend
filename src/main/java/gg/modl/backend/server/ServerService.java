@@ -1,6 +1,6 @@
 package gg.modl.backend.server;
 
-import gg.modl.backend.config.ModlCorsProperties;
+import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;

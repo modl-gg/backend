@@ -1,7 +1,7 @@
 package gg.modl.backend.migration.service;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
-import gg.modl.backend.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;

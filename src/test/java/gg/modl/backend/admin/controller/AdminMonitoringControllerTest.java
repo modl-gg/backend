@@ -10,8 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.admin.service.AdminMonitoringService;
-import gg.modl.backend.rest.GlobalExceptionHandler;
-import gg.modl.backend.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import java.util.Date;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;

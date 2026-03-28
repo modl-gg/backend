@@ -3,12 +3,12 @@ package gg.modl.backend.database.mongo.repository;
 import gg.modl.backend.analytics.data.MetricSnapshot;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.MetricSnapshotFields;
 import java.util.Date;
 import java.util.List;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
@@ -20,8 +20,8 @@ public class MetricSnapshotMongoRepository extends AbstractGlobalMongoRepository
     }
 
     public List<MetricSnapshot> findSinceOrdered(Date startDate) {
-        Query query = Query.query(MongoQueries.where(MetricSnapshotFields.DATE).gte(startDate));
-        query.with(MongoQueries.sort(Sort.Direction.ASC, MetricSnapshotFields.DATE));
+        Query query = Query.query(Criteria.where(MetricSnapshotFields.DATE).gte(startDate));
+        query.with(Sort.by(Sort.Direction.ASC, MetricSnapshotFields.DATE));
         return find(query);
     }
 
@@ -29,10 +29,10 @@ public class MetricSnapshotMongoRepository extends AbstractGlobalMongoRepository
         Update update = new Update()
             .set(MetricSnapshotFields.ACTIVE_SERVERS, activeServers)
             .setOnInsert(MetricSnapshotFields.CREATED_AT, createdAt);
-        upsert(Query.query(MongoQueries.where(MetricSnapshotFields.DATE).is(date)), update);
+        upsert(Query.query(Criteria.where(MetricSnapshotFields.DATE).is(date)), update);
     }
 
     public void deleteOlderThan(Date cutoff) {
-        remove(Query.query(MongoQueries.where(MetricSnapshotFields.DATE).lt(cutoff)));
+        remove(Query.query(Criteria.where(MetricSnapshotFields.DATE).lt(cutoff)));
     }
 }

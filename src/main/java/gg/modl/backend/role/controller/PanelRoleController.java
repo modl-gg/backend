@@ -1,7 +1,7 @@
 package gg.modl.backend.role.controller;
 
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
 import gg.modl.backend.role.dto.request.RoleRequest;

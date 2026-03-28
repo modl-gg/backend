@@ -5,19 +5,18 @@ import gg.modl.backend.admin.service.AdminAuthService;
 import gg.modl.backend.auth.AuthService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RESTSecurityRole;
-import gg.modl.backend.rest.RequestUtil;
-import gg.modl.backend.util.CookieUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.util.CookieUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.Optional;
@@ -81,7 +80,7 @@ public class AdminAuthController {
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
         Set<String> sessionEmails = new LinkedHashSet<>();
 
-        for (String sessionId : extractSessionIds(request)) {
+        for (String sessionId : adminAuthService.extractSessionIds(request)) {
             sessionService.findValidAdminSession(sessionId)
                 .map(AuthSessionData::getEmail)
                 .ifPresent(sessionEmails::add);
@@ -99,22 +98,9 @@ public class AdminAuthController {
         return ResponseEntity.ok(new ApiResponse(true, "Logout successful"));
     }
 
-    private Set<String> extractSessionIds(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return Set.of();
-        }
-
-        return Arrays.stream(cookies)
-            .filter(cookie -> RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName()))
-            .map(Cookie::getValue)
-            .filter(value -> value != null && !value.isBlank())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-    }
-
     @GetMapping("/session")
     public ResponseEntity<?> getSession(HttpServletRequest request) {
-        String sessionId = extractSessionId(request);
+        String sessionId = adminAuthService.extractSessionId(request);
         if (sessionId == null) {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Not authenticated"));
         }
@@ -136,36 +122,6 @@ public class AdminAuthController {
             new SessionData(admin.getEmail(), admin.getLastActivityAt(), admin.getLoggedInIps(), true)));
     }
 
-    private String extractSessionId(HttpServletRequest request) {
-        Cookie[] cookies = request.getCookies();
-        if (cookies == null) {
-            return null;
-        }
-        for (Cookie cookie : cookies) {
-            if (RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName())) {
-                return cookie.getValue();
-            }
-        }
-        return null;
-    }
-
-    // Helper to check if request is authenticated (for use by other admin controllers)
-    public Optional<AdminSession> getAuthenticatedSession(HttpServletRequest request) {
-        String sessionId = extractSessionId(request);
-        if (sessionId == null) {
-            return Optional.empty();
-        }
-
-        Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
-        if (sessionOpt.isEmpty()) {
-            return Optional.empty();
-        }
-
-        AuthSessionData session = sessionOpt.get();
-        return adminAuthService.findByEmail(session.getEmail())
-            .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
-    }
-
     // Request/Response records
     public record RequestCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
 
@@ -181,5 +137,4 @@ public class AdminAuthController {
 
     public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
 
-    public record AdminSession(String adminId, String email, Date createdAt) {}
 }

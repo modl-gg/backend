@@ -2,14 +2,14 @@ package gg.modl.backend.registration;
 
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.turnstile.TurnstileService;
-import gg.modl.backend.util.CookieUtil;
+import gg.modl.backend.infrastructure.turnstile.TurnstileService;
+import gg.modl.backend.infrastructure.util.CookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;

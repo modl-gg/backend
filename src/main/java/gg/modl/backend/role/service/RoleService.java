@@ -1,8 +1,8 @@
 package gg.modl.backend.role.service;
 
-import gg.modl.backend.exception.ConflictException;
-import gg.modl.backend.exception.ForbiddenException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;

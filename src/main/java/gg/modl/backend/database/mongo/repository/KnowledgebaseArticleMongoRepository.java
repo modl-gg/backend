@@ -2,7 +2,6 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-import gg.modl.backend.database.mongo.MongoQueries;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.KnowledgebaseArticleFields;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
@@ -28,16 +27,16 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     }
 
     public List<KnowledgebaseArticle> findByCategoryOrdered(Server server, String categoryId) {
-        Query query = Query.query(MongoQueries.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))
-            .with(MongoQueries.sort(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
+        Query query = Query.query(Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))
+            .with(Sort.by(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
         return find(server, query);
     }
 
     public List<KnowledgebaseArticle> findVisibleByCategoryOrdered(Server server, String categoryId) {
         Query query = Query.query(new Criteria().andOperator(
-            MongoQueries.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId),
-            MongoQueries.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true)
-        )).with(MongoQueries.sort(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
+            Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId),
+            Criteria.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true)
+        )).with(Sort.by(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
         return find(server, query);
     }
 
@@ -46,12 +45,12 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     }
 
     public Optional<KnowledgebaseArticle> findBySlug(Server server, String slug) {
-        return findOne(server, Query.query(MongoQueries.where(KnowledgebaseArticleFields.SLUG).is(slug)));
+        return findOne(server, Query.query(Criteria.where(KnowledgebaseArticleFields.SLUG).is(slug)));
     }
 
     public int findMaxOrdinalInCategory(Server server, String categoryId) {
-        Query query = Query.query(MongoQueries.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))
-            .with(MongoQueries.sort(Sort.Direction.DESC, KnowledgebaseArticleFields.ORDINAL))
+        Query query = Query.query(Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))
+            .with(Sort.by(Sort.Direction.DESC, KnowledgebaseArticleFields.ORDINAL))
             .limit(1);
         return findOne(server, query)
             .map(KnowledgebaseArticle::getOrdinal)
@@ -59,7 +58,7 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     }
 
     public boolean existsBySlug(Server server, String slug, String excludeId) {
-        Criteria criteria = MongoQueries.where(KnowledgebaseArticleFields.SLUG).is(slug);
+        Criteria criteria = Criteria.where(KnowledgebaseArticleFields.SLUG).is(slug);
         if (excludeId != null) {
             criteria = criteria.and(KnowledgebaseArticleFields.ID).ne(excludeId);
         }
@@ -91,7 +90,7 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
 
         KnowledgebaseArticle updated = findAndModify(
             server,
-            Query.query(MongoQueries.where(KnowledgebaseArticleFields.ID).is(id)),
+            Query.query(Criteria.where(KnowledgebaseArticleFields.ID).is(id)),
             update,
             FindAndModifyOptions.options().returnNew(true)
         );
@@ -99,24 +98,24 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     }
 
     public boolean deleteByArticleId(Server server, String id) {
-        return remove(server, Query.query(MongoQueries.where(KnowledgebaseArticleFields.ID).is(id))).getDeletedCount() > 0;
+        return remove(server, Query.query(Criteria.where(KnowledgebaseArticleFields.ID).is(id))).getDeletedCount() > 0;
     }
 
     public long deleteByCategoryId(Server server, String categoryId) {
-        return remove(server, Query.query(MongoQueries.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))).getDeletedCount();
+        return remove(server, Query.query(Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId))).getDeletedCount();
     }
 
     public List<KnowledgebaseArticle> searchVisibleArticles(Server server, String searchQuery, int limit) {
         String escapedQuery = Pattern.quote(searchQuery);
         Criteria criteria = new Criteria().andOperator(
-            MongoQueries.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true),
+            Criteria.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true),
             new Criteria().orOperator(
-                MongoQueries.where(KnowledgebaseArticleFields.TITLE).regex(Pattern.compile(escapedQuery, Pattern.CASE_INSENSITIVE)),
-                MongoQueries.where(KnowledgebaseArticleFields.CONTENT).regex(Pattern.compile(escapedQuery, Pattern.CASE_INSENSITIVE))
+                Criteria.where(KnowledgebaseArticleFields.TITLE).regex(Pattern.compile(escapedQuery, Pattern.CASE_INSENSITIVE)),
+                Criteria.where(KnowledgebaseArticleFields.CONTENT).regex(Pattern.compile(escapedQuery, Pattern.CASE_INSENSITIVE))
             )
         );
         Query query = Query.query(criteria)
-            .with(MongoQueries.sort(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL))
+            .with(Sort.by(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL))
             .limit(limit);
         return find(server, query);
     }

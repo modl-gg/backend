@@ -5,7 +5,7 @@ import gg.modl.backend.settings.data.OffenseLevelDurations;
 import gg.modl.backend.settings.data.PunishmentDurations;
 import gg.modl.backend.settings.data.PunishmentPoints;
 import gg.modl.backend.settings.data.PunishmentType;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;

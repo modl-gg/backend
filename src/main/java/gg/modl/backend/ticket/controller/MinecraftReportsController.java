@@ -1,13 +1,13 @@
 package gg.modl.backend.ticket.controller;
 
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.dto.request.AssignReportRequest;
 import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;

@@ -2,8 +2,8 @@ package gg.modl.backend.settings.controller;
 
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.admin.service.GlobalSystemService;
-import gg.modl.backend.rest.RESTMappingV1;
-import gg.modl.backend.rest.RequestUtil;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
 import gg.modl.backend.settings.data.TicketFormSettings;

@@ -1,6 +1,6 @@
 package gg.modl.backend.staff.service;
 
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;

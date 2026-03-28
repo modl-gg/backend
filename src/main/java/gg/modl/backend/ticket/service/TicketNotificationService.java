@@ -1,6 +1,6 @@
 package gg.modl.backend.ticket.service;
 
-import gg.modl.backend.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;

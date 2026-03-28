@@ -1,8 +1,9 @@
 package gg.modl.backend.staff.service;
 
-import gg.modl.backend.config.ModlProperties;
-import gg.modl.backend.exception.ConflictException;
-import gg.modl.backend.exception.ValidationException;
+import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.email.EmailAddressUtil;
+import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.email.EmailService;
@@ -13,11 +14,10 @@ import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
 import gg.modl.backend.staff.dto.response.InviteResultResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
-import gg.modl.backend.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -51,7 +51,7 @@ public class InvitationService {
 
         List<String> normalizedEmailsToInvite = emailsToInvite.stream()
             .filter(email -> email != null && !email.isBlank())
-            .map(email -> email.trim().toLowerCase(Locale.ROOT))
+            .map(EmailAddressUtil::normalize)
             .distinct()
             .toList();
 
@@ -111,7 +111,7 @@ public class InvitationService {
 
     private void processInvitation(Server server, String email, String role,
                                    List<InviteResultResponse.FailedInvite> failed) {
-        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        String normalizedEmail = EmailAddressUtil.normalize(email);
 
         if (server.getAdminEmail() != null && normalizedEmail.equalsIgnoreCase(server.getAdminEmail())) {
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "Cannot send invitation to the admin email address."));

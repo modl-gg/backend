@@ -1,42 +1,39 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.Settings;
 import java.util.HashMap;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-public class AIModerationSettingsService extends AbstractSettingsService {
+@RequiredArgsConstructor
+public class AIModerationSettingsService {
+    private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_AI_MODERATION = "aiModerationSettings";
-
-    public AIModerationSettingsService(SettingsMongoRepository settingsRepository, ObjectMapper objectMapper) {
-        super(settingsRepository);
-        this.objectMapper = objectMapper;
-    }
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
-        upsertSettings(server, SETTINGS_TYPE_AI_MODERATION, data);
+        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_AI_MODERATION, data);
         return getAIModerationSettings(server);
     }
 
     public AIModerationSettings getAIModerationSettings(Server server) {
-        Settings settings = findSettings(server, SETTINGS_TYPE_AI_MODERATION).orElse(null);
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_AI_MODERATION).orElse(null);
 
         if (settings == null || settings.getData() == null) {
             AIModerationSettings defaults = createDefaultSettings();
             try {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
-                settingsRepository.saveEntity(server, new Settings(null, SETTINGS_TYPE_AI_MODERATION, data));
+                settingsRepositoryAccess.saveEntity(server, new Settings(null, SETTINGS_TYPE_AI_MODERATION, data));
             } catch (Exception e) {
                 log.warn("Failed to create default AI moderation settings for server {}", server.getDatabaseName(), e);
             }
