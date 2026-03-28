@@ -1,7 +1,9 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import java.util.Collections;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -14,37 +16,34 @@ public final class PunishmentMapper {
     private PunishmentMapper() {}
 
     public static Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes) {
-        return toPunishmentMap(punishment, punishmentTypes, Collections.emptyMap());
+        return toPunishmentMap(punishment, PunishmentTypeIndex.byOrdinal(punishmentTypes), Collections.emptyMap());
     }
 
     public static Map<String, Object> toPunishmentMap(Punishment punishment, List<PunishmentType> punishmentTypes, Map<String, String> resolvedIssuers) {
+        return toPunishmentMap(punishment, PunishmentTypeIndex.byOrdinal(punishmentTypes), resolvedIssuers);
+    }
+
+    public static Map<String, Object> toPunishmentMap(Punishment punishment, Map<Integer, PunishmentType> typesByOrdinal, Map<String, String> resolvedIssuers) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put("id", punishment.getId());
         map.put("issuerName", resolveIssuer(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers));
         map.put("issued", punishment.getIssued());
         map.put("started", punishment.getStarted());
 
-        // Include the actual type ordinal for proper lookup
         int ordinal = punishment.getTypeOrdinal();
         map.put("typeOrdinal", ordinal);
 
-        // Look up the actual punishment type name from the configured types
-        String actualTypeName = punishmentTypes.stream()
-            .filter(t -> t.getOrdinal() == ordinal)
-            .findFirst()
-            .map(PunishmentType::getName)
-            .orElse(null);
+        PunishmentType matchedType = typesByOrdinal.get(ordinal);
+        String actualTypeName = matchedType != null ? matchedType.getName() : null;
 
         map.put("type", actualTypeName != null ? actualTypeName : "Unknown");
 
-        // Include the actual type name in the data map for display
         Map<String, Object> dataWithTypeName = punishment.getData() != null ?
                                                new LinkedHashMap<>(punishment.getData()) : new LinkedHashMap<>();
         if (actualTypeName != null) {
             dataWithTypeName.put("typeName", actualTypeName);
         }
 
-        // Convert modifications - include effectiveDuration for duration changes
         List<Map<String, Object>> modifications = punishment.getModifications()
             .stream()
             .map(m -> {
@@ -59,7 +58,6 @@ public final class PunishmentMapper {
             }).toList();
         map.put("modifications", modifications);
 
-        // Convert notes
         List<Map<String, Object>> notes = punishment.getNotes()
             .stream()
             .map(n -> {
@@ -72,7 +70,6 @@ public final class PunishmentMapper {
             }).toList();
         map.put("notes", notes);
 
-        // Convert evidence
         List<Map<String, Object>> evidence = punishment.getEvidence()
             .stream()
             .map(e -> {
@@ -106,30 +103,28 @@ public final class PunishmentMapper {
     }
 
     public static Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types, PlayerStatusCalculator statusCalculator) {
-        return toSimplePunishment(punishment, types, statusCalculator, Collections.emptyMap());
+        return toSimplePunishment(punishment, PunishmentTypeIndex.byOrdinal(types), statusCalculator, Collections.emptyMap());
     }
 
     public static Map<String, Object> toSimplePunishment(Punishment punishment, List<PunishmentType> types, PlayerStatusCalculator statusCalculator, Map<String, String> resolvedIssuers) {
+        return toSimplePunishment(punishment, PunishmentTypeIndex.byOrdinal(types), statusCalculator, resolvedIssuers);
+    }
+
+    public static Map<String, Object> toSimplePunishment(Punishment punishment, Map<Integer, PunishmentType> typesByOrdinal, PlayerStatusCalculator statusCalculator, Map<String, String> resolvedIssuers) {
         Map<String, Object> data = punishment.getData();
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
 
-        PunishmentType punishmentType = types.stream()
-            .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
-            .findFirst()
-            .orElse(null);
+        PunishmentType punishmentType = typesByOrdinal.get(punishment.getTypeOrdinal());
 
         String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
         String playerDescription = punishmentType != null ? punishmentType.getPlayerDescription() : null;
 
-        // Determine effective category: BAN, MUTE, or OTHER
         String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
         String category = effectiveCategory != null ? effectiveCategory : "OTHER";
 
-        // For manual punishments (ordinals 0-5: kick, mute, ban, security ban, linked ban, blacklist),
-        // the reason is stored as the first non-auto-generated note
         String reason = null;
         if (punishment.getTypeOrdinal() <= 5 && punishment.getNotes() != null && !punishment.getNotes().isEmpty()) {
-            for (var note : punishment.getNotes()) {
+            for (PunishmentNote note : punishment.getNotes()) {
                 String noteText = note.text();
                 if (noteText != null && !isAutoGeneratedNote(noteText)) {
                     reason = noteText;

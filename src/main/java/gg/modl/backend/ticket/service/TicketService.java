@@ -29,10 +29,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -93,8 +97,26 @@ public class TicketService {
 
         String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
 
-        // Collect staff usernames that need avatar resolution
-        Map<String, String> staffAvatarCache = new HashMap<>();
+        Set<String> staffUsernames = new HashSet<>();
+        for (TicketReply reply : ticket.getReplies()) {
+            if (reply.isStaff() && (reply.getAvatar() == null || reply.getAvatar().isBlank()) && reply.getName() != null && !reply.getName().isBlank()) {
+                staffUsernames.add(reply.getName());
+            }
+        }
+
+        Map<String, String> staffAvatarMap = new HashMap<>();
+        if (!staffUsernames.isEmpty()) {
+            Map<String, Staff> staffByUsername = staffRepository.findByUsernames(server, staffUsernames)
+                .stream()
+                .collect(Collectors.toMap(Staff::getUsername, Function.identity(), (a, b) -> a));
+
+            for (String username : staffUsernames) {
+                Staff staff = staffByUsername.get(username);
+                if (staff != null && staff.getAssignedMinecraftUuid() != null && !staff.getAssignedMinecraftUuid().isBlank()) {
+                    staffAvatarMap.put(username, String.format(AVATAR_URL_FORMAT, staff.getAssignedMinecraftUuid()));
+                }
+            }
+        }
 
         return ticket.getReplies()
             .stream().map(reply -> {
@@ -105,21 +127,10 @@ public class TicketService {
                 if (reply.getType() == null || reply.getType().isBlank()) {
                     reply.setType(reply.isStaff() ? "staff" : "user");
                 }
-                // Resolve staff avatar if missing
                 if (reply.isStaff() && (reply.getAvatar() == null || reply.getAvatar().isBlank()) && reply.getName() != null) {
-                    String cachedAvatar = staffAvatarCache.computeIfAbsent(reply.getName(), name -> {
-                        try {
-                            return staffRepository.findByUsername(server, name)
-                                .map(Staff::getAssignedMinecraftUuid)
-                                .filter(uuid -> uuid != null && !uuid.isBlank())
-                                .map(uuid -> String.format(AVATAR_URL_FORMAT, uuid))
-                                .orElse("");
-                        } catch (Exception e) {
-                            return "";
-                        }
-                    });
-                    if (!cachedAvatar.isEmpty()) {
-                        reply.setAvatar(cachedAvatar);
+                    String avatar = staffAvatarMap.get(reply.getName());
+                    if (avatar != null) {
+                        reply.setAvatar(avatar);
                     }
                 }
                 return reply;
@@ -178,7 +189,6 @@ public class TicketService {
 
         boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
 
-        // Override emailAuth from form settings if configured
         TicketFormSettings.TicketForm formSettings = ticketFormSettingsService.getFormByType(server, ticketCategory.getId());
         if (formSettings != null && formSettings.isRequireEmailAuth()) {
             emailAuth = true;
@@ -432,7 +442,6 @@ public class TicketService {
                 existingData.put("emailAuthEnabled", emailAuth);
             }
 
-            // Override emailAuth from form settings if configured
             TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
             if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
                 ticket.setEmailAuthEnabled(true);

@@ -11,6 +11,7 @@ import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -257,16 +258,14 @@ public class PlayerLookupService {
             .filter(statusCalculator::isPunishmentActive)
             .count();
 
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(types);
+
         int bans = 0;
         int mutes = 0;
         int kicks = 0;
         int warnings = 0;
         for (Punishment punishment : player.getPunishments()) {
-            int ordinal = punishment.getTypeOrdinal();
-            PunishmentType type = types.stream()
-                .filter(candidate -> candidate.getOrdinal() == ordinal)
-                .findFirst()
-                .orElse(null);
+            PunishmentType type = typesByOrdinal.get(punishment.getTypeOrdinal());
             if (type != null && type.isBan()) {
                 bans++;
             } else if (type != null && type.isMute()) {
@@ -283,11 +282,8 @@ public class PlayerLookupService {
             .sorted((left, right) -> right.getIssued().compareTo(left.getIssued()))
             .limit(5)
             .map(punishment -> {
-                String typeName = types.stream()
-                    .filter(type -> type.getOrdinal() == punishment.getTypeOrdinal())
-                    .findFirst()
-                    .map(PunishmentType::getName)
-                    .orElse("Unknown");
+                PunishmentType matchedType = typesByOrdinal.get(punishment.getTypeOrdinal());
+                String typeName = matchedType != null ? matchedType.getName() : "Unknown";
 
                 Map<String, Object> response = new LinkedHashMap<>();
                 response.put("id", punishment.getId());

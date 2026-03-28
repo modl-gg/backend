@@ -5,7 +5,9 @@ import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
@@ -98,7 +100,7 @@ public class PlayerService {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
                 String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());
-                if ("BAN".equals(category)) {
+                if (EnforcementCategory.BAN.name().equals(category)) {
                     return "Banned";
                 }
             }
@@ -265,15 +267,15 @@ public class PlayerService {
             punishment.getIssued(),
             punishment.getStarted(),
             punishmentTypeService.isAppealable(server, ordinal),
-            data != null ? (String) data.get("reason") : null,
-            data != null ? (String) data.get("severity") : null,
+            PunishmentData.getReason(data),
+            PunishmentData.getSeverity(data),
             data != null ? resolveOffenderStatus(data) : null,
             active,
             expires,
             null,
             null,
-            data != null ? (Boolean) data.get("altBlocking") : null,
-            data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
+            data != null ? PunishmentData.isAltBlocking(data) : null,
+            data != null ? PunishmentData.isWipeAfterExpiry(data) : null,
             effectiveCategory,
             punishment.getModifications(),
             punishment.getNotes(),
@@ -283,11 +285,11 @@ public class PlayerService {
     }
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
-        String status = data.get("status") instanceof String s ? s : null;
+        String status = PunishmentData.getStatus(data);
         if (status != null) {
             return status;
         }
-        String offenseLevel = data.get("offenseLevel") instanceof String s ? s : null;
+        String offenseLevel = PunishmentData.getOffenseLevel(data);
         if (offenseLevel != null) {
             return switch (offenseLevel.toLowerCase()) {
                 case "first" -> "low";

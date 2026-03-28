@@ -6,7 +6,9 @@ import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.request.AddModificationRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
@@ -75,14 +77,7 @@ public class PunishmentMutationService {
     }
 
     private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments().isEmpty()) {
-            return null;
-        }
-        return player.getPunishments()
-            .stream()
-            .filter(punishment -> punishmentId.equals(punishment.getId()))
-            .findFirst()
-            .orElse(null);
+        return PunishmentQueryService.findPunishment(player, punishmentId);
     }
 
     public PunishmentOperationResult changeDuration(Server server, String punishmentId, Long newDuration, String issuerName, String issuerId) {
@@ -98,7 +93,7 @@ public class PunishmentMutationService {
 
         punishment.getModifications().add(new PunishmentModification(
             IdGenerator.generateShortId(),
-            "MANUAL_DURATION_CHANGE",
+            PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
             now,
             resolvedIssuerName,
             issuerId,
@@ -125,7 +120,7 @@ public class PunishmentMutationService {
 
         punishmentRepository.replacePunishments(server, context.player());
 
-        if (Boolean.TRUE.equals(punishment.getData().get("altBlocking"))) {
+        if (PunishmentData.isAltBlocking(punishment.getData())) {
             int cascaded = punishmentLifecycleService.cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
             if (cascaded > 0) {
                 return new PunishmentOperationResult(
@@ -174,7 +169,7 @@ public class PunishmentMutationService {
         }
 
         Map<String, Object> data = context.punishment().getData();
-        if (!Boolean.TRUE.equals(data.get("wipeAfterExpiry"))) {
+        if (!PunishmentData.isWipeAfterExpiry(data)) {
             return new PunishmentOperationResult(
                 PunishmentOperationStatus.NO_OP,
                 "Stat wipe no longer enabled for this punishment",

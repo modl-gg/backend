@@ -8,9 +8,13 @@ import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.player.controller.MinecraftPunishmentController.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.dto.request.CreateEvidenceRequest;
 import gg.modl.backend.player.dto.request.CreateNoteRequest;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
@@ -20,6 +24,7 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Date;
@@ -127,16 +132,13 @@ public class PunishmentLifecycleService {
                 durationCalculator.calculate(server, player.getPunishments(), request.typeOrdinal(), request.severity());
             calculatedDuration = result.duration();
 
-            if (result.status() != null && (!data.containsKey("status") || data.get("status") == null)) {
+            if (result.status() != null && (!data.containsKey("status") || PunishmentData.getStatus(data) == null)) {
                 data.put("status", result.status());
             }
         }
 
         if (calculatedDuration == null) {
-            Object dataDuration = data.get("duration");
-            if (dataDuration instanceof Number n) {
-                calculatedDuration = n.longValue();
-            }
+            calculatedDuration = PunishmentData.getDuration(data);
         }
 
         if (calculatedDuration != null && calculatedDuration != 0) {
@@ -147,15 +149,13 @@ public class PunishmentLifecycleService {
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        PunishmentType newPunishmentType = types.stream()
-            .filter(t -> t.getOrdinal() == request.typeOrdinal())
-            .findFirst()
-            .orElse(null);
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(types);
+        PunishmentType newPunishmentType = typesByOrdinal.get(request.typeOrdinal());
 
         if (newPunishmentType != null) {
             if (newPunishmentType.isPermanentUntilUsernameChange() && !data.containsKey("blockedName")) {
-                String currentUsername = player.getUsernames().isEmpty() ? null :
-                                         player.getUsernames().get(player.getUsernames().size() - 1).username();
+                String currentUsername = PlayerDataUtils.extractLatestUsername(player.getUsernames());
+                currentUsername = "Unknown".equals(currentUsername) ? null : currentUsername;
                 if (currentUsername != null) {
                     data.put("blockedName", currentUsername);
                 }
@@ -183,7 +183,7 @@ public class PunishmentLifecycleService {
                 });
 
             if (hasExistingInCategory) {
-                data.put("status", "Unstarted");
+                data.put("status", PunishmentStatus.UNSTARTED);
             }
         }
 
@@ -192,8 +192,8 @@ public class PunishmentLifecycleService {
 
         List<PunishmentNote> notes = new ArrayList<>();
         String enforcementType = newPunishmentType != null && newPunishmentType.isKick() ? "kick"
-                                                                                         : "BAN".equals(newCategory) ? "ban"
-                                                                                                                     : "MUTE".equals(newCategory) ? "mute"
+                                                                                         : EnforcementCategory.BAN.name().equals(newCategory) ? "ban"
+                                                                                                                     : EnforcementCategory.MUTE.name().equals(newCategory) ? "mute"
                                                                                                                                                   : "punishment";
         String issuedNote = calculatedDuration != null && calculatedDuration > 0
                             ? "issued " + PunishmentMapper.formatDuration(calculatedDuration, false) + " " + enforcementType
@@ -291,13 +291,13 @@ public class PunishmentLifecycleService {
             return false;
         }
 
-        String status = (String) data.get("status");
-        if (!"Unstarted".equals(status)) {
+        String status = PunishmentData.getStatus(data);
+        if (!PunishmentStatus.UNSTARTED.equals(status)) {
             return false;
         }
 
-        for (var mod : punishment.getModifications()) {
-            if ("MANUAL_PARDON".equals(mod.type()) || "APPEAL_ACCEPT".equals(mod.type()) || "SYSTEM_PARDON".equals(mod.type())) {
+        for (PunishmentModification mod : punishment.getModifications()) {
+            if (PunishmentModificationType.isPardon(mod.type())) {
                 return false;
             }
         }
@@ -334,14 +334,7 @@ public class PunishmentLifecycleService {
     }
 
     private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments().isEmpty()) {
-            return null;
-        }
-        return player.getPunishments()
-            .stream()
-            .filter(punishment -> punishmentId.equals(punishment.getId()))
-            .findFirst()
-            .orElse(null);
+        return PunishmentQueryService.findPunishment(player, punishmentId);
     }
 
     public PunishmentOperationResult pardonPunishment(Server server, String punishmentId, String issuerName, String issuerId, String reason) {
@@ -362,7 +355,7 @@ public class PunishmentLifecycleService {
 
         punishment.getModifications().add(new PunishmentModification(
             IdGenerator.generateShortId(),
-            "MANUAL_PARDON",
+            PunishmentModificationType.MANUAL_PARDON.name(),
             now,
             resolvedIssuerName,
             issuerId,
@@ -389,10 +382,10 @@ public class PunishmentLifecycleService {
             ));
         }
 
-        punishment.getData().put("status", "Pardoned");
+        punishment.getData().put("status", PunishmentStatus.PARDONED);
         persistPlayerPunishments(server, context.player());
 
-        if (Boolean.TRUE.equals(punishment.getData().get("altBlocking"))) {
+        if (PunishmentData.isAltBlocking(punishment.getData())) {
             cascadePardonLinkedBans(server, punishmentId);
         }
 
@@ -448,7 +441,7 @@ public class PunishmentLifecycleService {
     private void addSystemPardon(Punishment punishment, String reason, Date now) {
         punishment.getModifications().add(new PunishmentModification(
             IdGenerator.generateShortId(),
-            "SYSTEM_PARDON",
+            PunishmentModificationType.SYSTEM_PARDON.name(),
             now,
             "System",
             null,
@@ -470,9 +463,7 @@ public class PunishmentLifecycleService {
         return punishment.getModifications()
             .stream()
             .anyMatch(modification ->
-                "MANUAL_PARDON".equals(modification.type())
-                || "APPEAL_ACCEPT".equals(modification.type())
-                || "SYSTEM_PARDON".equals(modification.type()));
+                PunishmentModificationType.isPardon(modification.type()));
     }
 
     public int cascadePardonLinkedBans(String databaseName, String parentPunishmentId) {
@@ -518,7 +509,7 @@ public class PunishmentLifecycleService {
                 punishment.getData().put("duration", newDuration);
             punishment.getModifications().add(new PunishmentModification(
                 IdGenerator.generateShortId(),
-                "MANUAL_DURATION_CHANGE",
+                PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
                 now,
                 "System",
                 null,
@@ -547,7 +538,7 @@ public class PunishmentLifecycleService {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<String> promotedIds = new ArrayList<>();
 
-        for (String category : List.of("BAN", "MUTE")) {
+        for (String category : List.of(EnforcementCategory.BAN.name(), EnforcementCategory.MUTE.name())) {
             boolean hasActive = player.getPunishments()
                 .stream().anyMatch(p -> {
                     String effectiveCategory = statusCalculator.getEffectiveCategory(p, types);
@@ -568,19 +559,8 @@ public class PunishmentLifecycleService {
 
             if (oldest.isPresent()) {
                 Punishment toPromote = oldest.get();
-                Player freshPlayer = playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString()).orElse(null);
-                if (freshPlayer != null) {
-                    for (Punishment p : freshPlayer.getPunishments()) {
-                        if (p.getId().equals(toPromote.getId())) {
-                            if (p.getData() != null) {
-                                p.getData().remove("status");
-                            }
-                            break;
-                        }
-                    }
-                    persistPlayerPunishments(server, freshPlayer);
-                    promotedIds.add(toPromote.getId());
-                }
+                punishmentRepository.unsetPunishmentStatus(server, player.getMinecraftUuid().toString(), toPromote.getId());
+                promotedIds.add(toPromote.getId());
             }
         }
 
@@ -600,7 +580,7 @@ public class PunishmentLifecycleService {
         boolean alreadyBanned = player.getPunishments()
             .stream().anyMatch(p -> {
                 String cat = statusCalculator.getEffectiveCategory(p, types);
-                return "BAN".equals(cat) && statusCalculator.isPunishmentActive(p);
+                return EnforcementCategory.BAN.name().equals(cat) && statusCalculator.isPunishmentActive(p);
             });
         if (alreadyBanned) {
             return createdIds;
@@ -619,13 +599,12 @@ public class PunishmentLifecycleService {
                     continue;
                 }
 
-                Boolean altBlocking = data.get("altBlocking") instanceof Boolean b ? b : null;
-                if (!Boolean.TRUE.equals(altBlocking)) {
+                if (!PunishmentData.isAltBlocking(data)) {
                     continue;
                 }
 
                 String cat = statusCalculator.getEffectiveCategory(punishment, types);
-                if (!"BAN".equals(cat)) {
+                if (!EnforcementCategory.BAN.name().equals(cat)) {
                     continue;
                 }
 
@@ -726,18 +705,14 @@ public class PunishmentLifecycleService {
 
     public List<String> checkRestrictionAutoPardons(Server server, Player player, String currentUsername, String currentSkinHash) {
         List<String> pardonedIds = new ArrayList<>();
-        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypeService.getPunishmentTypes(server));
 
         for (Punishment punishment : player.getPunishments()) {
             if (!statusCalculator.isPunishmentActive(punishment)) {
                 continue;
             }
 
-            int ordinal = punishment.getTypeOrdinal();
-            PunishmentType type = types.stream()
-                .filter(t -> t.getOrdinal() == ordinal)
-                .findFirst()
-                .orElse(null);
+            PunishmentType type = typesByOrdinal.get(punishment.getTypeOrdinal());
             if (type == null) {
                 continue;
             }
@@ -748,7 +723,7 @@ public class PunishmentLifecycleService {
             }
 
             if (type.isPermanentUntilUsernameChange() && currentUsername != null) {
-                String blockedName = data.get("blockedName") instanceof String s ? s : null;
+                String blockedName = PunishmentData.getBlockedName(data);
                 if (blockedName != null && !blockedName.equalsIgnoreCase(currentUsername)) {
                     String reason = "Auto-pardoned: username changed from '" + blockedName + "' to '" + currentUsername + "'";
                     systemPardonPunishment(server, player.getMinecraftUuid(), punishment.getId(), reason);
@@ -757,7 +732,7 @@ public class PunishmentLifecycleService {
             }
 
             if (type.isPermanentUntilSkinChange() && currentSkinHash != null) {
-                String blockedSkin = data.get("blockedSkin") instanceof String s ? s : null;
+                String blockedSkin = PunishmentData.getBlockedSkin(data);
                 if (blockedSkin != null && !blockedSkin.equals(currentSkinHash)) {
                     String reason = "Auto-pardoned: skin changed";
                     systemPardonPunishment(server, player.getMinecraftUuid(), punishment.getId(), reason);

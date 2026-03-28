@@ -521,4 +521,17 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     public record TicketSearchPage(List<Ticket> tickets, long total) {}
 
     public record TicketCounts(long open, long closed) {}
+
+    public void bulkCloseForPunishment(Server server, List<String> ticketIds) {
+        if (ticketIds == null || ticketIds.isEmpty()) return;
+        Query query = Query.query(
+            Criteria.where(TicketFields.ID).in(ticketIds)
+                .and(TicketFields.LOCKED).ne(true)
+        );
+        Update update = new Update()
+            .set(TicketFields.STATUS, TicketStatus.CLOSED.getId())
+            .set(TicketFields.LOCKED, true)
+            .set(TicketFields.UPDATED_AT, new Date());
+        updateMulti(server, query, update);
+    }
 }

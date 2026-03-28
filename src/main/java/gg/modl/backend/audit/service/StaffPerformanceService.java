@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.repository.AuditMongoRepository.IdCountRes
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.OrdinalCountResult;
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.StaffActivityResult;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
@@ -210,8 +211,8 @@ public class StaffPerformanceService {
                 reason != null ? reason : "No reason provided",
                 durationObj != null ? durationObj.toString() : null,
                 doc.getDate("issued"),
-                !AuditDocumentUtil.hasModificationType(doc, "REMOVE", "REVOKE"),
-                AuditDocumentUtil.hasModificationType(doc, "ROLLBACK")
+                !AuditDocumentUtil.hasModificationType(doc, PunishmentModificationType.REMOVE.name(), PunishmentModificationType.REVOKE.name()),
+                AuditDocumentUtil.hasModificationType(doc, PunishmentModificationType.ROLLBACK.name())
             ));
         }
         return details;

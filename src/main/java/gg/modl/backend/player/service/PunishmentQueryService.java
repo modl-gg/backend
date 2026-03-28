@@ -9,6 +9,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
@@ -19,6 +20,7 @@ import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import gg.modl.backend.ticket.data.Ticket;
@@ -73,8 +75,7 @@ public class PunishmentQueryService {
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
 
         String playerUuid = player != null ? player.getMinecraftUuid().toString() : null;
-        String playerUsername = player != null && !player.getUsernames().isEmpty() ?
-                                player.getUsernames().get(player.getUsernames().size() - 1).username() : null;
+        String playerUsername = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : null;
 
         int ordinal = punishment.getTypeOrdinal();
 
@@ -89,15 +90,15 @@ public class PunishmentQueryService {
             punishment.getIssued(),
             punishment.getStarted(),
             punishmentTypeService.isAppealable(server, ordinal),
-            data != null ? (String) data.get("reason") : null,
-            data != null ? (String) data.get("severity") : null,
+            PunishmentData.getReason(data),
+            PunishmentData.getSeverity(data),
             data != null ? resolveOffenderStatus(data) : null,
             active,
             expires,
             playerUuid,
             playerUsername,
-            data != null ? (Boolean) data.get("altBlocking") : null,
-            data != null ? (Boolean) data.get("wipeAfterExpiry") : null,
+            data != null ? PunishmentData.isAltBlocking(data) : null,
+            data != null ? PunishmentData.isWipeAfterExpiry(data) : null,
             effectiveCategory,
             resolveModifications(punishment.getModifications(), resolvedIssuers),
             resolveNotes(punishment.getNotes(), resolvedIssuers),
@@ -115,12 +116,12 @@ public class PunishmentQueryService {
     }
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
-        String status = data.get("status") instanceof String s ? s : null;
+        String status = PunishmentData.getStatus(data);
         if (status != null) {
             return status;
         }
         // Backward compat: map legacy offenseLevel to display status
-        String offenseLevel = data.get("offenseLevel") instanceof String s ? s : null;
+        String offenseLevel = PunishmentData.getOffenseLevel(data);
         if (offenseLevel != null) {
             return switch (offenseLevel.toLowerCase()) {
                 case "first" -> "low";
@@ -135,17 +136,17 @@ public class PunishmentQueryService {
         if (punishment.getIssuerId() != null) {
             ids.add(punishment.getIssuerId());
         }
-        for (var m : punishment.getModifications()) {
+        for (PunishmentModification m : punishment.getModifications()) {
             if (m.issuerId() != null) {
                 ids.add(m.issuerId());
             }
         }
-        for (var n : punishment.getNotes()) {
+        for (PunishmentNote n : punishment.getNotes()) {
             if (n.issuerId() != null) {
                 ids.add(n.issuerId());
             }
         }
-        for (var e : punishment.getEvidence()) {
+        for (PunishmentEvidence e : punishment.getEvidence()) {
             if (e.uploadedById() != null) {
                 ids.add(e.uploadedById());
             }
@@ -198,10 +199,7 @@ public class PunishmentQueryService {
     }
 
     private String getLatestUsername(Player player) {
-        if (player.getUsernames() == null || player.getUsernames().isEmpty()) {
-            return "Unknown";
-        }
-        return player.getUsernames().get(player.getUsernames().size() - 1).username();
+        return PlayerDataUtils.extractLatestUsername(player.getUsernames());
     }
 
     public List<PunishmentSearchResult> searchPunishments(Server server, String searchQuery, boolean activeOnly) {
@@ -223,8 +221,7 @@ public class PunishmentQueryService {
                                               : issuerNameResolver.batchResolve(allIssuerIds, server);
 
         for (Player player : players) {
-            String username = player.getUsernames().isEmpty() ? "Unknown" :
-                              player.getUsernames().get(player.getUsernames().size() - 1).username();
+            String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
             for (Punishment punishment : player.getPunishments()) {
                 if (activeOnly && !statusCalculator.isPunishmentActive(punishment)) {
@@ -239,7 +236,7 @@ public class PunishmentQueryService {
 
                 Map<String, Object> pData = punishment.getData();
                 if (pData != null) {
-                    String reason = (String) pData.get("reason");
+                    String reason = PunishmentData.getReason(pData);
                     if (reason != null && pattern.matcher(reason).find()) {
                         matches = true;
                     }
@@ -314,8 +311,7 @@ public class PunishmentQueryService {
         List<Player> players = punishmentRepository.findByLinkedBanId(server, parentPunishmentId);
 
         for (Player player : players) {
-            String username = player.getUsernames().isEmpty() ? "Unknown" :
-                              player.getUsernames().get(player.getUsernames().size() - 1).username();
+            String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
             for (Punishment punishment : player.getPunishments()) {
                 if (punishment.getTypeOrdinal() == Punishment.LINKED_BAN_TYPE_ORDINAL &&
@@ -342,10 +338,7 @@ public class PunishmentQueryService {
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        PunishmentType punishmentType = types.stream()
-            .filter(type -> type.getOrdinal() == typeOrdinal)
-            .findFirst()
-            .orElse(null);
+        PunishmentType punishmentType = PunishmentTypeIndex.byOrdinal(types).get(typeOrdinal);
         if (punishmentType == null) {
             return PunishmentPreviewResponse.error("Punishment type not found");
         }
@@ -405,11 +398,7 @@ public class PunishmentQueryService {
 
         PunishmentType defaultType = null;
         if (durationDetail == null || points == 0) {
-            defaultType = DefaultPunishmentTypes.getAll()
-                .stream()
-                .filter(defaultPunishment -> defaultPunishment.getOrdinal() == type.getOrdinal())
-                .findFirst()
-                .orElse(null);
+            defaultType = PunishmentTypeIndex.byOrdinal(DefaultPunishmentTypes.getAll()).get(type.getOrdinal());
         }
         if (durationDetail == null && defaultType != null) {
             durationDetail = defaultType.getDurationDetail(severity, offenseLevel);
@@ -518,6 +507,17 @@ public class PunishmentQueryService {
         NOT_FOUND,
         INVALID_REQUEST,
         NO_OP
+    }
+
+    public static Punishment findPunishment(Player player, String punishmentId) {
+        if (player.getPunishments().isEmpty()) {
+            return null;
+        }
+        return player.getPunishments()
+            .stream()
+            .filter(punishment -> punishmentId.equals(punishment.getId()))
+            .findFirst()
+            .orElse(null);
     }
 
     public record PunishmentContext(Player player, Punishment punishment) {

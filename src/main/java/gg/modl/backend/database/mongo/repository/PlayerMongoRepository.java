@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -200,9 +201,9 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         serverTemplate(server).insertAll(players);
     }
 
-    public org.springframework.data.mongodb.core.BulkOperations bulkOps(Server server) {
+    public BulkOperations bulkOps(Server server) {
         return serverTemplate(server).bulkOps(
-            org.springframework.data.mongodb.core.BulkOperations.BulkMode.UNORDERED,
+            BulkOperations.BulkMode.UNORDERED,
             Player.class,
             CollectionName.PLAYERS
         );
@@ -212,7 +213,7 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         if (updatesByUuid == null || updatesByUuid.isEmpty()) {
             return;
         }
-        org.springframework.data.mongodb.core.BulkOperations ops = bulkOps(server);
+        BulkOperations ops = bulkOps(server);
         for (Map.Entry<UUID, Update> entry : updatesByUuid.entrySet()) {
             ops.updateOne(
                 Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(entry.getKey())),

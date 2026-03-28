@@ -9,6 +9,7 @@ import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import java.util.ArrayList;
@@ -38,7 +39,7 @@ public class AuditMongoRepository {
     private static final String LEVEL_MODERATION = "moderation";
     private static final String LEVEL_INFO = "info";
     private static final String SOURCE_SYSTEM = "system";
-    private static final String STATUS_UNSTARTED = "Unstarted";
+    private static final String STATUS_UNSTARTED = PunishmentStatus.UNSTARTED;
     private static final String DATE = "date";
     private static final String ALIAS_TICKET_ACTIONS = "ticketActions";
     private static final String ALIAS_MODERATION_ACTIONS = "moderationActions";

@@ -2,11 +2,15 @@ package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.Settings;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +28,11 @@ public class PunishmentTypeService {
     private final ServerTimestampService serverTimestampService;
     private static final String SETTINGS_TYPE_PUNISHMENT_TYPES = "punishmentTypes";
 
+    private final Cache<String, List<PunishmentType>> typesCache = Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(45))
+        .maximumSize(500)
+        .build();
+
     public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
         return getPunishmentTypes(server).stream()
             .filter(pt -> pt.getId() != null && pt.getId() == id)
@@ -31,21 +40,23 @@ public class PunishmentTypeService {
     }
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
+        return typesCache.get(server.getId(), id -> {
+            Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
 
-        if (settings == null || settings.getData() == null) {
-            return initializeDefaultTypes(server);
-        }
+            if (settings == null || settings.getData() == null) {
+                return initializeDefaultTypes(server);
+            }
 
-        try {
-            return objectMapper.convertValue(
-                settings.getData(),
-                new TypeReference<List<PunishmentType>>() {}
-            );
-        } catch (Exception e) {
-            log.error("Failed to convert punishment types from settings, initializing defaults", e);
-            return initializeDefaultTypes(server);
-        }
+            try {
+                return objectMapper.convertValue(
+                    settings.getData(),
+                    new TypeReference<List<PunishmentType>>() {}
+                );
+            } catch (Exception e) {
+                log.error("Failed to convert punishment types from settings, initializing defaults", e);
+                return initializeDefaultTypes(server);
+            }
+        });
     }
 
     public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
@@ -56,6 +67,7 @@ public class PunishmentTypeService {
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
         settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
         serverTimestampService.updatePunishmentTypesTimestamp(server);
+        typesCache.invalidate(server.getId());
         return types;
     }
 
@@ -113,12 +125,12 @@ public class PunishmentTypeService {
             return false;
         }
 
-        savePunishmentTypes(server, new java.util.ArrayList<>(filtered));
+        savePunishmentTypes(server, new ArrayList<>(filtered));
         return true;
     }
 
     public PunishmentType createPunishmentType(@NotNull Server server, @NotNull PunishmentType newType) {
-        List<PunishmentType> types = new java.util.ArrayList<>(getPunishmentTypes(server));
+        List<PunishmentType> types = new ArrayList<>(getPunishmentTypes(server));
 
         int maxOrdinal = types.stream()
             .map(PunishmentType::getOrdinal)
@@ -159,9 +171,7 @@ public class PunishmentTypeService {
     }
 
     public Optional<PunishmentType> getPunishmentTypeByOrdinal(@NotNull Server server, int ordinal) {
-        return getPunishmentTypes(server).stream()
-            .filter(pt -> pt.getOrdinal() == ordinal)
-            .findFirst();
+        return Optional.ofNullable(PunishmentTypeIndex.byOrdinal(getPunishmentTypes(server)).get(ordinal));
     }
 
     public String getPunishmentTypeName(@NotNull Server server, int ordinal) {

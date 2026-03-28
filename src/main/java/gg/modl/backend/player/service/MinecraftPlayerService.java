@@ -8,9 +8,14 @@ import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
+import gg.modl.backend.player.data.punishment.PunishmentData;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import gg.modl.backend.player.service.PlayerDataUtils;
@@ -104,16 +109,14 @@ public class MinecraftPlayerService {
         Map<String, String> resolvedIssuers
     ) {
         List<Map<String, Object>> activePunishments = new ArrayList<>();
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
 
         for (Punishment punishment : player.getPunishments()) {
             if (!statusCalculator.isPunishmentActive(punishment)) {
                 continue;
             }
 
-            PunishmentType punishmentType = punishmentTypes.stream()
-                .filter(type -> type.getOrdinal() == punishment.getTypeOrdinal())
-                .findFirst()
-                .orElse(null);
+            PunishmentType punishmentType = typesByOrdinal.get(punishment.getTypeOrdinal());
             if (punishmentType != null && punishmentType.isKick()) {
                 continue;
             }
@@ -137,7 +140,7 @@ public class MinecraftPlayerService {
 
         for (Map<String, Object> punishment : punishments) {
             String category = (String) punishment.get("category");
-            if ("BAN".equals(category) || "MUTE".equals(category)) {
+            if (EnforcementCategory.BAN.name().equals(category) || EnforcementCategory.MUTE.name().equals(category)) {
                 Map<String, Object> existing = oldestByCategory.get(category);
                 if (existing == null) {
                     oldestByCategory.put(category, punishment);
@@ -182,8 +185,8 @@ public class MinecraftPlayerService {
         for (Punishment punishment : player.getPunishments()) {
             Map<String, Object> data = punishment.getData();
             if (data == null
-                || !Boolean.TRUE.equals(data.get("wipeAfterExpiry"))
-                || Boolean.TRUE.equals(data.get("statWipeCompleted"))
+                || !PunishmentData.isWipeAfterExpiry(data)
+                || PunishmentData.isStatWipeCompleted(data)
                 || !statusCalculator.isPunishmentNaturallyExpired(punishment)) {
                 continue;
             }
@@ -456,7 +459,7 @@ public class MinecraftPlayerService {
 
             boolean isActive = statusCalculator.isPunishmentActive(punishment);
             Map<String, Object> punishmentData = punishment.getData();
-            boolean isUnstarted = punishmentData != null && "Unstarted".equals(punishmentData.get("status"));
+            boolean isUnstarted = PunishmentStatus.UNSTARTED.equals(PunishmentData.getStatus(punishmentData));
 
             boolean shouldPardon;
             if (punishmentType == null) {
@@ -464,8 +467,8 @@ public class MinecraftPlayerService {
             } else {
                 String requestedType = punishmentType.toLowerCase();
                 String effectiveCategory = statusCalculator.getEffectiveCategory(punishment, types);
-                shouldPardon = ("ban".equals(requestedType) && "BAN".equals(effectiveCategory) && (isActive || isUnstarted))
-                               || ("mute".equals(requestedType) && "MUTE".equals(effectiveCategory) && (isActive || isUnstarted));
+                shouldPardon = ("ban".equals(requestedType) && EnforcementCategory.BAN.name().equals(effectiveCategory) && (isActive || isUnstarted))
+                               || ("mute".equals(requestedType) && EnforcementCategory.MUTE.name().equals(effectiveCategory) && (isActive || isUnstarted));
             }
 
             if (!shouldPardon) {
@@ -498,9 +501,7 @@ public class MinecraftPlayerService {
         return punishment.getModifications()
             .stream()
             .anyMatch(modification ->
-                "MANUAL_PARDON".equals(modification.type())
-                || "APPEAL_ACCEPT".equals(modification.type())
-                || "SYSTEM_PARDON".equals(modification.type()));
+                PunishmentModificationType.isPardon(modification.type()));
     }
 
     private ServiceResponse ok(Map<String, Object> body) {

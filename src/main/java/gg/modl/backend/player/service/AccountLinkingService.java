@@ -75,8 +75,7 @@ public class AccountLinkingService {
     }
 
     private LinkedAccountResponse buildLinkedAccountResponse(Server server, Player player) {
-        String username = player.getUsernames().isEmpty() ? "Unknown"
-                                                          : player.getUsernames().get(player.getUsernames().size() - 1).username();
+        String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
         int activeBans = 0;
         int activeMutes = 0;
@@ -115,7 +114,6 @@ public class AccountLinkingService {
             return new LinkingResult(false, "Player not found", 0);
         }
 
-        Set<String> linkedUuids = new HashSet<>();
         Set<String> playerIps = new HashSet<>();
 
         for (IPEntry ipEntry : player.getIpAddresses()) {
@@ -138,6 +136,7 @@ public class AccountLinkingService {
 
         List<Player> potentialMatches = playerRepository.findByIpAddresses(server, playerIps);
 
+        List<Player> linkedPlayers = new ArrayList<>();
         for (Player match : potentialMatches) {
             if (match.getMinecraftUuid().equals(playerUuid)) {
                 continue;
@@ -158,20 +157,24 @@ public class AccountLinkingService {
             }
 
             if (shouldLink) {
-                linkedUuids.add(match.getMinecraftUuid().toString());
+                linkedPlayers.add(match);
             }
         }
 
-        if (!linkedUuids.isEmpty()) {
+        if (!linkedPlayers.isEmpty()) {
+            Set<String> linkedUuids = new HashSet<>();
+            for (Player linked : linkedPlayers) {
+                linkedUuids.add(linked.getMinecraftUuid().toString());
+            }
+
             updateLinkedAccounts(server, player, linkedUuids);
 
-            List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, linkedUuids);
             for (Player linkedPlayer : linkedPlayers) {
                 updateLinkedAccounts(server, linkedPlayer, Set.of(playerUuid.toString()));
             }
         }
 
-        return new LinkingResult(true, "Linking complete", linkedUuids.size());
+        return new LinkingResult(true, "Linking complete", linkedPlayers.size());
     }
 
     private boolean hasRecentLogin(IPEntry ipEntry) {

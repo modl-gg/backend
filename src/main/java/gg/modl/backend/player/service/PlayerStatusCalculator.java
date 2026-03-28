@@ -1,12 +1,17 @@
 package gg.modl.backend.player.service;
 
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.Date;
 import java.util.List;
@@ -25,6 +30,7 @@ public class PlayerStatusCalculator {
 
     public PlayerStatus calculateStatus(Server server, List<Punishment> punishments) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(types);
         OffenderThresholdSettings thresholdSettings = offenderThresholdSettingsService.getThresholdSettings(server);
         long socialExpiryMs = thresholdSettings.getSocial().getPointExpiryMs();
         long gameplayExpiryMs = thresholdSettings.getGameplay().getPointExpiryMs();
@@ -40,14 +46,12 @@ public class PlayerStatusCalculator {
 
             int typeOrdinal = punishment.getTypeOrdinal();
             Map<String, Object> data = punishment.getData();
-            String severity = data != null ? (String) data.get("severity") : null;
+            String severity = PunishmentData.getSeverity(data);
 
-            Optional<PunishmentType> typeOpt = findTypeByOrdinal(types, typeOrdinal);
-            if (typeOpt.isEmpty()) {
+            PunishmentType type = typesByOrdinal.get(typeOrdinal);
+            if (type == null) {
                 continue;
             }
-
-            PunishmentType type = typeOpt.get();
 
             // Check if this punishment's points have expired
             Date effectiveExpiry = getEffectiveExpiry(punishment);
@@ -86,16 +90,14 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        // Queued punishments (status = "Unstarted") are not yet active
-        Object statusObj = data.get("status");
-        String status = statusObj instanceof String ? (String) statusObj : null;
-        if ("Unstarted".equals(status)) {
+        String status = PunishmentData.getStatus(data);
+        if (PunishmentStatus.UNSTARTED.equals(status)) {
             return false;
         }
 
         for (PunishmentModification mod : punishment.getModifications()) {
             String type = mod.type();
-            if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
+            if (PunishmentModificationType.isPardon(type)) {
                 return false;
             }
         }
@@ -122,17 +124,7 @@ public class PlayerStatusCalculator {
         }
 
         if (duration == null) {
-            Object durationObj = data.get("duration");
-            if (durationObj instanceof Long) {
-                duration = (Long) durationObj;
-            } else if (durationObj instanceof Integer) {
-                duration = ((Integer) durationObj).longValue();
-            } else if (durationObj instanceof Double) {
-                duration = ((Double) durationObj).longValue();
-            } else if (durationObj instanceof Number) {
-                // Catch-all for any other numeric type
-                duration = ((Number) durationObj).longValue();
-            }
+            duration = PunishmentData.getDuration(data);
         }
 
         // null, 0, or negative (-1L) indicates permanent (no expiry)
@@ -152,10 +144,8 @@ public class PlayerStatusCalculator {
         return new Date(baseDate.getTime() + duration);
     }
 
-    private Optional<PunishmentType> findTypeByOrdinal(List<PunishmentType> types, int ordinal) {
-        return types.stream()
-            .filter(t -> t.getOrdinal() == ordinal)
-            .findFirst();
+    private Optional<PunishmentType> findTypeByOrdinal(Map<Integer, PunishmentType> typesByOrdinal, int ordinal) {
+        return Optional.ofNullable(typesByOrdinal.get(ordinal));
     }
 
     private String getStatusFromPoints(int points) {
@@ -175,20 +165,21 @@ public class PlayerStatusCalculator {
      * Core types use isBan()/isMute()/isKick().
      * Social/gameplay types use the DurationDetail for the stored severity and offense level.
      *
-     * @return "BAN", "MUTE", or null (for kicks and unknown types)
+     * @return EnforcementCategory name, or null (for kicks and unknown types)
      */
     public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
-        PunishmentType pt = types.stream()
-            .filter(t -> t.getOrdinal() == punishment.getTypeOrdinal())
-            .findFirst()
-            .orElse(null);
+        return getEffectiveCategory(punishment, PunishmentTypeIndex.byOrdinal(types));
+    }
+
+    public String getEffectiveCategory(Punishment punishment, Map<Integer, PunishmentType> typesByOrdinal) {
+        PunishmentType pt = typesByOrdinal.get(punishment.getTypeOrdinal());
         return getEffectiveCategory(pt, punishment.getData());
     }
 
     /**
      * Determine the effective enforcement category for a punishment type with given data.
      *
-     * @return "BAN", "MUTE", or null
+     * @return EnforcementCategory name, or null
      */
     public String getEffectiveCategory(PunishmentType pt, Map<String, Object> data) {
         if (pt == null) {
@@ -198,20 +189,21 @@ public class PlayerStatusCalculator {
             return null;
         }
         if (pt.isBan()) {
-            return "BAN";
+            return EnforcementCategory.BAN.name();
         }
         if (pt.isMute()) {
-            return "MUTE";
+            return EnforcementCategory.MUTE.name();
         }
 
         // Social/gameplay types: determine from DurationDetail
         if (data != null) {
-            String severity = data.get("severity") instanceof String s ? s : "regular";
+            String severity = PunishmentData.getSeverity(data) != null ? PunishmentData.getSeverity(data) : "regular";
             String offenseLevel;
-            if (data.get("offenseLevel") instanceof String s) {
-                offenseLevel = s;
+            String rawOffenseLevel = PunishmentData.getOffenseLevel(data);
+            if (rawOffenseLevel != null) {
+                offenseLevel = rawOffenseLevel;
             } else {
-                String statusVal = data.get("status") instanceof String sv ? sv.toLowerCase() : "";
+                String statusVal = PunishmentData.getStatus(data) != null ? PunishmentData.getStatus(data).toLowerCase() : "";
                 offenseLevel = switch (statusVal) {
                     case "low" -> "first";
                     case "medium" -> "medium";
@@ -222,10 +214,10 @@ public class PlayerStatusCalculator {
             DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
             if (detail != null) {
                 if (detail.isBan()) {
-                    return "BAN";
+                    return EnforcementCategory.BAN.name();
                 }
                 if (detail.isMute()) {
-                    return "MUTE";
+                    return EnforcementCategory.MUTE.name();
                 }
             }
         }
@@ -250,7 +242,7 @@ public class PlayerStatusCalculator {
         // Must not have been pardoned
         for (PunishmentModification mod : punishment.getModifications()) {
             String type = mod.type();
-            if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
+            if (PunishmentModificationType.isPardon(type)) {
                 return false;
             }
         }

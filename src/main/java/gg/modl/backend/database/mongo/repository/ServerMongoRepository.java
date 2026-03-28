@@ -417,7 +417,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.ADMIN_EMAIL, adminEmail)
-                .set(ServerFields.UPDATED_AT, new java.util.Date())
+                .set(ServerFields.UPDATED_AT, new Date())
         );
     }
 
@@ -677,7 +677,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         List<Document> pipeline = List.of(new Document("$facet", facet));
         List<Document> results = globalTemplate().getCollection(collectionName())
             .aggregate(pipeline)
-            .into(new java.util.ArrayList<>());
+            .into(new ArrayList<>());
 
         if (results.isEmpty()) {
             return new DashboardStats(0, 0, 0, 0, 0, 0, 0);

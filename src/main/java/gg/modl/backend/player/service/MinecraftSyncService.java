@@ -1,25 +1,20 @@
 package gg.modl.backend.player.service;
 
-import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
-import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.ticket.data.Ticket;
-import gg.modl.backend.ticket.data.TicketCategory;
-import gg.modl.backend.player.service.PlayerDataUtils;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,18 +29,16 @@ import java.util.Set;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class MinecraftSyncService {
-    private final ModlProperties modlProperties;
     private final PlayerMongoRepository playerRepository;
-    private final PunishmentMongoRepository punishmentRepository;
     private final StaffMongoRepository staffRepository;
-    private final StaffRoleMongoRepository staffRoleRepository;
-    private final TicketMongoRepository ticketRepository;
     private final ServerMongoRepository serverRepository;
     private final MigrationMongoRepository migrationRepository;
     private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
@@ -54,38 +47,8 @@ public class MinecraftSyncService {
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final MinecraftChatLogService minecraftChatLogService;
     private final IssuerNameResolver issuerNameResolver;
-
-    public MinecraftSyncService(
-        ModlProperties modlProperties,
-        PlayerMongoRepository playerRepository,
-        PunishmentMongoRepository punishmentRepository,
-        StaffMongoRepository staffRepository,
-        StaffRoleMongoRepository staffRoleRepository,
-        TicketMongoRepository ticketRepository,
-        ServerMongoRepository serverRepository,
-        MigrationMongoRepository migrationRepository,
-        ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository,
-        PlayerStatusCalculator statusCalculator,
-        PunishmentTypeService punishmentTypeService,
-        PunishmentLifecycleService punishmentLifecycleService,
-        MinecraftChatLogService minecraftChatLogService,
-        IssuerNameResolver issuerNameResolver
-    ) {
-        this.modlProperties = modlProperties;
-        this.playerRepository = playerRepository;
-        this.punishmentRepository = punishmentRepository;
-        this.staffRepository = staffRepository;
-        this.staffRoleRepository = staffRoleRepository;
-        this.ticketRepository = ticketRepository;
-        this.serverRepository = serverRepository;
-        this.migrationRepository = migrationRepository;
-        this.serverInstanceSnapshotRepository = serverInstanceSnapshotRepository;
-        this.statusCalculator = statusCalculator;
-        this.punishmentTypeService = punishmentTypeService;
-        this.punishmentLifecycleService = punishmentLifecycleService;
-        this.minecraftChatLogService = minecraftChatLogService;
-        this.issuerNameResolver = issuerNameResolver;
-    }
+    private final SyncStaffEventService syncStaffEventService;
+    private final SyncActiveStaffService syncActiveStaffService;
 
     public Map<String, Object> sync(
         Server server,
@@ -135,7 +98,7 @@ public class MinecraftSyncService {
                     if (pun.getIssuerId() != null) {
                         allIssuerIds.add(pun.getIssuerId());
                     }
-                    for (var m : pun.getModifications()) {
+                    for (PunishmentModification m : pun.getModifications()) {
                         if (m.issuerId() != null) {
                             allIssuerIds.add(m.issuerId());
                         }
@@ -158,16 +121,62 @@ public class MinecraftSyncService {
                 String uuid = player.getMinecraftUuid().toString();
                 String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
+                // Pass 1: classify all punishments in a single iteration
                 Set<String> categoriesWithActiveStarted = new HashSet<>();
                 Map<String, Punishment> oldestUnstartedPerCategory = new LinkedHashMap<>();
+                Set<String> pardonedCategories = new HashSet<>();
 
                 for (Punishment punishment : player.getPunishments()) {
                     boolean active = statusCalculator.isPunishmentActive(punishment);
                     String category = statusCalculator.getEffectiveCategory(punishment, types);
+
+                    boolean recentlyModified = punishment.getModifications()
+                        .stream()
+                        .anyMatch(mod -> mod.date() != null && mod.date().toInstant().isAfter(lastSync));
+                    if (recentlyModified) {
+                        recentlyModifiedPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
+                        ));
+                    }
+
+                    boolean recentlyPardoned = punishment.getModifications()
+                        .stream()
+                        .anyMatch(mod -> mod.date() != null
+                                         && mod.date().toInstant().isAfter(lastSync)
+                                         && PunishmentModificationType.isPardon(mod.type()));
+                    if (recentlyPardoned && category != null) {
+                        pardonedCategories.add(category);
+                    }
+
+                    // Unstarted kicks (ordinal 0)
+                    if (punishment.getTypeOrdinal() == 0 && punishment.getStarted() == null) {
+                        pendingPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
+                        ));
+                        continue;
+                    }
+
                     if (!active) {
                         continue;
                     }
 
+                    // Newly issued active punishments since last sync
+                    if (punishment.getStarted() != null
+                        && punishment.getIssued() != null
+                        && punishment.getIssued().toInstant().isAfter(lastSync)
+                        && category != null) {
+                        pendingPunishments.add(Map.of(
+                            "minecraftUuid", uuid,
+                            "username", username,
+                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
+                        ));
+                    }
+
+                    // Track active started vs unstarted per category
                     if (category != null && punishment.getStarted() != null) {
                         categoriesWithActiveStarted.add(category);
                     } else if (category != null && punishment.getStarted() == null) {
@@ -178,90 +187,18 @@ public class MinecraftSyncService {
                     }
                 }
 
-                for (Punishment punishment : player.getPunishments()) {
-                    boolean active = statusCalculator.isPunishmentActive(punishment);
-                    boolean recentlyModified = punishment.getModifications()
-                        .stream()
-                        .anyMatch(modification -> modification.date() != null && modification.date().toInstant().isAfter(lastSync));
-
-                    if (recentlyModified) {
-                        recentlyModifiedPunishments.add(Map.of(
+                // Add oldest unstarted punishments that don't have an active started one in the same category
+                for (Map.Entry<String, Punishment> entry : oldestUnstartedPerCategory.entrySet()) {
+                    if (!categoriesWithActiveStarted.contains(entry.getKey())) {
+                        pendingPunishments.add(Map.of(
                             "minecraftUuid", uuid,
                             "username", username,
-                            "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
+                            "punishment", PunishmentMapper.toSimplePunishment(entry.getValue(), types, statusCalculator, resolvedIssuers)
                         ));
                     }
-
-                    if (!active || punishment.getStarted() != null) {
-                        continue;
-                    }
-
-                    String category = statusCalculator.getEffectiveCategory(punishment, types);
-                    if (category != null) {
-                        if (categoriesWithActiveStarted.contains(category)) {
-                            continue;
-                        }
-                        if (oldestUnstartedPerCategory.get(category) != punishment) {
-                            continue;
-                        }
-                    }
-
-                    pendingPunishments.add(Map.of(
-                        "minecraftUuid", uuid,
-                        "username", username,
-                        "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
-                    ));
                 }
 
-                for (Punishment punishment : player.getPunishments()) {
-                    if (!statusCalculator.isPunishmentActive(punishment)
-                        || punishment.getStarted() == null
-                        || punishment.getIssued() == null
-                        || !punishment.getIssued().toInstant().isAfter(lastSync)) {
-                        continue;
-                    }
-
-                    String category = statusCalculator.getEffectiveCategory(punishment, types);
-                    if (category == null) {
-                        continue;
-                    }
-
-                    pendingPunishments.add(Map.of(
-                        "minecraftUuid", uuid,
-                        "username", username,
-                        "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
-                    ));
-                }
-
-                for (Punishment punishment : player.getPunishments()) {
-                    if (punishment.getTypeOrdinal() != 0 || punishment.getStarted() != null) {
-                        continue;
-                    }
-
-                    pendingPunishments.add(Map.of(
-                        "minecraftUuid", uuid,
-                        "username", username,
-                        "punishment", PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers)
-                    ));
-                }
-
-                Set<String> pardonedCategories = new HashSet<>();
-                for (Punishment punishment : player.getPunishments()) {
-                    boolean recentlyPardoned = punishment.getModifications()
-                        .stream()
-                        .anyMatch(modification -> modification.date() != null
-                                                  && modification.date().toInstant().isAfter(lastSync)
-                                                  && ("MANUAL_PARDON".equals(modification.type())
-                                                      || "APPEAL_ACCEPT".equals(modification.type())
-                                                      || "SYSTEM_PARDON".equals(modification.type())));
-                    if (recentlyPardoned) {
-                        String category = statusCalculator.getEffectiveCategory(punishment, types);
-                        if (category != null) {
-                            pardonedCategories.add(category);
-                        }
-                    }
-                }
-
+                // Pass 2: find active replacements for recently pardoned categories
                 if (!pardonedCategories.isEmpty()) {
                     for (Punishment punishment : player.getPunishments()) {
                         if (!statusCalculator.isPunishmentActive(punishment) || punishment.getStarted() == null) {
@@ -297,7 +234,7 @@ public class MinecraftSyncService {
         }
 
         pendingPunishments = deduplicatePendingPunishments(pendingPunishments);
-        List<Map<String, Object>> staffNotifications = getRecentStaffEvents(server, lastSync, types, recentlyModifiedPunishments);
+        List<Map<String, Object>> staffNotifications = syncStaffEventService.collectStaffEvents(server, lastSync, types, recentlyModifiedPunishments);
 
         Map<String, String> onlinePlayerIps = new HashMap<>();
         if (onlinePlayers != null) {
@@ -308,7 +245,7 @@ public class MinecraftSyncService {
             }
         }
 
-        List<Map<String, Object>> activeStaffMembers = getActiveStaffMembers(server, onlinePlayerIps);
+        List<Map<String, Object>> activeStaffMembers = syncActiveStaffService.getActiveStaffMembers(server, onlinePlayerIps);
 
         if (chatLogs != null && !chatLogs.isEmpty()) {
             minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
@@ -400,165 +337,6 @@ public class MinecraftSyncService {
         playerRepository.markStalePlayersOffline(server, onlineUuids, serverName, logoutTime);
     }
 
-    private List<Map<String, Object>> getRecentStaffEvents(
-        Server server,
-        Instant lastSync,
-        List<PunishmentType> types,
-        List<Map<String, Object>> recentlyModifiedPunishments
-    ) {
-        List<Map<String, Object>> notifications = new ArrayList<>();
-
-        try {
-            List<Ticket> recentTickets = ticketRepository.findCreatedAfterExcludingUnfinished(server, Date.from(lastSync), 20);
-
-            for (Ticket ticket : recentTickets) {
-                TicketCategory ticketType = ticket.getType();
-                if (ticketType == TicketCategory.APPLICATION) {
-                    continue;
-                }
-
-                String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
-                String createdServer = null;
-                if (ticket.getData() != null) {
-                    Object value = ticket.getData().get("createdServer");
-                    if (value instanceof String serverValue && !serverValue.isBlank()) {
-                        createdServer = serverValue;
-                    }
-                }
-
-                String message;
-                if (ticketType != null && ticketType.isReport()) {
-                    String reportedPlayer = ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "Unknown";
-                    String categoryLabel = ticketType == TicketCategory.CHAT ? "Chat" : "Gameplay";
-                    message = creatorName + ": reported " + reportedPlayer;
-                    if (createdServer != null) {
-                        message += " on " + createdServer;
-                    }
-                    message += " (" + categoryLabel + ")";
-                } else {
-                    message = creatorName + ": created " + ticket.getId();
-                    if (createdServer != null) {
-                        message += " on " + createdServer;
-                    }
-                }
-
-                Map<String, Object> notification = new LinkedHashMap<>();
-                notification.put("id", "ticket_" + ticket.getId());
-                notification.put("type", "TICKET_CREATED");
-                notification.put("message", message);
-                notification.put("timestamp", ticket.getCreated() != null ? ticket.getCreated().getTime() : System.currentTimeMillis());
-
-                Map<String, Object> ticketData = new LinkedHashMap<>();
-                ticketData.put("ticketId", ticket.getId());
-                ticketData.put("creatorName", creatorName);
-                ticketData.put("subject", ticket.getSubject() != null ? ticket.getSubject() : "");
-
-                String firstReply = "";
-                if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
-                    String content = ticket.getReplies().get(0).getContent();
-                    if (content != null) {
-                        firstReply = content.replace("**", "").replace("```", "");
-                    }
-                }
-                ticketData.put("firstReplyContent", firstReply);
-
-                String domain = server.getCustomDomainOverride();
-                if (domain == null || domain.isBlank()) {
-                    domain = server.getCustomDomain() + "." + modlProperties.getDomain();
-                }
-                ticketData.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
-                ticketData.put("ticketType", ticketType != null ? ticketType.getId() : "");
-                if (ticketType != null && ticketType.isReport()) {
-                    ticketData.put("reportedPlayer", ticket.getReportedPlayer() != null ? ticket.getReportedPlayer() : "");
-                    ticketData.put("category", ticketType.getId());
-                }
-
-                notification.put("data", ticketData);
-                notifications.add(notification);
-            }
-        } catch (Exception e) {
-            log.warn("Failed to collect ticket notifications during sync", e);
-        }
-
-        try {
-            List<Player> playersWithNewPunishments = punishmentRepository.findWithPunishmentsIssuedAfter(server, Date.from(lastSync), 50);
-
-            Set<String> issuerIds = new HashSet<>();
-            for (Player player : playersWithNewPunishments) {
-                for (Punishment punishment : player.getPunishments()) {
-                    if (punishment.getIssuerId() != null) {
-                        issuerIds.add(punishment.getIssuerId());
-                    }
-                }
-            }
-            Map<String, String> resolvedIssuers = issuerIds.isEmpty()
-                                                  ? Map.of()
-                                                  : issuerNameResolver.batchResolve(issuerIds, server);
-
-            for (Player player : playersWithNewPunishments) {
-                String playerName = PlayerDataUtils.extractLatestUsername(player.getUsernames());
-
-                for (Punishment punishment : player.getPunishments()) {
-                    if (punishment.getIssued() != null && punishment.getIssued().toInstant().isAfter(lastSync)) {
-                        PunishmentType punishmentType = types.stream()
-                            .filter(type -> type.getOrdinal() == punishment.getTypeOrdinal())
-                            .findFirst()
-                            .orElse(null);
-                        String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-                        String action = punishmentType != null && punishmentType.isBan() ? "banned"
-                                                                                         : punishmentType != null && punishmentType.isMute() ? "muted"
-                                                                                                                                             : punishmentType != null && punishmentType.isKick() ? "kicked"
-                                                                                                                                                                                                 : "punished";
-
-                        String issuerName = issuerNameResolver.resolve(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
-                        notifications.add(Map.of(
-                            "id", "punishment_" + punishment.getId(),
-                            "type", "PUNISHMENT_ISSUED",
-                            "message", issuerName + ": " + action + " " + playerName + " (" + typeName + ")",
-                            "timestamp", punishment.getIssued().getTime()
-                        ));
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to collect punishment notifications during sync", e);
-        }
-
-        for (Map<String, Object> modified : recentlyModifiedPunishments) {
-            if (!(modified.get("punishment") instanceof Map<?, ?> rawPunishment)) {
-                continue;
-            }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
-            String username = modified.get("username") instanceof String value ? value : "Unknown";
-
-            if (!(punishment.get("modifications") instanceof List<?> rawModifications)) {
-                continue;
-            }
-
-            for (Object rawModification : rawModifications) {
-                if (!(rawModification instanceof Map<?, ?> rawModificationMap)) {
-                    continue;
-                }
-                @SuppressWarnings("unchecked")
-                Map<String, Object> modification = (Map<String, Object>) rawModificationMap;
-                String type = modification.get("type") instanceof String value ? value : null;
-                if ("MANUAL_PARDON".equals(type) || "APPEAL_ACCEPT".equals(type) || "SYSTEM_PARDON".equals(type)) {
-                    String pardoner = modification.get("issuerName") instanceof String value ? value : "System";
-                    String punishmentType = punishment.get("type") instanceof String value ? value : "punishment";
-                    notifications.add(Map.of(
-                        "id", "pardon_" + punishment.get("id"),
-                        "type", "PUNISHMENT_PARDONED",
-                        "message", pardoner + ": pardoned " + username + "'s " + punishmentType,
-                        "timestamp", modification.get("timestamp")
-                    ));
-                }
-            }
-        }
-
-        return notifications;
-    }
-
     private List<Map<String, Object>> deduplicatePendingPunishments(List<Map<String, Object>> punishments) {
         Map<String, Map<String, Object>> oldestByPlayerCategory = new LinkedHashMap<>();
         List<Map<String, Object>> result = new ArrayList<>();
@@ -574,7 +352,7 @@ public class MinecraftSyncService {
             Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
             String category = punishment.get("category") instanceof String value ? value : null;
 
-            if ("BAN".equals(category) || "MUTE".equals(category)) {
+            if (EnforcementCategory.BAN.name().equals(category) || EnforcementCategory.MUTE.name().equals(category)) {
                 String key = uuid + "|" + category;
                 Map<String, Object> existing = oldestByPlayerCategory.get(key);
                 if (existing == null) {
@@ -594,53 +372,6 @@ public class MinecraftSyncService {
         }
 
         result.addAll(oldestByPlayerCategory.values());
-        return result;
-    }
-
-    private List<Map<String, Object>> getActiveStaffMembers(Server server, Map<String, String> onlinePlayerIps) {
-        List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
-
-        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
-
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Staff staff : staffWithMinecraft) {
-            List<String> permissions = permissionsByRole.getOrDefault(staff.getRole(), List.of());
-
-            String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
-            boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null
-                                   && staff.getTwoFactorSessionExpiresAt() > Instant.now().toEpochMilli()
-                                   && staff.getTwoFactorSessionIp() != null
-                                   && staff.getTwoFactorSessionIp().equals(currentIp);
-
-            Map<String, Object> entry = new HashMap<>();
-            entry.put("minecraftUuid", staff.getAssignedMinecraftUuid());
-            entry.put("minecraftUsername", staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "");
-            entry.put("staffUsername", staff.getUsername() != null ? staff.getUsername() : "");
-            entry.put("staffId", staff.getId());
-            entry.put("staffRole", staff.getRole() != null ? staff.getRole() : "");
-            entry.put("permissions", permissions);
-            entry.put("email", staff.getEmail() != null ? staff.getEmail() : "");
-            entry.put("twoFactorSessionValid", sessionValid);
-            result.add(entry);
-        }
-
-        return result;
-    }
-
-    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
-        Set<String> roleNames = new HashSet<>();
-        for (Staff staff : staffMembers) {
-            if (staff.getRole() != null && !staff.getRole().isBlank()) {
-                roleNames.add(staff.getRole());
-            }
-        }
-        if (roleNames.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, List<String>> result = new HashMap<>();
-        for (StaffRole role : staffRoleRepository.findByNames(server, roleNames)) {
-            result.put(role.getName(), role.getPermissions() != null ? role.getPermissions() : List.of());
-        }
         return result;
     }
 

@@ -9,6 +9,7 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.player.service.PunishmentMutationService;
@@ -380,7 +381,7 @@ public class AppealService {
 
         PunishmentModification modification = new PunishmentModification(
             IdGenerator.generateShortId(),
-            "APPEAL_ACCEPT",
+            PunishmentModificationType.APPEAL_ACCEPT.name(),
             now,
             staffName,
             null,

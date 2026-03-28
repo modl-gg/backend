@@ -22,9 +22,17 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @GenerateMongoFields
 @MongoFieldAliases({
     @MongoFieldAlias(name = "DATA_LINKED_BAN_ID", path = "data.linkedBanId"),
+    @MongoFieldAlias(name = "DATA_LINKED_BAN_PARENT_UUID", path = "data.linkedBanParentUuid"),
     @MongoFieldAlias(name = "DATA_STATUS", path = "data.status"),
     @MongoFieldAlias(name = "DATA_REASON", path = "data.reason"),
-    @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration")
+    @MongoFieldAlias(name = "DATA_DURATION", path = "data.duration"),
+    @MongoFieldAlias(name = "DATA_SEVERITY", path = "data.severity"),
+    @MongoFieldAlias(name = "DATA_ALT_BLOCKING", path = "data.altBlocking"),
+    @MongoFieldAlias(name = "DATA_WIPE_AFTER_EXPIRY", path = "data.wipeAfterExpiry"),
+    @MongoFieldAlias(name = "DATA_STAT_WIPE_COMPLETED", path = "data.statWipeCompleted"),
+    @MongoFieldAlias(name = "DATA_BLOCKED_NAME", path = "data.blockedName"),
+    @MongoFieldAlias(name = "DATA_BLOCKED_SKIN", path = "data.blockedSkin"),
+    @MongoFieldAlias(name = "DATA_OFFENSE_LEVEL", path = "data.offenseLevel")
 })
 public class Punishment {
     public static final int LINKED_BAN_TYPE_ORDINAL = 4;

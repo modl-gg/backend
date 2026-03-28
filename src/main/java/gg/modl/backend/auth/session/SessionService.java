@@ -3,9 +3,8 @@ package gg.modl.backend.auth.session;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.database.mongo.repository.AuthSessionMongoRepository;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import gg.modl.backend.server.data.Server;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -19,8 +18,7 @@ import org.springframework.stereotype.Service;
 public class SessionService {
     private final AuthSessionMongoRepository sessionRepository;
     private final AuthConfiguration authConfiguration;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final int TOKEN_BYTE_LENGTH = 32;
+    private final IdGenerator idGenerator;
 
     public AuthSessionData createSession(Server server, String email, String ipAddress, String userAgent) {
         sessionRepository.deleteByEmail(server, email);
@@ -50,9 +48,7 @@ public class SessionService {
     }
 
     private String generateSecureToken() {
-        byte[] tokenBytes = new byte[TOKEN_BYTE_LENGTH];
-        SECURE_RANDOM.nextBytes(tokenBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(tokenBytes);
+        return idGenerator.generateToken();
     }
 
     private Date nextExpiryDate(Date now) {

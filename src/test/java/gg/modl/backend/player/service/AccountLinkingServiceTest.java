@@ -73,7 +73,6 @@ class AccountLinkingServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid)).thenReturn(Optional.of(player));
         when(playerRepository.findByIpAddresses(server, Set.of("1.1.1.1"))).thenReturn(List.of(player, linkedPlayer));
-        when(playerRepository.findByMinecraftUuids(server, Set.of(linkedUuid.toString()))).thenReturn(List.of(linkedPlayer));
 
         AccountLinkingService.LinkingResult result = accountLinkingService.findAndLinkAccounts(server, playerUuid);
 

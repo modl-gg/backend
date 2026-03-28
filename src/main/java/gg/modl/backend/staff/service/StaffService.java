@@ -14,6 +14,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
@@ -404,8 +405,7 @@ public class StaffService {
             throw new ConflictException("This Minecraft player is already assigned to " + existingAssignment.getUsername());
         }
 
-        String currentUsername = player.getUsernames().isEmpty() ? "Unknown" :
-                                 player.getUsernames().get(player.getUsernames().size() - 1).username();
+        String currentUsername = PlayerDataUtils.extractLatestUsername(player.getUsernames());
 
         staff.setAssignedMinecraftUuid(player.getMinecraftUuid().toString());
         staff.setAssignedMinecraftUsername(currentUsername);
@@ -429,8 +429,7 @@ public class StaffService {
         return players.stream()
             .map(player -> new AvailablePlayerResponse(
                 player.getMinecraftUuid().toString(),
-                player.getUsernames().isEmpty() ? "Unknown" :
-                player.getUsernames().get(player.getUsernames().size() - 1).username()
+                PlayerDataUtils.extractLatestUsername(player.getUsernames())
             ))
             .toList();
     }

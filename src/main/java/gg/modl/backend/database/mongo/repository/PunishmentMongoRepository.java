@@ -170,4 +170,13 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
         query.limit(limit);
         return find(server, query);
     }
+
+    public void unsetPunishmentStatus(Server server, String playerUuid, String punishmentId) {
+        Query query = Query.query(
+            Criteria.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)
+                .and("punishments.id").is(punishmentId)
+        );
+        Update update = new Update().unset("punishments.$.data.status");
+        updateFirst(server, query, update);
+    }
 }

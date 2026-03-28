@@ -87,14 +87,7 @@ public class PunishmentEvidenceService {
     }
 
     private Punishment findPunishment(Player player, String punishmentId) {
-        if (player.getPunishments().isEmpty()) {
-            return null;
-        }
-        return player.getPunishments()
-            .stream()
-            .filter(punishment -> punishmentId.equals(punishment.getId()))
-            .findFirst()
-            .orElse(null);
+        return PunishmentQueryService.findPunishment(player, punishmentId);
     }
 
     public PunishmentOperationResult addUploadedEvidence(Server server, String punishmentId, String issuerName, String issuerId, List<UploadedEvidenceItem> evidenceItems) {

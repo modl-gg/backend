@@ -217,16 +217,10 @@ public class AnalyticsService {
         return normalized.isBlank() ? "Unknown" : normalized;
     }
 
-    private String formatPunishmentDay(String dateKey) {
-        if (dateKey == null || dateKey.isBlank()) {
-            return "Unknown";
-        }
+    private static final DateTimeFormatter SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("MMM dd");
 
-        try {
-            return LocalDate.parse(dateKey).format(DateTimeFormatter.ofPattern("MMM dd"));
-        } catch (Exception ignored) {
-            return dateKey;
-        }
+    private String formatPunishmentDay(String dateKey) {
+        return formatDateLabel(dateKey, SHORT_DATE_FORMATTER);
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {

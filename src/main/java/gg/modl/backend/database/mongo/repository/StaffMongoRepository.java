@@ -8,6 +8,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.email.EmailAddressUtil;
 import java.util.Collection;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -93,7 +94,7 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public boolean updateLastSeenByAssignedMinecraftUuid(Server server, String minecraftUuid) {
         Query query = Query.query(Criteria.where(StaffFields.ASSIGNED_MINECRAFT_UUID).is(minecraftUuid));
-        Update update = new Update().set(StaffFields.LAST_SEEN, new java.util.Date());
+        Update update = new Update().set(StaffFields.LAST_SEEN, new Date());
         return updateFirst(server, query, update).getModifiedCount() > 0;
     }
 
@@ -225,6 +226,12 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
                 .and(StaffFields.ASSIGNED_MINECRAFT_UUID).exists(true).ne(null).ne("")
         );
         updateMulti(server, query, new Update().set(StaffFields.TWO_FACTOR_PENDING_DELIVERY, false));
+    }
+
+    public List<Staff> findByUsernames(Server server, Collection<String> usernames) {
+        if (usernames == null || usernames.isEmpty()) return List.of();
+        Query query = Query.query(Criteria.where(StaffFields.USERNAME).in(usernames));
+        return find(server, query);
     }
 }
 

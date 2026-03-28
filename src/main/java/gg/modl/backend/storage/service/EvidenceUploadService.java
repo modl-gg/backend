@@ -2,6 +2,7 @@ package gg.modl.backend.storage.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
@@ -40,10 +41,7 @@ public class EvidenceUploadService {
 
         Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), uploadToken.playerUuid())
             .orElse(null);
-        String playerName = "Unknown";
-        if (player != null && player.getUsernames() != null && !player.getUsernames().isEmpty()) {
-            playerName = player.getUsernames().get(player.getUsernames().size() - 1).username();
-        }
+        String playerName = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : "Unknown";
 
         return TokenValidationResult.valid(new TokenInfo(
             uploadToken.punishmentId(),

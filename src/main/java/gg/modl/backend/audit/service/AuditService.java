@@ -9,9 +9,11 @@ import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.StaffService;
@@ -99,6 +101,7 @@ public class AuditService {
 
     public List<ActivePunishmentResponse> getPunishmentsList(Server server, String statusFilter) {
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
         List<Document> rows = auditRepository.aggregatePunishmentRows(server);
         Map<String, String> resolvedIssuers = resolveIssuerNames(server, rows);
 
@@ -118,7 +121,7 @@ public class AuditService {
             }
 
             results.add(mapToActivePunishmentResponse(
-                server, row, punishment, active, punishmentTypes, resolvedIssuers));
+                server, row, punishment, active, typesByOrdinal, resolvedIssuers));
         }
 
         return results;
@@ -126,14 +129,13 @@ public class AuditService {
 
     private ActivePunishmentResponse mapToActivePunishmentResponse(
         Server server, Document row, Punishment punishment, boolean active,
-        List<PunishmentType> punishmentTypes, Map<String, String> resolvedIssuers) {
+        Map<Integer, PunishmentType> typesByOrdinal, Map<String, String> resolvedIssuers) {
         int typeOrdinal = row.getInteger("typeOrdinal", 0);
         String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
-        String category = punishmentTypes.stream()
-            .filter(type -> type.getOrdinal() == typeOrdinal)
-            .findFirst()
-            .map(type -> type.getCategory() != null ? type.getCategory() : "Administrative")
-            .orElse("Administrative");
+        PunishmentType matchedType = typesByOrdinal.get(typeOrdinal);
+        String category = matchedType != null
+            ? (matchedType.getCategory() != null ? matchedType.getCategory() : "Administrative")
+            : "Administrative";
 
         Document data = row.get("data", Document.class);
         String reason = data != null ? data.getString("reason") : null;
@@ -358,7 +360,7 @@ public class AuditService {
                 auditRepository.findPlayersForRollback(server, staffUsername, staffId);
             Date now = new Date();
             Map<String, Object> rollbackModification = new HashMap<>();
-            rollbackModification.put("type", "ROLLBACK");
+            rollbackModification.put("type", PunishmentModificationType.ROLLBACK.name());
             rollbackModification.put("timestamp", now);
             rollbackModification.put("performedBy", performerUsername);
             rollbackModification.put("reason", reason);
@@ -397,7 +399,7 @@ public class AuditService {
             if (!isWithinDateRange(punishment.getDate("issued"), startDate, endDate)) {
                 continue;
             }
-            if (AuditDocumentUtil.hasModificationType(punishment, "ROLLBACK")) {
+            if (AuditDocumentUtil.hasModificationType(punishment, PunishmentModificationType.ROLLBACK.name())) {
                 continue;
             }
 

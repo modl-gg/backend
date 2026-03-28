@@ -250,7 +250,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         List<Document> pipeline = List.of(new Document("$facet", facet));
         List<Document> results = globalTemplate().getCollection(COLLECTION_NAME)
             .aggregate(pipeline)
-            .into(new java.util.ArrayList<>());
+            .into(new ArrayList<>());
 
         if (results.isEmpty()) {
             return new MonitoringLogStats(0, 0, 0, 0, 0, 0);
