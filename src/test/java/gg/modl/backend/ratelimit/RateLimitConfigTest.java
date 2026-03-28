@@ -2,6 +2,7 @@ package gg.modl.backend.ratelimit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import gg.modl.backend.infrastructure.ratelimit.RateLimitConfig;
 import org.junit.jupiter.api.Test;
 
 class RateLimitConfigTest {

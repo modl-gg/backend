@@ -1,5 +1,7 @@
 package gg.modl.backend.role.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
@@ -7,6 +9,7 @@ import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +23,11 @@ public class PermissionService {
     private final StaffRoleMongoRepository staffRoleRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final StaffMongoRepository staffRepository;
+
+    private final Cache<String, Boolean> permissionCache = Caffeine.newBuilder()
+        .maximumSize(2000)
+        .expireAfterWrite(Duration.ofMinutes(2))
+        .build();
 
     private static final List<Permission> BASE_PERMISSIONS = List.of(
         // Admin permissions
@@ -125,7 +133,13 @@ public class PermissionService {
             return false;
         }
 
-        StaffRole role = staffRoleRepository.findByName(server, staffRole.trim()).orElse(null);
+        String trimmedRole = staffRole.trim();
+        String cacheKey = server.getId() + ":" + trimmedRole + ":" + permission;
+        return permissionCache.get(cacheKey, key -> computeHasPermission(server, trimmedRole, permission));
+    }
+
+    private boolean computeHasPermission(Server server, String staffRole, String permission) {
+        StaffRole role = staffRoleRepository.findByName(server, staffRole).orElse(null);
 
         if (role == null) {
             return false;
@@ -144,6 +158,10 @@ public class PermissionService {
             }
         }
         return false;
+    }
+
+    public void evictPermissionCache() {
+        permissionCache.invalidateAll();
     }
 
     public Optional<StaffRole> getRoleByName(Server server, String roleName) {

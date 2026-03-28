@@ -7,6 +7,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -36,6 +37,9 @@ class DashboardServiceTest {
     private PlayerMongoRepository playerRepository;
 
     @Mock
+    private PunishmentMongoRepository punishmentRepository;
+
+    @Mock
     private StaffMongoRepository staffRepository;
 
     @Mock
@@ -54,6 +58,7 @@ class DashboardServiceTest {
         dashboardService = new DashboardService(
             ticketRepository,
             playerRepository,
+            punishmentRepository,
             staffRepository,
             punishmentTypeService,
             statusCalculator
@@ -62,6 +67,7 @@ class DashboardServiceTest {
 
     @Test
     void getMinecraftStatsAggregatesRepositoryResults() {
+        when(server.getId()).thenReturn("test-server-id");
         List<String> staffUuids = List.of("uuid-1", "uuid-2");
 
         Player punishedPlayer = Player.builder()
@@ -82,7 +88,7 @@ class DashboardServiceTest {
         when(playerRepository.countOnlineByUuids(eq(server), eq(staffUuids))).thenReturn(2L);
         when(playerRepository.countOnlinePlayers(server)).thenReturn(12L);
         when(playerRepository.countAll(server)).thenReturn(50L);
-        when(playerRepository.findWithPunishmentsProjected(server)).thenReturn(List.of(punishedPlayer, inactivePlayer));
+        when(punishmentRepository.findWithPunishmentsProjected(server)).thenReturn(List.of(punishedPlayer, inactivePlayer));
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of(
             punishmentType("Mute", 1, "Social"),
             punishmentType("Ban", 2, "Administrative")

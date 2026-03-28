@@ -10,6 +10,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -76,6 +77,25 @@ public class AuthSessionMongoRepository {
 
     public Optional<AuthSessionData> findActiveByIdGlobal(String sessionId, Date now) {
         return findActiveById(tenantMongoAccess.global(), sessionId, now);
+    }
+
+    public Optional<AuthSessionData> findAndRefreshById(Server server, String sessionId, Date now, Date newExpiresAt) {
+        return findAndRefreshById(tenantMongoAccess.forServer(server), sessionId, now, newExpiresAt);
+    }
+
+    public Optional<AuthSessionData> findAndRefreshByIdGlobal(String sessionId, Date now, Date newExpiresAt) {
+        return findAndRefreshById(tenantMongoAccess.global(), sessionId, now, newExpiresAt);
+    }
+
+    private Optional<AuthSessionData> findAndRefreshById(MongoTemplate template, String sessionId, Date now, Date newExpiresAt) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(AuthSessionDataFields.ID).is(sessionId),
+            Criteria.where(AuthSessionDataFields.EXPIRES_AT).gt(now)
+        ));
+        Update update = new Update().set(AuthSessionDataFields.EXPIRES_AT, newExpiresAt);
+        return Optional.ofNullable(template.findAndModify(
+            query, update, FindAndModifyOptions.options().returnNew(true), AuthSessionData.class, CollectionName.SESSIONS
+        ));
     }
 
     public boolean refreshExpiresAt(Server server, String sessionId, Date expiresAt) {

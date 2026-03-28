@@ -3,6 +3,8 @@ package gg.modl.backend.infrastructure.filter;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV2;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.util.CookieUtil;
@@ -34,6 +36,26 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
     private final CookieUtil cookieUtil;
+
+    @Override
+    protected boolean shouldNotFilter(@NotNull HttpServletRequest request) {
+        String path = request.getRequestURI();
+        String method = request.getMethod();
+
+        if ("OPTIONS".equalsIgnoreCase(method)) {
+            return true;
+        }
+
+        if (path.startsWith("/actuator/")) {
+            return true;
+        }
+
+        if (path.startsWith(RESTMappingV1.PREFIX_MINECRAFT) || path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)) {
+            return true;
+        }
+
+        return false;
+    }
 
     @Override
     protected void doFilterInternal(@NotNull HttpServletRequest request,

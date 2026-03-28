@@ -8,7 +8,6 @@ import gg.modl.backend.database.mongo.fields.AdminUserFields;
 import java.util.Date;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -24,15 +23,13 @@ public class AdminUserMongoRepository extends AbstractGlobalMongoRepository<Admi
 
     public Optional<AdminUser> findByEmailIgnoreCase(String email) {
         String normalizedEmail = Objects.requireNonNullElse(EmailAddressUtil.normalize(email), "");
-        String escapedEmail = Pattern.quote(normalizedEmail);
-        Query query = Query.query(Criteria.where(AdminUserFields.EMAIL).regex("^" + escapedEmail + "$", "i"));
+        Query query = Query.query(Criteria.where(AdminUserFields.EMAIL).is(normalizedEmail));
         return findOne(query);
     }
 
     public void updateLastActivity(String email, String clientIp, Date lastActivityAt) {
         String normalizedEmail = Objects.requireNonNullElse(EmailAddressUtil.normalize(email), "");
-        String escapedEmail = Pattern.quote(normalizedEmail);
-        Query query = Query.query(Criteria.where(AdminUserFields.EMAIL).regex("^" + escapedEmail + "$", "i"));
+        Query query = Query.query(Criteria.where(AdminUserFields.EMAIL).is(normalizedEmail));
         Update update = new Update()
             .set(AdminUserFields.LAST_ACTIVITY_AT, lastActivityAt)
             .addToSet(AdminUserFields.LOGGED_IN_IPS, clientIp);

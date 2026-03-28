@@ -132,6 +132,7 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
 
     public Map<String, Integer> countPunishmentsByIssuerName(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
             Aggregation.unwind(PlayerFields.PUNISHMENTS),
             Aggregation.group(PlayerFields.PUNISHMENT_ISSUER_NAME).count().as("count")
         );

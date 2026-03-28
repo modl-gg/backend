@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.infrastructure.util.ServerMutationHelper;
+import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

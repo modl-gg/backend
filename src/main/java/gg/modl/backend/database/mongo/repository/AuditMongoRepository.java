@@ -66,7 +66,9 @@ public class AuditMongoRepository {
     private static final String ALIAS_FIRST_REPLY = "firstReply";
 
     public List<Staff> findAllStaff(Server server) {
-        return tenantMongoAccess.forServer(server).findAll(Staff.class, CollectionName.STAFF);
+        Query query = new Query();
+        query.fields().include(StaffFields.ID, StaffFields.USERNAME, StaffFields.EMAIL, StaffFields.ROLE, StaffFields.ASSIGNED_MINECRAFT_USERNAME, StaffFields.UPDATED_AT);
+        return tenantMongoAccess.forServer(server).find(query, Staff.class, CollectionName.STAFF);
     }
 
     public List<StaffActivityResult> aggregateLogActivityBySource(Server server, Date startDate) {
@@ -133,6 +135,7 @@ public class AuditMongoRepository {
         }
 
         Query query = Query.query(Criteria.where(StaffFields.ID).in(staffIds));
+        query.fields().include(StaffFields.ID, StaffFields.USERNAME);
         List<Staff> staffMembers = tenantMongoAccess.forServer(server).find(query, Staff.class, CollectionName.STAFF);
         Map<String, String> usernamesById = new HashMap<>();
         for (Staff staff : staffMembers) {
@@ -167,6 +170,7 @@ public class AuditMongoRepository {
             Aggregation.unwind(PlayerFields.PUNISHMENTS),
             Aggregation.match(Criteria.where(PlayerFields.PUNISHMENT_TYPE_ORDINAL).ne(0)
                 .and(PlayerFields.PUNISHMENT_DATA_STATUS).ne(STATUS_UNSTARTED)),
+            Aggregation.sort(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED),
             Aggregation.project()
                 .and(PlayerFields.PUNISHMENT_ID).as(ALIAS_PUNISHMENT_ID)
                 .and(PlayerFields.MINECRAFT_UUID).as(ALIAS_PLAYER_ID)
@@ -231,6 +235,7 @@ public class AuditMongoRepository {
         Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             new Criteria().orOperator(issuerMatch.toArray(new Criteria[0]))
         ));
+        query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID, PlayerFields.PUNISHMENTS);
 
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
     }

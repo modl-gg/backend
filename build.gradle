@@ -65,6 +65,9 @@ dependencies {
     // Replay format
     implementation 'gg.modl.replay:replay-format:1.1.0'
 
+    // Caching
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
     // Utilities
     implementation 'com.github.slugify:slugify:3.0.7'
 

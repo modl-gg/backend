@@ -2,6 +2,7 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -26,6 +27,7 @@ public class AdminServerService {
     private final ServerMongoRepository serverRepository;
     private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerProvisioningService provisioningService;
+    private final ServerService serverService;
     private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
     private static final int MAX_USAGE_BATCH_SIZE = 50;
 
@@ -124,7 +126,9 @@ public class AdminServerService {
         server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
         server.setCreatedAt(now);
         server.setUpdatedAt(now);
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        serverService.evictAllServerCaches();
+        return saved;
     }
 
     public String exportServersCsv(String plan, String status) {
@@ -148,7 +152,9 @@ public class AdminServerService {
     }
 
     public Server save(Server server) {
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        serverService.evictAllServerCaches();
+        return saved;
     }
 
     public Server updateById(String id, Map<String, Object> updateData) {

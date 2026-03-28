@@ -45,4 +45,11 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/v1/health || exit 1
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", \
+    "-XX:MaxRAMPercentage=75.0", \
+    "-XX:+UseG1GC", \
+    "-XX:MaxGCPauseMillis=100", \
+    "-XX:+UseStringDeduplication", \
+    "-XX:+ExitOnOutOfMemoryError", \
+    "-Djava.security.egd=file:/dev/./urandom", \
+    "-jar", "app.jar"]

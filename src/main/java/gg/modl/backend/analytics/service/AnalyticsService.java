@@ -1,6 +1,6 @@
 package gg.modl.backend.analytics.service;
 
-import static gg.modl.backend.util.SafeConvertUtil.toInt;
+import static gg.modl.backend.infrastructure.util.SafeConvertUtil.toInt;
 
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;

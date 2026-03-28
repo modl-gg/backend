@@ -50,9 +50,6 @@ class MinecraftPlayerServiceTest {
     private AccountLinkingService accountLinkingService;
 
     @Mock
-    private MojangApiService mojangApiService;
-
-    @Mock
     private IssuerNameResolver issuerNameResolver;
 
     @Mock
@@ -70,29 +67,9 @@ class MinecraftPlayerServiceTest {
             punishmentTypeService,
             punishmentLifecycleService,
             accountLinkingService,
-            mojangApiService,
             issuerNameResolver,
             staffRepository
         );
-    }
-
-    @Test
-    void getPlayerByMinecraftUuidFallsBackToMojang() {
-        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        UUID playerUuid = UUID.randomUUID();
-
-        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.empty());
-        when(mojangApiService.lookupByUuid(playerUuid.toString()))
-            .thenReturn(Optional.of(new MojangApiService.MojangProfile("LookupName", playerUuid)));
-
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerByMinecraftUuid(
-            server,
-            playerUuid.toString(),
-            true
-        );
-
-        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
-        assertEquals("Player found via Mojang", response.body().get("message"));
     }
 
     @Test

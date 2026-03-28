@@ -1,5 +1,7 @@
 package gg.modl.backend.dashboard.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.dashboard.dto.response.ActivityItemResponse;
 import gg.modl.backend.dashboard.dto.response.DashboardMetricsResponse;
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
@@ -24,6 +26,7 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import gg.modl.backend.player.service.PlayerDataUtils;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -45,6 +48,12 @@ public class DashboardService {
     private final StaffMongoRepository staffRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final PlayerStatusCalculator statusCalculator;
+
+    private final Cache<String, ActivePunishmentCounts> activePunishmentCountsCache = Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(60))
+        .maximumSize(500)
+        .build();
+
     private static final int RECENT_PUNISHMENT_WINDOW_DAYS = 7;
     private static final int MAX_RECENT_TICKETS_LIMIT = 20;
     private static final int MAX_RECENT_PUNISHMENTS_LIMIT = 20;
@@ -82,6 +91,10 @@ public class DashboardService {
     }
 
     private ActivePunishmentCounts countActivePunishments(Server server) {
+        return activePunishmentCountsCache.get(server.getId(), key -> computeActivePunishments(server));
+    }
+
+    private ActivePunishmentCounts computeActivePunishments(Server server) {
         Map<Integer, PunishmentType> punishmentTypesByOrdinal = buildPunishmentTypeByOrdinal(server);
         long activeBans = 0;
         long activeMutes = 0;

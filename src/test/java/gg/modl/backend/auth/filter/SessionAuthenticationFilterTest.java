@@ -10,7 +10,9 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.infrastructure.filter.SessionAuthenticationFilter;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
+import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import jakarta.servlet.http.Cookie;
@@ -39,7 +41,8 @@ class SessionAuthenticationFilterTest {
         authConfiguration.setCookieSecure(true);
         authConfiguration.setSessionCookieName("MODL_SESSION");
 
-        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
+        CookieUtil cookieUtil = new CookieUtil(authConfiguration);
+        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration, cookieUtil);
 
         Server server = new Server("Alpha", "alpha", "server_alpha", "admin@example.com", true, ServerPlan.FREE);
         AuthSessionData session = new AuthSessionData("token-123", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);
@@ -73,7 +76,8 @@ class SessionAuthenticationFilterTest {
         authConfiguration.setCookieSecure(true);
         authConfiguration.setSessionCookieName("MODL_SESSION");
 
-        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration);
+        CookieUtil cookieUtil = new CookieUtil(authConfiguration);
+        SessionAuthenticationFilter filter = new SessionAuthenticationFilter(sessionService, authConfiguration, cookieUtil);
 
         Server server = new Server("Custom", "custom", "server_custom", "admin@example.com", true, ServerPlan.FREE);
         AuthSessionData session = new AuthSessionData("token-456", "staff@example.com", new Date(), new Date(System.currentTimeMillis() + 1000), null, null);

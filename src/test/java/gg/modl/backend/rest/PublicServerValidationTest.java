@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.controller.PublicServerController;
 import org.junit.jupiter.api.BeforeEach;

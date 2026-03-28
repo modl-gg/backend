@@ -1,5 +1,6 @@
 package gg.modl.backend.punishment.controller;
 
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -26,8 +27,8 @@ public class PublicPunishmentController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        var result = punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, punishmentId)
-            .orElseThrow(() -> new gg.modl.backend.exception.ResourceNotFoundException("Punishment not found"));
+        Map<String, Object> result = punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, punishmentId)
+            .orElseThrow(() -> new ResourceNotFoundException("Punishment not found"));
         if (result.containsKey("error")) {
             return ResponseEntity.badRequest().body(result);
         }

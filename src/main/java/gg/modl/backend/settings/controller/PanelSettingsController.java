@@ -313,7 +313,7 @@ public class PanelSettingsController {
         Server server = RequestUtil.getRequestServer(request);
         String staffName = body.staffName() != null ? body.staffName() : "Staff";
 
-        var result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, staffName);
+        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, staffName);
         if (!result.success()) {
             return ResponseEntity.badRequest().body(Map.of("error", result.error()));
         }
@@ -327,7 +327,7 @@ public class PanelSettingsController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        var result = aiTicketAnalysisService.dismissAISuggestion(server, ticketId);
+        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.dismissAISuggestion(server, ticketId);
         if (!result.success()) {
             return ResponseEntity.badRequest().body(Map.of("error", result.error()));
         }

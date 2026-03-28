@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
@@ -28,6 +29,9 @@ class MinecraftSyncServiceTest {
 
     @Mock
     private PlayerMongoRepository playerRepository;
+
+    @Mock
+    private PunishmentMongoRepository punishmentRepository;
 
     @Mock
     private StaffMongoRepository staffRepository;
@@ -72,6 +76,7 @@ class MinecraftSyncServiceTest {
         minecraftSyncService = new MinecraftSyncService(
             modlProperties,
             playerRepository,
+            punishmentRepository,
             staffRepository,
             staffRoleRepository,
             ticketRepository,

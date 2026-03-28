@@ -4,7 +4,10 @@ import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import gg.modl.backend.player.service.PlayerDataUtils;
+import gg.modl.backend.player.data.IPEntry;
+import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -351,15 +354,15 @@ public class PlayerLookupService {
         return issuerNameResolver.batchResolve(ids, server);
     }
 
-    private List<gg.modl.backend.player.data.UsernameEntry> safeUsernames(Player player) {
+    private List<UsernameEntry> safeUsernames(Player player) {
         return player.getUsernames() != null ? player.getUsernames() : List.of();
     }
 
-    private List<gg.modl.backend.player.data.NoteEntry> safeNotes(Player player) {
+    private List<NoteEntry> safeNotes(Player player) {
         return player.getNotes() != null ? player.getNotes() : List.of();
     }
 
-    private List<gg.modl.backend.player.data.IPEntry> safeIpAddresses(Player player) {
+    private List<IPEntry> safeIpAddresses(Player player) {
         return player.getIpAddresses() != null ? player.getIpAddresses() : List.of();
     }
 

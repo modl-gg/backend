@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.email.EmailAddressUtil;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -13,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
@@ -63,7 +63,7 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public Optional<Staff> findByEmailIgnoreCase(Server server, String email) {
         return findOne(server, Query.query(Criteria.where(StaffFields.EMAIL)
-            .regex("^" + Pattern.quote(email) + "$", "i")));
+            .is(EmailAddressUtil.normalize(email))));
     }
 
     public boolean existsByUsernameExcludingId(Server server, String username, String excludedStaffId) {

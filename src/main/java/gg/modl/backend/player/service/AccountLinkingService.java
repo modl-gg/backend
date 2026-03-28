@@ -6,6 +6,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.dto.response.LinkedAccountResponse;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Date;
@@ -81,7 +82,7 @@ public class AccountLinkingService {
         int activeMutes = 0;
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
-                var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
+                PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
                 String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.getData());
                 if ("BAN".equals(category)) {
                     activeBans++;

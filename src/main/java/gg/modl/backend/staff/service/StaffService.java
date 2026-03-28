@@ -1,5 +1,8 @@
 package gg.modl.backend.staff.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
@@ -11,6 +14,7 @@ import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
@@ -23,6 +27,7 @@ import gg.modl.backend.staff.dto.response.AvailablePlayerResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -48,6 +53,11 @@ public class StaffService {
     private final ServerMongoRepository serverRepository;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
+
+    private final Cache<String, Optional<Staff>> staffByEmailCache = Caffeine.newBuilder()
+        .maximumSize(1000)
+        .expireAfterWrite(Duration.ofMinutes(2))
+        .build();
 
     public List<StaffResponse> getAllStaff(Server server) {
         List<Staff> staffMembers = staffRepository.findAll(server);
@@ -76,6 +86,7 @@ public class StaffService {
                 .updatedAt(new Date())
                 .build();
             staffRepository.saveEntity(server, superAdmin);
+            evictStaffByEmailCache(server, adminEmail);
             result.add(0, toStaffResponse(superAdmin, "Active"));
         }
 
@@ -132,6 +143,7 @@ public class StaffService {
             .build();
 
         staffRepository.saveEntity(server, staff);
+        evictStaffByEmailCache(server, staff.getEmail());
 
         return toStaffResponse(staff, "Active");
     }
@@ -160,6 +172,10 @@ public class StaffService {
 
         if (hasChanges) {
             staff.setUpdatedAt(new Date());
+            evictStaffByEmailCache(server, currentUserEmail);
+            if (request.email() != null) {
+                evictStaffByEmailCache(server, request.email());
+            }
             staff = staffRepository.saveEntity(server, staff);
         }
 
@@ -187,6 +203,7 @@ public class StaffService {
         }
 
         staffRepository.deleteById(server, id);
+        evictStaffByEmailCache(server, staffToRemove.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
@@ -210,6 +227,7 @@ public class StaffService {
         staff.setRole(newRole);
         staff.setUpdatedAt(new Date());
         Staff saved = staffRepository.saveEntity(server, staff);
+        evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         return Optional.of(toStaffResponse(saved, "Active"));
@@ -308,7 +326,7 @@ public class StaffService {
         return staffRoleRepository.findByNames(server, roleNames)
             .stream()
             .collect(Collectors.toMap(
-                gg.modl.backend.role.data.StaffRole::getName,
+                StaffRole::getName,
                 role -> role.getPermissions() != null ? role.getPermissions() : List.of(),
                 (left, right) -> left,
                 LinkedHashMap::new
@@ -345,6 +363,7 @@ public class StaffService {
         staff.setRole(roleName);
         staff.setUpdatedAt(new Date());
         staffRepository.saveEntity(server, staff);
+        evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
@@ -366,6 +385,7 @@ public class StaffService {
             staff.setAssignedMinecraftUsername(null);
             staff.setUpdatedAt(new Date());
             staffRepository.saveEntity(server, staff);
+            evictStaffByEmailCache(server, staff.getEmail());
             serverTimestampService.updateStaffPermissionsTimestamp(server);
             return Optional.of(toStaffResponse(staff, "Active"));
         }
@@ -391,6 +411,7 @@ public class StaffService {
         staff.setAssignedMinecraftUsername(currentUsername);
         staff.setUpdatedAt(new Date());
         staffRepository.saveEntity(server, staff);
+        evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return Optional.of(toStaffResponse(staff, "Active"));
     }
@@ -429,7 +450,9 @@ public class StaffService {
                 .createdAt(new Date())
                 .updatedAt(new Date())
                 .build();
-            return Optional.of(staffRepository.saveEntity(server, staff));
+            Staff saved = staffRepository.saveEntity(server, staff);
+            evictStaffByEmailCache(server, email);
+            return Optional.of(saved);
         }
 
         boolean hasChanges = false;
@@ -454,6 +477,7 @@ public class StaffService {
         if (hasChanges) {
             staff.setUpdatedAt(new Date());
             staff = staffRepository.saveEntity(server, staff);
+            evictStaffByEmailCache(server, email);
         }
 
         return Optional.of(staff);
@@ -488,6 +512,9 @@ public class StaffService {
             staff = staffRepository.saveEntity(server, staff);
         }
 
+        evictStaffByEmailCache(server, currentEmail);
+        evictStaffByEmailCache(server, newEmail);
+
         if (isSuperAdmin) {
             serverRepository.updateAdminEmail(server.getId(), newEmail);
         }
@@ -496,6 +523,25 @@ public class StaffService {
     }
 
     public Optional<Staff> getStaffByEmail(Server server, String email) {
-        return staffRepository.findByEmailIgnoreCase(server, email);
+        String normalized = EmailAddressUtil.normalize(email);
+        if (normalized == null) {
+            return Optional.empty();
+        }
+        String cacheKey = server.getId() + ":" + normalized;
+        return staffByEmailCache.get(cacheKey, key ->
+            staffRepository.findByEmailIgnoreCase(server, email)
+        );
+    }
+
+    public void evictStaffByEmailCache(Server server, String email) {
+        String normalized = EmailAddressUtil.normalize(email);
+        if (normalized == null) {
+            return;
+        }
+        staffByEmailCache.invalidate(server.getId() + ":" + normalized);
+    }
+
+    public void evictAllStaffCaches() {
+        staffByEmailCache.invalidateAll();
     }
 }

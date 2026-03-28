@@ -10,7 +10,6 @@ import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Pattern;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -28,7 +27,7 @@ public class WebAuthnCredentialMongoRepository extends AbstractServerMongoReposi
 
     private Query emailQuery(String email) {
         return Query.query(Criteria.where(WebAuthnCredentialFields.EMAIL)
-            .regex("^" + Pattern.quote(EmailAddressUtil.normalize(email)) + "$", "i"));
+            .is(EmailAddressUtil.normalize(email)));
     }
 
     public List<WebAuthnCredential> findByEmail(Server server, String email) {

@@ -9,6 +9,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -67,10 +68,14 @@ public class SessionService {
         return sessionRepository.findActiveByEmail(server, email, new Date());
     }
 
+    private static final long REFRESH_SKIP_THRESHOLD_MS = 10L * 60 * 1000;
+
     public Optional<AuthSessionData> findAndRefreshSession(Server server, String sessionId) {
-        Optional<AuthSessionData> sessionOpt = findValidSession(server, sessionId);
-        sessionOpt.ifPresent(session -> refreshSession(server, sessionId));
-        return sessionOpt;
+        return findAndRefreshInternal(
+            sessionId,
+            now -> sessionRepository.findActiveById(server, sessionId, now),
+            (now, newExpiresAt) -> sessionRepository.findAndRefreshById(server, sessionId, now, newExpiresAt)
+        );
     }
 
     public Optional<AuthSessionData> findValidSession(Server server, String sessionId) {
@@ -89,8 +94,27 @@ public class SessionService {
     }
 
     public Optional<AuthSessionData> findAndRefreshAdminSession(String sessionId) {
-        Optional<AuthSessionData> sessionOpt = findValidAdminSession(sessionId);
-        sessionOpt.ifPresent(session -> refreshAdminSession(sessionId));
+        return findAndRefreshInternal(
+            sessionId,
+            now -> sessionRepository.findActiveByIdGlobal(sessionId, now),
+            (now, newExpiresAt) -> sessionRepository.findAndRefreshByIdGlobal(sessionId, now, newExpiresAt)
+        );
+    }
+
+    private Optional<AuthSessionData> findAndRefreshInternal(
+        String sessionId,
+        Function<Date, Optional<AuthSessionData>> findActive,
+        BiFunction<Date, Date, Optional<AuthSessionData>> findAndRefresh
+    ) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return Optional.empty();
+        }
+        Date now = new Date();
+        Date refreshThreshold = new Date(now.getTime() + (authConfiguration.getSessionDurationSeconds() * 1000) - REFRESH_SKIP_THRESHOLD_MS);
+        Optional<AuthSessionData> sessionOpt = findActive.apply(now);
+        if (sessionOpt.isPresent() && sessionOpt.get().getExpiresAt().before(refreshThreshold)) {
+            return findAndRefresh.apply(now, nextExpiryDate(now));
+        }
         return sessionOpt;
     }
 

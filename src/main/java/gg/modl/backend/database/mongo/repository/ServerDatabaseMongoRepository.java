@@ -7,6 +7,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
 
@@ -18,7 +19,7 @@ public class ServerDatabaseMongoRepository {
 
     public Optional<ServerDatabaseStats> readStats(Server server) {
         try {
-            var template = tenantMongoAccess.forServer(server);
+            MongoTemplate template = tenantMongoAccess.forServer(server);
             long players = template.count(new Query(), CollectionName.PLAYERS);
             long tickets = template.count(new Query(), CollectionName.TICKETS);
             long logs = template.count(new Query(), CollectionName.LOGS);
@@ -38,7 +39,7 @@ public class ServerDatabaseMongoRepository {
 
     public Optional<UsageCounts> readUsageCounts(Server server) {
         try {
-            var template = tenantMongoAccess.forServer(server);
+            MongoTemplate template = tenantMongoAccess.forServer(server);
             long players = template.count(new Query(), CollectionName.PLAYERS);
             long tickets = template.count(new Query(), CollectionName.TICKETS);
             return Optional.of(new UsageCounts(players, tickets));

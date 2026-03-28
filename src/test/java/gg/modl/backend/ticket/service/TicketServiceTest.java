@@ -58,12 +58,14 @@ class TicketServiceTest {
     @Mock
     private TicketIdGenerator ticketIdGenerator;
 
+    private final TicketContentService contentService = new TicketContentService();
+
     private TicketService ticketService;
     private MinecraftTicketService minecraftTicketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator);
+        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator, contentService);
         minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 

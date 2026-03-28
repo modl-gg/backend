@@ -1,5 +1,7 @@
 package gg.modl.backend.server;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
@@ -7,8 +9,10 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
@@ -22,6 +26,11 @@ public class ServerService {
     private final ServerProvisioningService provisioningService;
     private final Set<String> appDomains;
     public static final String SERVER_DATABASE_PREFIX = "server_";
+
+    private final Cache<String, Optional<Server>> serverCache = Caffeine.newBuilder()
+        .maximumSize(500)
+        .expireAfterWrite(Duration.ofMinutes(5))
+        .build();
 
     public ServerService(
         ServerMongoRepository serverRepository,
@@ -39,6 +48,7 @@ public class ServerService {
     @Async
     public void createServer(@NotNull Server server) {
         serverRepository.saveEntity(server);
+        evictAllServerCaches();
     }
 
     public void createServer(@NotNull String serverName, @NotNull String customDomain, @NotNull String adminEmail) {
@@ -60,7 +70,9 @@ public class ServerService {
             server.setEmailVerificationToken(emailVerificationToken);
         }
 
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
+        return saved;
     }
 
     public String generateDatabaseName(@NotNull String subdomain) {
@@ -69,13 +81,23 @@ public class ServerService {
 
     @Nullable
     public Server getServerFromDomain(@NotNull String domain) {
-        String subdomain = extractSubdomain(domain);
+        return serverCache.get(domain, key -> {
+            String subdomain = extractSubdomain(key);
 
-        if (subdomain != null) {
-            return serverRepository.findByCustomDomain(subdomain).orElse(null);
-        }
+            if (subdomain != null) {
+                return serverRepository.findByCustomDomain(subdomain);
+            }
 
-        return serverRepository.findByActiveCustomDomainOverride(domain).orElse(null);
+            return serverRepository.findByActiveCustomDomainOverride(key);
+        }).orElse(null);
+    }
+
+    public void evictServerCache(@NotNull String domain) {
+        serverCache.invalidate(domain);
+    }
+
+    public void evictAllServerCaches() {
+        serverCache.invalidateAll();
     }
 
     @Nullable
@@ -161,8 +183,8 @@ public class ServerService {
         server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
         server.setUpdatedAt(new Date());
         Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
 
-        // Seed default data for the new server
         provisioningService.provision(saved);
 
         return saved;
@@ -177,14 +199,18 @@ public class ServerService {
         server.setProvisioningSignInToken(token);
         server.setProvisioningSignInTokenExpiresAt(expiresAt);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
+        return saved;
     }
 
     public Server clearAutoLoginToken(@NotNull Server server) {
         server.setProvisioningSignInToken(null);
         server.setProvisioningSignInTokenExpiresAt(null);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
+        return saved;
     }
 
     @Nullable
@@ -195,13 +221,17 @@ public class ServerService {
     public Server setCliSetupToken(@NotNull Server server, @NotNull String token) {
         server.setCliSetupToken(token);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
+        return saved;
     }
 
     public Server clearCliSetupToken(@NotNull Server server) {
         server.setCliSetupToken(null);
         server.setUpdatedAt(new Date());
-        return serverRepository.saveEntity(server);
+        Server saved = serverRepository.saveEntity(server);
+        evictAllServerCaches();
+        return saved;
     }
 
     public record ServerExistResult(boolean emailMatch, boolean nameMatch, boolean domainMatch) {}

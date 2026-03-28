@@ -10,8 +10,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -44,7 +45,10 @@ class PunishmentServiceTest {
     private PlayerMongoRepository playerRepository;
 
     @Mock
-    private TicketMongoRepository ticketRepository;
+    private PunishmentMongoRepository punishmentRepository;
+
+    @Mock
+    private TicketService ticketService;
 
     @Mock
     private PlayerStatusCalculator statusCalculator;
@@ -54,6 +58,9 @@ class PunishmentServiceTest {
 
     @Mock
     private OffenderThresholdSettingsService thresholdSettingsService;
+
+    @Mock
+    private PunishmentDurationCalculator durationCalculator;
 
     @Mock
     private IssuerNameResolver issuerNameResolver;
@@ -75,10 +82,12 @@ class PunishmentServiceTest {
     void setUp() {
         punishmentLifecycleService = new PunishmentLifecycleService(
             playerRepository,
-            ticketRepository,
+            punishmentRepository,
+            ticketService,
             statusCalculator,
             punishmentTypeService,
             thresholdSettingsService,
+            durationCalculator,
             issuerNameResolver,
             staffRepository,
             punishmentQueryService,
@@ -86,7 +95,8 @@ class PunishmentServiceTest {
         );
         punishmentMutationService = new PunishmentMutationService(
             playerRepository,
-            ticketRepository,
+            punishmentRepository,
+            ticketService,
             issuerNameResolver,
             staffRepository,
             punishmentQueryService,
@@ -126,7 +136,7 @@ class PunishmentServiceTest {
 
         assertEquals(PunishmentOperationStatus.SUCCESS, result.status());
         assertEquals("Punishment acknowledged", result.message());
-        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertNotNull(updatedPunishment.getStarted());
         assertNull(updatedPunishment.getData().get("status"));
@@ -179,7 +189,7 @@ class PunishmentServiceTest {
         String punishmentId = punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         assertNotNull(punishmentId);
-        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
         assertEquals(1, player.getPunishments().size());
         Punishment createdPunishment = player.getPunishments().get(0);
         assertEquals(punishmentId, createdPunishment.getId());
@@ -213,7 +223,7 @@ class PunishmentServiceTest {
 
         punishmentLifecycleService.systemPardonPunishment(server, playerUuid, "punish-1", "Auto-pardoned");
 
-        verify(playerRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals(1, updatedPunishment.getModifications().size());
         PunishmentModification modification = updatedPunishment.getModifications().get(0);
@@ -243,13 +253,13 @@ class PunishmentServiceTest {
             .punishments(new ArrayList<>(List.of(linkedBan)))
             .build();
 
-        when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
+        when(punishmentRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(true);
 
         int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(1, updatedCount);
-        verify(playerRepository).replacePunishments(eq("db"), eq(player));
+        verify(punishmentRepository).replacePunishments(eq("db"), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals("SYSTEM_PARDON", updatedPunishment.getModifications().get(0).type());
     }
@@ -275,12 +285,12 @@ class PunishmentServiceTest {
             .punishments(new ArrayList<>(List.of(linkedBan)))
             .build();
 
-        when(playerRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
+        when(punishmentRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(false);
 
         int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
 
         assertEquals(0, updatedCount);
-        verify(playerRepository, never()).replacePunishments(eq("db"), any(Player.class));
+        verify(punishmentRepository, never()).replacePunishments(eq("db"), any(Player.class));
     }
 }

@@ -11,7 +11,7 @@ import com.stripe.model.checkout.Session;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.infrastructure.util.ServerMutationHelper;
+import gg.modl.backend.server.service.ServerMutationHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

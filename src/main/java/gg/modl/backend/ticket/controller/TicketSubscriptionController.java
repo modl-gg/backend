@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.UnauthorizedException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -57,7 +58,7 @@ public class TicketSubscriptionController {
         }
 
         if (!subscriptionService.unsubscribe(server, staffEmail, ticketId)) {
-            throw new gg.modl.backend.exception.ResourceNotFoundException("Subscription not found");
+            throw new ResourceNotFoundException("Subscription not found");
         }
         return ResponseEntity.ok(Map.of("message", "Successfully unsubscribed from ticket"));
     }

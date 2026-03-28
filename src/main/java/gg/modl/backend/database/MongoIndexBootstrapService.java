@@ -1,6 +1,7 @@
 package gg.modl.backend.database;
 
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.List;
@@ -53,6 +54,10 @@ public class MongoIndexBootstrapService {
 
         ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
             IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
+        ));
+
+        ensureIndexes(template, "admin_users", List.of(
+            IndexSpec.standard("uidx_admin_users_email", doc("email", 1), true, false)
         ));
     }
 
@@ -168,6 +173,18 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_security_events_severity_timestamp", doc("severity", 1).append("timestamp", -1), false, false)
         ));
 
+        ensureIndexes(template, CollectionName.CHAT_LOGS, List.of(
+            IndexSpec.standard("idx_chat_logs_uuid_timestamp", doc("uuid", 1).append("timestamp", -1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.COMMAND_LOGS, List.of(
+            IndexSpec.standard("idx_command_logs_uuid_timestamp", doc("uuid", 1).append("timestamp", -1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.LOGS, List.of(
+            IndexSpec.standard("idx_logs_created_desc", doc("created", -1), false, false)
+        ));
+
         ensureIndexes(template, CollectionName.MIGRATIONS, List.of(
             IndexSpec.standard("idx_migrations_status_startedAt", doc("status", 1).append("startedAt", -1), false, false)
         ));
@@ -205,7 +222,7 @@ public class MongoIndexBootstrapService {
         if (value instanceof Number number) {
             return number.intValue() < 0 ? Sort.Direction.DESC : Sort.Direction.ASC;
         }
-        throw new gg.modl.backend.exception.ValidationException("Unsupported index direction value: " + value);
+        throw new ValidationException("Unsupported index direction value: " + value);
     }
 
     private Document doc(String field, int direction) {

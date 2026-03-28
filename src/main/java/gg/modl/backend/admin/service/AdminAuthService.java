@@ -47,7 +47,7 @@ public class AdminAuthService {
             .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
     }
 
-    String extractSessionId(HttpServletRequest request) {
+    public String extractSessionId(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
             return null;
@@ -60,7 +60,7 @@ public class AdminAuthService {
         return null;
     }
 
-    Set<String> extractSessionIds(HttpServletRequest request) {
+    public Set<String> extractSessionIds(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
             return Set.of();

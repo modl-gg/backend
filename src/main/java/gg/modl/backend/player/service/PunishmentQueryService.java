@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
@@ -500,7 +501,7 @@ public class PunishmentQueryService {
             response.put("existingAppeal", existingAppeal);
         }
 
-        var punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
+        Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
         response.put("appealForm", punishmentType.map(pt -> pt.getAppealForm()).orElse(null));
 
         return Optional.of(response);
@@ -508,7 +509,7 @@ public class PunishmentQueryService {
 
     public PunishmentResponse getPunishmentById(Server server, String punishmentId) {
         PunishmentContext context = findPunishmentContext(server, punishmentId)
-            .orElseThrow(() -> new gg.modl.backend.exception.ResourceNotFoundException("Punishment not found"));
+            .orElseThrow(() -> new ResourceNotFoundException("Punishment not found"));
         return toPunishmentResponseWithPlayer(server, context.punishment(), context.player());
     }
 

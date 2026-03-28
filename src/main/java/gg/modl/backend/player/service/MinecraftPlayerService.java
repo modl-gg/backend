@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
 import gg.modl.backend.server.data.Server;
@@ -229,7 +230,7 @@ public class MinecraftPlayerService {
             .toList();
     }
 
-    private List<gg.modl.backend.player.data.UsernameEntry> safeUsernames(Player player) {
+    private List<UsernameEntry> safeUsernames(Player player) {
         return player.getUsernames() != null ? player.getUsernames() : List.of();
     }
 

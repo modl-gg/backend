@@ -98,6 +98,7 @@ public class RoleService {
         role.setPermissions(permissions != null ? new ArrayList<>(permissions) : new ArrayList<>());
         role.setUpdatedAt(new Date());
         staffRoleRepository.saveEntity(server, role);
+        permissionService.evictPermissionCache();
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
@@ -235,6 +236,7 @@ public class RoleService {
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
         updated = staffRoleRepository.saveEntity(server, updated);
+        permissionService.evictPermissionCache();
 
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
@@ -272,7 +274,11 @@ public class RoleService {
             throw new ConflictException("Cannot delete role that is currently assigned to staff members");
         }
 
-        return staffRoleRepository.deleteById(server, id);
+        boolean deleted = staffRoleRepository.deleteById(server, id);
+        if (deleted) {
+            permissionService.evictPermissionCache();
+        }
+        return deleted;
     }
 
     public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleName, boolean isSuperAdmin) {
@@ -384,5 +390,6 @@ public class RoleService {
         for (StaffRole role : defaultRoles) {
             staffRoleRepository.upsertRole(server, role);
         }
+        permissionService.evictPermissionCache();
     }
 }
