@@ -25,6 +25,7 @@ import gg.modl.backend.ticket.dto.request.UpdateTicketRequest;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import gg.modl.backend.util.MongoKeyUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -208,7 +209,7 @@ public class TicketService {
             .replies(replies)
             .notes(new ArrayList<>())
             .chatMessages(request.chatMessages() == null || request.chatMessages().isEmpty() ? null : contentService.sanitizeChatMessages(request.chatMessages()))
-            .formData(contentService.sanitizeMapKeysForMongo(request.formData()))
+            .formData(MongoKeyUtils.sanitizeKeys(request.formData()))
             .data(data)
             .locked(ticketStatus.isTerminal())
             .priority(TicketPriority.resolveOrDefault(request.priority()))
@@ -432,7 +433,11 @@ public class TicketService {
         boolean hasDataUpdates = false;
 
         if (request.formData() != null && !request.formData().isEmpty()) {
-            existingData.putAll(contentService.sanitizeFormDataForDataStore(request.formData()));
+            Map<String, Object> sanitizedFormData = MongoKeyUtils.sanitizeKeys(request.formData());
+
+            existingData.putAll(sanitizedFormData);
+            existingData.remove("creatorEmail");
+            existingData.remove("creatorIdentifier");
             hasDataUpdates = true;
 
             Object emailAuthValue = request.formData().get("emailAuthEnabled");
@@ -448,7 +453,7 @@ public class TicketService {
                 existingData.put("emailAuthEnabled", true);
             }
 
-            ticket.setFormData(contentService.sanitizeMapKeysForMongo(request.formData()));
+            ticket.setFormData(sanitizedFormData);
         }
 
         String creatorEmail = contentService.resolveCreatorEmail(request);
@@ -467,7 +472,7 @@ public class TicketService {
         }
 
         if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
-            String content = contentService.buildFormDataContent(formDataProcessing.formData());
+            String content = contentService.buildFormDataContent(formDataProcessing.formData(), request.fieldLabels());
             if (!content.isBlank() || !initialAttachments.isEmpty()) {
                 TicketReply initialReply = TicketReply.builder()
                     .id(UUID.randomUUID().toString())

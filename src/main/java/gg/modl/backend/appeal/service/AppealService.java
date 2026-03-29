@@ -3,6 +3,7 @@ package gg.modl.backend.appeal.service;
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
+import gg.modl.backend.util.MongoKeyUtils;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -110,7 +111,10 @@ public class AppealService {
         data.put("contactEmail", request.email());
 
         if (request.additionalData() != null) {
-            data.putAll(request.additionalData());
+            Map<String, Object> sanitized = MongoKeyUtils.sanitizeKeys(request.additionalData());
+            if (sanitized != null) {
+                data.putAll(sanitized);
+            }
         }
 
         String username = PlayerDataUtils.extractLatestUsername(player.getUsernames());
@@ -187,9 +191,7 @@ public class AppealService {
             for (Map.Entry<String, Object> entry : request.additionalData().entrySet()) {
                 Object value = entry.getValue();
                 if (value != null) {
-                    String fieldLabel = request.fieldLabels() != null && request.fieldLabels().containsKey(entry.getKey())
-                                        ? request.fieldLabels().get(entry.getKey())
-                                        : formatFieldLabel(entry.getKey());
+                    String fieldLabel = MongoKeyUtils.resolveFieldLabel(entry.getKey(), request.fieldLabels());
 
                     if (value instanceof List<?> list) {
                         if (!list.isEmpty()) {
@@ -214,11 +216,6 @@ public class AppealService {
         }
 
         return content.toString();
-    }
-
-    private String formatFieldLabel(String key) {
-        return key.replaceAll("([A-Z])", " $1")
-            .replaceFirst("^.", String.valueOf(Character.toUpperCase(key.charAt(0))));
     }
 
     public TicketReply addReply(Server server, String appealId, AddAppealReplyRequest request) {

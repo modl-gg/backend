@@ -247,6 +247,23 @@ public class AuditMongoRepository {
         tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
     }
 
+    public List<Document> findPlayersForBulkAction(Server server, List<Integer> typeOrdinals) {
+        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+            Criteria.where(PunishmentFields.TYPE_ORDINAL).in(typeOrdinals)
+        ));
+        return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
+    }
+
+    public void appendPunishmentModificationWithData(Server server, String playerId, String punishmentId,
+            Map<String, Object> modification, Map<String, Object> dataUpdates) {
+        Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification);
+        for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
+            update.set("punishments.$.data." + entry.getKey(), entry.getValue());
+        }
+        Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
+        tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
+    }
+
     public List<Document> aggregatePunishmentDetails(Server server, List<String> usernames, String staffId, Date startDate) {
         Criteria criteria = buildIssuerCriteria(usernames, staffId);
         if (startDate != null) {

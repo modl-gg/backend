@@ -4,6 +4,7 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
+import gg.modl.backend.util.MongoKeyUtils;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,7 +54,7 @@ public class TicketContentService {
             content.append("\n");
         }
 
-        String formDataContent = buildFormDataContent(formDataForContent);
+        String formDataContent = buildFormDataContent(formDataForContent, request.fieldLabels());
         if (!formDataContent.isEmpty()) {
             content.append(formDataContent);
         }
@@ -62,6 +63,10 @@ public class TicketContentService {
     }
 
     public String buildFormDataContent(Map<String, Object> formData) {
+        return buildFormDataContent(formData, null);
+    }
+
+    public String buildFormDataContent(Map<String, Object> formData, Map<String, String> fieldLabels) {
         if (formData == null || formData.isEmpty()) {
             return "";
         }
@@ -69,7 +74,7 @@ public class TicketContentService {
         StringBuilder content = new StringBuilder();
         for (Map.Entry<String, Object> entry : formData.entrySet()) {
             if (entry.getValue() != null && !entry.getValue().toString().isBlank()) {
-                String formattedKey = formatFormDataKey(entry.getKey());
+                String formattedKey = MongoKeyUtils.resolveFieldLabel(entry.getKey(), fieldLabels);
                 content.append("**").append(formattedKey).append(":** ").append(entry.getValue()).append("\n\n");
             }
         }
@@ -168,25 +173,15 @@ public class TicketContentService {
         return dedupeAttachments(merged);
     }
 
-    @SuppressWarnings("unchecked")
     public Map<String, Object> sanitizeMapKeysForMongo(Map<String, Object> map) {
-        if (map == null) {
-            return null;
-        }
-        Map<String, Object> sanitized = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> entry : map.entrySet()) {
-            String key = entry.getKey().replace('.', '\uFF0E');
-            Object value = entry.getValue();
-            if (value instanceof Map) {
-                value = sanitizeMapKeysForMongo((Map<String, Object>) value);
-            }
-            sanitized.put(key, value);
-        }
-        return sanitized;
+        return MongoKeyUtils.sanitizeKeys(map);
     }
 
     public Map<String, Object> sanitizeFormDataForDataStore(Map<String, Object> formData) {
-        Map<String, Object> sanitized = new LinkedHashMap<>(formData);
+        Map<String, Object> sanitized = MongoKeyUtils.sanitizeKeys(formData);
+        if (sanitized == null) {
+            return new LinkedHashMap<>();
+        }
         sanitized.remove("creatorEmail");
         sanitized.remove("creatorIdentifier");
         return sanitized;
@@ -324,41 +319,6 @@ public class TicketContentService {
             case "pdf" -> "application/pdf";
             default -> "application/octet-stream";
         };
-    }
-
-    private String formatFormDataKey(String key) {
-        if (key == null || key.isBlank()) {
-            return key;
-        }
-
-        String formatted = key.replace("_", " ");
-
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < formatted.length(); i++) {
-            char c = formatted.charAt(i);
-            if (i > 0 && Character.isUpperCase(c) && !Character.isWhitespace(formatted.charAt(i - 1))) {
-                result.append(' ');
-            }
-            result.append(c);
-        }
-        formatted = result.toString();
-
-        String[] words = formatted.split("\\s+");
-        StringBuilder titleCase = new StringBuilder();
-        for (int i = 0; i < words.length; i++) {
-            String word = words[i];
-            if (!word.isEmpty()) {
-                titleCase.append(Character.toUpperCase(word.charAt(0)));
-                if (word.length() > 1) {
-                    titleCase.append(word.substring(1).toLowerCase());
-                }
-                if (i < words.length - 1) {
-                    titleCase.append(" ");
-                }
-            }
-        }
-
-        return titleCase.toString();
     }
 
     public record FormDataProcessingResult(Map<String, Object> formData, List<Object> attachments) {}

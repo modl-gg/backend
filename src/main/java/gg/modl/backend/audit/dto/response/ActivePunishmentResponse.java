@@ -8,6 +8,7 @@ public record ActivePunishmentResponse(
     String playerId,
     String playerName,
     String type,
+    int typeOrdinal,
     String category,
     String staffName,
     String reason,

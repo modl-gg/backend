@@ -11,6 +11,7 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -18,6 +19,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -40,6 +42,7 @@ public class AuditService {
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
     private final PlayerStatusCalculator statusCalculator;
+    private final PunishmentLifecycleService punishmentLifecycleService;
 
     public List<PunishmentAuditResponse> getPunishments(
         Server server, int limit, boolean canRollbackOnly) {
@@ -152,6 +155,7 @@ public class AuditService {
             row.getString("playerId"),
             AuditDocumentUtil.extractPlayerNameFromDoc(row),
             typeName,
+            typeOrdinal,
             category,
             resolveIssuerFromDoc(
                 row.getString("issuerId"),
@@ -458,5 +462,143 @@ public class AuditService {
             .orElse(null);
         return rollbackPunishmentsInternal(
             server, staffUsername, staffId, startDate, endDate, reason, performerUsername);
+    }
+
+    public int bulkPardonByType(
+        Server server, List<Integer> typeOrdinals, String reason, String performerUsername) {
+        return processBulkPunishmentAction(server, typeOrdinals, reason, performerUsername,
+            "bulk pardon", (ctx) -> {
+                if (hasModificationType(ctx.punishmentDoc, "MANUAL_PARDON", "APPEAL_ACCEPT", "SYSTEM_PARDON")) {
+                    return false;
+                }
+
+                Map<String, Object> modification = buildModification(
+                    "MANUAL_PARDON", ctx.now, performerUsername, reason, null);
+                auditRepository.appendPunishmentModificationWithData(
+                    server, ctx.playerId, ctx.punishmentId, modification, Map.of("status", "Pardoned"));
+
+                AuditLog pardonLog = buildBulkAuditLog(ctx, performerUsername,
+                    "Bulk pardon: " + ctx.typeName + " for " + ctx.playerName,
+                    Map.of("pardonReason", reason, "bulkPardon", true));
+                auditRepository.saveAuditLog(server, pardonLog);
+
+                Map<String, Object> data = ctx.punishmentDoc.get("data", Document.class);
+                if (data != null && Boolean.TRUE.equals(data.get("altBlocking"))) {
+                    punishmentLifecycleService.cascadePardonLinkedBans(server, ctx.punishmentId);
+                }
+                return true;
+            });
+    }
+
+    public int bulkSetExpirationByType(
+        Server server, List<Integer> typeOrdinals, long newDurationMs,
+        String reason, String performerUsername) {
+        Long effectiveDuration = newDurationMs <= 0 ? null : newDurationMs;
+
+        return processBulkPunishmentAction(server, typeOrdinals, reason, performerUsername,
+            "bulk set expiration", (ctx) -> {
+                Map<String, Object> modification = buildModification(
+                    "MANUAL_DURATION_CHANGE", ctx.now, performerUsername, reason, effectiveDuration);
+                auditRepository.appendPunishmentModificationWithData(
+                    server, ctx.playerId, ctx.punishmentId, modification, Map.of("duration", effectiveDuration));
+
+                AuditLog durationLog = buildBulkAuditLog(ctx, performerUsername,
+                    "Bulk duration change: " + ctx.typeName + " for " + ctx.playerName,
+                    Map.of("reason", reason, "newDurationMs", newDurationMs, "bulkDurationChange", true));
+                auditRepository.saveAuditLog(server, durationLog);
+                return true;
+            });
+    }
+
+    private int processBulkPunishmentAction(
+        Server server, List<Integer> typeOrdinals, String reason,
+        String performerUsername, String operationName, BulkPunishmentAction action) {
+        try {
+            List<Document> players = auditRepository.findPlayersForBulkAction(server, typeOrdinals);
+            Date now = new Date();
+            int count = 0;
+
+            Map<Integer, String> typeNameCache = new HashMap<>();
+            for (int ordinal : typeOrdinals) {
+                typeNameCache.put(ordinal, punishmentTypeService.getPunishmentTypeName(server, ordinal));
+            }
+
+            for (Document player : players) {
+                String playerId = player.getString("_id");
+                List<Document> punishments = player.getList("punishments", Document.class);
+                if (punishments == null) {
+                    continue;
+                }
+
+                String playerName = extractPlayerNameFromDoc(player);
+
+                for (Document punishmentDoc : punishments) {
+                    int typeOrdinal = punishmentDoc.getInteger("typeOrdinal", 0);
+                    if (!typeOrdinals.contains(typeOrdinal)) {
+                        continue;
+                    }
+
+                    Punishment punishment = reconstructPunishment(punishmentDoc);
+                    if (!statusCalculator.isPunishmentActive(punishment)) {
+                        continue;
+                    }
+
+                    String punishmentId = punishmentDoc.getString("_id");
+                    String typeName = typeNameCache.getOrDefault(typeOrdinal, "Unknown");
+
+                    BulkActionContext ctx = new BulkActionContext(
+                        playerId, playerName, punishmentId, punishmentDoc, typeName, typeOrdinal, now);
+                    if (action.apply(ctx)) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        } catch (Exception e) {
+            log.error("Error during {}", operationName, e);
+            throw new ExternalServiceException("Failed to " + operationName, e);
+        }
+    }
+
+    private Map<String, Object> buildModification(
+        String type, Date now, String issuerName, String reason, Long effectiveDuration) {
+        Map<String, Object> modification = new HashMap<>();
+        modification.put("id", IdGenerator.generateShortId());
+        modification.put("type", type);
+        modification.put("date", now);
+        modification.put("issuerName", issuerName);
+        modification.put("reason", reason);
+        if (effectiveDuration != null) {
+            modification.put("effectiveDuration", effectiveDuration);
+        }
+        return modification;
+    }
+
+    private AuditLog buildBulkAuditLog(
+        BulkActionContext ctx, String performerUsername,
+        String description, Map<String, Object> extraMetadata) {
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put("punishmentId", ctx.punishmentId != null ? ctx.punishmentId : "");
+        metadata.put("playerId", ctx.playerId != null ? ctx.playerId : "");
+        metadata.put("playerName", ctx.playerName);
+        metadata.put("punishmentType", ctx.typeName);
+        metadata.putAll(extraMetadata);
+
+        return AuditLog.builder()
+            .created(ctx.now)
+            .level("moderation")
+            .source(performerUsername)
+            .description(description)
+            .metadata(metadata)
+            .build();
+    }
+
+    private record BulkActionContext(
+        String playerId, String playerName, String punishmentId,
+        Document punishmentDoc, String typeName, int typeOrdinal, Date now) {}
+
+    @FunctionalInterface
+    private interface BulkPunishmentAction {
+        boolean apply(BulkActionContext ctx);
     }
 }

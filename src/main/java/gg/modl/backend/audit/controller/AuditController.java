@@ -1,7 +1,9 @@
 package gg.modl.backend.audit.controller;
 
+import gg.modl.backend.audit.dto.request.BulkPunishmentActionRequest;
 import gg.modl.backend.audit.dto.request.DateRangeRollbackRequest;
 import gg.modl.backend.audit.dto.request.RollbackRequest;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
@@ -10,6 +12,7 @@ import gg.modl.backend.audit.dto.response.StaffPerformanceResponse;
 import gg.modl.backend.audit.service.AuditService;
 import gg.modl.backend.audit.service.StaffPerformanceService;
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -39,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuditController {
     private final AuditService auditService;
     private final StaffPerformanceService staffPerformanceService;
+    private final PermissionService permissionService;
 
     private static final Set<String> ALLOWED_TABLES = Set.of(
         CollectionName.MODL_SERVERS,
@@ -167,6 +171,56 @@ public class AuditController {
             "count", count,
             "message", "Successfully rolled back " + count + " punishments"
         ));
+    }
+
+    @PostMapping("/punishments/bulk-pardon")
+    public ResponseEntity<?> bulkPardon(
+        @RequestBody @Valid BulkPunishmentActionRequest actionRequest,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
+
+        String performerUsername = RequestUtil.getCurrentUsername(request);
+        int count = auditService.bulkPardonByType(
+            server, actionRequest.typeOrdinals(), actionRequest.reason(), performerUsername);
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "count", count,
+            "message", "Successfully pardoned " + count + " punishments"
+        ));
+    }
+
+    @PostMapping("/punishments/bulk-set-expiration")
+    public ResponseEntity<?> bulkSetExpiration(
+        @RequestBody @Valid BulkPunishmentActionRequest actionRequest,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
+
+        if (actionRequest.newDurationMs() == null) {
+            throw new ValidationException("newDurationMs is required for set-expiration");
+        }
+
+        String performerUsername = RequestUtil.getCurrentUsername(request);
+        int count = auditService.bulkSetExpirationByType(
+            server, actionRequest.typeOrdinals(), actionRequest.newDurationMs(),
+            actionRequest.reason(), performerUsername);
+
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "count", count,
+            "message", "Successfully updated expiration for " + count + " punishments"
+        ));
+    }
+
+    private void requireSuperAdmin(Server server, HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            throw new ForbiddenException("Only super admins can perform this action");
+        }
     }
 
     @GetMapping("/database/{table}")

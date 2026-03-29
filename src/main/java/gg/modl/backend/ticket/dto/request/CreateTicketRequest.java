@@ -28,6 +28,7 @@ public record CreateTicketRequest(
     @Nullable @Pattern(regexp = "(?i)^(low|minor|normal|medium|default|standard|high|urgent|critical|highest)$")
     String priority,
     @Nullable @Size(max = RequestValidationLimits.TICKET_CREATOR_IDENTIFIER_MAX_LENGTH) String creatorIdentifier,
-    @Nullable Boolean emailAuthEnabled
+    @Nullable Boolean emailAuthEnabled,
+    @Nullable @Size(max = RequestValidationLimits.TICKET_FORM_DATA_MAX_ENTRIES) Map<String, String> fieldLabels
 ) {
 }
