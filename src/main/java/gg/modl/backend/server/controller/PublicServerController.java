@@ -31,7 +31,8 @@ public class PublicServerController {
         "root", "internal", "administrator", "mod",
         "beta", "dev", "portal", "dashboard",
         "modl", "support", "help", "email",
-        "docs", "secure", "alpha", "cdn"
+        "docs", "secure", "alpha", "cdn",
+        "nexus", "replay", "replays"
     );
 
     @PostMapping("/register")
