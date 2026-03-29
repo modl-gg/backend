@@ -468,7 +468,7 @@ public class AuditService {
         Server server, List<Integer> typeOrdinals, String reason, String performerUsername) {
         return processBulkPunishmentAction(server, typeOrdinals, reason, performerUsername,
             "bulk pardon", (ctx) -> {
-                if (hasModificationType(ctx.punishmentDoc, "MANUAL_PARDON", "APPEAL_ACCEPT", "SYSTEM_PARDON")) {
+                if (AuditDocumentUtil.hasModificationType(ctx.punishmentDoc, "MANUAL_PARDON", "APPEAL_ACCEPT", "SYSTEM_PARDON")) {
                     return false;
                 }
 
@@ -530,7 +530,7 @@ public class AuditService {
                     continue;
                 }
 
-                String playerName = extractPlayerNameFromDoc(player);
+                String playerName = AuditDocumentUtil.extractPlayerNameFromDoc(player);
 
                 for (Document punishmentDoc : punishments) {
                     int typeOrdinal = punishmentDoc.getInteger("typeOrdinal", 0);

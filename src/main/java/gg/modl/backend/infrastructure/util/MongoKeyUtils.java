@@ -1,4 +1,4 @@
-package gg.modl.backend.util;
+package gg.modl.backend.infrastructure.util;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

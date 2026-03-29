@@ -3,7 +3,7 @@ package gg.modl.backend.appeal.service;
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
-import gg.modl.backend.util.MongoKeyUtils;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;

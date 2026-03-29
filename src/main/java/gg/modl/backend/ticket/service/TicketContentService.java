@@ -4,7 +4,7 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
-import gg.modl.backend.util.MongoKeyUtils;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;

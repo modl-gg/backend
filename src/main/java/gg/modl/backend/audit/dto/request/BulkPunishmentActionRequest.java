@@ -1,6 +1,6 @@
 package gg.modl.backend.audit.dto.request;
 
-import gg.modl.backend.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.util.List;

@@ -248,7 +248,7 @@ public class AuditMongoRepository {
     }
 
     public List<Document> findPlayersForBulkAction(Server server, List<Integer> typeOrdinals) {
-        Query query = Query.query(MongoQueries.where(PlayerFields.PUNISHMENTS).elemMatch(
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where(PunishmentFields.TYPE_ORDINAL).in(typeOrdinals)
         ));
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
@@ -260,7 +260,7 @@ public class AuditMongoRepository {
         for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
             update.set("punishments.$.data." + entry.getKey(), entry.getValue());
         }
-        Query query = Query.query(MongoQueries.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
+        Query query = Query.query(Criteria.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
         tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
     }
 

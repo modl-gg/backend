@@ -25,7 +25,7 @@ import gg.modl.backend.ticket.dto.request.UpdateTicketRequest;
 import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
-import gg.modl.backend.util.MongoKeyUtils;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
