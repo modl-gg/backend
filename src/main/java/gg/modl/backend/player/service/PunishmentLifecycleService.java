@@ -40,6 +40,7 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import gg.modl.backend.settings.service.WebhookSettingsService;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -57,6 +58,7 @@ public class PunishmentLifecycleService {
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
     private final PermissionService permissionService;
+    private final WebhookSettingsService webhookSettingsService;
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
         if (email == null) {
@@ -266,6 +268,27 @@ public class PunishmentLifecycleService {
 
         player.getPunishments().add(punishment);
         persistPlayerPunishments(server, player);
+
+        String playerName = PlayerDataUtils.extractLatestUsername(player.getUsernames());
+        String typeName = newPunishmentType != null ? newPunishmentType.getName() : "Unknown";
+        String severity = request.severity() != null ? request.severity() : "";
+        String reason = request.reason() != null ? request.reason() : "";
+        String duration = calculatedDuration != null
+            ? PunishmentMapper.formatDuration(calculatedDuration, calculatedDuration < 0)
+            : "Permanent";
+        String issuerDisplay = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
+        String ticketIds = request.attachedTicketIds() != null ? String.join(", ", request.attachedTicketIds()) : "";
+
+        webhookSettingsService.sendPunishmentCreatedWebhook(server, Map.of(
+            "id", punishmentId,
+            "playerName", playerName,
+            "type", typeName,
+            "severity", severity,
+            "reason", reason,
+            "duration", duration,
+            "issuer", issuerDisplay,
+            "ticketId", ticketIds
+        ));
 
         if (request.attachedTicketIds() != null && !request.attachedTicketIds().isEmpty()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);

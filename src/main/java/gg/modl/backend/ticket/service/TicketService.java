@@ -10,6 +10,7 @@ import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.data.TicketFormSettings;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
 import gg.modl.backend.settings.service.TicketFormSettingsService;
+import gg.modl.backend.settings.service.WebhookSettingsService;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
@@ -51,6 +52,7 @@ public class TicketService {
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
     private final TicketContentService contentService;
+    private final WebhookSettingsService webhookSettingsService;
     private static final String AVATAR_URL_FORMAT = "https://mc-heads.net/avatar/%s/32";
 
     public TicketResponse getTicketById(Server server, String ticketId) {
@@ -219,6 +221,15 @@ public class TicketService {
             .build();
 
         ticketRepository.saveEntity(server, ticket);
+
+        webhookSettingsService.sendTicketCreatedWebhook(server, Map.of(
+            "id", ticketId,
+            "type", ticketCategory.getDisplayName(),
+            "title", subject,
+            "priority", ticket.getPriority() != null ? ticket.getPriority().name() : "Normal",
+            "category", ticketCategory.getDisplayName(),
+            "submittedBy", creatorDisplayName
+        ));
 
         return toTicketResponse(server, ticket);
     }

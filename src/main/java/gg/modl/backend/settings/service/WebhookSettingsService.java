@@ -5,13 +5,17 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.data.WebhookSettings;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -23,6 +27,7 @@ public class WebhookSettingsService {
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private static final String SETTINGS_TYPE_WEBHOOKS = "webhookSettings";
+    private static final int DEFAULT_EMBED_COLOR = 3447003;
 
     public WebhookSettings updateWebhookSettings(Server server, WebhookSettings newSettings) {
         @SuppressWarnings("unchecked")
@@ -136,7 +141,7 @@ public class WebhookSettingsService {
                 "embeds", List.of(Map.of(
                     "title", "Webhook Test",
                     "description", "This is a test message from modl Panel to verify your webhook is working correctly.",
-                    "color", 3447003
+                    "color", DEFAULT_EMBED_COLOR
                 ))
             );
 
@@ -147,6 +152,115 @@ public class WebhookSettingsService {
         } catch (Exception e) {
             log.error("Webhook test failed", e);
             return false;
+        }
+    }
+
+    @Async
+    public void sendTicketCreatedWebhook(Server server, Map<String, String> variables) {
+        sendEventWebhook(server, variables,
+            s -> s.getNotifications() != null && s.getNotifications().isNewTickets(),
+            s -> s.getEmbedTemplates() != null ? s.getEmbedTemplates().getNewTickets() : null);
+    }
+
+    @Async
+    public void sendPunishmentCreatedWebhook(Server server, Map<String, String> variables) {
+        sendEventWebhook(server, variables,
+            s -> s.getNotifications() != null && s.getNotifications().isNewPunishments(),
+            s -> s.getEmbedTemplates() != null ? s.getEmbedTemplates().getNewPunishments() : null);
+    }
+
+    private void sendEventWebhook(Server server, Map<String, String> variables,
+            Function<WebhookSettings, Boolean> isEnabled,
+            Function<WebhookSettings, WebhookSettings.EmbedTemplate> getTemplate) {
+        try {
+            WebhookSettings settings = getWebhookSettings(server);
+
+            if (!settings.isEnabled()) {
+                return;
+            }
+
+            String webhookUrl = settings.getDiscordWebhookUrl();
+            if (webhookUrl == null || webhookUrl.isBlank() || !isAllowedDiscordWebhookUrl(webhookUrl)) {
+                return;
+            }
+
+            if (!Boolean.TRUE.equals(isEnabled.apply(settings))) {
+                return;
+            }
+
+            WebhookSettings.EmbedTemplate template = getTemplate.apply(settings);
+            if (template == null) {
+                return;
+            }
+
+            Map<String, Object> embed = buildEmbedFromTemplate(template, variables);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("username", settings.getBotName() != null ? settings.getBotName() : "modl Panel");
+            payload.put("avatar_url", settings.getAvatarUrl() != null ? settings.getAvatarUrl() : "");
+            payload.put("embeds", List.of(embed));
+
+            String adminRoleId = settings.getDiscordAdminRoleId();
+            if (adminRoleId != null && !adminRoleId.isBlank()) {
+                payload.put("content", "<@&" + adminRoleId + ">");
+            }
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(payload, headers);
+            restTemplate.postForEntity(webhookUrl, request, String.class);
+        } catch (Exception e) {
+            log.error("Failed to send webhook notification for server {}", server.getId(), e);
+        }
+    }
+
+    private Map<String, Object> buildEmbedFromTemplate(WebhookSettings.EmbedTemplate template, Map<String, String> variables) {
+        Map<String, Object> embed = new LinkedHashMap<>();
+
+        embed.put("title", replaceVariables(template.getTitle(), variables));
+        embed.put("description", replaceVariables(template.getDescription(), variables));
+        embed.put("color", parseColor(template.getColor()));
+
+        if (template.getFields() != null && !template.getFields().isEmpty()) {
+            List<Map<String, Object>> fields = new ArrayList<>();
+            for (WebhookSettings.EmbedField field : template.getFields()) {
+                String value = replaceVariables(field.getValue(), variables);
+                if (value.isBlank()) {
+                    continue;
+                }
+                Map<String, Object> fieldMap = new LinkedHashMap<>();
+                fieldMap.put("name", replaceVariables(field.getName(), variables));
+                fieldMap.put("value", value);
+                fieldMap.put("inline", field.isInline());
+                fields.add(fieldMap);
+            }
+            embed.put("fields", fields);
+        }
+
+        return embed;
+    }
+
+    private String replaceVariables(String text, Map<String, String> variables) {
+        if (text == null) {
+            return "";
+        }
+        String result = text;
+        for (Map.Entry<String, String> entry : variables.entrySet()) {
+            result = result.replace("{{" + entry.getKey() + "}}", entry.getValue() != null ? entry.getValue() : "");
+        }
+        return result;
+    }
+
+    private int parseColor(String hexColor) {
+        if (hexColor == null || hexColor.isBlank()) {
+            return DEFAULT_EMBED_COLOR;
+        }
+        try {
+            String hex = hexColor.startsWith("#") ? hexColor.substring(1) : hexColor;
+            return Integer.parseInt(hex, 16);
+        } catch (NumberFormatException e) {
+            return DEFAULT_EMBED_COLOR;
         }
     }
 
