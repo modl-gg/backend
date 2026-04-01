@@ -32,6 +32,7 @@ public class RateLimitConfig {
         new PathRule("/v1/minecraft/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
+        new PathRule("/v1/admin/auth/session", RateLimitTier.ADMIN_SESSION),
         new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
         new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
     );
@@ -153,6 +154,7 @@ public class RateLimitConfig {
         AUTH(20, Duration.ofMinutes(1)),
         AUTH_SEND_CODE(2, Duration.ofMinutes(1)),
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
+        ADMIN_SESSION(30, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
         WEBHOOK(50, Duration.ofMinutes(1)),
         MIGRATION(5, Duration.ofHours(1)),
