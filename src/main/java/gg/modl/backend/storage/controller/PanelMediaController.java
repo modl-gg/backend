@@ -11,6 +11,7 @@ import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -33,6 +34,7 @@ public class PanelMediaController {
     private final S3StorageService s3StorageService;
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
+    private final StorageMetadataService storageMetadataService;
 
     @GetMapping("/config")
     public ResponseEntity<Map<String, Object>> getMediaConfig(HttpServletRequest request) {
@@ -65,6 +67,7 @@ public class PanelMediaController {
 
         boolean deleted = s3StorageService.deleteFile(normalizedKey);
         if (deleted) {
+            storageMetadataService.removeFile(server, normalizedKey);
             return ResponseEntity.ok(Map.of("message", "File deleted"));
         }
         return ResponseEntity.notFound().build();
@@ -126,6 +129,7 @@ public class PanelMediaController {
             ));
         }
 
+        storageMetadataService.recordFile(server, key, uploadDetails.size(), uploadDetails.contentType());
         return ResponseEntity.ok(uploadDetails);
     }
 }

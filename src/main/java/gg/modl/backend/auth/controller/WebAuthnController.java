@@ -8,7 +8,6 @@ import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.exception.UnauthorizedException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
@@ -52,15 +51,10 @@ public class WebAuthnController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, getRequestDomain(request), email);
+        WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, email);
         Object options = objectMapper.readValue(result.optionsJson(), Object.class);
         return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
     }
-
-    private String getRequestDomain(HttpServletRequest request) {
-        return (String) request.getAttribute(RequestAttribute.SERVER_DOMAIN);
-    }
-
 
     @PostMapping("/register/verify")
     public ResponseEntity<?> registerVerify(
@@ -72,7 +66,7 @@ public class WebAuthnController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        webAuthnService.finishRegistration(server, getRequestDomain(request), email, body.challengeId(), body.response(), body.name());
+        webAuthnService.finishRegistration(server, email, body.challengeId(), body.response(), body.name());
         return ResponseEntity.ok(Map.of("success", true));
     }
 
@@ -127,7 +121,7 @@ public class WebAuthnController {
     @PostMapping("/login/start")
     public ResponseEntity<?> loginStart(HttpServletRequest request) throws JsonProcessingException {
         Server server = RequestUtil.getRequestServer(request);
-        WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server, getRequestDomain(request));
+        WebAuthnService.StartAuthenticationResult result = webAuthnService.startDiscoverableAuthentication(server);
         Object options = objectMapper.readValue(result.optionsJson(), Object.class);
         return ResponseEntity.ok(Map.of("challengeId", result.challengeId(), "options", options));
     }
@@ -148,7 +142,7 @@ public class WebAuthnController {
             return ResponseEntity.ok(Map.of("hasPasskeys", false));
         }
 
-        WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, getRequestDomain(request), body.email());
+        WebAuthnService.StartAuthenticationResult result = webAuthnService.startAuthentication(server, body.email());
         Object options = objectMapper.readValue(result.optionsJson(), Object.class);
         return ResponseEntity.ok(Map.of(
             "hasPasskeys", true,
@@ -165,7 +159,7 @@ public class WebAuthnController {
         @RequestBody @Valid LoginVerifyRequest body) throws Exception {
         Server server = RequestUtil.getRequestServer(request);
 
-        String email = webAuthnService.finishAuthentication(server, getRequestDomain(request), body.challengeId(), body.response());
+        String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response());
 
         if (!permissionService.isAuthorizedEmail(server, email)) {
             throw new ValidationException("Not authorized");

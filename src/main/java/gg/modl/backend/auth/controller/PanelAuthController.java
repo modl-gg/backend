@@ -157,10 +157,9 @@ public class PanelAuthController {
             new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
     }
 
-    @PatchMapping("/email")
-    public ResponseEntity<?> updateEmail(
+    @PostMapping("/email/send-code")
+    public ResponseEntity<?> sendEmailChangeCode(
         HttpServletRequest request,
-        HttpServletResponse response,
         @RequestBody @Valid UpdateEmailRequest requestData) {
 
         String currentEmail = RequestUtil.getSessionEmail(request);
@@ -175,6 +174,46 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
+
+        if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "This email is not authorized for this panel."));
+        }
+
+        try {
+            authService.sendUserLoginCode(server, newEmail);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(new AuthResponse(false, "Failed to send verification code."));
+        }
+
+        return ResponseEntity.ok(new AuthResponse(true, "Verification code sent to new email."));
+    }
+
+    @PatchMapping("/email")
+    public ResponseEntity<?> updateEmail(
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @RequestBody @Valid UpdateEmailWithCodeRequest requestData) {
+
+        String currentEmail = RequestUtil.getSessionEmail(request);
+        if (currentEmail == null) {
+            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+        }
+
+        String newEmail = requestData.newEmail().trim();
+        if (currentEmail.equalsIgnoreCase(newEmail)) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "New email must be different from your current email."));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+        boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
+
+        if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "This email is not authorized for this panel."));
+        }
+
+        if (!authService.verifyCode(server, newEmail, requestData.code())) {
+            return ResponseEntity.badRequest().body(new AuthResponse(false, "Invalid or expired verification code."));
+        }
 
         Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
         if (result.isEmpty()) {
@@ -289,6 +328,11 @@ public class PanelAuthController {
     ) {}
 
     public record UpdateEmailRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String newEmail) {}
+
+    public record UpdateEmailWithCodeRequest(
+        @Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String newEmail,
+        @NotBlank @Size(min = 1, max = 10) String code
+    ) {}
 
     public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
 

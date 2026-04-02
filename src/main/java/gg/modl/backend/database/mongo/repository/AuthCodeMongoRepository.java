@@ -18,6 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class AuthCodeMongoRepository {
+    private static final int MAX_FAILED_ATTEMPTS = 5;
     private final TenantMongoAccess tenantMongoAccess;
 
     public void replaceForServer(Server server, String normalizedEmail, String codeHash, Date expiresAt) {
@@ -25,13 +26,13 @@ public class AuthCodeMongoRepository {
     }
 
     private void replace(MongoTemplate template, String normalizedEmail, String codeHash, Date expiresAt) {
-        template.remove(emailQuery(normalizedEmail), AuthCode.class, CollectionName.AUTH_CODES);
-
-        AuthCode authCode = new AuthCode();
-        authCode.setEmail(normalizedEmail);
-        authCode.setCodeHash(codeHash);
-        authCode.setExpiresAt(expiresAt);
-        template.save(authCode, CollectionName.AUTH_CODES);
+        Query query = Query.query(Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail));
+        Update update = new Update()
+            .set(AuthCodeFields.CODE_HASH, codeHash)
+            .set(AuthCodeFields.EXPIRES_AT, expiresAt)
+            .set(AuthCodeFields.FAILED_ATTEMPTS, 0)
+            .setOnInsert(AuthCodeFields.EMAIL, normalizedEmail);
+        template.upsert(query, update, AuthCode.class, CollectionName.AUTH_CODES);
     }
 
     private Query emailQuery(String normalizedEmail) {
@@ -81,5 +82,23 @@ public class AuthCodeMongoRepository {
 
     public boolean incrementFailedAttemptsForGlobal(String normalizedEmail, Date now) {
         return incrementFailedAttempts(tenantMongoAccess.global(), normalizedEmail, now);
+    }
+
+    public Optional<AuthCode> consumeIfHashMatchesForServer(Server server, String normalizedEmail, String codeHash, Date now) {
+        return consumeIfHashMatches(tenantMongoAccess.forServer(server), normalizedEmail, codeHash, now);
+    }
+
+    public Optional<AuthCode> consumeIfHashMatchesForGlobal(String normalizedEmail, String codeHash, Date now) {
+        return consumeIfHashMatches(tenantMongoAccess.global(), normalizedEmail, codeHash, now);
+    }
+
+    private Optional<AuthCode> consumeIfHashMatches(MongoTemplate template, String normalizedEmail, String codeHash, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
+            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now),
+            Criteria.where(AuthCodeFields.CODE_HASH).is(codeHash),
+            Criteria.where(AuthCodeFields.FAILED_ATTEMPTS).lt(MAX_FAILED_ATTEMPTS)
+        ));
+        return Optional.ofNullable(template.findAndRemove(query, AuthCode.class, CollectionName.AUTH_CODES));
     }
 }

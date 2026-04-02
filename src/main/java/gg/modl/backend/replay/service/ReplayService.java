@@ -8,6 +8,7 @@ import gg.modl.backend.replay.dto.PublicReplayResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import java.util.Date;
 import java.util.List;
@@ -24,16 +25,19 @@ public class ReplayService {
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
     private final TrainingDataService trainingDataService;
+    private final StorageMetadataService storageMetadataService;
 
     @Value("${modl.replay.max-file-size:10485760}")
     private long maxFileSize;
 
     public ReplayService(ReplayMongoRepository replayRepository, S3StorageService s3StorageService,
-                         StorageQuotaService storageQuotaService, TrainingDataService trainingDataService) {
+                         StorageQuotaService storageQuotaService, TrainingDataService trainingDataService,
+                         StorageMetadataService storageMetadataService) {
         this.replayRepository = replayRepository;
         this.s3StorageService = s3StorageService;
         this.storageQuotaService = storageQuotaService;
         this.trainingDataService = trainingDataService;
+        this.storageMetadataService = storageMetadataService;
     }
 
     public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
@@ -81,6 +85,7 @@ public class ReplayService {
         replayRepository.saveEntity(server, doc);
 
         if (exists) {
+            storageMetadataService.recordFile(server, doc.getStorageKey(), doc.getFileSize(), "application/octet-stream");
             log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
         } else {
             log.warn("Replay {} upload not found in storage for server {}", replayId, server.getDatabaseName());

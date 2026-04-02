@@ -44,6 +44,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @Service
 @Slf4j
 public class S3StorageService {
+    public record UploadFileResult(String key, String cdnUrl) {}
+    public record S3ObjectInfo(String key, long size, Instant lastModified) {}
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
     private final S3Configuration s3Configuration;
@@ -317,6 +319,37 @@ public class S3StorageService {
         }
     }
 
+    public List<S3ObjectInfo> listAllObjects(Server server) {
+        if (s3Client == null) {
+            return Collections.emptyList();
+        }
+
+        String prefix = server.getDatabaseName() + "/";
+        List<S3ObjectInfo> objects = new ArrayList<>();
+
+        ListObjectsV2Request request = ListObjectsV2Request.builder()
+            .bucket(s3Configuration.getBucketName())
+            .prefix(prefix)
+            .build();
+
+        ListObjectsV2Response response;
+        String continuationToken = null;
+
+        do {
+            if (continuationToken != null) {
+                request = request.toBuilder().continuationToken(continuationToken).build();
+            }
+
+            response = s3Client.listObjectsV2(request);
+            for (S3Object obj : response.contents()) {
+                objects.add(new S3ObjectInfo(obj.key(), obj.size(), obj.lastModified()));
+            }
+            continuationToken = response.nextContinuationToken();
+        } while (response.isTruncated());
+
+        return objects;
+    }
+
     public long calculateStorageUsed(Server server) {
         return calculateStorageByType(server).values()
             .stream().mapToLong(Long::longValue).sum();
@@ -362,7 +395,7 @@ public class S3StorageService {
         return byType;
     }
 
-    private String categorizeFile(String key) {
+    public static String categorizeFile(String key) {
         if (key.contains("/evidence/")) {
             return "evidence";
         }
@@ -452,7 +485,7 @@ public class S3StorageService {
      * @param data        The file bytes
      * @return The CDN URL of the uploaded file
      */
-    public String uploadFile(Server server, String uploadType, String fileName, String contentType, byte[] data) {
+    public UploadFileResult uploadFile(Server server, String uploadType, String fileName, String contentType, byte[] data) {
         if (s3Client == null) {
             throw new IllegalStateException("S3 storage is not configured");
         }
@@ -469,7 +502,7 @@ public class S3StorageService {
 
             s3Client.putObject(putRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data));
 
-            return getCdnUrl(key);
+            return new UploadFileResult(key, getCdnUrl(key));
         } catch (Exception e) {
             log.error("Error uploading file: {}", key, e);
             throw new ExternalServiceException("Failed to upload file", e);

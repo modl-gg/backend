@@ -3,7 +3,6 @@ package gg.modl.backend.infrastructure.rest;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
-import java.net.InetAddress;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
@@ -12,6 +11,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class RequestUtil {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RequestUtil.class);
+    private static volatile boolean warnedAboutProxy = false;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
         Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
@@ -45,9 +46,7 @@ public final class RequestUtil {
     }
 
     public static String getClientIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        boolean shouldTrustProxyHeaders = TRUST_PROXY_HEADERS || isLikelyTrustedProxy(remoteAddr);
-        if (shouldTrustProxyHeaders) {
+        if (TRUST_PROXY_HEADERS) {
             String xForwardedFor = request.getHeader("X-Forwarded-For");
             if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
                 String firstHop = xForwardedFor.split(",")[0].trim();
@@ -59,24 +58,17 @@ public final class RequestUtil {
             if (xRealIp != null && !xRealIp.isEmpty()) {
                 return xRealIp;
             }
+        } else if (!warnedAboutProxy) {
+            String remoteAddr = request.getRemoteAddr();
+            String xForwardedFor = request.getHeader("X-Forwarded-For");
+            if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+                log.warn("Request has X-Forwarded-For header ({}) but MODL_TRUST_PROXY_HEADERS is not set. "
+                    + "Client IP will be reported as {}. Set MODL_TRUST_PROXY_HEADERS=true if running behind a proxy.",
+                    xForwardedFor, remoteAddr);
+                warnedAboutProxy = true;
+            }
         }
-        return remoteAddr;
-    }
-
-    private static boolean isLikelyTrustedProxy(String remoteAddr) {
-        if (remoteAddr == null || remoteAddr.isBlank()) {
-            return false;
-        }
-
-        try {
-            InetAddress address = InetAddress.getByName(remoteAddr);
-            return address.isAnyLocalAddress()
-                   || address.isLoopbackAddress()
-                   || address.isSiteLocalAddress()
-                   || address.isLinkLocalAddress();
-        } catch (Exception ignored) {
-            return false;
-        }
+        return request.getRemoteAddr();
     }
 
     public static String generateSecureToken(int byteLength) {

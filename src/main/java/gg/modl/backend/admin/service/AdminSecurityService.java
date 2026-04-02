@@ -6,7 +6,6 @@ import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -71,42 +70,6 @@ public class AdminSecurityService {
                 "last7Days", Map.of("total", totalEvents7d),
                 "timestamp", new Date()
             )
-        );
-    }
-
-    public Map<String, Object> testSecurityConfig() {
-        List<Map<String, Object>> testResults = new ArrayList<>();
-
-        testResults.add(Map.of(
-            "test", "CORS Configuration",
-            "status", "passed",
-            "message", "CORS is properly configured with allowed origins"
-        ));
-        testResults.add(Map.of(
-            "test", "Rate Limiting",
-            "status", "passed",
-            "message", "Rate limiting is active on all endpoints"
-        ));
-        testResults.add(Map.of(
-            "test", "Session Security",
-            "status", "passed",
-            "message", "Sessions use secure tokens with proper cookie attributes"
-        ));
-        testResults.add(Map.of(
-            "test", "Input Validation",
-            "status", "passed",
-            "message", "NoSQL injection protection is enabled"
-        ));
-
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "tests", testResults,
-                "passedCount", testResults.size(),
-                "failedCount", 0,
-                "timestamp", new Date()
-            ),
-            "message", "All security tests passed"
         );
     }
 }

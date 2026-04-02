@@ -2,6 +2,7 @@ package gg.modl.backend.infrastructure.exception;
 
 import gg.modl.backend.infrastructure.exception.BaseApplicationException;
 import gg.modl.backend.infrastructure.exception.ErrorResponseDTO;
+import gg.modl.backend.infrastructure.proto.ProtoValidationException;
 import gg.modl.backend.settings.service.SettingsConflictException;
 import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
@@ -87,6 +88,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDTO> handleNoHandlerFound(NoHandlerFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
             .body(new ErrorResponseDTO(404, "No endpoint found for " + ex.getHttpMethod() + " " + ex.getRequestURL()));
+    }
+
+    @ExceptionHandler(ProtoValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleProtoValidation(ProtoValidationException ex) {
+        Map<String, Object> body = Map.of(
+                "status", 400,
+                "error", ex.getMessage()
+        );
+        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler(Exception.class)

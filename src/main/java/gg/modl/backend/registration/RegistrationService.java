@@ -49,7 +49,13 @@ public class RegistrationService {
         cliRateLimitMap.put(clientIp, System.currentTimeMillis());
     }
 
+    private void evictExpired(ConcurrentHashMap<String, Long> map, long windowMs) {
+        long now = System.currentTimeMillis();
+        map.entrySet().removeIf(entry -> (now - entry.getValue()) >= windowMs);
+    }
+
     private RateLimitResult checkLimit(ConcurrentHashMap<String, Long> map, long windowMs, String clientIp) {
+        evictExpired(map, windowMs);
         long now = System.currentTimeMillis();
         Long last = map.get(clientIp);
         if (last != null && (now - last) < windowMs) {

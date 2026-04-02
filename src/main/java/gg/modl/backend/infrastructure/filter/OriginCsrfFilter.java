@@ -17,6 +17,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
@@ -33,10 +34,6 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (modlProperties.isDevelopmentMode()) {
-            return true;
-        }
-
         final String method = request.getMethod();
         if (method.equalsIgnoreCase("GET") || method.equalsIgnoreCase("HEAD") || method.equalsIgnoreCase("OPTIONS")) {
             return true;
@@ -75,10 +72,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
         }
 
         String fetchSite = request.getHeader("Sec-Fetch-Site");
-        if (fetchSite == null || fetchSite.isBlank()
-            || "same-origin".equalsIgnoreCase(fetchSite)
-            || "same-site".equalsIgnoreCase(fetchSite)
-            || "none".equalsIgnoreCase(fetchSite)) {
+        if (fetchSite != null && ("same-origin".equalsIgnoreCase(fetchSite) || "same-site".equalsIgnoreCase(fetchSite))) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -100,7 +94,12 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
 
     @PostConstruct
     void initParsedOrigins() {
-        parsedSystemOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins());
+        Set<String> origins = new HashSet<>(HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()));
+        if (modlProperties.isDevelopmentMode()) {
+            origins.add("http://localhost:3000");
+            origins.add("http://localhost:5173");
+        }
+        parsedSystemOrigins = origins;
     }
 
     private void reject(HttpServletResponse response) throws IOException {

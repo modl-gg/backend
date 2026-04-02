@@ -3,12 +3,15 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.request.BulkDeleteRequest;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
+import gg.modl.backend.storage.service.StorageSyncService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -29,6 +32,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelStorageController {
     private final S3StorageService s3StorageService;
     private final StorageQuotaService quotaService;
+    private final StorageMetadataService storageMetadataService;
+    private final StorageSyncService storageSyncService;
+    private final PermissionService permissionService;
 
     @GetMapping("/quota")
     public ResponseEntity<StorageQuotaResponse> getQuota(HttpServletRequest request) {
@@ -43,7 +49,7 @@ public class PanelStorageController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<StorageFileResponse> files = s3StorageService.listFiles(server, prefix);
+        List<StorageFileResponse> files = storageMetadataService.listFiles(server, prefix);
         return ResponseEntity.ok(Map.of("files", files));
     }
 
@@ -63,7 +69,18 @@ public class PanelStorageController {
         }
 
         int deleted = s3StorageService.bulkDelete(keys);
+        storageMetadataService.removeFiles(server, keys);
         return ResponseEntity.ok(Map.of("deleted", deleted));
+    }
+
+    @PostMapping("/sync")
+    public ResponseEntity<?> syncFiles(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        if (!permissionService.isSuperAdmin(server, RequestUtil.getSessionEmail(request))) {
+            throw new ForbiddenException("Only super admins can trigger a storage sync");
+        }
+        int synced = storageSyncService.syncServerFiles(server);
+        return ResponseEntity.ok(Map.of("synced", synced));
     }
 
     @GetMapping("/download/{*key}")

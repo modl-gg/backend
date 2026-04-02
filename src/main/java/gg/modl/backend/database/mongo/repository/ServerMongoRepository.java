@@ -386,6 +386,27 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public void incrementStorageUsed(String serverId, long bytes) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update().inc(ServerFields.STORAGE_USED_BYTES, bytes)
+        );
+    }
+
+    public void decrementStorageUsed(String serverId, long bytes) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update().inc(ServerFields.STORAGE_USED_BYTES, -bytes)
+        );
+    }
+
+    public void setStorageUsed(String serverId, long bytes) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update().set(ServerFields.STORAGE_USED_BYTES, bytes)
+        );
+    }
+
     public Optional<AIUsageSnapshot> findAIUsageSnapshotById(String serverId) {
         Query query = Query.query(Criteria.where(ServerFields.ID).is(serverId));
         query.fields()

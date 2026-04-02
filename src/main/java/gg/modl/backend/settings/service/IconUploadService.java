@@ -2,6 +2,7 @@ package gg.modl.backend.settings.service;
 
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import java.io.IOException;
 import java.util.Map;
@@ -16,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class IconUploadService {
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
+    private final StorageMetadataService storageMetadataService;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
         "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
     );
@@ -29,14 +31,11 @@ public class IconUploadService {
 
         try {
             String fileName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "icon";
-            String url = s3StorageService.uploadFile(
-                server,
-                "icons/" + iconType,
-                fileName,
-                file.getContentType(),
-                file.getBytes()
+            S3StorageService.UploadFileResult result = s3StorageService.uploadFile(
+                server, "icons/" + iconType, fileName, file.getContentType(), file.getBytes()
             );
-            return ResponseEntity.ok(Map.of("url", url));
+            storageMetadataService.recordFile(server, result.key(), file.getSize(), file.getContentType());
+            return ResponseEntity.ok(Map.of("url", result.cdnUrl()));
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to read file"));
         } catch (RuntimeException e) {

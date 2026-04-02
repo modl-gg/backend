@@ -104,6 +104,10 @@ public class Server {
     private Date usageBillingUpdatedAt;
 
     @Nullable
+    @Field(name = "storageUsedBytes", targetType = FieldType.INT64)
+    private Long storageUsedBytes;
+
+    @Nullable
     @Field(name = "maxStorageLimitBytes", targetType = FieldType.INT64)
     private Long maxStorageLimitBytes;
 

@@ -19,11 +19,13 @@ import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.net.URI;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class EvidenceUploadService {
     private final EvidenceUploadTokenService tokenService;
     private final S3StorageService s3StorageService;
@@ -32,6 +34,7 @@ public class EvidenceUploadService {
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
     private final PunishmentEvidenceService punishmentEvidenceService;
+    private final StorageMetadataService storageMetadataService;
 
     public TokenValidationResult validateToken(String token) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
@@ -109,6 +112,13 @@ public class EvidenceUploadService {
         UploadResponse uploadDetails = s3StorageService.getUploadDetails(request.key());
         if (uploadDetails == null) {
             return ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
+        }
+
+        Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
+        if (server != null) {
+            storageMetadataService.recordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+        } else {
+            log.warn("Could not record storage metadata: server not found for database {}", uploadToken.serverDatabaseName());
         }
 
         return ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, uploadDetails);

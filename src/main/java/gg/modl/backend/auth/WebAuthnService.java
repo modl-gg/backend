@@ -38,6 +38,7 @@ import gg.modl.backend.auth.data.WebAuthnChallenge;
 import gg.modl.backend.auth.data.WebAuthnCredential;
 import gg.modl.backend.database.mongo.repository.WebAuthnChallengeMongoRepository;
 import gg.modl.backend.database.mongo.repository.WebAuthnCredentialMongoRepository;
+import gg.modl.backend.server.data.CustomDomainStatus;
 import gg.modl.backend.server.data.Server;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -62,8 +63,8 @@ public class WebAuthnService {
     private final WebAuthnCredentialMongoRepository credentialRepository;
     private final AuthConfiguration authConfiguration;
 
-    public StartRegistrationResult startRegistration(Server server, String requestDomain, String email) {
-        RelyingParty rp = buildRelyingParty(server, requestDomain);
+    public StartRegistrationResult startRegistration(Server server, String email) {
+        RelyingParty rp = buildRelyingParty(server);
 
         UserIdentity userIdentity = UserIdentity.builder()
             .name(email)
@@ -95,9 +96,9 @@ public class WebAuthnService {
         }
     }
 
-    private RelyingParty buildRelyingParty(Server server, String requestDomain) {
-        String rpId = resolveRpId(requestDomain);
-        Set<String> origins = resolveOrigins(requestDomain, rpId);
+    private RelyingParty buildRelyingParty(Server server) {
+        String rpId = resolveRpId(server);
+        Set<String> origins = resolveOrigins(server, rpId);
         CredentialRepositoryAdapter credRepo = new CredentialRepositoryAdapter(server);
 
         return RelyingParty.builder()
@@ -111,28 +112,27 @@ public class WebAuthnService {
             .build();
     }
 
-    private String resolveRpId(String requestDomain) {
-        if (requestDomain != null && requestDomain.endsWith(".modl.gg")) {
-            return "modl.gg";
-        }
-        if (requestDomain != null && !requestDomain.isBlank()) {
-            return requestDomain;
+    private String resolveRpId(Server server) {
+        if (server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isBlank()
+            && server.getCustomDomainStatus() == CustomDomainStatus.ACTIVE) {
+            return server.getCustomDomainOverride();
         }
         return "modl.gg";
     }
 
-    private Set<String> resolveOrigins(String requestDomain, String rpId) {
+    private Set<String> resolveOrigins(Server server, String rpId) {
         Set<String> origins = new HashSet<>();
         if (authConfiguration.isDevelopmentMode()) {
             origins.add("http://localhost:3000");
             origins.add("http://localhost:5173");
         }
-        if (requestDomain != null && !requestDomain.isBlank()) {
-            origins.add("https://" + requestDomain);
+        if (server.getCustomDomainOverride() != null && !server.getCustomDomainOverride().isBlank()
+            && server.getCustomDomainStatus() == CustomDomainStatus.ACTIVE) {
+            origins.add("https://" + server.getCustomDomainOverride());
+        } else {
+            origins.add("https://" + server.getCustomDomain() + ".modl.gg");
         }
-        if (!rpId.equals(requestDomain)) {
-            origins.add("https://" + rpId);
-        }
+        origins.add("https://" + rpId);
         return origins;
     }
 
@@ -154,9 +154,9 @@ public class WebAuthnService {
         return new Date(System.currentTimeMillis() + 5 * 60 * 1000);
     }
 
-    public void finishRegistration(Server server, String requestDomain, String email, String challengeId, String responseJson, String credentialName)
+    public void finishRegistration(Server server, String email, String challengeId, String responseJson, String credentialName)
         throws Exception {
-        RelyingParty rp = buildRelyingParty(server, requestDomain);
+        RelyingParty rp = buildRelyingParty(server);
         WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
         if (challenge == null) {
             throw new ResourceNotFoundException("Challenge not found or expired");
@@ -199,8 +199,8 @@ public class WebAuthnService {
         return credentialRepository.existsByEmail(server, email);
     }
 
-    public StartAuthenticationResult startDiscoverableAuthentication(Server server, String requestDomain) {
-        RelyingParty rp = buildRelyingParty(server, requestDomain);
+    public StartAuthenticationResult startDiscoverableAuthentication(Server server) {
+        RelyingParty rp = buildRelyingParty(server);
         AssertionRequest assertionRequest = rp.startAssertion(
             StartAssertionOptions.builder()
                 .userVerification(UserVerificationRequirement.PREFERRED)
@@ -221,8 +221,8 @@ public class WebAuthnService {
         }
     }
 
-    public StartAuthenticationResult startAuthentication(Server server, String requestDomain, String email) {
-        RelyingParty rp = buildRelyingParty(server, requestDomain);
+    public StartAuthenticationResult startAuthentication(Server server, String email) {
+        RelyingParty rp = buildRelyingParty(server);
         AssertionRequest assertionRequest = rp.startAssertion(
             StartAssertionOptions.builder()
                 .username(normalizeEmail(email))
@@ -244,8 +244,8 @@ public class WebAuthnService {
         }
     }
 
-    public String finishAuthentication(Server server, String requestDomain, String challengeId, String responseJson) throws Exception {
-        RelyingParty rp = buildRelyingParty(server, requestDomain);
+    public String finishAuthentication(Server server, String challengeId, String responseJson) throws Exception {
+        RelyingParty rp = buildRelyingParty(server);
         WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
         if (challenge == null) {
             throw new ResourceNotFoundException("Challenge not found or expired");
@@ -271,13 +271,25 @@ public class WebAuthnService {
             throw new UnauthorizedException("Authentication failed");
         }
 
+        if (!result.isSignatureCounterValid()) {
+            log.warn("WebAuthn signature counter invalid for credential {} — possible cloned authenticator",
+                result.getCredential().getCredentialId().getBase64Url());
+            throw new UnauthorizedException("Authentication failed: possible cloned authenticator");
+        }
+
         String credentialId = result.getCredential().getCredentialId().getBase64Url();
-        credentialRepository.updateUsage(server, credentialId, result.getSignatureCount(), new Date());
+        boolean updated = credentialRepository.updateUsage(server, credentialId, result.getSignatureCount(), new Date());
+        if (!updated) {
+            throw new UnauthorizedException("Authentication failed: credential not found");
+        }
 
         String email = challenge.getEmail();
         if (email == null || email.isBlank()) {
-            String userHandleBase64 = result.getCredential().getUserHandle().getBase64Url();
-            WebAuthnCredential cred = credentialRepository.findByUserHandle(server, userHandleBase64).orElse(null);
+            ByteArray userHandle = result.getCredential().getUserHandle();
+            if (userHandle == null) {
+                throw new ResourceNotFoundException("Could not determine user identity");
+            }
+            WebAuthnCredential cred = credentialRepository.findByUserHandle(server, userHandle.getBase64Url()).orElse(null);
             if (cred == null) {
                 throw new ResourceNotFoundException("Could not determine user identity");
             }
@@ -349,9 +361,18 @@ public class WebAuthnService {
         @Override
         public Optional<RegisteredCredential> lookup(ByteArray credentialId, ByteArray userHandle) {
             return credentialRepository.findByCredentialId(server, credentialId.getBase64Url())
+                .filter(cred -> {
+                    try {
+                        ByteArray storedHandle = ByteArray.fromBase64Url(cred.getUserHandle());
+                        return storedHandle.equals(userHandle);
+                    } catch (Base64UrlException e) {
+                        log.error("Invalid base64url user handle for credential {}", cred.getId(), e);
+                        return false;
+                    }
+                })
                 .map(cred -> RegisteredCredential.builder()
                     .credentialId(credentialId)
-                    .userHandle(userHandle(cred.getEmail()))
+                    .userHandle(userHandle)
                     .publicKeyCose(new ByteArray(cred.getPublicKeyCose()))
                     .signatureCount(cred.getSignatureCount())
                     .build());

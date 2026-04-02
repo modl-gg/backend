@@ -30,23 +30,28 @@ public class AdminAuthFilter extends OncePerRequestFilter {
 
         if (path.startsWith("/v1/admin/") && !path.startsWith("/v1/admin/auth/")) {
             Optional<AdminAuthService.AdminSession> sessionOpt = adminAuthService.getAuthenticatedSession(request);
-            if (sessionOpt.isPresent()) {
-                AdminAuthService.AdminSession session = sessionOpt.get();
-                request.setAttribute(ADMIN_SESSION_ATTR, session);
-
-                List<SimpleGrantedAuthority> authorities = List.of(
-                    new SimpleGrantedAuthority(RESTSecurityRole.ADMIN)
-                );
-
-                UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(
-                        session.email(),
-                        null,
-                        authorities
-                    );
-                authentication.setDetails(session);
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+            if (sessionOpt.isEmpty()) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"success\":false,\"message\":\"Unauthorized\"}");
+                return;
             }
+
+            AdminAuthService.AdminSession session = sessionOpt.get();
+            request.setAttribute(ADMIN_SESSION_ATTR, session);
+
+            List<SimpleGrantedAuthority> authorities = List.of(
+                new SimpleGrantedAuthority(RESTSecurityRole.ADMIN)
+            );
+
+            UsernamePasswordAuthenticationToken authentication =
+                new UsernamePasswordAuthenticationToken(
+                    session.email(),
+                    null,
+                    authorities
+                );
+            authentication.setDetails(session);
+            SecurityContextHolder.getContext().setAuthentication(authentication);
         }
 
         filterChain.doFilter(request, response);

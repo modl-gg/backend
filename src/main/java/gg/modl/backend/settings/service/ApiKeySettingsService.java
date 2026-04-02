@@ -36,13 +36,15 @@ public class ApiKeySettingsService {
     @Nullable
     private Server findServerByApiKeyInSettings(@NotNull String apiKey) {
         List<Server> servers = serverRepository.findAll();
+        byte[] apiKeyBytes = apiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         for (Server server : servers) {
             if (server.getDatabaseName() == null) {
                 continue;
             }
 
             String settingsApiKey = getApiKeyFromSettings(server);
-            if (apiKey.equals(settingsApiKey)) {
+            if (settingsApiKey != null && java.security.MessageDigest.isEqual(
+                    apiKeyBytes, settingsApiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
                 syncApiKeyToServer(server, settingsApiKey);
                 server.setApiKey(apiKey);
                 return server;

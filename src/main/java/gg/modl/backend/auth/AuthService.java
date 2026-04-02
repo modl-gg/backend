@@ -27,7 +27,6 @@ public class AuthService {
     private final AuthCodeMongoRepository authCodeRepository;
     private final AuthConfiguration authConfiguration;
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
-    private static final int MAX_FAILED_ATTEMPTS = 5;
 
     public void sendUserLoginCode(Server server, String email) throws MessagingException, UnsupportedEncodingException {
         String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
@@ -87,55 +86,30 @@ public class AuthService {
 
     public boolean verifyCode(Server server, String email, String code) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
+        String codeHash = hashCode(code);
         Date now = new Date();
-        return verifyCodeInternal(
-            code,
-            authCodeRepository.findActiveForServer(server, normalizedEmail, now),
-            () -> authCodeRepository.deleteForServer(server, normalizedEmail),
-            () -> authCodeRepository.incrementFailedAttemptsForServer(server, normalizedEmail, now)
-        );
-    }
 
-    private boolean verifyCodeInternal(
-        String code,
-        Optional<AuthCode> authCodeOpt,
-        Runnable onDelete,
-        Runnable onFailedAttempt
-    ) {
-        if (authCodeOpt.isEmpty()) {
-            return false;
+        Optional<AuthCode> consumed = authCodeRepository.consumeIfHashMatchesForServer(server, normalizedEmail, codeHash, now);
+        if (consumed.isPresent()) {
+            return true;
         }
 
-        AuthCode authCode = authCodeOpt.get();
-        if (authCode.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
-            onDelete.run();
-            return false;
-        }
-
-        String providedHash = hashCode(code);
-        boolean valid = MessageDigest.isEqual(
-            providedHash.getBytes(StandardCharsets.UTF_8),
-            authCode.getCodeHash().getBytes(StandardCharsets.UTF_8)
-        );
-
-        if (valid) {
-            onDelete.run();
-        } else {
-            onFailedAttempt.run();
-        }
-
-        return valid;
+        authCodeRepository.incrementFailedAttemptsForServer(server, normalizedEmail, now);
+        return false;
     }
 
     public boolean verifyAdminCode(String email, String code) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
+        String codeHash = hashCode(code);
         Date now = new Date();
-        return verifyCodeInternal(
-            code,
-            authCodeRepository.findActiveForGlobal(normalizedEmail, now),
-            () -> authCodeRepository.deleteForGlobal(normalizedEmail),
-            () -> authCodeRepository.incrementFailedAttemptsForGlobal(normalizedEmail, now)
-        );
+
+        Optional<AuthCode> consumed = authCodeRepository.consumeIfHashMatchesForGlobal(normalizedEmail, codeHash, now);
+        if (consumed.isPresent()) {
+            return true;
+        }
+
+        authCodeRepository.incrementFailedAttemptsForGlobal(normalizedEmail, now);
+        return false;
     }
 
     @FunctionalInterface

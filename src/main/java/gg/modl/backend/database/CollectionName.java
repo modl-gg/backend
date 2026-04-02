@@ -45,4 +45,7 @@ public final class CollectionName {
 
     // Training
     public static final String TRAINING_SEGMENTS = "training_segments";
+
+    // Storage
+    public static final String STORAGE_FILES = "storage_files";
 }

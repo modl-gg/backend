@@ -13,6 +13,7 @@ import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaAccessService;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -36,6 +37,7 @@ public class PublicMediaController {
     private final MediaValidationService validationService;
     private final StorageQuotaService quotaService;
     private final MediaAccessService mediaAccessService;
+    private final StorageMetadataService storageMetadataService;
 
     private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "tickets", "appeal");
 
@@ -169,6 +171,7 @@ public class PublicMediaController {
             ));
         }
 
+        storageMetadataService.recordFile(server, key, uploadDetails.size(), uploadDetails.contentType());
         return ResponseEntity.ok(uploadDetails);
     }
 }
