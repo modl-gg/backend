@@ -1,7 +1,7 @@
 package gg.modl.backend.infrastructure.proto;
 
 import build.buf.protovalidate.ValidationResult;
-import build.buf.protovalidate.Violation;
+import build.buf.validate.Violation;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 

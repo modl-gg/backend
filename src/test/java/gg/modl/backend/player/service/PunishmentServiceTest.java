@@ -25,6 +25,7 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.settings.service.WebhookSettingsService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -74,6 +75,9 @@ class PunishmentServiceTest {
     @Mock
     private PermissionService permissionService;
 
+    @Mock
+    private WebhookSettingsService webhookSettingsService;
+
     private PunishmentLifecycleService punishmentLifecycleService;
 
     private PunishmentMutationService punishmentMutationService;
@@ -91,7 +95,8 @@ class PunishmentServiceTest {
             issuerNameResolver,
             staffRepository,
             punishmentQueryService,
-            permissionService
+            permissionService,
+            webhookSettingsService
         );
         punishmentMutationService = new PunishmentMutationService(
             playerRepository,
@@ -185,6 +190,7 @@ class PunishmentServiceTest {
         );
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
+        when(issuerNameResolver.resolve(any(), any(), any(Server.class))).thenReturn("Mod");
 
         String punishmentId = punishmentLifecycleService.createPunishment(server, playerUuid, request);
 

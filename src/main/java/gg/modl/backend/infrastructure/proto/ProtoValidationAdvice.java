@@ -2,6 +2,7 @@ package gg.modl.backend.infrastructure.proto;
 
 import build.buf.protovalidate.ValidationResult;
 import build.buf.protovalidate.Validator;
+import build.buf.protovalidate.exceptions.ValidationException;
 import com.google.protobuf.Message;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpInputMessage;
@@ -25,11 +26,14 @@ public class ProtoValidationAdvice extends RequestBodyAdviceAdapter {
     @Override
     public Object afterBodyRead(Object body, HttpInputMessage inputMessage, MethodParameter parameter,
                                 Type targetType, Class<? extends HttpMessageConverter<?>> converterType) {
-        if (body instanceof Message) {
-            Message protoMessage = (Message) body;
-            ValidationResult result = validator.validate(protoMessage);
-            if (!result.isSuccess()) {
-                throw new ProtoValidationException(result);
+        if (body instanceof Message protoMessage) {
+            try {
+                ValidationResult result = validator.validate(protoMessage);
+                if (!result.isSuccess()) {
+                    throw new ProtoValidationException(result);
+                }
+            } catch (ValidationException e) {
+                throw new IllegalArgumentException("Proto validation failed: " + e.getMessage(), e);
             }
         }
         return body;

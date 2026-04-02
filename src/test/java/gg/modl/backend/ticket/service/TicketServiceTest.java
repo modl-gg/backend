@@ -25,6 +25,7 @@ import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.QuickResponseRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
+import gg.modl.backend.settings.service.WebhookSettingsService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -60,12 +61,15 @@ class TicketServiceTest {
 
     private final TicketContentService contentService = new TicketContentService();
 
+    @Mock
+    private WebhookSettingsService webhookSettingsService;
+
     private TicketService ticketService;
     private MinecraftTicketService minecraftTicketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator, contentService);
+        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator, contentService, webhookSettingsService);
         minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 
@@ -119,6 +123,7 @@ class TicketServiceTest {
             null,
             List.of("legacy"),
             "medium",
+            null,
             null,
             null
         ));
@@ -267,7 +272,8 @@ class TicketServiceTest {
                 "player@example.com",
                 java.util.Map.of("issue_type", "Bug report", "emailAuthEnabled", true),
                 List.of(),
-                "creator-1"
+                "creator-1",
+                null
             )
         );
 

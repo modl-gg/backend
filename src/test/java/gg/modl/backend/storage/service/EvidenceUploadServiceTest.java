@@ -13,6 +13,7 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.dto.request.EvidenceItemRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import java.time.Instant;
@@ -47,6 +48,9 @@ class EvidenceUploadServiceTest {
     @Mock
     private PunishmentEvidenceService punishmentEvidenceService;
 
+    @Mock
+    private StorageMetadataService storageMetadataService;
+
     private EvidenceUploadService evidenceUploadService;
 
     @BeforeEach
@@ -58,7 +62,8 @@ class EvidenceUploadServiceTest {
             serverService,
             quotaService,
             validationService,
-            punishmentEvidenceService
+            punishmentEvidenceService,
+            storageMetadataService
         );
     }
 
