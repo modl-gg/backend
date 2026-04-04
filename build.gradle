@@ -64,10 +64,10 @@ dependencies {
     implementation 'com.yubico:webauthn-server-core:2.5.4'
 
     // Replay format
-    implementation 'gg.modl.replay:replay-format:1.1.0'
+    implementation 'gg.modl.minecraft.replay:replay-format:1.1.0'
 
     // Shared protobuf types
-    implementation 'gg.modl:modl-proto:1.0.0'
+    implementation 'gg.modl:proto:1.0.0'
 
     // Caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
