@@ -2,15 +2,3 @@ rootProject.name = 'backend'
 
 include 'mongo-fields-annotations'
 include 'mongo-fields-processor'
-
-// Local dev: use composite build if replay-format is available as a sibling
-def replayFormatDir = file('../replay/modl-replay-format')
-if (replayFormatDir.exists()) {
-    includeBuild(replayFormatDir)
-}
-
-// Shared protobuf types
-def protoDir = file('../modl-proto')
-if (protoDir.exists()) {
-    includeBuild('../modl-proto')
-}
