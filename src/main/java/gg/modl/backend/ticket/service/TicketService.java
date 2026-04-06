@@ -265,7 +265,7 @@ public class TicketService {
 
         if (request.data() != null && !request.data().isEmpty()) {
             Map<String, Object> existingData = ticket.getData() != null ? new HashMap<>(ticket.getData()) : new HashMap<>();
-            existingData.putAll(request.data());
+            existingData.putAll(MongoKeyUtils.sanitizeKeys(request.data()));
             ticket.setData(existingData);
         }
 
