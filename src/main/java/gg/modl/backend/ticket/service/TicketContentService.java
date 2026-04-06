@@ -214,7 +214,8 @@ public class TicketContentService {
 
         return trimmed.stream()
             .map(x -> {
-                String content = (String) x.get("content");
+                Object rawContent = x.get("content");
+                String content = rawContent instanceof String s ? s : (rawContent != null ? rawContent.toString() : null);
                 if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
                     content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
                 }

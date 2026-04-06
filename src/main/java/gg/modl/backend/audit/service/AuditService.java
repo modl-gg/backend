@@ -468,7 +468,10 @@ public class AuditService {
         Server server, List<Integer> typeOrdinals, String reason, String performerUsername) {
         return processBulkPunishmentAction(server, typeOrdinals, reason, performerUsername,
             "bulk pardon", (ctx) -> {
-                if (AuditDocumentUtil.hasModificationType(ctx.punishmentDoc, "MANUAL_PARDON", "APPEAL_ACCEPT", "SYSTEM_PARDON")) {
+                if (AuditDocumentUtil.hasModificationType(ctx.punishmentDoc,
+                        PunishmentModificationType.MANUAL_PARDON.name(),
+                        PunishmentModificationType.APPEAL_ACCEPT.name(),
+                        PunishmentModificationType.SYSTEM_PARDON.name())) {
                     return false;
                 }
 
@@ -500,7 +503,8 @@ public class AuditService {
                 Map<String, Object> modification = buildModification(
                     "MANUAL_DURATION_CHANGE", ctx.now, performerUsername, reason, effectiveDuration);
                 auditRepository.appendPunishmentModificationWithData(
-                    server, ctx.playerId, ctx.punishmentId, modification, Map.of("duration", effectiveDuration));
+                    server, ctx.playerId, ctx.punishmentId, modification,
+                    effectiveDuration != null ? Map.of("duration", effectiveDuration) : Map.of());
 
                 AuditLog durationLog = buildBulkAuditLog(ctx, performerUsername,
                     "Bulk duration change: " + ctx.typeName + " for " + ctx.playerName,

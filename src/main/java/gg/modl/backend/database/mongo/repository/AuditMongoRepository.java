@@ -251,6 +251,8 @@ public class AuditMongoRepository {
         Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where(PunishmentFields.TYPE_ORDINAL).in(typeOrdinals)
         ));
+        query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID,
+            PlayerFields.USERNAMES, PlayerFields.PUNISHMENTS);
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
     }
 
