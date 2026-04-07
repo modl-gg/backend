@@ -458,10 +458,12 @@ public class TicketService {
                 existingData.put("emailAuthEnabled", emailAuth);
             }
 
-            TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
-            if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
-                ticket.setEmailAuthEnabled(true);
-                existingData.put("emailAuthEnabled", true);
+            if (ticket.getType() != null) {
+                TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
+                if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
+                    ticket.setEmailAuthEnabled(true);
+                    existingData.put("emailAuthEnabled", true);
+                }
             }
 
             ticket.setFormData(sanitizedFormData);
