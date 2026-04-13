@@ -1,6 +1,7 @@
 package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.backend.replay.dto.InitReplayUploadResponse;
@@ -42,11 +43,11 @@ public class ReplayService {
 
     public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
         if (fileSize > maxFileSize) {
-            throw new IllegalArgumentException("File size exceeds maximum of " + (maxFileSize / 1024 / 1024) + " MB");
+            throw new ValidationException("File size exceeds maximum of " + (maxFileSize / 1024 / 1024) + " MB");
         }
 
         if (!storageQuotaService.canUpload(server, fileSize)) {
-            throw new IllegalArgumentException("Storage quota exceeded");
+            throw new ValidationException("Storage quota exceeded");
         }
 
         String replayId = UUID.randomUUID().toString();
