@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,8 @@ import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
+import org.springframework.data.mongodb.core.index.IndexField;
+import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.stereotype.Service;
 
@@ -192,7 +195,11 @@ public class MongoIndexBootstrapService {
 
     private void ensureIndexes(MongoTemplate template, String collectionName, List<IndexSpec> specs) {
         IndexOperations indexOps = template.indexOps(collectionName);
+        List<IndexInfo> existingIndexes = indexOps.getIndexInfo();
         for (IndexSpec spec : specs) {
+            if (hasEquivalentIndex(existingIndexes, spec)) {
+                continue;
+            }
             createIndex(indexOps, spec);
         }
     }
@@ -223,6 +230,38 @@ public class MongoIndexBootstrapService {
             return number.intValue() < 0 ? Sort.Direction.DESC : Sort.Direction.ASC;
         }
         throw new ValidationException("Unsupported index direction value: " + value);
+    }
+
+    private boolean hasEquivalentIndex(List<IndexInfo> existingIndexes, IndexSpec spec) {
+        List<IndexField> expectedFields = fieldsFor(spec.keys());
+        for (IndexInfo existingIndex : existingIndexes) {
+            if (!existingIndex.getIndexFields().equals(expectedFields)) {
+                continue;
+            }
+            if (existingIndex.isUnique() != spec.unique()) {
+                continue;
+            }
+            if (existingIndex.isSparse() != spec.sparse()) {
+                continue;
+            }
+
+            long existingTtlSeconds = existingIndex.getExpireAfter().map(Duration::getSeconds).orElse(-1L);
+            long expectedTtlSeconds = spec.ttlSeconds() == null ? -1L : spec.ttlSeconds();
+            if (existingTtlSeconds != expectedTtlSeconds) {
+                continue;
+            }
+
+            return true;
+        }
+        return false;
+    }
+
+    private List<IndexField> fieldsFor(Document keys) {
+        List<IndexField> fields = new ArrayList<>(keys.size());
+        for (Map.Entry<String, Object> entry : keys.entrySet()) {
+            fields.add(IndexField.create(entry.getKey(), directionFrom(entry.getValue())));
+        }
+        return fields;
     }
 
     private Document doc(String field, int direction) {
