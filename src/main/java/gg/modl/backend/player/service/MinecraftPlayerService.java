@@ -444,7 +444,7 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> pardonPlayer(Server server, String playerName, String punishmentType, String issuerName, String issuerId, String reason) {
-        Player player = playerRepository.findByUsernameIgnoreCase(server, playerName).orElse(null);
+        Player player = playerService.findBestByUsername(server, playerName).orElse(null);
         if (player == null) {
             return Map.of("status", 404, "message", "Player not found");
         }

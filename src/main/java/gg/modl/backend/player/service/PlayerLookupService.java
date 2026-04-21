@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
+import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
@@ -37,6 +38,7 @@ public class PlayerLookupService {
     private final PlayerStatusCalculator statusCalculator;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
+    private final PlayerService playerService;
 
     public MinecraftPlayerService.ServiceResponse getPlayerByUuid(Server server, String uuid, Integer punishmentLimit, Integer noteLimit) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
@@ -336,7 +338,7 @@ public class PlayerLookupService {
     }
 
     private Optional<Player> findByUsername(Server server, String username) {
-        return playerRepository.findByUsernameIgnoreCase(server, username);
+        return playerService.findBestByUsername(server, username);
     }
 
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {

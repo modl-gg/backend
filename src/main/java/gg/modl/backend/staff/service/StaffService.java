@@ -13,6 +13,7 @@ import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
+import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.role.data.StaffRole;
@@ -52,6 +53,7 @@ public class StaffService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final ServerMongoRepository serverRepository;
+    private final PlayerService playerService;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
 
@@ -393,7 +395,7 @@ public class StaffService {
 
         Player player = request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()
                         ? playerRepository.findByMinecraftUuid(server, request.minecraftUuid()).orElse(null)
-                        : playerRepository.findByUsernameIgnoreCase(server, request.minecraftUsername()).orElse(null);
+                        : playerService.findBestByUsername(server, request.minecraftUsername()).orElse(null);
         if (player == null) {
             throw new ResourceNotFoundException("Minecraft player not found");
         }

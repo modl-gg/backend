@@ -75,6 +75,26 @@ public class PlayerService {
             .toList();
     }
 
+    public Optional<Player> findBestByUsername(Server server, String username) {
+        String normalizedUsername = username == null ? "" : username.trim();
+        if (normalizedUsername.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String normalizedUsernameLower = normalizedUsername.toLowerCase(Locale.ROOT);
+        List<Player> candidates = playerRepository.searchByUsernamePattern(server, normalizedUsername, SEARCH_CANDIDATE_LIMIT);
+
+        return candidates.stream()
+            .filter(player -> hasExactUsernameMatch(player, normalizedUsernameLower))
+            .sorted(Comparator
+                .comparingInt((Player player) -> exactUsernameMatchRank(player, normalizedUsernameLower))
+                .thenComparing((Player a, Player b) -> Boolean.compare(isOnline(b), isOnline(a)))
+                .thenComparing((Player a, Player b) -> Long.compare(getLastLoginMillis(b), getLastLoginMillis(a)))
+                .thenComparing(player -> player.getMinecraftUuid().toString()))
+            .findFirst()
+            .or(() -> playerRepository.findByUsernameIgnoreCase(server, normalizedUsername));
+    }
+
     private PlayerSearchResult toPlayerSearchResult(Server server, Player player) {
         List<UsernameEntry> usernames = player.getUsernames();
         String username = usernames == null || usernames.isEmpty() ? "Unknown" :
@@ -106,8 +126,7 @@ public class PlayerService {
             }
         }
 
-        Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
-        if (Boolean.TRUE.equals(isOnline)) {
+        if (isOnline(player)) {
             return "Online";
         }
         return "Offline";
@@ -153,6 +172,40 @@ public class PlayerService {
         return RANK_NO_MATCH;
     }
 
+    private boolean hasExactUsernameMatch(Player player, String normalizedSearchLower) {
+        List<UsernameEntry> usernames = player.getUsernames();
+        if (usernames == null || usernames.isEmpty()) {
+            return false;
+        }
+
+        for (UsernameEntry username : usernames) {
+            if (equalsIgnoreCase(username.username(), normalizedSearchLower)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int exactUsernameMatchRank(Player player, String normalizedSearchLower) {
+        List<UsernameEntry> usernames = player.getUsernames();
+        if (usernames == null || usernames.isEmpty()) {
+            return RANK_NO_MATCH;
+        }
+
+        String currentUsername = usernames.get(usernames.size() - 1).username();
+        if (equalsIgnoreCase(currentUsername, normalizedSearchLower)) {
+            return RANK_EXACT_CURRENT_USERNAME;
+        }
+
+        for (int i = 0; i < usernames.size() - 1; i++) {
+            if (equalsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
+                return RANK_EXACT_PAST_USERNAME;
+            }
+        }
+
+        return RANK_NO_MATCH;
+    }
+
     private boolean equalsIgnoreCase(String value, String normalizedSearchLower) {
         return value != null && value.toLowerCase(Locale.ROOT).equals(normalizedSearchLower);
     }
@@ -179,6 +232,11 @@ public class PlayerService {
             return (Date) lastLogin;
         }
         return null;
+    }
+
+    private boolean isOnline(Player player) {
+        Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
+        return Boolean.TRUE.equals(isOnline);
     }
 
     private boolean isUuid(String value) {
