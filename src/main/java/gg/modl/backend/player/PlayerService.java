@@ -363,7 +363,7 @@ public class PlayerService {
 
     private Player newPlayer(UUID minecraftUuid, String username) {
         return Player.builder()
-            .id(IdGenerator.generateShortId())
+            .id(PlayerDocumentIdGenerator.generate())
             .minecraftUuid(minecraftUuid)
             .usernames(new ArrayList<>(List.of(new UsernameEntry(username, new Date()))))
             .notes(new ArrayList<>())
@@ -537,11 +537,13 @@ public class PlayerService {
 
     private boolean updatePlayerOnLogin(Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         List<UsernameEntry> usernames = ensureUsernames(player);
-        String currentUsername = usernames.isEmpty() ? null :
-                                 usernames.get(usernames.size() - 1).username();
+        UsernameEntry currentEntry = usernames.isEmpty() ? null : usernames.get(usernames.size() - 1);
+        String currentUsername = currentEntry != null ? currentEntry.username() : null;
 
         if (!username.equals(currentUsername)) {
             usernames.add(new UsernameEntry(username, new Date()));
+        } else if (currentEntry != null && currentEntry.date() == null) {
+            usernames.set(usernames.size() - 1, new UsernameEntry(username, new Date()));
         }
 
         boolean isNewIp = addIpToPlayer(player, ip, ipInfo);

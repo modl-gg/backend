@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.migration.validation.MigrationValidator;
+import gg.modl.backend.player.PlayerDocumentIdGenerator;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
@@ -210,7 +211,7 @@ public class MigrationProcessor {
     private Player buildNewPlayer(String uuid, Map<?, ?> data) {
         try {
             Player player = Player.builder()
-                .id(UUID.randomUUID().toString())
+                .id(PlayerDocumentIdGenerator.generate())
                 .minecraftUuid(UUID.fromString(uuid))
                 .usernames(parseUsernames(data.get("usernames")))
                 .notes(parseNotes(data.get("notes")))
