@@ -20,6 +20,8 @@ const UUID_REGEX =
 function main() {
     print("\n--- Player Document UUID Migration ---");
     print(`Mode: ${CONFIG.dryRun ? "DRY RUN" : "LIVE"}`);
+    print("[INFO] Codebase verification: player document _id references were found in logs.metadata.playerId.");
+    print("[INFO] Tickets use player UUID fields (creatorUuid/reportedPlayerUuid), so no ticket update is required.");
 
     try {
         const transactionSupport = preflightTransactionSupport();
@@ -206,10 +208,15 @@ function preflightTenant(databaseName) {
             continue;
         }
 
+        if (!isUuidString(playerDoc.minecraftUuid)) {
+            result.fatalErrors.push(`Player ${tojsononeline(oldId)} is missing a valid minecraftUuid.`);
+            continue;
+        }
+
         result.candidates.push({
             minecraftUuid: playerDoc.minecraftUuid,
             oldId,
-            newId: generateUuidV4String()
+            newId: playerDoc.minecraftUuid
         });
     }
 
@@ -344,23 +351,6 @@ function printTenantMappings(databaseName, mappings, label) {
 
 function isUuidString(value) {
     return typeof value === "string" && UUID_REGEX.test(value);
-}
-
-function generateUuidV4String() {
-    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-        return crypto.randomUUID();
-    }
-
-    const bytes = [];
-    for (let index = 0; index < 16; index++) {
-        bytes.push(Math.floor(Math.random() * 256));
-    }
-
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-    const hex = bytes.map(byte => byte.toString(16).padStart(2, "0")).join("");
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 main();
