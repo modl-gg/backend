@@ -58,7 +58,8 @@ public class MinecraftSyncV2Controller {
         List<OnlinePlayer> onlinePlayers,
         String serverName,
         List<ChatLogEntry> chatLogs,
-        List<CommandLogEntry> commandLogs
+        List<CommandLogEntry> commandLogs,
+        String serverInstanceId
     ) {
     }
 }

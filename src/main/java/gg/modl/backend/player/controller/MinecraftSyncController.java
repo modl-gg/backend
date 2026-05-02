@@ -83,7 +83,8 @@ public class MinecraftSyncController {
         ServerStatus serverStatus,
         String serverName,
         List<ChatLogEntry> chatLogs,
-        List<CommandLogEntry> commandLogs
+        List<CommandLogEntry> commandLogs,
+        String serverInstanceId
     ) {
     }
 

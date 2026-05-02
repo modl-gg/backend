@@ -1,0 +1,38 @@
+# Example backend nginx config for realtime WebSocket readiness.
+# Install manually and adapt server_name/upstream include paths for the target host.
+# Install/include backend/nginx/modl-websocket-map.conf.example once at nginx http scope.
+# Do not include the shared map from every vhost when installing multiple examples.
+
+include /etc/nginx/conf.d/modl-backend-upstream.conf;
+
+server {
+    listen 443 ssl http2;
+    server_name api.modl.example;
+
+    location = /v1/realtime/ws {
+        # Keep aligned with modl.realtime.ws.max-frame-bytes.
+        client_max_body_size 64k;
+
+        proxy_pass http://modl_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
+    location /v1/ {
+        proxy_pass http://modl_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

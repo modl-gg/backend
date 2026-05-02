@@ -172,22 +172,17 @@ public class ServerService {
 
     @Nullable
     public Server verifyEmailToken(@NotNull String token) {
-        Server server = serverRepository.findByEmailVerificationToken(token).orElse(null);
+        Server server = serverRepository.verifyEmailTokenAtomically(token).orElse(null);
 
         if (server == null) {
             return null;
         }
 
-        server.setEmailVerified(true);
-        server.setEmailVerificationToken(null);
-        server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
-        server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
         evictAllServerCaches();
 
-        provisioningService.provision(saved);
+        provisioningService.provision(server);
 
-        return saved;
+        return server;
     }
 
     @Nullable

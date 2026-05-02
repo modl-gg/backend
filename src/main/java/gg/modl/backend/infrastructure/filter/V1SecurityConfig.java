@@ -52,6 +52,7 @@ public class V1SecurityConfig {
                 .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.ADMIN_AUTH + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.WEBHOOKS_STRIPE + "/**").permitAll()
+                .requestMatchers(RESTMappingV1.REALTIME_WS).permitAll()
                 .requestMatchers(RESTMappingV1.PREFIX_ADMIN + "/**").hasAuthority(RESTSecurityRole.ADMIN)
                 .requestMatchers(RESTMappingV1.PREFIX_PANEL + "/**").hasAuthority(RESTSecurityRole.USER)
                 .requestMatchers(RESTMappingV1.PREFIX_MINECRAFT + "/**").hasAuthority(RESTSecurityRole.MINECRAFT)

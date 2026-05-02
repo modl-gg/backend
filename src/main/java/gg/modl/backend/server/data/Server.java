@@ -48,6 +48,14 @@ public class Server {
     private String emailVerificationToken;
 
     @Nullable
+    @Field(name = "cleanupClaimId", targetType = FieldType.STRING)
+    private String cleanupClaimId;
+
+    @Nullable
+    @Field(name = "cleanupClaimedAt", targetType = FieldType.DATE_TIME)
+    private Date cleanupClaimedAt;
+
+    @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
     private ProvisioningStatus provisioningStatus;
 
