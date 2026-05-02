@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -15,6 +16,7 @@ public class RealtimeMessageRateLimiter {
     private final Clock clock;
     private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
 
+    @Autowired
     public RealtimeMessageRateLimiter(RealtimeProperties properties) {
         this(properties, Clock.systemUTC());
     }
