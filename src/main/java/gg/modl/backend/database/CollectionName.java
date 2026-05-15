@@ -42,6 +42,8 @@ public final class CollectionName {
 
     // Replays
     public static final String REPLAYS = "replays";
+    public static final String REPLAY_LITE_REPLAYS = "replay_lite_replays";
+    public static final String REPLAY_LITE_DAILY_QUOTAS = "replay_lite_daily_quotas";
 
     // Training
     public static final String TRAINING_SEGMENTS = "training_segments";

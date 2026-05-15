@@ -59,6 +59,34 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
         ));
 
+        ensureIndexes(template, CollectionName.REPLAY_LITE_REPLAYS, List.of(
+            IndexSpec.standard("uidx_replay_lite_objectKey", doc("objectKey", 1), true, false),
+            IndexSpec.standard("idx_replay_lite_expiresAt", doc("expiresAt", 1), false, true),
+            IndexSpec.standard(
+                "idx_replay_lite_server_status_confirmedAt",
+                doc("pluginServerUuid", 1).append("status", 1).append("confirmedAt", 1),
+                false,
+                false
+            ),
+            IndexSpec.standard(
+                "idx_replay_lite_server_status_createdAt",
+                doc("pluginServerUuid", 1).append("status", 1).append("createdAt", 1),
+                false,
+                false
+            ),
+            IndexSpec.standard("idx_replay_lite_status_createdAt", doc("status", 1).append("createdAt", 1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.REPLAY_LITE_DAILY_QUOTAS, List.of(
+            IndexSpec.standard(
+                "uidx_replay_lite_daily_quotas_server_day",
+                doc("pluginServerUuid", 1).append("day", 1),
+                true,
+                false
+            ),
+            IndexSpec.ttl("idx_replay_lite_daily_quotas_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
+
         ensureIndexes(template, "admin_users", List.of(
             IndexSpec.standard("uidx_admin_users_email", doc("email", 1), true, false)
         ));

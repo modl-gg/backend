@@ -49,6 +49,7 @@ public class V1SecurityConfig {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                 .requestMatchers(RESTMappingV1.HEALTH).permitAll()
                 .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
+                .requestMatchers(RESTMappingV1.PREFIX_REPLAY_LITE + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.ADMIN_AUTH + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.WEBHOOKS_STRIPE + "/**").permitAll()

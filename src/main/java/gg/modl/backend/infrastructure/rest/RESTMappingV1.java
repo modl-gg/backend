@@ -8,6 +8,7 @@ public final class RESTMappingV1 {
     public static final String ADMIN_AUTH = PREFIX_ADMIN + "/auth";
     public static final String PREFIX_PUBLIC = V1 + "/public";
     public static final String PREFIX_MINECRAFT = V1 + "/minecraft";
+    public static final String PREFIX_REPLAY_LITE = V1 + "/replay-lite";
     // Health check
     public static final String HEALTH = V1 + "/health";
     // Server
@@ -110,4 +111,6 @@ public final class RESTMappingV1 {
     private static final String REPLAYS = "/replays";
     public static final String MINECRAFT_REPLAYS = PREFIX_MINECRAFT + REPLAYS;
     public static final String PUBLIC_REPLAYS = PREFIX_PUBLIC + REPLAYS;
+    public static final String REPLAY_LITE_REPLAYS = PREFIX_REPLAY_LITE + REPLAYS;
+    public static final String PUBLIC_REPLAY_LITE_REPLAYS = PREFIX_PUBLIC + "/replay-lite" + REPLAYS;
 }
