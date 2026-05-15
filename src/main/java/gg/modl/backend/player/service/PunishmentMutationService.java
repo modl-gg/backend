@@ -212,7 +212,10 @@ public class PunishmentMutationService {
 
     private void applyPunishmentTicketModifications(Server server, Player player, Punishment punishment, ModifyPunishmentTicketsRequest request) {
 
-        List<String> currentIds = new ArrayList<>(punishment.getAttachedTicketIds());
+        List<String> currentIds = punishment.getAttachedTicketIds() != null
+            ? new ArrayList<>(punishment.getAttachedTicketIds())
+            : new ArrayList<>();
+        List<String> originalIds = new ArrayList<>(currentIds);
 
         if (request.addTicketIds() != null) {
             for (String id : request.addTicketIds()) {
@@ -226,16 +229,22 @@ public class PunishmentMutationService {
             currentIds.removeAll(request.removeTicketIds());
         }
 
+        List<String> addedIds = new ArrayList<>(currentIds);
+        addedIds.removeAll(originalIds);
+
+        List<String> removedIds = new ArrayList<>(originalIds);
+        removedIds.removeAll(currentIds);
+
         punishment.setAttachedTicketIds(currentIds);
         punishmentRepository.replacePunishments(server, player);
 
         if (request.modifyAssociatedTickets()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
-            if (request.addTicketIds() != null && !request.addTicketIds().isEmpty()) {
-                closeAttachedTickets(server, request.addTicketIds(), ticketIssuerName);
+            if (!addedIds.isEmpty()) {
+                closeAttachedTickets(server, addedIds, ticketIssuerName);
             }
-            if (request.removeTicketIds() != null && !request.removeTicketIds().isEmpty()) {
-                reopenAttachedTickets(server, request.removeTicketIds(), ticketIssuerName);
+            if (!removedIds.isEmpty()) {
+                reopenAttachedTickets(server, removedIds, ticketIssuerName);
             }
         }
     }

@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -284,7 +285,9 @@ class TicketServiceTest {
         Ticket updatedTicket = updatedTicketCaptor.getValue();
         assertEquals(TicketStatus.OPEN, updatedTicket.getStatus());
         assertEquals("Updated subject", updatedTicket.getSubject());
-        assertTrue(updatedTicket.isEmailAuthEnabled());
+        assertFalse(updatedTicket.isEmailAuthEnabled());
+        assertFalse(updatedTicket.getData().containsKey("emailAuthEnabled"));
+        assertFalse(updatedTicket.getFormData().containsKey("emailAuthEnabled"));
         assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));
         assertEquals("creator-1", updatedTicket.getData().get("creatorIdentifier"));
         assertEquals(1, updatedTicket.getReplies().size());

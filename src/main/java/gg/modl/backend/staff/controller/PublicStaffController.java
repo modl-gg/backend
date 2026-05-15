@@ -73,7 +73,8 @@ public class PublicStaffController {
         @PathVariable String token,
         HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        if (!staffTwoFactorService.verifyToken(server, token)) {
+        String sessionEmail = RequestUtil.getSessionEmail(request);
+        if (!staffTwoFactorService.verifyToken(server, token, sessionEmail)) {
             return ResponseEntity.notFound().build();
         }
 

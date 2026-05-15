@@ -79,7 +79,7 @@ public class StaffService {
             }
         }
 
-        // If Super Admin doesn't have a staff record yet, create one
+        // Expose the owner in listings without creating a privileged staff document implicitly.
         if (!superAdminFound && adminEmail != null) {
             Staff superAdmin = Staff.builder()
                 .email(adminEmail)
@@ -88,8 +88,6 @@ public class StaffService {
                 .createdAt(server.getCreatedAt())
                 .updatedAt(new Date())
                 .build();
-            staffRepository.saveEntity(server, superAdmin);
-            evictStaffByEmailCache(server, adminEmail);
             result.add(0, toStaffResponse(superAdmin, "Active"));
         }
 
@@ -441,19 +439,7 @@ public class StaffService {
         Staff staff = staffRepository.findByEmailIgnoreCase(server, email).orElse(null);
 
         if (staff == null) {
-            if (!createIfNotExists) {
-                return Optional.empty();
-            }
-            staff = Staff.builder()
-                .email(email)
-                .username(newUsername != null ? newUsername : "Admin")
-                .role("Super Admin")
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
-            Staff saved = staffRepository.saveEntity(server, staff);
-            evictStaffByEmailCache(server, email);
-            return Optional.of(saved);
+            return Optional.empty();
         }
 
         boolean hasChanges = false;

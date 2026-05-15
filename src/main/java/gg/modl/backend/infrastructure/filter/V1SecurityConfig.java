@@ -48,6 +48,7 @@ public class V1SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/prometheus").permitAll()
                 .requestMatchers(RESTMappingV1.HEALTH).permitAll()
+                .requestMatchers(HttpMethod.POST, RESTMappingV1.PREFIX_PUBLIC + "/staff/2fa/verify/**").hasAuthority(RESTSecurityRole.USER)
                 .requestMatchers(RESTMappingV1.PREFIX_PUBLIC + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.PANEL_AUTH + "/**").permitAll()
                 .requestMatchers(RESTMappingV1.ADMIN_AUTH + "/**").permitAll()

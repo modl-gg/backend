@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class StorageQuotaService {
     private final StorageMetadataService storageMetadataService;
+    private final S3StorageService s3StorageService;
     private final UsageTrackingService usageTrackingService;
     public static final long MAX_PREMIUM_BYTES = 2200L * 1024L * 1024 * 1024; // 2200 GB (200 base + 2000 max overage)
     private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
@@ -22,7 +23,7 @@ public class StorageQuotaService {
     private static final double AI_OVERAGE_RATE = 0.02;
 
     public boolean canUpload(Server server, long fileSize) {
-        long used = storageMetadataService.getStorageUsedBytes(server);
+        long used = s3StorageService.calculateStorageUsed(server);
         long max = getMaxBytesForServer(server);
         return used + fileSize <= max;
     }
@@ -73,10 +74,6 @@ public class StorageQuotaService {
 
     private long getMaxBytesForServer(Server server) {
         if (server.getPlan() == ServerPlan.PREMIUM) {
-            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                // Trust the database value directly â€” support can set values above MAX_PREMIUM_BYTES
-                return server.getMaxStorageLimitBytes();
-            }
             return DEFAULT_PREMIUM_BYTES;
         }
         return FREE_TIER_BYTES;

@@ -17,7 +17,6 @@ import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -126,21 +125,10 @@ public class PublicTicketController {
         String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
         response.put("creatorName", creatorName);
         response.put("creator", creatorName);
-        response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
-        response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
         response.put("created", ticketResponse.date());
         response.put("date", ticketResponse.date());
         response.put("category", ticketResponse.category());
         response.put("locked", ticketResponse.locked());
-        response.put("replies", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-        response.put("messages", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-        response.put("notes", ticketResponse.notes() != null ? ticketResponse.notes() : Collections.emptyList());
-        response.put("tags", ticketResponse.tags() != null ? ticketResponse.tags() : Collections.emptyList());
-        response.put("data", ticketResponse.data() != null ? ticketResponse.data() : Map.of());
-        response.put("formData", ticketResponse.formData() != null ? ticketResponse.formData() : Map.of());
-        response.put("reportedPlayer", ticketResponse.reportedPlayer() != null ? ticketResponse.reportedPlayer() : "");
-        response.put("reportedPlayerUuid", ticketResponse.reportedPlayerUuid() != null ? ticketResponse.reportedPlayerUuid() : "");
-        response.put("chatMessages", ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
         response.put("emailAuthEnabled", ticketResponse.emailAuthEnabled());
         return ResponseEntity.ok(response);
     }
@@ -148,6 +136,7 @@ public class PublicTicketController {
     @GetMapping("/{id}/status")
     public ResponseEntity<?> getTicketStatus(
         @PathVariable String id,
+        @RequestParam(value = "token", required = false) String ticketToken,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -156,6 +145,13 @@ public class PublicTicketController {
         Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
         if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
             return ResponseEntity.notFound().build();
+        }
+
+        Ticket ticket = rawTicket.get();
+        if (ticket.isEmailAuthEnabled()) {
+            if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
+                throw new ForbiddenException("Email verification required");
+            }
         }
 
         TicketResponse ticketResp = ticketService.getTicketById(server, id);
@@ -191,6 +187,10 @@ public class PublicTicketController {
             }
         }
 
+        if (replyRequest.staff()) {
+            throw new ValidationException("Public replies cannot be marked as staff");
+        }
+
         TicketReply reply = ticketReplyService.addReply(server, id, replyRequest);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
@@ -204,9 +204,22 @@ public class PublicTicketController {
     public ResponseEntity<?> submitTicketForm(
         @PathVariable String id,
         @RequestBody @Valid SubmitTicketFormRequest submitRequest,
+        @RequestParam(value = "token", required = false) String ticketToken,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+
+        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
+        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Ticket ticket = rawTicket.get();
+        if (ticket.isEmailAuthEnabled()) {
+            if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
+                throw new ForbiddenException("Email verification required");
+            }
+        }
 
         TicketResponse ticketResp = ticketService.submitTicketForm(server, id, submitRequest);
         return ResponseEntity.ok(Map.of(

@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.repository.AdminUserMongoRepository;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedHashSet;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class AdminAuthService {
+    private static final long ADMIN_SESSION_MAX_AGE_SECONDS = 24 * 60 * 60;
     private final AdminUserMongoRepository adminUserRepository;
     private final SessionService sessionService;
 
@@ -43,6 +45,11 @@ public class AdminAuthService {
         }
 
         AuthSessionData session = sessionOpt.get();
+        if (isAdminSessionExpired(session)) {
+            sessionService.invalidateAdminSession(sessionId);
+            return Optional.empty();
+        }
+
         return findByEmail(session.getEmail())
             .map(admin -> new AdminSession(admin.getId(), session.getEmail(), session.getCreatedAt()));
     }
@@ -71,6 +78,10 @@ public class AdminAuthService {
             .map(Cookie::getValue)
             .filter(value -> value != null && !value.isBlank())
             .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    public boolean isAdminSessionExpired(AuthSessionData session) {
+        return session.getCreatedAt().toInstant().plusSeconds(ADMIN_SESSION_MAX_AGE_SECONDS).isBefore(Instant.now());
     }
 
     public record AdminSession(String adminId, String email, Date createdAt) {}

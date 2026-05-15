@@ -146,6 +146,12 @@ public class PanelAuthController {
         Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(),
             requestData.dateFormat());
         if (result.isEmpty()) {
+            if (isSuperAdmin) {
+                String username = requestData.username() != null ? requestData.username() : "Admin";
+                String language = requestData.language() != null ? requestData.language() : "en";
+                String dateFormat = requestData.dateFormat() != null ? requestData.dateFormat() : "MM/DD/YYYY";
+                return ResponseEntity.ok(new ProfileResponse(null, email, username, "Super Admin", username, language, dateFormat));
+            }
             return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
         }
         Staff staff = result.get();

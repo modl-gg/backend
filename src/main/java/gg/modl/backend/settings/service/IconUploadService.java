@@ -19,7 +19,7 @@ public class IconUploadService {
     private final StorageQuotaService storageQuotaService;
     private final StorageMetadataService storageMetadataService;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
-        "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
+        "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"
     );
     private static final long MAX_ICON_SIZE = 2 * 1024 * 1024;
 
@@ -52,7 +52,7 @@ public class IconUploadService {
         }
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP, SVG"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP"));
         }
         if (file.getSize() > MAX_ICON_SIZE) {
             return ResponseEntity.badRequest().body(Map.of("error", "File too large. Maximum size is 2MB."));

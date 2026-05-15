@@ -23,7 +23,7 @@ public class TicketIdGenerator {
         String id;
         int attempts = 0;
         do {
-            int randomId = idGenerator.nextSixDigitInt();
+            String randomId = idGenerator.generateToken();
             id = prefix + "-" + randomId;
             attempts++;
         } while (ticketRepository.existsByTicketId(server, id) && attempts < 10);

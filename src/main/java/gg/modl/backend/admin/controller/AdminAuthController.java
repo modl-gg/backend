@@ -110,6 +110,10 @@ public class AdminAuthController {
             return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
         }
         AuthSessionData session = sessionOpt.get();
+        if (adminAuthService.isAdminSessionExpired(session)) {
+            sessionService.invalidateAdminSession(sessionId);
+            return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
+        }
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.getEmail());
         if (adminOpt.isEmpty()) {
