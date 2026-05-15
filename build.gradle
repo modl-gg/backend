@@ -68,7 +68,7 @@ dependencies {
     implementation 'gg.modl.minecraft.replay:replay-format:1.1.0'
 
     // Shared protobuf types
-    implementation 'gg.modl:proto:1.1.0'
+    implementation 'gg.modl:proto:1.2.0'
 
     // Caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'

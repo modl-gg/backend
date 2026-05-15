@@ -312,7 +312,16 @@ public class MinecraftPlayerService {
     }
 
     public ServiceResponse acknowledgeNotifications(Server server, AcknowledgeNotificationsRequest request) {
-        Player player = findPlayerByUuid(server, request.playerUuid()).orElse(null);
+        return acknowledgeNotifications(server, request.playerUuid(), request.notificationIds(), request.acknowledgedAt());
+    }
+
+    public ServiceResponse acknowledgeNotifications(
+        Server server,
+        String playerUuid,
+        List<String> notificationIds,
+        String acknowledgedAt
+    ) {
+        Player player = findPlayerByUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return ok(Map.of(
                 "status", 200,
@@ -325,7 +334,7 @@ public class MinecraftPlayerService {
         List<Map<String, Object>> remainingNotifications = pendingNotifications.stream()
             .filter(notification -> {
                 Object notificationId = notification.get("id");
-                return notificationId == null || !request.notificationIds().contains(notificationId.toString());
+                return notificationId == null || !notificationIds.contains(notificationId.toString());
             })
             .toList();
 
