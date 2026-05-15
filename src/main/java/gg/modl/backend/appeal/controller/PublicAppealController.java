@@ -2,7 +2,7 @@ package gg.modl.backend.appeal.controller;
 
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
 import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
-import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.appeal.dto.response.PublicAppealResponse;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -73,6 +73,10 @@ public class PublicAppealController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+
+        if (replyRequest.staff()) {
+            throw new ValidationException("Public replies cannot be marked as staff");
+        }
 
         TicketReply reply = appealService.addReply(server, id, replyRequest);
 

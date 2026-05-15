@@ -1,5 +1,6 @@
 package gg.modl.backend.billing.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
@@ -56,5 +57,20 @@ class UsageTrackingServiceTest {
         usageTrackingService.incrementCdnUsage("server-1", 1.5);
 
         verify(serverRepository).incrementCdnUsage("server-1", 1.5);
+    }
+
+    @Test
+    void getCdnLimitGbUsesCustomPremiumStorageLimitWhenConfigured() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
+        server.setMaxStorageLimitBytes(512L * 1024 * 1024 * 1024);
+
+        assertEquals(512.0, usageTrackingService.getCdnLimitGB(server));
+    }
+
+    @Test
+    void getCdnLimitGbFallsBackForPremiumServerWithoutCustomLimit() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
+
+        assertEquals(200.0, usageTrackingService.getCdnLimitGB(server));
     }
 }

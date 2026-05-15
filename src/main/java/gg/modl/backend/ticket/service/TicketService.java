@@ -444,7 +444,7 @@ public class TicketService {
         boolean hasDataUpdates = false;
 
         if (request.formData() != null && !request.formData().isEmpty()) {
-            Map<String, Object> sanitizedFormData = MongoKeyUtils.sanitizeKeys(request.formData());
+            Map<String, Object> sanitizedFormData = new HashMap<>(MongoKeyUtils.sanitizeKeys(request.formData()));
 
             existingData.putAll(sanitizedFormData);
             existingData.remove("creatorEmail");
@@ -452,10 +452,9 @@ public class TicketService {
             hasDataUpdates = true;
 
             Object emailAuthValue = request.formData().get("emailAuthEnabled");
-            if (emailAuthValue != null) {
-                boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
-                ticket.setEmailAuthEnabled(emailAuth);
-                existingData.put("emailAuthEnabled", emailAuth);
+            if (emailAuthValue != null && Boolean.parseBoolean(emailAuthValue.toString())) {
+                ticket.setEmailAuthEnabled(true);
+                existingData.put("emailAuthEnabled", true);
             }
 
             if (ticket.getType() != null) {
@@ -477,6 +476,11 @@ public class TicketService {
 
         if (request.creatorIdentifier() != null) {
             existingData.put("creatorIdentifier", request.creatorIdentifier());
+            hasDataUpdates = true;
+        }
+
+        if (ticket.isEmailAuthEnabled()) {
+            existingData.put("emailAuthEnabled", true);
             hasDataUpdates = true;
         }
 

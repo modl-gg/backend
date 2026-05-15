@@ -85,6 +85,7 @@ public class MinecraftRolesController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+
         if (!roleService.updateRolePermissions(server, id, request.permissions())) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
@@ -94,8 +95,7 @@ public class MinecraftRolesController {
 
         return ResponseEntity.ok(Map.of(
             "status", 200,
-            "success", true,
-            "message", "Role permissions updated"
+            "success", true
         ));
     }
 

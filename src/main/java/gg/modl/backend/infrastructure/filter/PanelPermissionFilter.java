@@ -32,7 +32,8 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         new PermissionMapping(RESTMappingV1.PANEL_DASHBOARD, "admin.audit.view.dashboard"),
         new PermissionMapping(RESTMappingV1.PANEL_ANALYTICS, "admin.audit.view.analytics"),
         new PermissionMapping(RESTMappingV1.PANEL_AUDIT, "admin.audit.view.logs"),
-        new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs")
+        new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs"),
+        new PermissionMapping(RESTMappingV1.PANEL_TICKETS + "/bulk", "ticket.close.all")
     );
     private static final List<PermissionMapping> RW_PERMISSIONS = List.of(
         new PermissionMapping(RESTMappingV1.PANEL_BILLING, "admin.settings.view.billing", "admin.settings.modify.billing"),
@@ -43,7 +44,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         new PermissionMapping(RESTMappingV1.PANEL_STORAGE, "admin.settings.view.storage", "admin.settings.modify.storage"),
         new PermissionMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS, "ticket.view.all", "ticket.reply.all"),
         new PermissionMapping(RESTMappingV1.PANEL_TICKETS, "ticket.view.all", "ticket.reply.all"),
-        new PermissionMapping(RESTMappingV1.PANEL_APPEALS, "ticket.view.all", "ticket.reply.all"),
+        new PermissionMapping(RESTMappingV1.PANEL_APPEALS, "ticket.view.all", "appeal.modify"),
         new PermissionMapping(RESTMappingV1.PANEL_SERVER, "admin.settings.view", "admin.settings.modify")
     );
     private static final Set<String> SETTINGS_PUNISHMENT_PATHS = Set.of(
@@ -86,13 +87,28 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         String role = staffOpt.map(Staff::getRole).orElse(null);
-        boolean authorized = role != null && permissionService.hasPermission(server, role, requiredPermission);
+        boolean authorized = role != null && hasRequiredPermission(server, role, requiredPermission, request.getRequestURI(), request.getMethod());
         if (!authorized) {
             deny(response);
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean hasRequiredPermission(Server server, String role, String requiredPermission, String path, String method) {
+        if (permissionService.hasPermission(server, role, requiredPermission)) {
+            return true;
+        }
+        return isAppealReplyWrite(path, method)
+               && "appeal.modify".equals(requiredPermission)
+               && permissionService.hasPermission(server, role, "ticket.reply.all");
+    }
+
+    private boolean isAppealReplyWrite(String path, String method) {
+        return "POST".equalsIgnoreCase(method)
+               && startsWithEndpoint(path, RESTMappingV1.PANEL_APPEALS)
+               && path.endsWith("/replies");
     }
 
     private void deny(HttpServletResponse response) throws IOException {
