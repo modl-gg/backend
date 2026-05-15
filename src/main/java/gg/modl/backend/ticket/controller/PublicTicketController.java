@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +40,13 @@ public class PublicTicketController {
     private final TicketService ticketService;
     private final TicketReplyService ticketReplyService;
     private final TicketEmailVerificationService verificationService;
+    private static final String CREATOR_EMAIL_DATA_KEY = "creatorEmail";
+    private static final String CREATOR_IDENTIFIER_DATA_KEY = "creatorIdentifier";
+    private static final String EMAIL_AUTH_DATA_KEY = "emailAuthEnabled";
+    private static final String CONTACT_EMAIL_DATA_KEY = "contactEmail";
+    private static final String CONTACT_EMAIL_LEGACY_DATA_KEY = "contact_email";
+    private static final String EMAIL_DATA_KEY = "email";
+    private static final String PLAYER_UUID_DATA_KEY = "playerUuid";
 
     @PostMapping
     public ResponseEntity<?> createTicket(
@@ -126,28 +134,64 @@ public class PublicTicketController {
         String creatorName = ticketResponse.creatorName() != null ? ticketResponse.creatorName() : "";
         response.put("creatorName", creatorName);
         response.put("creator", creatorName);
-        response.put("creatorUuid", ticketResponse.creatorUuid() != null ? ticketResponse.creatorUuid() : "");
-        response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
         response.put("created", ticketResponse.date());
         response.put("date", ticketResponse.date());
         response.put("category", ticketResponse.category());
         response.put("locked", ticketResponse.locked());
-        response.put("replies", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-        response.put("messages", ticketResponse.messages() != null ? ticketResponse.messages() : Collections.emptyList());
-        response.put("notes", ticketResponse.notes() != null ? ticketResponse.notes() : Collections.emptyList());
-        response.put("tags", ticketResponse.tags() != null ? ticketResponse.tags() : Collections.emptyList());
-        response.put("data", ticketResponse.data() != null ? ticketResponse.data() : Map.of());
-        response.put("formData", ticketResponse.formData() != null ? ticketResponse.formData() : Map.of());
+        response.put("creatorUuid", "");
+        response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
+        List<Map<String, Object>> publicMessages = filterPublicReplies(ticketResponse.messages());
+        response.put("replies", publicMessages);
+        response.put("messages", publicMessages);
+        response.put("data", filterPublicData(ticketResponse.data()));
+        response.put("formData", filterPublicData(ticketResponse.formData()));
         response.put("reportedPlayer", ticketResponse.reportedPlayer() != null ? ticketResponse.reportedPlayer() : "");
-        response.put("reportedPlayerUuid", ticketResponse.reportedPlayerUuid() != null ? ticketResponse.reportedPlayerUuid() : "");
-        response.put("chatMessages", ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
+        response.put("reportedPlayerUuid", "");
+        response.put("chatMessages", ticket.isEmailAuthEnabled() && ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
         response.put("emailAuthEnabled", ticketResponse.emailAuthEnabled());
         return ResponseEntity.ok(response);
+    }
+
+    private Map<String, Object> filterPublicData(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> filtered = new HashMap<>(data);
+        filtered.remove(CREATOR_EMAIL_DATA_KEY);
+        filtered.remove(CREATOR_IDENTIFIER_DATA_KEY);
+        filtered.remove(EMAIL_AUTH_DATA_KEY);
+        filtered.remove(CONTACT_EMAIL_DATA_KEY);
+        filtered.remove(CONTACT_EMAIL_LEGACY_DATA_KEY);
+        filtered.remove(EMAIL_DATA_KEY);
+        filtered.remove(PLAYER_UUID_DATA_KEY);
+        return filtered;
+    }
+
+    private List<Map<String, Object>> filterPublicReplies(List<TicketReply> replies) {
+        if (replies == null || replies.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return replies.stream().map(this::toPublicReply).toList();
+    }
+
+    private Map<String, Object> toPublicReply(TicketReply reply) {
+        Map<String, Object> publicReply = new HashMap<>();
+        publicReply.put("id", reply.getId());
+        publicReply.put("name", reply.getName());
+        publicReply.put("avatar", reply.getAvatar());
+        publicReply.put("content", reply.getContent());
+        publicReply.put("type", reply.getType());
+        publicReply.put("created", reply.getCreated());
+        publicReply.put("staff", reply.isStaff());
+        publicReply.put("action", reply.getAction());
+        publicReply.put("attachments", reply.getAttachments() != null ? reply.getAttachments() : Collections.emptyList());
+        return publicReply;
     }
 
     @GetMapping("/{id}/status")
     public ResponseEntity<?> getTicketStatus(
         @PathVariable String id,
+        @RequestParam(value = "token", required = false) String ticketToken,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -156,6 +200,13 @@ public class PublicTicketController {
         Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
         if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
             return ResponseEntity.notFound().build();
+        }
+
+        Ticket ticket = rawTicket.get();
+        if (ticket.isEmailAuthEnabled()) {
+            if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
+                throw new ForbiddenException("Email verification required");
+            }
         }
 
         TicketResponse ticketResp = ticketService.getTicketById(server, id);
@@ -191,6 +242,10 @@ public class PublicTicketController {
             }
         }
 
+        if (replyRequest.staff()) {
+            throw new ValidationException("Public replies cannot be marked as staff");
+        }
+
         TicketReply reply = ticketReplyService.addReply(server, id, replyRequest);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
@@ -204,9 +259,22 @@ public class PublicTicketController {
     public ResponseEntity<?> submitTicketForm(
         @PathVariable String id,
         @RequestBody @Valid SubmitTicketFormRequest submitRequest,
+        @RequestParam(value = "token", required = false) String ticketToken,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+
+        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
+        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Ticket ticket = rawTicket.get();
+        if (ticket.isEmailAuthEnabled() && ticketService.getEmailHint(ticket) != null) {
+            if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
+                throw new ForbiddenException("Email verification required");
+            }
+        }
 
         TicketResponse ticketResp = ticketService.submitTicketForm(server, id, submitRequest);
         return ResponseEntity.ok(Map.of(

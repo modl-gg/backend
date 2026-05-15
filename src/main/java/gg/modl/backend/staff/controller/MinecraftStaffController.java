@@ -62,6 +62,7 @@ public class MinecraftStaffController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+
         if (!staffService.updateMinecraftStaffRole(server, id, request.role())) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
@@ -71,8 +72,7 @@ public class MinecraftStaffController {
 
         return ResponseEntity.ok(Map.of(
             "status", 200,
-            "success", true,
-            "message", "Staff role updated"
+            "success", true
         ));
     }
 

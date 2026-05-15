@@ -329,7 +329,7 @@ public class RoleService {
         List<String> adminPerms = new ArrayList<>(List.of(
             "admin.settings.view", "admin.staff.manage", "admin.audit.view",
             "punishment.modify",
-            "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+            "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
             "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
             "staff.maintenance", "staff.modactions",
             "staff.intercept", "staff.chatlogs", "staff.commandlogs"
@@ -338,7 +338,7 @@ public class RoleService {
 
         List<String> moderatorPerms = new ArrayList<>(List.of(
             "punishment.modify",
-            "ticket.view.all", "ticket.reply.all", "ticket.close.all",
+            "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
             "staff.modactions",
             "staff.chatlogs", "staff.commandlogs"
         ));
@@ -379,7 +379,7 @@ public class RoleService {
                 .id("helper")
                 .name("Helper")
                 .description("Basic support permissions")
-                .permissions(new ArrayList<>(List.of("ticket.view.all", "ticket.reply.all")))
+                .permissions(new ArrayList<>(List.of("ticket.view.all", "ticket.reply.all", "appeal.modify")))
                 .isDefault(true)
                 .order(3)
                 .createdAt(new Date())

@@ -77,6 +77,7 @@ public class PermissionService {
         new Permission("ticket.view.all.notes", "View Staff Notes", "View internal staff notes on tickets", "ticket", "ticket.view.all"),
         new Permission("ticket.reply.all", "Reply to All Tickets", "Reply to all ticket types (includes all sub-permissions)", "ticket"),
         new Permission("ticket.reply.all.notes", "Add Staff Notes", "Add staff-only internal notes", "ticket", "ticket.reply.all"),
+        new Permission("appeal.modify", "Modify Appeals", "Reply to and update appeals", "ticket"),
         new Permission("ticket.close.all", "Close/Reopen All Tickets", "Close and reopen all ticket types (includes all sub-permissions)", "ticket"),
         new Permission("ticket.close.all.lock", "Lock Tickets", "Lock tickets to prevent further replies", "ticket", "ticket.close.all"),
         new Permission("ticket.manage", "Manage Tickets", "Advanced ticket management (includes all sub-permissions)", "ticket"),

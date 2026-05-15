@@ -28,8 +28,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} '
           set -e
           cd /home/modl/backend
-          git fetch origin main
-          git reset --hard origin/main
+          git fetch --no-tags origin ${{ github.sha }}
+          git reset --hard ${{ github.sha }}
           chmod +x scripts/deploy.sh scripts/rollback.sh
           ./scripts/deploy.sh production
           '

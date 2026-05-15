@@ -1,9 +1,11 @@
 package gg.modl.backend.settings.controller;
 
 import gg.modl.backend.ai.service.AITicketAnalysisService;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.GeneralSettings;
@@ -62,6 +64,7 @@ public class PanelSettingsController {
     private final IconUploadService iconUploadService;
     private final AITicketAnalysisService aiTicketAnalysisService;
     private final OffenderThresholdSettingsService offenderThresholdSettingsService;
+    private final PermissionService permissionService;
 
     @GetMapping("/general")
     public ResponseEntity<SettingsEnvelope<GeneralSettings>> getGeneralSettings(HttpServletRequest request) {
@@ -144,6 +147,7 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         String apiKey = apiKeySettingsService.generateApiKey(server, type);
         return ResponseEntity.ok(Map.of(
             "message", "API key generated successfully",
@@ -157,6 +161,7 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         String apiKey = apiKeySettingsService.revealApiKey(server, type);
 
         if (apiKey == null) {
@@ -172,6 +177,7 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
 
         if (!deleted) {
@@ -187,6 +193,7 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         boolean exists = apiKeySettingsService.hasApiKey(server, type);
         return ResponseEntity.ok(Map.of("exists", exists));
     }
@@ -338,6 +345,13 @@ public class PanelSettingsController {
     }
 
     public record SettingsMeta(long version, Date updatedAt) {
+    }
+
+    private void requireSuperAdmin(Server server, HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (!permissionService.isSuperAdmin(server, email)) {
+            throw new ForbiddenException("Only super admins can manage API keys");
+        }
     }
 
 }
