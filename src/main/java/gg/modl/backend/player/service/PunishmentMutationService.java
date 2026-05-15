@@ -196,6 +196,28 @@ public class PunishmentMutationService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment tickets modified", true, 1);
     }
 
+    public PunishmentOperationResult modifyPunishmentTickets(
+        Server server,
+        String punishmentId,
+        List<String> addTicketIds,
+        List<String> removeTicketIds,
+        boolean modifyAssociatedTickets,
+        String issuerName,
+        String issuerId
+    ) {
+        return modifyPunishmentTickets(
+            server,
+            punishmentId,
+            new ModifyPunishmentTicketsRequest(
+                addTicketIds,
+                removeTicketIds,
+                modifyAssociatedTickets,
+                issuerName,
+                issuerId
+            )
+        );
+    }
+
     public Player modifyPunishmentTickets(Server server, UUID playerUuid, String punishmentId, ModifyPunishmentTicketsRequest request) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
@@ -212,7 +234,10 @@ public class PunishmentMutationService {
 
     private void applyPunishmentTicketModifications(Server server, Player player, Punishment punishment, ModifyPunishmentTicketsRequest request) {
 
-        List<String> currentIds = new ArrayList<>(punishment.getAttachedTicketIds());
+        List<String> currentIds = punishment.getAttachedTicketIds() != null
+            ? new ArrayList<>(punishment.getAttachedTicketIds())
+            : new ArrayList<>();
+        List<String> originalIds = new ArrayList<>(currentIds);
 
         if (request.addTicketIds() != null) {
             for (String id : request.addTicketIds()) {
@@ -226,16 +251,22 @@ public class PunishmentMutationService {
             currentIds.removeAll(request.removeTicketIds());
         }
 
+        List<String> addedIds = new ArrayList<>(currentIds);
+        addedIds.removeAll(originalIds);
+
+        List<String> removedIds = new ArrayList<>(originalIds);
+        removedIds.removeAll(currentIds);
+
         punishment.setAttachedTicketIds(currentIds);
         punishmentRepository.replacePunishments(server, player);
 
         if (request.modifyAssociatedTickets()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
-            if (request.addTicketIds() != null && !request.addTicketIds().isEmpty()) {
-                closeAttachedTickets(server, request.addTicketIds(), ticketIssuerName);
+            if (!addedIds.isEmpty()) {
+                closeAttachedTickets(server, addedIds, ticketIssuerName);
             }
-            if (request.removeTicketIds() != null && !request.removeTicketIds().isEmpty()) {
-                reopenAttachedTickets(server, request.removeTicketIds(), ticketIssuerName);
+            if (!removedIds.isEmpty()) {
+                reopenAttachedTickets(server, removedIds, ticketIssuerName);
             }
         }
     }

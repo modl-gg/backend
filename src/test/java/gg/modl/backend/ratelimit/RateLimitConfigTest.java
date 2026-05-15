@@ -38,6 +38,14 @@ class RateLimitConfigTest {
     }
 
     @Test
+    void v3MinecraftUsesMinecraftTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.MINECRAFT_STANDARD,
+            config.getTierForPath("/v3/minecraft/players/sync", "POST")
+        );
+    }
+
+    @Test
     void replayLiteUploadAndConfirmUseDedicatedTier() {
         assertEquals(
             RateLimitConfig.RateLimitTier.REPLAY_LITE_UPLOAD,

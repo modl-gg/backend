@@ -249,7 +249,8 @@ public class MinecraftPlayerController {
         @NotBlank String ip,
         Map<String, Object> ipInfo,
         String skinHash,
-        String serverName
+        String serverName,
+        String serverInstanceId
     ) {
     }
 
@@ -266,13 +267,15 @@ public class MinecraftPlayerController {
 
     public record DisconnectRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
-        @Min(0) long sessionDurationMs
+        @Min(0) long sessionDurationMs,
+        String serverInstanceId
     ) {
     }
 
     public record UpdateServerRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
-        @NotBlank @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
+        @NotBlank @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
+        String serverInstanceId
     ) {
     }
 

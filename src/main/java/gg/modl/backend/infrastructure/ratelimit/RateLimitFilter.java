@@ -1,5 +1,6 @@
 package gg.modl.backend.infrastructure.ratelimit;
 
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
@@ -21,6 +22,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Slf4j
 public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitConfig rateLimitConfig;
+    private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
 
     // Canonical response headers
     private static final String RATE_LIMIT_REMAINING_HEADER = "X-RateLimit-Remaining";
@@ -63,9 +65,18 @@ public class RateLimitFilter extends OncePerRequestFilter {
             String retryAfter = String.valueOf(waitTimeSeconds);
             response.setHeader(RATE_LIMIT_RETRY_AFTER_HEADER, retryAfter);
             response.setHeader(RATE_LIMIT_RETRY_AFTER_HEADER_LEGACY, retryAfter);
-            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":" + waitTimeSeconds + "}");
+            if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+                protobufErrorResponseWriter.write(
+                    response,
+                    HttpStatus.TOO_MANY_REQUESTS.value(),
+                    "RESOURCE_EXHAUSTED",
+                    "Rate limit exceeded"
+                );
+            } else {
+                response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+                response.setContentType("application/json");
+                response.getWriter().write("{\"error\":\"Rate limit exceeded\",\"retryAfterSeconds\":" + waitTimeSeconds + "}");
+            }
 
             log.warn("Rate limit exceeded for client {} on path {} (tier: {})", clientKey, path, tier.name());
         }

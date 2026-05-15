@@ -8,6 +8,8 @@ BLUE_PORT=8080
 GREEN_PORT=8081
 MAX_HEALTH_RETRIES=30
 HEALTH_RETRY_INTERVAL=2
+MODL_DEPLOY_DRAIN_GRACE_SECONDS=${MODL_DEPLOY_DRAIN_GRACE_SECONDS:-90}
+MODL_DEPLOY_STOP_TIMEOUT_SECONDS=${MODL_DEPLOY_STOP_TIMEOUT_SECONDS:-120}
 NGINX_UPSTREAM_CONF="/etc/nginx/conf.d/modl-backend-upstream.conf"
 
 log() {
@@ -74,7 +76,9 @@ update_nginx() {
 
     echo "upstream modl_backend { server 127.0.0.1:${active_port}; keepalive 32; }" | sudo tee $NGINX_UPSTREAM_CONF > /dev/null
 
-    sudo nginx -t && sudo systemctl reload nginx
+    log "Validating nginx configuration..."
+    sudo nginx -t
+    sudo systemctl reload nginx
     log "Nginx updated and reloaded"
 }
 
@@ -101,7 +105,7 @@ else
 fi
 
 log "Stopping and removing existing $NEXT_COLOR container if exists..."
-docker stop "$NEW_CONTAINER" 2>/dev/null || true
+docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$NEW_CONTAINER" 2>/dev/null || true
 docker rm "$NEW_CONTAINER" 2>/dev/null || true
 
 log "Starting new container: $NEW_CONTAINER on port $NEW_PORT"
@@ -118,7 +122,7 @@ docker run -d \
 if ! wait_for_health "$NEW_PORT"; then
     log "Rolling back: stopping failed container"
     docker logs "$NEW_CONTAINER" --tail 50
-    docker stop "$NEW_CONTAINER" 2>/dev/null || true
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$NEW_CONTAINER" 2>/dev/null || true
     docker rm "$NEW_CONTAINER" 2>/dev/null || true
     exit 1
 fi
@@ -127,9 +131,10 @@ log "Switching nginx to new container..."
 update_nginx $NEW_PORT
 
 if [[ "$CURRENT_COLOR" != "none" ]]; then
-    log "Stopping old container: $CURRENT_CONTAINER"
-    sleep 5  # Allow in-flight requests to complete
-    docker stop "$CURRENT_CONTAINER" 2>/dev/null || true
+    log "Draining old container for ${MODL_DEPLOY_DRAIN_GRACE_SECONDS}s: $CURRENT_CONTAINER"
+    sleep "$MODL_DEPLOY_DRAIN_GRACE_SECONDS"
+    log "Stopping old container with ${MODL_DEPLOY_STOP_TIMEOUT_SECONDS}s timeout: $CURRENT_CONTAINER"
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$CURRENT_CONTAINER" 2>/dev/null || true
     docker rm "$CURRENT_CONTAINER" 2>/dev/null || true
 fi
 

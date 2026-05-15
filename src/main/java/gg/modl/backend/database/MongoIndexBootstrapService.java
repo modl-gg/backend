@@ -41,6 +41,12 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_servers_emailVerified", doc("emailVerified", 1), false, false),
             IndexSpec.standard("uidx_servers_emailVerificationToken", doc("emailVerificationToken", 1), true, true),
             IndexSpec.standard("idx_servers_provisioningStatus", doc("provisioningStatus", 1), false, false),
+            IndexSpec.standard(
+                "idx_servers_registration_cleanup",
+                doc("emailVerified", 1).append("provisioningStatus", 1).append("createdAt", 1).append("emailVerificationToken", 1),
+                false,
+                true
+            ),
             IndexSpec.standard("uidx_servers_provisioningSignInToken", doc("provisioningSignInToken", 1), true, true),
             IndexSpec.standard("uidx_servers_stripeCustomerId", doc("stripeCustomerId", 1), true, true),
             IndexSpec.standard("uidx_servers_stripeSubscriptionId", doc("stripeSubscriptionId", 1), true, true),

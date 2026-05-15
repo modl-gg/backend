@@ -3,7 +3,7 @@ package gg.modl.backend.player.controller;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import gg.modl.backend.player.dto.request.CreateUploadTokenRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
-import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
+import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.player.service.PunishmentMutationService;
@@ -125,7 +125,7 @@ public class MinecraftPunishmentController {
     }
 
     @GetMapping("/preview")
-    public ResponseEntity<PunishmentPreviewResponse> previewPunishment(
+    public ResponseEntity<PunishmentPreviewView> previewPunishment(
         @RequestParam String playerUuid,
         @RequestParam int typeOrdinal,
         HttpServletRequest httpRequest

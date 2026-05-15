@@ -32,7 +32,8 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         new PermissionMapping(RESTMappingV1.PANEL_DASHBOARD, "admin.audit.view.dashboard"),
         new PermissionMapping(RESTMappingV1.PANEL_ANALYTICS, "admin.audit.view.analytics"),
         new PermissionMapping(RESTMappingV1.PANEL_AUDIT, "admin.audit.view.logs"),
-        new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs")
+        new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs"),
+        new PermissionMapping(RESTMappingV1.PANEL_TICKETS + "/bulk", "ticket.close.all")
     );
     private static final List<PermissionMapping> RW_PERMISSIONS = List.of(
         new PermissionMapping(RESTMappingV1.PANEL_BILLING, "admin.settings.view.billing", "admin.settings.modify.billing"),
@@ -43,7 +44,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         new PermissionMapping(RESTMappingV1.PANEL_STORAGE, "admin.settings.view.storage", "admin.settings.modify.storage"),
         new PermissionMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS, "ticket.view.all", "ticket.reply.all"),
         new PermissionMapping(RESTMappingV1.PANEL_TICKETS, "ticket.view.all", "ticket.reply.all"),
-        new PermissionMapping(RESTMappingV1.PANEL_APPEALS, "ticket.view.all", "ticket.reply.all"),
+        new PermissionMapping(RESTMappingV1.PANEL_APPEALS, "ticket.view.all", "appeal.modify"),
         new PermissionMapping(RESTMappingV1.PANEL_SERVER, "admin.settings.view", "admin.settings.modify")
     );
     private static final Set<String> SETTINGS_PUNISHMENT_PATHS = Set.of(

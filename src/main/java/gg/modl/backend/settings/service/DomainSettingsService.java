@@ -96,8 +96,12 @@ public class DomainSettingsService {
             throw new ConflictException("This domain is already configured. Please verify the existing configuration or remove it first.");
         }
 
+        String currentCloudflareHostnameId = extractCurrentCloudflareHostnameId(server);
         CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
         if (existingHostname != null) {
+            if (currentCloudflareHostnameId == null || !existingHostname.id().equals(currentCloudflareHostnameId)) {
+                throw new ConflictException("This domain is already configured by another server.");
+            }
             cloudflareClient.deleteCustomHostname(existingHostname.id());
         }
 
@@ -160,6 +164,19 @@ public class DomainSettingsService {
             }
         }
         return currentDomain;
+    }
+
+    private String extractCurrentCloudflareHostnameId(Server server) {
+        String currentCloudflareHostnameId = server.getCustomDomainCloudflareId();
+        if (currentCloudflareHostnameId == null) {
+            Settings existingSettings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+            if (existingSettings != null && existingSettings.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
+                currentCloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
+            }
+        }
+        return currentCloudflareHostnameId;
     }
 
     private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
@@ -283,11 +300,6 @@ public class DomainSettingsService {
                 boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
                 if (!deleted) {
                     log.warn("Failed to delete Cloudflare custom hostname for domain: {}", customDomain);
-                }
-            } else if (customDomain != null && !customDomain.isEmpty()) {
-                CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(customDomain);
-                if (cfResult != null) {
-                    cloudflareClient.deleteCustomHostname(cfResult.id());
                 }
             }
         }

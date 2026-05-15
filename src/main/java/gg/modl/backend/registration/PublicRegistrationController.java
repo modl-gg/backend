@@ -17,7 +17,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import java.util.Date;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -38,6 +38,18 @@ public class PublicRegistrationController {
     private final SessionService sessionService;
     private final RegistrationService registrationService;
     private final CookieUtil cookieUtil;
+    private static final Set<String> RESERVED_SUBDOMAINS = Set.of(
+        "payments", "payment", "api", "app",
+        "status", "mail", "www", "discord",
+        "admin", "twitter", "demo", "panel",
+        "ftp", "sftp", "www2", "www3",
+        "billing", "stripe", "test", "staging",
+        "root", "internal", "administrator", "mod",
+        "beta", "dev", "portal", "dashboard",
+        "modl", "support", "help", "email",
+        "docs", "secure", "alpha", "cdn",
+        "nexus", "replay", "replays"
+    );
 
     @PostMapping
     public ResponseEntity<?> register(
@@ -62,6 +74,11 @@ public class PublicRegistrationController {
                 "Security verification failed. Please try again.",
                 null
             ));
+        }
+
+        ResponseEntity<?> reservedSubdomainResponse = checkReservedSubdomain(requestData.customDomain());
+        if (reservedSubdomainResponse != null) {
+            return reservedSubdomainResponse;
         }
 
         ServerService.ServerExistResult existResult = serverService.doesServerExist(
@@ -126,15 +143,11 @@ public class PublicRegistrationController {
             return ResponseEntity.badRequest().body(new VerifyResponse(false, "Invalid or expired verification token.", null, null));
         }
 
-        String autoLoginToken = registrationService.generateToken();
-        Date tokenExpiry = registrationService.createAutoLoginTokenExpiry();
-        serverService.setAutoLoginToken(server, autoLoginToken, tokenExpiry);
-
         return ResponseEntity.ok(new VerifyResponse(
             true,
             "Email verified successfully.",
             server.getCustomDomain(),
-            autoLoginToken
+            null
         ));
     }
 
@@ -229,6 +242,11 @@ public class PublicRegistrationController {
                 "Rate limit exceeded. CLI registration is limited to once every 30 minutes. Please try again in " + rateLimit.remainingMinutes() + " minute(s).",
                 null
             ));
+        }
+
+        ResponseEntity<?> reservedSubdomainResponse = checkReservedSubdomain(requestData.customDomain());
+        if (reservedSubdomainResponse != null) {
+            return reservedSubdomainResponse;
         }
 
         ServerService.ServerExistResult existResult = serverService.doesServerExist(
@@ -342,6 +360,17 @@ public class PublicRegistrationController {
         }
         if (existResult.domainMatch()) {
             return ResponseEntity.status(409).body(new RegisterResponse(false, "This subdomain is already in use.", null));
+        }
+        return null;
+    }
+
+    private ResponseEntity<?> checkReservedSubdomain(String customDomain) {
+        if (customDomain != null && RESERVED_SUBDOMAINS.contains(customDomain)) {
+            return ResponseEntity.status(409).body(new RegisterResponse(
+                false,
+                "This subdomain is reserved and cannot be used.",
+                null
+            ));
         }
         return null;
     }

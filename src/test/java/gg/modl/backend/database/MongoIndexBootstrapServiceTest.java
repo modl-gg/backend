@@ -49,7 +49,15 @@ class MongoIndexBootstrapServiceTest {
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
-        verify(servers, atLeastOnce()).createIndex(any());
+        org.mockito.ArgumentCaptor<IndexDefinition> serverIndexCaptor = org.mockito.ArgumentCaptor.forClass(IndexDefinition.class);
+        verify(servers, atLeastOnce()).createIndex(serverIndexCaptor.capture());
+        assertThat(serverIndexCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_servers_registration_cleanup");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("emailVerified", 1)
+                .append("provisioningStatus", 1)
+                .append("createdAt", 1)
+                .append("emailVerificationToken", 1));
+        });
         verify(metrics, atLeastOnce()).createIndex(any());
         verify(replayLite, atLeastOnce()).createIndex(any());
         verify(replayLiteQuotas, atLeastOnce()).createIndex(any());

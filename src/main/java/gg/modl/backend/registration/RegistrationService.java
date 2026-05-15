@@ -73,9 +73,7 @@ public class RegistrationService {
     }
 
     public ServerPlan parsePlan(String plan) {
-        if (plan != null && plan.equalsIgnoreCase("premium")) {
-            return ServerPlan.PREMIUM;
-        }
+        // Public registration must never grant privileged billing tiers from client input.
         return ServerPlan.FREE;
     }
 

@@ -34,6 +34,7 @@ public class RateLimitConfig {
         new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
         new PathRule("/v2/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
+        new PathRule("/v3/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
         new PathRule("/v1/admin/auth/session", RateLimitTier.ADMIN_SESSION),
         new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
         new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)

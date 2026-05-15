@@ -12,6 +12,7 @@ import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
+import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.server.data.Server;
@@ -331,7 +332,7 @@ public class PunishmentQueryService {
         return results;
     }
 
-    public PunishmentPreviewResponse previewPunishment(Server server, String playerUuid, int typeOrdinal) {
+    public PunishmentPreviewView previewPunishment(Server server, String playerUuid, int typeOrdinal) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return PunishmentPreviewResponse.error("Player not found");
@@ -459,35 +460,10 @@ public class PunishmentQueryService {
         response.put("expires", punishment.expires());
         response.put("active", punishment.active());
         response.put("appealable", punishment.isAppealable());
-        response.put("playerUuid", punishment.playerUuid());
 
         List<Ticket> existingAppeals = ticketRepository.findAppealsByPunishmentId(server, punishmentId);
         if (!existingAppeals.isEmpty()) {
-            Ticket latestAppeal = existingAppeals.stream()
-                .max((left, right) -> {
-                    Date leftDate = left.getCreated();
-                    Date rightDate = right.getCreated();
-                    if (leftDate == null && rightDate == null) {
-                        return 0;
-                    }
-                    if (leftDate == null) {
-                        return -1;
-                    }
-                    if (rightDate == null) {
-                        return 1;
-                    }
-                    return leftDate.compareTo(rightDate);
-                })
-                .orElse(existingAppeals.get(0));
-            Map<String, Object> existingAppeal = new HashMap<>();
-            existingAppeal.put("id", latestAppeal.getId());
-            existingAppeal.put("submittedDate", latestAppeal.getCreated());
-            String workflowStatus = latestAppeal.getAppealWorkflowStatus() != null
-                                    ? latestAppeal.getAppealWorkflowStatus().getId()
-                                    : latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : "open";
-            existingAppeal.put("status", workflowStatus);
-            existingAppeal.put("appealWorkflowStatus", workflowStatus);
-            response.put("existingAppeal", existingAppeal);
+            response.put("existingAppeal", true);
         }
 
         Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
