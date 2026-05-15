@@ -9,7 +9,7 @@ import lombok.Data;
  */
 @Data
 @Builder
-public class PunishmentPreviewResponse {
+public class PunishmentPreviewResponse implements PunishmentPreviewView {
     private final int status;
     private final boolean success;
     private final String message;
@@ -49,7 +49,7 @@ public class PunishmentPreviewResponse {
 
     @Data
     @Builder
-    public static class SeverityPreview {
+    public static class SeverityPreview implements PunishmentSeverityPreviewView {
         private final String severity; // "lenient", "regular", "aggravated"
         private final int points;
         private final long durationMs;

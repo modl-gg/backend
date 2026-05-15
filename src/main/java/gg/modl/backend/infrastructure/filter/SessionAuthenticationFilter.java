@@ -5,6 +5,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV2;
+import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.util.CookieUtil;
@@ -20,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -50,7 +52,9 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
             return true;
         }
 
-        if (path.startsWith(RESTMappingV1.PREFIX_MINECRAFT) || path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)) {
+        if (path.startsWith(RESTMappingV1.PREFIX_MINECRAFT)
+            || path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)
+            || path.startsWith(RESTMappingV3.PREFIX_MINECRAFT)) {
             return true;
         }
 
@@ -118,6 +122,6 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
             .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
             .map(Cookie::getValue)
             .filter(value -> value != null && !value.isBlank())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

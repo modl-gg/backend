@@ -37,6 +37,26 @@ public class MinecraftStartupService {
     private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
 
     public Map<String, Object> handleStartup(Server server, StartupRequest request, String clientIp) {
+        return handleStartup(
+            server,
+            request.serverVersion(),
+            request.platformType(),
+            request.pluginVersion(),
+            request.maxPlayers(),
+            request.serverName(),
+            clientIp
+        );
+    }
+
+    public Map<String, Object> handleStartup(
+        Server server,
+        String serverVersion,
+        String platformType,
+        String pluginVersion,
+        int maxPlayers,
+        String serverName,
+        String clientIp
+    ) {
         Instant now = Instant.now();
 
         // Build panel URL
@@ -59,12 +79,12 @@ public class MinecraftStartupService {
             serverInstanceSnapshotRepository.upsertServerEntry(
                 fiveMinBoundary,
                 server.getId(),
-                request.serverName(),
+                serverName,
                 0,
-                request.platformType(),
-                request.serverVersion(),
+                platformType,
+                serverVersion,
                 clientIp,
-                request.pluginVersion(),
+                pluginVersion,
                 Date.from(now)
             );
         } catch (Exception e) {

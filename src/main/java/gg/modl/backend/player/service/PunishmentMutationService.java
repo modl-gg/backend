@@ -196,6 +196,28 @@ public class PunishmentMutationService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment tickets modified", true, 1);
     }
 
+    public PunishmentOperationResult modifyPunishmentTickets(
+        Server server,
+        String punishmentId,
+        List<String> addTicketIds,
+        List<String> removeTicketIds,
+        boolean modifyAssociatedTickets,
+        String issuerName,
+        String issuerId
+    ) {
+        return modifyPunishmentTickets(
+            server,
+            punishmentId,
+            new ModifyPunishmentTicketsRequest(
+                addTicketIds,
+                removeTicketIds,
+                modifyAssociatedTickets,
+                issuerName,
+                issuerId
+            )
+        );
+    }
+
     public Player modifyPunishmentTickets(Server server, UUID playerUuid, String punishmentId, ModifyPunishmentTicketsRequest request) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));

@@ -1,8 +1,12 @@
 package gg.modl.backend.infrastructure.exception;
 
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
+import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
+import gg.modl.proto.modl.v1.ApiError;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.http.HttpStatus;
@@ -11,9 +15,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequiredArgsConstructor
 public class CustomErrorController implements ErrorController {
+    private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
+
     @RequestMapping("/error")
-    public ResponseEntity<ErrorResponse> handleError(HttpServletRequest request) {
+    public ResponseEntity<?> handleError(HttpServletRequest request) {
         Object status = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
 
         int statusCode = status != null ? Integer.parseInt(status.toString()) : 500;
@@ -38,12 +45,33 @@ public class CustomErrorController implements ErrorController {
             errorMessage = "Your request could not be processed.";
         }
 
+        HttpStatus httpStatus = HttpStatus.valueOf(statusCode);
+        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+            return ResponseEntity.status(httpStatus)
+                .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
+                .body(ApiError.newBuilder()
+                    .setStatusCode(statusCode)
+                    .setCode(machineCodeForStatus(httpStatus))
+                    .setMessage(errorMessage)
+                    .build());
+        }
+
         ErrorResponse errorResponse = new ErrorResponse(
             statusCode,
             error,
             errorMessage);
 
-        return new ResponseEntity<>(errorResponse, HttpStatus.valueOf(statusCode));
+        return new ResponseEntity<>(errorResponse, httpStatus);
+    }
+
+    private String machineCodeForStatus(HttpStatus status) {
+        return switch (status) {
+            case NOT_FOUND -> "NOT_FOUND";
+            case FORBIDDEN -> "PERMISSION_DENIED";
+            case UNAUTHORIZED -> "UNAUTHENTICATED";
+            case INTERNAL_SERVER_ERROR -> "INTERNAL";
+            default -> status.name();
+        };
     }
 
     @Setter

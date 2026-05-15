@@ -36,5 +36,13 @@ class RateLimitConfigTest {
             config.getTierForPath("/v1/public/tickets", "POST")
         );
     }
+
+    @Test
+    void v3MinecraftUsesMinecraftTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.MINECRAFT_STANDARD,
+            config.getTierForPath("/v3/minecraft/players/sync", "POST")
+        );
+    }
 }
 

@@ -12,6 +12,7 @@ import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
+import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.server.data.Server;
@@ -331,7 +332,7 @@ public class PunishmentQueryService {
         return results;
     }
 
-    public PunishmentPreviewResponse previewPunishment(Server server, String playerUuid, int typeOrdinal) {
+    public PunishmentPreviewView previewPunishment(Server server, String playerUuid, int typeOrdinal) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return PunishmentPreviewResponse.error("Player not found");
