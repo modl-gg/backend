@@ -7,6 +7,7 @@ import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
@@ -44,11 +45,15 @@ public class ProtobufErrorResponseWriter {
             return false;
         }
         for (String header : acceptHeaders) {
-            for (MediaType mediaType : MediaType.parseMediaTypes(header)) {
-                if (mediaType.isCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-                    || mediaType.isCompatibleWith(ProtobufMediaTypes.APPLICATION_PROTOBUF)) {
-                    return true;
+            try {
+                for (MediaType mediaType : MediaType.parseMediaTypes(header)) {
+                    if (mediaType.isCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
+                        || mediaType.isCompatibleWith(ProtobufMediaTypes.APPLICATION_PROTOBUF)) {
+                        return true;
+                    }
                 }
+            } catch (InvalidMediaTypeException ignored) {
+                return false;
             }
         }
         return false;

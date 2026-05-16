@@ -7,7 +7,6 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -18,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
@@ -167,7 +167,8 @@ class MinecraftStaffV3ControllerTest {
     }
 
     @Test
-    void v3UpdateStaffRoleReturnsForbiddenWithoutServiceMutation() throws Exception {
+    void v3UpdateStaffRoleCallsServiceAndReturnsBinarySuccess() throws Exception {
+        when(staffService.updateMinecraftStaffRole(server, "staff-1", "Admin")).thenReturn(true);
         UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
             .setRole("Admin")
             .build();
@@ -176,19 +177,20 @@ class MinecraftStaffV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         MinecraftStaffOperationResponse response = MinecraftStaffOperationResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(403, response.getStatus());
-        assertFalse(response.getSuccess());
-        assertEquals("Staff role updates are not available via Minecraft API key routes", response.getMessage());
-        verifyNoInteractions(staffService);
+        assertEquals(200, response.getStatus());
+        assertTrue(response.getSuccess());
+        assertFalse(response.hasMessage());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("Admin"));
     }
 
     @Test
-    void v3UpdateStaffRoleMissingStaffStillReturnsForbiddenBeforeLookup() throws Exception {
+    void v3UpdateStaffRoleMissingStaffReturnsBinaryNotFound() throws Exception {
+        when(staffService.updateMinecraftStaffRole(server, "missing-staff", "Admin")).thenReturn(false);
         UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
             .setRole("Admin")
             .build();
@@ -197,15 +199,38 @@ class MinecraftStaffV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isNotFound())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         MinecraftStaffOperationResponse response = MinecraftStaffOperationResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(403, response.getStatus());
+        assertEquals(404, response.getStatus());
         assertFalse(response.getSuccess());
-        assertEquals("Staff role updates are not available via Minecraft API key routes", response.getMessage());
-        verifyNoInteractions(staffService);
+        assertEquals("Staff member not found", response.getMessage());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("missing-staff"), eq("Admin"));
+    }
+
+    @Test
+    void v3UpdateStaffRoleUnknownRoleReturnsBinaryApiError() throws Exception {
+        when(staffService.updateMinecraftStaffRole(server, "staff-1", "MissingRole"))
+            .thenThrow(new ResourceNotFoundException("Role not found"));
+        UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
+            .setRole("MissingRole")
+            .build();
+
+        MvcResult result = v3MockMvc.perform(patch(RESTMappingV3.PREFIX_MINECRAFT + "/staff/staff-1/role")
+                .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
+                .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
+                .content(request.toByteArray()))
+            .andExpect(status().isNotFound())
+            .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
+            .andReturn();
+
+        ApiError error = ApiError.parseFrom(result.getResponse().getContentAsByteArray());
+        assertEquals(404, error.getStatusCode());
+        assertEquals("NOT_FOUND", error.getCode());
+        assertEquals("Role not found", error.getMessage());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("MissingRole"));
     }
 
     @Test
@@ -329,22 +354,24 @@ class MinecraftStaffV3ControllerTest {
     }
 
     @Test
-    void v1UpdateStaffRoleReturnsForbiddenJsonEnvelope() throws Exception {
+    void v1UpdateStaffRoleStillReturnsJsonEnvelope() throws Exception {
+        when(staffService.updateMinecraftStaffRole(server, "staff-1", "Admin")).thenReturn(true);
+
         MvcResult result = v1MockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/staff-1/role")
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .content("""
                     {"role":"Admin"}
                     """))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
             .andReturn();
 
         JsonNode json = new ObjectMapper().readTree(result.getResponse().getContentAsByteArray());
-        assertEquals(403, json.get("status").asInt());
-        assertEquals("Staff role updates are not available via Minecraft API key routes", json.get("message").asText());
+        assertEquals(200, json.get("status").asInt());
+        assertTrue(json.get("success").asBoolean());
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
-        verifyNoInteractions(staffService);
+        verify(staffService).updateMinecraftStaffRole(server, "staff-1", "Admin");
     }
 
     @Test

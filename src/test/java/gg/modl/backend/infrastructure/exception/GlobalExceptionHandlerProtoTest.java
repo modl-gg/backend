@@ -2,6 +2,8 @@ package gg.modl.backend.infrastructure.exception;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -239,6 +241,23 @@ class GlobalExceptionHandlerProtoTest {
         assertEquals(404, error.getStatusCode());
         assertEquals("NOT_FOUND", error.getCode());
         assertEquals("The requested resource was not found.", error.getMessage());
+    }
+
+    @Test
+    void malformedAcceptHeaderFallsBackToJsonErrorInsteadOfThrowing() {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/error");
+        request.addHeader("Accept", "text/plain;q=abc");
+        request.setAttribute(RequestDispatcher.ERROR_STATUS_CODE, 401);
+        request.setAttribute(RequestDispatcher.ERROR_REQUEST_URI, "/unknown");
+
+        ResponseEntity<?> response = new CustomErrorController(new ProtobufErrorResponseWriter()).handleError(request);
+
+        assertEquals(401, response.getStatusCode().value());
+        assertNull(response.getHeaders().getContentType());
+        assertTrue(response.getBody() instanceof CustomErrorController.ErrorResponse);
+        CustomErrorController.ErrorResponse error = (CustomErrorController.ErrorResponse) response.getBody();
+        assertEquals(401, error.getStatus());
+        assertEquals("Unauthorized", error.getError());
     }
 
     @Test

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -172,7 +171,8 @@ class MinecraftRolesV3ControllerTest {
     }
 
     @Test
-    void v3UpdateRolePermissionsReturnsForbiddenWithoutServiceMutation() throws Exception {
+    void v3UpdateRolePermissionsCallsServiceAndReturnsBinarySuccess() throws Exception {
+        when(roleService.updateRolePermissions(server, "admin", List.of("first", "second"))).thenReturn(true);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder()
             .addAllPermissions(List.of("first", "second"))
             .build();
@@ -181,19 +181,20 @@ class MinecraftRolesV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         MinecraftRoleMutationResponse response = MinecraftRoleMutationResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(403, response.getStatus());
-        assertFalse(response.getSuccess());
-        assertEquals("Role permission updates are not available via Minecraft API key routes", response.getMessage());
-        verifyNoInteractions(roleService);
+        assertEquals(200, response.getStatus());
+        assertTrue(response.getSuccess());
+        assertEquals("", response.getMessage());
+        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of("first", "second")));
     }
 
     @Test
-    void v3UpdateRolePermissionsMissingRoleStillReturnsForbiddenBeforeLookup() throws Exception {
+    void v3UpdateRolePermissionsMissingRoleReturnsBinaryNotFound() throws Exception {
+        when(roleService.updateRolePermissions(server, "missing", List.of("first"))).thenReturn(false);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder()
             .addPermissions("first")
             .build();
@@ -202,33 +203,35 @@ class MinecraftRolesV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isNotFound())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         MinecraftRoleMutationResponse response = MinecraftRoleMutationResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(403, response.getStatus());
+        assertEquals(404, response.getStatus());
         assertFalse(response.getSuccess());
-        assertEquals("Role permission updates are not available via Minecraft API key routes", response.getMessage());
-        verifyNoInteractions(roleService);
+        assertEquals("Role not found", response.getMessage());
+        verify(roleService).updateRolePermissions(same(server), eq("missing"), eq(List.of("first")));
     }
 
     @Test
-    void v3UpdateRolePermissionsEmptyPermissionListStillForbidden() throws Exception {
+    void v3UpdateRolePermissionsEmptyPermissionListCallsServiceAndReturnsBinarySuccess() throws Exception {
+        when(roleService.updateRolePermissions(server, "admin", List.of())).thenReturn(true);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder().build();
 
         MvcResult result = v3MockMvc.perform(patch(RESTMappingV3.PREFIX_MINECRAFT + "/roles/admin/permissions")
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         MinecraftRoleMutationResponse response = MinecraftRoleMutationResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(403, response.getStatus());
-        assertFalse(response.getSuccess());
-        verifyNoInteractions(roleService);
+        assertEquals(200, response.getStatus());
+        assertTrue(response.getSuccess());
+        assertEquals("", response.getMessage());
+        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of()));
     }
 
     @Test
@@ -354,21 +357,23 @@ class MinecraftRolesV3ControllerTest {
     }
 
     @Test
-    void v1UpdateRolePermissionsReturnsForbiddenJsonEnvelope() throws Exception {
+    void v1UpdateRolePermissionsStillReturnsJsonEnvelope() throws Exception {
+        when(roleService.updateRolePermissions(server, "admin", List.of("first"))).thenReturn(true);
+
         MvcResult result = v1MockMvc.perform(patch(RESTMappingV1.MINECRAFT_ROLES + "/admin/permissions")
                 .contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON)
                 .content("""
                     {"permissions":["first"]}
                     """))
-            .andExpect(status().isForbidden())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
             .andReturn();
 
         JsonNode json = new ObjectMapper().readTree(result.getResponse().getContentAsByteArray());
-        assertEquals(403, json.get("status").asInt());
-        assertEquals("Role permission updates are not available via Minecraft API key routes", json.get("message").asText());
+        assertEquals(200, json.get("status").asInt());
+        assertTrue(json.get("success").asBoolean());
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
-        verifyNoInteractions(roleService);
+        verify(roleService).updateRolePermissions(server, "admin", List.of("first"));
     }
 }

@@ -17,6 +17,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.Date;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -143,11 +144,15 @@ public class PublicRegistrationController {
             return ResponseEntity.badRequest().body(new VerifyResponse(false, "Invalid or expired verification token.", null, null));
         }
 
+        String autoLoginToken = registrationService.generateToken();
+        Date tokenExpiry = registrationService.createAutoLoginTokenExpiry();
+        serverService.setAutoLoginToken(server, autoLoginToken, tokenExpiry);
+
         return ResponseEntity.ok(new VerifyResponse(
             true,
             "Email verified successfully.",
             server.getCustomDomain(),
-            null
+            autoLoginToken
         ));
     }
 

@@ -46,6 +46,14 @@ class RateLimitConfigTest {
     }
 
     @Test
+    void v3MinecraftLoginUsesLoginTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.MINECRAFT_LOGIN,
+            config.getTierForPath("/v3/minecraft/players/login", "POST")
+        );
+    }
+
+    @Test
     void replayLiteUploadAndConfirmUseDedicatedTier() {
         assertEquals(
             RateLimitConfig.RateLimitTier.REPLAY_LITE_UPLOAD,

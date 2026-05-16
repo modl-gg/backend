@@ -192,7 +192,8 @@ public class PlayerLookupService {
             })
             .toList();
 
-        List<Map<String, Object>> notes = safeNotes(player).stream()
+        List<NoteEntry> allNotes = safeNotes(player);
+        List<Map<String, Object>> notes = limitList(allNotes, noteLimit).stream()
             .map(note -> {
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("id", note.getId());
@@ -218,8 +219,9 @@ public class PlayerLookupService {
             })
             .toList();
 
-        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
-        List<Map<String, Object>> punishments = player.getPunishments().stream()
+        List<Punishment> allPunishments = safePunishments(player);
+        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, allPunishments);
+        List<Map<String, Object>> punishments = limitList(allPunishments, punishmentLimit).stream()
             .map(punishment -> PunishmentMapper.toPunishmentMap(punishment, punishmentTypes, resolvedIssuers))
             .toList();
 
@@ -235,10 +237,10 @@ public class PlayerLookupService {
         profile.put("pendingNotifications", pendingNotifications);
         profile.put("data", player.getData());
         if (punishmentLimit != null) {
-            profile.put("punishmentCount", punishments.size());
+            profile.put("punishmentCount", allPunishments.size());
         }
         if (noteLimit != null) {
-            profile.put("noteCount", notes.size());
+            profile.put("noteCount", allNotes.size());
         }
         return profile;
     }
@@ -342,8 +344,12 @@ public class PlayerLookupService {
     }
 
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
+        return resolveIssuersForPunishments(server, safePunishments(player));
+    }
+
+    private Map<String, String> resolveIssuersForPunishments(Server server, List<Punishment> punishments) {
         Set<String> ids = new HashSet<>();
-        for (Punishment p : player.getPunishments()) {
+        for (Punishment p : punishments) {
             ids.addAll(PunishmentQueryService.collectIssuerIds(p));
         }
         if (ids.isEmpty()) {
@@ -360,8 +366,21 @@ public class PlayerLookupService {
         return player.getNotes() != null ? player.getNotes() : List.of();
     }
 
+    private List<Punishment> safePunishments(Player player) {
+        return player.getPunishments() != null ? player.getPunishments() : List.of();
+    }
+
     private List<IPEntry> safeIpAddresses(Player player) {
         return player.getIpAddresses() != null ? player.getIpAddresses() : List.of();
+    }
+
+    private <T> List<T> limitList(List<T> values, Integer limit) {
+        if (limit == null) {
+            return values;
+        }
+        return values.stream()
+            .limit(Math.max(0, limit))
+            .toList();
     }
 
     private List<Map<String, Object>> extractPendingNotifications(Player player) {

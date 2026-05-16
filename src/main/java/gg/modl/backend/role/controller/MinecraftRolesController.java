@@ -84,9 +84,18 @@ public class MinecraftRolesController {
         @RequestBody @Valid UpdatePermissionsRequest request,
         HttpServletRequest httpRequest
     ) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-            "status", 403,
-            "message", "Role permission updates are not available via Minecraft API key routes"
+        Server server = RequestUtil.getRequestServer(httpRequest);
+
+        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Role not found"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "success", true
         ));
     }
 

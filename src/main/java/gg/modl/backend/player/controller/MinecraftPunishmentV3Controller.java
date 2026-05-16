@@ -236,7 +236,8 @@ public class MinecraftPunishmentV3Controller {
 
         return switch (result.status()) {
             case NOT_FOUND -> changeDurationResponse(HttpStatus.NOT_FOUND, 404, null, result.message());
-            case INVALID_REQUEST, NO_OP, SUCCESS -> changeDurationResponse(HttpStatus.OK, 200, true, result.message());
+            case INVALID_REQUEST -> changeDurationResponse(HttpStatus.BAD_REQUEST, 400, null, result.message());
+            case NO_OP, SUCCESS -> changeDurationResponse(HttpStatus.OK, 200, result.success(), result.message());
         };
     }
 

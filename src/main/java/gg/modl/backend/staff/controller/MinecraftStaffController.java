@@ -61,9 +61,18 @@ public class MinecraftStaffController {
         @RequestBody @Valid UpdateRoleRequest request,
         HttpServletRequest httpRequest
     ) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-            "status", 403,
-            "message", "Staff role updates are not available via Minecraft API key routes"
+        Server server = RequestUtil.getRequestServer(httpRequest);
+
+        if (!staffService.updateMinecraftStaffRole(server, id, request.role())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                "status", 404,
+                "message", "Staff member not found"
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "success", true
         ));
     }
 

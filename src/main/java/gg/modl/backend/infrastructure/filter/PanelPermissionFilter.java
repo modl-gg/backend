@@ -87,13 +87,28 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         String role = staffOpt.map(Staff::getRole).orElse(null);
-        boolean authorized = role != null && permissionService.hasPermission(server, role, requiredPermission);
+        boolean authorized = role != null && hasRequiredPermission(server, role, requiredPermission, request.getRequestURI(), request.getMethod());
         if (!authorized) {
             deny(response);
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean hasRequiredPermission(Server server, String role, String requiredPermission, String path, String method) {
+        if (permissionService.hasPermission(server, role, requiredPermission)) {
+            return true;
+        }
+        return isAppealReplyWrite(path, method)
+               && "appeal.modify".equals(requiredPermission)
+               && permissionService.hasPermission(server, role, "ticket.reply.all");
+    }
+
+    private boolean isAppealReplyWrite(String path, String method) {
+        return "POST".equalsIgnoreCase(method)
+               && startsWithEndpoint(path, RESTMappingV1.PANEL_APPEALS)
+               && path.endsWith("/replies");
     }
 
     private void deny(HttpServletResponse response) throws IOException {

@@ -81,6 +81,9 @@ public class UsageTrackingService {
 
     public double getCdnLimitGB(Server server) {
         if (server.getPlan() == ServerPlan.PREMIUM) {
+            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
+                return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
+            }
             return DEFAULT_PREMIUM_CDN_LIMIT_GB;
         }
         return FREE_CDN_LIMIT_GB;

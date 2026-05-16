@@ -2190,6 +2190,23 @@ class MinecraftPunishmentV3ControllerTest {
     }
 
     @Test
+    void v3ChangeDurationInvalidRequestReturnsBinaryBadRequestStatusMessageAndDefaultFailureFields() throws Exception {
+        when(punishmentMutationService.changeDuration(same(server), any(), any(), any(), any()))
+            .thenReturn(new PunishmentOperationResult(PunishmentOperationStatus.INVALID_REQUEST, "Invalid duration", false, 0));
+
+        MvcResult result = performV3ChangeDuration("punishment-1", validChangeDurationRequest("punishment-1"))
+            .andExpect(status().isBadRequest())
+            .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
+            .andReturn();
+
+        ChangePunishmentDurationResponse response =
+            ChangePunishmentDurationResponse.parseFrom(result.getResponse().getContentAsByteArray());
+        assertEquals(400, response.getStatus());
+        assertFalse(response.hasSuccess());
+        assertEquals("Invalid duration", response.getMessage());
+    }
+
+    @Test
     void v3ChangeDurationAcceptsOmittedBodyPunishmentIdAndUsesPathPunishmentId() throws Exception {
         when(punishmentMutationService.changeDuration(same(server), any(), any(), any(), any()))
             .thenReturn(new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Duration changed", true, 1));

@@ -124,10 +124,11 @@ final class MinecraftPlayerProtoMapper {
     }
 
     static PlayerNoteCreateResponse toPlayerNoteCreateResponse(Map<String, Object> body) {
-        return PlayerNoteCreateResponse.newBuilder()
+        PlayerNoteCreateResponse.Builder builder = PlayerNoteCreateResponse.newBuilder()
             .setStatus(intValue(body.get("status")))
-            .setMessage(stringValue(body.get("message")))
-            .build();
+            .setMessage(stringValue(body.get("message")));
+        setBooleanIfPresent(builder, "setSuccess", body.get("success"));
+        return builder.build();
     }
 
     static LinkedAccountsResponse toLinkedAccountsResponse(Map<String, Object> body) {
@@ -267,12 +268,13 @@ final class MinecraftPlayerProtoMapper {
     }
 
     private static NoteEntry toNoteEntry(Map<String, Object> note) {
-        return NoteEntry.newBuilder()
+        NoteEntry.Builder builder = NoteEntry.newBuilder()
             .setText(stringValue(note.get("text")))
             .setDate(stringValue(note.get("date")))
             .setIssuerName(stringValue(note.get("issuerName")))
-            .setIssuerId(stringValue(note.get("issuerId")))
-            .build();
+            .setIssuerId(stringValue(note.get("issuerId")));
+        setStringIfPresent(builder, "setId", note.get("id"));
+        return builder.build();
     }
 
     private static IPEntry toIpEntry(Map<String, Object> ip) {
@@ -631,6 +633,29 @@ final class MinecraftPlayerProtoMapper {
     private static void setOptionalBoolean(Consumer<Boolean> setter, Object value) {
         if (value != null) {
             setter.accept(booleanValue(value));
+        }
+    }
+
+    private static void setStringIfPresent(Object target, String methodName, Object value) {
+        if (value == null) {
+            return;
+        }
+        try {
+            target.getClass().getMethod(methodName, String.class).invoke(target, Objects.toString(value));
+        } catch (NoSuchMethodException ignored) {
+            // Published proto artifacts can lag additive local schema fields during rollout.
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
+        }
+    }
+
+    private static void setBooleanIfPresent(Object target, String methodName, Object value) {
+        try {
+            target.getClass().getMethod(methodName, boolean.class).invoke(target, booleanValue(value));
+        } catch (NoSuchMethodException ignored) {
+            // Published proto artifacts can lag additive local schema fields during rollout.
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
         }
     }
 }

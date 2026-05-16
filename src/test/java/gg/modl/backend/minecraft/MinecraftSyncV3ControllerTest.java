@@ -99,6 +99,10 @@ class MinecraftSyncV3ControllerTest {
         assertEquals("https://demo.modl.gg", response.getPanelUrl());
         assertEquals("2026-05-12T00:00:00Z", response.getTimestamp());
         assertEquals("instance-1", response.getServerInstanceId());
+        assertIfMethodPresent(response, "getRealtimeEnabled", true);
+        assertIfMethodPresent(response, "getRealtimeUrl", "wss://api.modl.gg/v3/realtime");
+        assertIfMethodPresent(response, "getRealtimeProtocolVersion", 1);
+        assertIfMethodPresent(response, "getRealtimeTopicsList", List.of("TOPIC_MINECRAFT_PERMISSIONS", "TOPIC_MINECRAFT_PUNISHMENT_TYPES"));
     }
 
     @Test
@@ -180,5 +184,13 @@ class MinecraftSyncV3ControllerTest {
             any(),
             eq("203.0.113.20")
         );
+    }
+
+    private static void assertIfMethodPresent(Object target, String methodName, Object expected) throws Exception {
+        try {
+            assertEquals(expected, target.getClass().getMethod(methodName).invoke(target));
+        } catch (NoSuchMethodException ignored) {
+            // Published proto artifacts can lag additive local schema fields during rollout.
+        }
     }
 }

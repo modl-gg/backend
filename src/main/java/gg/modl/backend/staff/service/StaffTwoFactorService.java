@@ -35,16 +35,13 @@ public class StaffTwoFactorService {
     }
 
     public boolean verifyToken(Server server, String token, String sessionEmail) {
-        if (sessionEmail == null || sessionEmail.isBlank()) {
-            return false;
-        }
-
         Staff staff = staffRepository.findByTwoFactorToken(server, token).orElse(null);
         if (staff == null) {
             return false;
         }
 
-        if (staff.getEmail() == null || !staff.getEmail().equalsIgnoreCase(sessionEmail)) {
+        if (sessionEmail != null && !sessionEmail.isBlank()
+            && (staff.getEmail() == null || !staff.getEmail().equalsIgnoreCase(sessionEmail))) {
             return false;
         }
 

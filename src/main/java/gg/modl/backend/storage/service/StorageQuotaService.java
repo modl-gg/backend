@@ -74,6 +74,9 @@ public class StorageQuotaService {
 
     private long getMaxBytesForServer(Server server) {
         if (server.getPlan() == ServerPlan.PREMIUM) {
+            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
+                return server.getMaxStorageLimitBytes();
+            }
             return DEFAULT_PREMIUM_BYTES;
         }
         return FREE_TIER_BYTES;

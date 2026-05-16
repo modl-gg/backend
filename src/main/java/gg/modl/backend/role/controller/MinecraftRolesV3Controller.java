@@ -68,7 +68,14 @@ public class MinecraftRolesV3Controller {
         @RequestBody(required = false) @Valid UpdateRolePermissionsRequest request,
         HttpServletRequest httpRequest
     ) {
-        return mutationResponse(HttpStatus.FORBIDDEN, false, "Role permission updates are not available via Minecraft API key routes");
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        List<String> permissions = request != null ? request.getPermissionsList() : List.of();
+
+        if (!roleService.updateRolePermissions(server, id, permissions)) {
+            return mutationResponse(HttpStatus.NOT_FOUND, false, "Role not found");
+        }
+
+        return mutationResponse(HttpStatus.OK, true, null);
     }
 
     private ResponseEntity<MinecraftRoleMutationResponse> mutationResponse(
@@ -76,12 +83,15 @@ public class MinecraftRolesV3Controller {
         boolean success,
         String message
     ) {
+        MinecraftRoleMutationResponse.Builder response = MinecraftRoleMutationResponse.newBuilder()
+            .setStatus(httpStatus.value())
+            .setSuccess(success);
+        if (message != null) {
+            response.setMessage(message);
+        }
+
         return ResponseEntity.status(httpStatus)
             .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-            .body(MinecraftRoleMutationResponse.newBuilder()
-                .setStatus(httpStatus.value())
-                .setSuccess(success)
-                .setMessage(message)
-                .build());
+            .body(response.build());
     }
 }

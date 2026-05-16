@@ -460,10 +460,35 @@ public class PunishmentQueryService {
         response.put("expires", punishment.expires());
         response.put("active", punishment.active());
         response.put("appealable", punishment.isAppealable());
+        response.put("playerUuid", context.player().getMinecraftUuid().toString());
 
         List<Ticket> existingAppeals = ticketRepository.findAppealsByPunishmentId(server, punishmentId);
         if (!existingAppeals.isEmpty()) {
-            response.put("existingAppeal", true);
+            Ticket latestAppeal = existingAppeals.stream()
+                .max((left, right) -> {
+                    Date leftDate = left.getCreated();
+                    Date rightDate = right.getCreated();
+                    if (leftDate == null && rightDate == null) {
+                        return 0;
+                    }
+                    if (leftDate == null) {
+                        return -1;
+                    }
+                    if (rightDate == null) {
+                        return 1;
+                    }
+                    return leftDate.compareTo(rightDate);
+                })
+                .orElse(existingAppeals.get(0));
+            Map<String, Object> existingAppeal = new HashMap<>();
+            existingAppeal.put("id", latestAppeal.getId());
+            existingAppeal.put("submittedDate", latestAppeal.getCreated());
+            String workflowStatus = latestAppeal.getAppealWorkflowStatus() != null
+                                    ? latestAppeal.getAppealWorkflowStatus().getId()
+                                    : latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : "open";
+            existingAppeal.put("status", workflowStatus);
+            existingAppeal.put("appealWorkflowStatus", workflowStatus);
+            response.put("existingAppeal", existingAppeal);
         }
 
         Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());

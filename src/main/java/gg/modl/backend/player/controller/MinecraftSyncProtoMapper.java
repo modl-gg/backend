@@ -83,11 +83,19 @@ final class MinecraftSyncProtoMapper {
     }
 
     static StartupResponse toStartupResponse(Map<String, Object> body) {
-        return StartupResponse.newBuilder()
+        StartupResponse.Builder builder = StartupResponse.newBuilder()
             .setPanelUrl(stringValue(body.get("panelUrl")))
             .setTimestamp(stringValue(body.get("timestamp")))
-            .setServerInstanceId(stringValue(body.get("serverInstanceId")))
-            .build();
+            .setServerInstanceId(stringValue(body.get("serverInstanceId")));
+
+        setBooleanIfPresent(builder, "setRealtimeEnabled", body.get("realtimeEnabled"));
+        setIntIfPresent(builder, "setRealtimeProtocolVersion", body.get("realtimeProtocolVersion"));
+        setStringIfPresent(builder, "setRealtimeUrl", body.get("realtimeUrl"));
+        list(body.get("realtimeTopics")).stream()
+            .map(Objects::toString)
+            .forEach(topic -> setStringIfPresent(builder, "addRealtimeTopics", topic));
+
+        return builder.build();
     }
 
     private static SyncData toSyncData(Map<String, Object> data) {
@@ -311,6 +319,30 @@ final class MinecraftSyncProtoMapper {
     private static void setOptionalBoolean(Consumer<Boolean> setter, Object value) {
         if (value instanceof Boolean bool) {
             setter.accept(bool);
+        }
+    }
+
+    private static void setStringIfPresent(Object target, String methodName, Object value) {
+        if (value != null) {
+            invokeIfPresent(target, methodName, String.class, Objects.toString(value));
+        }
+    }
+
+    private static void setIntIfPresent(Object target, String methodName, Object value) {
+        invokeIfPresent(target, methodName, int.class, intValue(value));
+    }
+
+    private static void setBooleanIfPresent(Object target, String methodName, Object value) {
+        invokeIfPresent(target, methodName, boolean.class, booleanValue(value));
+    }
+
+    private static void invokeIfPresent(Object target, String methodName, Class<?> parameterType, Object value) {
+        try {
+            target.getClass().getMethod(methodName, parameterType).invoke(target, value);
+        } catch (NoSuchMethodException ignored) {
+            // Published proto artifacts can lag additive local schema fields during rollout.
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
         }
     }
 }

@@ -285,12 +285,52 @@ class TicketServiceTest {
         Ticket updatedTicket = updatedTicketCaptor.getValue();
         assertEquals(TicketStatus.OPEN, updatedTicket.getStatus());
         assertEquals("Updated subject", updatedTicket.getSubject());
-        assertFalse(updatedTicket.isEmailAuthEnabled());
-        assertFalse(updatedTicket.getData().containsKey("emailAuthEnabled"));
-        assertFalse(updatedTicket.getFormData().containsKey("emailAuthEnabled"));
+        assertTrue(updatedTicket.isEmailAuthEnabled());
+        assertEquals(true, updatedTicket.getData().get("emailAuthEnabled"));
+        assertEquals(true, updatedTicket.getFormData().get("emailAuthEnabled"));
         assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));
         assertEquals("creator-1", updatedTicket.getData().get("creatorIdentifier"));
         assertEquals(1, updatedTicket.getReplies().size());
         assertTrue(updatedTicket.getReplies().get(0).getContent().contains("Issue Type"));
+    }
+
+    @Test
+    void submitTicketFormCannotDisableExistingEmailAuthWhileSavingEmail() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Ticket ticket = Ticket.builder()
+            .id("SUPPORT-3")
+            .type(TicketCategory.SUPPORT)
+            .status(TicketStatus.UNFINISHED)
+            .emailAuthEnabled(true)
+            .creatorName("PlayerOne")
+            .replies(new ArrayList<>())
+            .notes(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
+
+        when(ticketRepository.findById(server, "SUPPORT-3")).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+            .thenAnswer(invocation -> invocation.getArgument(1));
+
+        ticketService.submitTicketForm(
+            server,
+            "SUPPORT-3",
+            new SubmitTicketFormRequest(
+                "Updated subject",
+                "player@example.com",
+                java.util.Map.of("issue_type", "Bug report", "emailAuthEnabled", false),
+                List.of(),
+                "creator-1",
+                null
+            )
+        );
+
+        ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
+        Ticket updatedTicket = updatedTicketCaptor.getValue();
+        assertTrue(updatedTicket.isEmailAuthEnabled());
+        assertEquals(true, updatedTicket.getData().get("emailAuthEnabled"));
+        assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));
+        assertEquals(false, updatedTicket.getFormData().get("emailAuthEnabled"));
     }
 }

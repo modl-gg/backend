@@ -17,7 +17,9 @@ import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,13 @@ public class PublicTicketController {
     private final TicketService ticketService;
     private final TicketReplyService ticketReplyService;
     private final TicketEmailVerificationService verificationService;
+    private static final String CREATOR_EMAIL_DATA_KEY = "creatorEmail";
+    private static final String CREATOR_IDENTIFIER_DATA_KEY = "creatorIdentifier";
+    private static final String EMAIL_AUTH_DATA_KEY = "emailAuthEnabled";
+    private static final String CONTACT_EMAIL_DATA_KEY = "contactEmail";
+    private static final String CONTACT_EMAIL_LEGACY_DATA_KEY = "contact_email";
+    private static final String EMAIL_DATA_KEY = "email";
+    private static final String PLAYER_UUID_DATA_KEY = "playerUuid";
 
     @PostMapping
     public ResponseEntity<?> createTicket(
@@ -129,8 +138,54 @@ public class PublicTicketController {
         response.put("date", ticketResponse.date());
         response.put("category", ticketResponse.category());
         response.put("locked", ticketResponse.locked());
+        response.put("creatorUuid", "");
+        response.put("reportedBy", ticketResponse.reportedBy() != null ? ticketResponse.reportedBy() : "");
+        List<Map<String, Object>> publicMessages = filterPublicReplies(ticketResponse.messages());
+        response.put("replies", publicMessages);
+        response.put("messages", publicMessages);
+        response.put("data", filterPublicData(ticketResponse.data()));
+        response.put("formData", filterPublicData(ticketResponse.formData()));
+        response.put("reportedPlayer", ticketResponse.reportedPlayer() != null ? ticketResponse.reportedPlayer() : "");
+        response.put("reportedPlayerUuid", "");
+        response.put("chatMessages", ticket.isEmailAuthEnabled() && ticketResponse.chatMessages() != null ? ticketResponse.chatMessages() : Collections.emptyList());
         response.put("emailAuthEnabled", ticketResponse.emailAuthEnabled());
         return ResponseEntity.ok(response);
+    }
+
+    private Map<String, Object> filterPublicData(Map<String, Object> data) {
+        if (data == null || data.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> filtered = new HashMap<>(data);
+        filtered.remove(CREATOR_EMAIL_DATA_KEY);
+        filtered.remove(CREATOR_IDENTIFIER_DATA_KEY);
+        filtered.remove(EMAIL_AUTH_DATA_KEY);
+        filtered.remove(CONTACT_EMAIL_DATA_KEY);
+        filtered.remove(CONTACT_EMAIL_LEGACY_DATA_KEY);
+        filtered.remove(EMAIL_DATA_KEY);
+        filtered.remove(PLAYER_UUID_DATA_KEY);
+        return filtered;
+    }
+
+    private List<Map<String, Object>> filterPublicReplies(List<TicketReply> replies) {
+        if (replies == null || replies.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return replies.stream().map(this::toPublicReply).toList();
+    }
+
+    private Map<String, Object> toPublicReply(TicketReply reply) {
+        Map<String, Object> publicReply = new HashMap<>();
+        publicReply.put("id", reply.getId());
+        publicReply.put("name", reply.getName());
+        publicReply.put("avatar", reply.getAvatar());
+        publicReply.put("content", reply.getContent());
+        publicReply.put("type", reply.getType());
+        publicReply.put("created", reply.getCreated());
+        publicReply.put("staff", reply.isStaff());
+        publicReply.put("action", reply.getAction());
+        publicReply.put("attachments", reply.getAttachments() != null ? reply.getAttachments() : Collections.emptyList());
+        return publicReply;
     }
 
     @GetMapping("/{id}/status")
@@ -215,7 +270,7 @@ public class PublicTicketController {
         }
 
         Ticket ticket = rawTicket.get();
-        if (ticket.isEmailAuthEnabled()) {
+        if (ticket.isEmailAuthEnabled() && ticketService.getEmailHint(ticket) != null) {
             if (ticketToken == null || !verificationService.validateToken(server, id, ticketToken)) {
                 throw new ForbiddenException("Email verification required");
             }
