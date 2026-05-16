@@ -14,12 +14,14 @@ import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitResponse;
 import gg.modl.backend.replaylite.repository.ReplayLiteMongoRepository;
 import gg.modl.backend.replaylite.repository.ReplayLiteQuotaMongoRepository;
 import gg.modl.backend.replaylite.storage.ReplayLiteStorageService;
+import gg.modl.backend.server.data.Server;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -64,29 +66,25 @@ public class ReplayLiteService {
         this.clock = clock;
     }
 
-    public ReplayLiteUploadInitResponse initUpload(ReplayLiteUploadInitRequest request, String clientIp) {
+    public ReplayLiteUploadInitResponse initUpload(Server server, ReplayLiteUploadInitRequest request, String clientIp) {
         if (request.requestedSize() > MAX_REPLAY_SIZE_BYTES) {
             throw new ValidationException("Replay Lite uploads cannot exceed 10 MB");
         }
 
+        UUID pluginServerUuid = authenticatedServerUuid(server);
         abuseGuard.checkIp(clientIp);
-        abuseGuard.checkInit(request.pluginServerUuid());
+        abuseGuard.checkInit(pluginServerUuid);
         Instant now = clock.instant();
-        long pendingCount = repository.countPendingForServerSince(request.pluginServerUuid(), now.minus(PENDING_UPLOAD_TTL));
+        long pendingCount = repository.countPendingForServerSince(pluginServerUuid, now.minus(PENDING_UPLOAD_TTL));
         abuseGuard.checkPendingUploads(pendingCount);
 
         UUID replayUuid = UUID.randomUUID();
         String replayId = replayUuid.toString();
         String objectKey = buildObjectKey(replayUuid, now);
 
-        ReplayLiteStorageService.PresignedUpload presignedUpload = storageService.createPresignedUpload(
-            objectKey,
-            request.requestedSize()
-        );
-
         ReplayLiteDocument document = new ReplayLiteDocument();
         document.setId(replayId);
-        document.setPluginServerUuid(request.pluginServerUuid());
+        document.setPluginServerUuid(pluginServerUuid);
         document.setObjectKey(objectKey);
         document.setStatus(ReplayLiteStatus.PENDING);
         document.setRequestedSize(request.requestedSize());
@@ -94,6 +92,11 @@ public class ReplayLiteService {
         document.setCreatedAt(now);
         document.setUploadInitIp(clientIp);
         repository.saveEntity(document);
+
+        ReplayLiteStorageService.PresignedUpload presignedUpload = storageService.createPresignedUpload(
+            objectKey,
+            request.requestedSize()
+        );
 
         return new ReplayLiteUploadInitResponse(
             replayId,
@@ -104,13 +107,18 @@ public class ReplayLiteService {
         );
     }
 
-    public void confirmUpload(String replayId, String clientIp) {
+    public void confirmUpload(Server server, String replayId, String clientIp) {
         abuseGuard.checkIp(clientIp);
+        UUID pluginServerUuid = authenticatedServerUuid(server);
 
         ReplayLiteDocument document = repository.findByReplayId(replayId)
             .orElseThrow(() -> new ResourceNotFoundException("Replay not found"));
 
-        abuseGuard.checkConfirm(document.getPluginServerUuid());
+        if (!pluginServerUuid.equals(document.getPluginServerUuid())) {
+            throw new ResourceNotFoundException("Replay not found");
+        }
+
+        abuseGuard.checkConfirm(pluginServerUuid);
         requirePending(document);
         requireNotStale(document);
 
@@ -172,10 +180,16 @@ public class ReplayLiteService {
             throw new ConflictException("This replay has already been labeled");
         }
 
-        document.setLabels(normalizeLabels(labels));
-        document.setLabelIp(clientIp);
-        document.setLabeledAt(now);
-        repository.saveEntity(document);
+        if (!repository.claimLabels(document.getId(), now, normalizeLabels(labels), clientIp)) {
+            Optional<ReplayLiteDocument> current = repository.findByReplayId(replayId);
+            if (current.isEmpty()
+                || current.get().getStatus() != ReplayLiteStatus.CONFIRMED
+                || current.get().getExpiresAt() == null
+                || !current.get().getExpiresAt().isAfter(now)) {
+                throw new ResourceNotFoundException("Replay not found");
+            }
+            throw new ConflictException("This replay has already been labeled");
+        }
     }
 
     private Optional<ReplayLiteDocument> findAvailablePublicReplay(String replayId) {
@@ -201,6 +215,18 @@ public class ReplayLiteService {
     private String buildObjectKey(UUID replayUuid, Instant now) {
         String date = KEY_DATE_FORMATTER.format(LocalDate.ofInstant(now, ZoneOffset.UTC));
         return "replay-lite/" + date + "/" + replayUuid + ".modlreplay";
+    }
+
+    private UUID authenticatedServerUuid(Server server) {
+        String serverId = server.getId();
+        if (serverId == null || serverId.isBlank()) {
+            throw new ValidationException("Authenticated server is missing an id");
+        }
+        try {
+            return UUID.fromString(serverId);
+        } catch (IllegalArgumentException ignored) {
+            return UUID.nameUUIDFromBytes(serverId.getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     private void requirePending(ReplayLiteDocument document) {

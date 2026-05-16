@@ -5,6 +5,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitResponse;
 import gg.modl.backend.replaylite.service.ReplayLiteService;
+import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -27,7 +28,9 @@ public class ReplayLiteController {
         @RequestBody @Valid ReplayLiteUploadInitRequest request,
         HttpServletRequest httpRequest
     ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
         ReplayLiteUploadInitResponse response = replayLiteService.initUpload(
+            server,
             request,
             RequestUtil.getClientIp(httpRequest)
         );
@@ -47,7 +50,8 @@ public class ReplayLiteController {
         @PathVariable String replayId,
         HttpServletRequest httpRequest
     ) {
-        replayLiteService.confirmUpload(replayId, RequestUtil.getClientIp(httpRequest));
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        replayLiteService.confirmUpload(server, replayId, RequestUtil.getClientIp(httpRequest));
         return ResponseEntity.ok(Map.of(
             "status", 200,
             "success", true

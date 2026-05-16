@@ -19,7 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -126,7 +125,6 @@ class RequestDtoValidationTest {
     @Test
     void replayLiteUploadRejectsInvalidMinecraftVersion() {
         ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
-            UUID.randomUUID(),
             1024,
             "../1.21.4"
         );
@@ -137,7 +135,6 @@ class RequestDtoValidationTest {
     @Test
     void replayLiteUploadRejectsOversizedRequest() {
         ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
-            UUID.randomUUID(),
             RequestValidationLimits.REPLAY_LITE_MAX_REQUESTED_SIZE_BYTES + 1,
             "1.21.4"
         );

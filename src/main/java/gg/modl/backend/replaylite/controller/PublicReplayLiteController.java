@@ -8,7 +8,9 @@ import gg.modl.backend.replaylite.service.ReplayLiteService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -27,8 +29,8 @@ public class PublicReplayLiteController {
     private final ReplayLiteService replayLiteService;
 
     @GetMapping("/{replayId}")
-    public ResponseEntity<?> getReplay(@PathVariable String replayId) {
-        return replayLiteService.getPublicReplay(replayId)
+    public ResponseEntity<?> getReplay(@PathVariable UUID replayId) {
+        return replayLiteService.getPublicReplay(replayId.toString())
             .<ResponseEntity<?>>map(this::toResponse)
             .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
@@ -38,17 +40,17 @@ public class PublicReplayLiteController {
 
     @PostMapping("/{replayId}/label")
     public ResponseEntity<Map<String, Object>> submitLabels(
-        @PathVariable String replayId,
+        @PathVariable UUID replayId,
         @RequestBody @Valid ReplayLiteLabelRequest request,
         HttpServletRequest httpRequest
     ) {
-        replayLiteService.submitLabels(replayId, request.labels(), RequestUtil.getClientIp(httpRequest));
+        replayLiteService.submitLabels(replayId.toString(), request.labels(), RequestUtil.getClientIp(httpRequest));
         return ResponseEntity.ok(Map.of("status", "ok"));
     }
 
     @GetMapping("/{replayId}/download")
-    public ResponseEntity<?> downloadReplay(@PathVariable String replayId) {
-        return replayLiteService.getPublicReplayDownload(replayId)
+    public ResponseEntity<?> downloadReplay(@PathVariable UUID replayId) {
+        return replayLiteService.getPublicReplayDownload(replayId.toString())
             .<ResponseEntity<?>>map(download -> ResponseEntity.ok()
                 .headers(downloadHeaders(replayId, download))
                 .body(download.bytes()))
@@ -58,14 +60,16 @@ public class PublicReplayLiteController {
             )));
     }
 
-    private HttpHeaders downloadHeaders(String replayId, ReplayLiteService.ReplayLiteDownload download) {
+    private HttpHeaders downloadHeaders(UUID replayId, ReplayLiteService.ReplayLiteDownload download) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(download.contentType()));
         headers.setContentLength(download.bytes().length);
         headers.setCacheControl("private, no-store, max-age=0");
         headers.setPragma("no-cache");
         headers.setExpires(0);
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + replayId + ".modlreplay\"");
+        headers.setContentDisposition(ContentDisposition.inline()
+            .filename(replayId + ".modlreplay")
+            .build());
         return headers;
     }
 

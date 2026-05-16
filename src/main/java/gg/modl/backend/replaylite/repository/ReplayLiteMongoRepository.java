@@ -4,6 +4,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.replaylite.data.ReplayLiteDocument;
+import gg.modl.backend.replaylite.data.ReplayLiteLabel;
 import gg.modl.backend.replaylite.data.ReplayLiteStatus;
 import java.time.Instant;
 import java.util.List;
@@ -59,6 +60,24 @@ public class ReplayLiteMongoRepository extends AbstractGlobalMongoRepository<Rep
 
     public ReplayLiteDocument saveEntity(ReplayLiteDocument document) {
         return super.saveEntity(document);
+    }
+
+    public boolean claimLabels(String replayId, Instant now, List<ReplayLiteLabel> labels, String labelIp) {
+        Query query = Query.query(Criteria.where("_id").is(replayId)
+            .and("status").is(ReplayLiteStatus.CONFIRMED)
+            .and("expiresAt").gt(now)
+            .orOperator(
+                Criteria.where("labels").exists(false),
+                Criteria.where("labels").is(null),
+                Criteria.where("labels").size(0)
+            ));
+        Update update = new Update()
+            .set("labels", labels)
+            .set("labelIp", labelIp)
+            .set("labeledAt", now);
+
+        UpdateResult result = updateFirst(query, update);
+        return result.getModifiedCount() == 1;
     }
 
     public boolean confirmPendingUpload(
