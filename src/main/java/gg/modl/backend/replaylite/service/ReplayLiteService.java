@@ -13,6 +13,7 @@ import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitResponse;
 import gg.modl.backend.replaylite.repository.ReplayLiteMongoRepository;
 import gg.modl.backend.replaylite.repository.ReplayLiteQuotaMongoRepository;
+import gg.modl.backend.replaylite.repository.ReplayLiteQuotaMongoRepository.QuotaReservationResult;
 import gg.modl.backend.replaylite.storage.ReplayLiteStorageService;
 import gg.modl.backend.server.data.Server;
 import java.time.Clock;
@@ -133,12 +134,36 @@ public class ReplayLiteService {
             throw new ValidationException("Replay Lite upload exceeds requested size");
         }
 
-        LocalDate quotaDay = reserveDailyQuota(document.getPluginServerUuid());
+        LocalDate quotaDay = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
+        QuotaReservationResult quotaReservation = reserveDailyQuota(document.getPluginServerUuid(), document.getId(), quotaDay);
+        if (quotaReservation == QuotaReservationResult.ALREADY_RESERVED) {
+            throw new ConflictException("Replay Lite upload is not pending");
+        }
+
+        boolean confirmed;
         try {
-            confirmPendingUpload(document, actualSize, clientIp);
+            confirmed = confirmPendingUpload(document, actualSize, clientIp);
         } catch (RuntimeException e) {
-            quotaRepository.releaseConfirmedUpload(document.getPluginServerUuid(), quotaDay, clock.instant());
+            if (quotaReservation == QuotaReservationResult.RESERVED && shouldReleaseFailedConfirmation(document.getId())) {
+                quotaRepository.releaseConfirmedUpload(
+                    document.getPluginServerUuid(),
+                    quotaDay,
+                    document.getId(),
+                    clock.instant()
+                );
+            }
             throw e;
+        }
+        if (!confirmed) {
+            if (quotaReservation == QuotaReservationResult.RESERVED && shouldReleaseFailedConfirmation(document.getId())) {
+                quotaRepository.releaseConfirmedUpload(
+                    document.getPluginServerUuid(),
+                    quotaDay,
+                    document.getId(),
+                    clock.instant()
+                );
+            }
+            throw new ConflictException("Replay Lite upload is not pending");
         }
     }
 
@@ -242,29 +267,38 @@ public class ReplayLiteService {
         }
     }
 
-    private LocalDate reserveDailyQuota(UUID pluginServerUuid) {
-        Instant now = clock.instant();
-        LocalDate utcDate = LocalDate.ofInstant(now, ZoneOffset.UTC);
-        if (!quotaRepository.reserveConfirmedUpload(pluginServerUuid, utcDate, DAILY_CONFIRMED_LIMIT, now)) {
+    private QuotaReservationResult reserveDailyQuota(UUID pluginServerUuid, String replayId, LocalDate utcDate) {
+        QuotaReservationResult result = quotaRepository.reserveConfirmedUpload(
+            pluginServerUuid,
+            utcDate,
+            replayId,
+            DAILY_CONFIRMED_LIMIT,
+            clock.instant()
+        );
+        if (result == QuotaReservationResult.LIMIT_REACHED) {
             throw new ValidationException("Replay Lite daily upload limit reached");
         }
-        return utcDate;
+        return result;
     }
 
-    private void confirmPendingUpload(ReplayLiteDocument document, long actualSize, String clientIp) {
+    private boolean confirmPendingUpload(ReplayLiteDocument document, long actualSize, String clientIp) {
         Instant confirmedAt = clock.instant();
         Instant expiresAt = confirmedAt.plus(CONFIRMED_REPLAY_TTL);
         Instant freshCreatedAfter = confirmedAt.minus(PENDING_UPLOAD_TTL);
-        if (!repository.confirmPendingUpload(
+        return repository.confirmPendingUpload(
             document.getId(),
             actualSize,
             confirmedAt,
             expiresAt,
             clientIp,
             freshCreatedAfter
-        )) {
-            throw new ConflictException("Replay Lite upload is not pending");
-        }
+        );
+    }
+
+    private boolean shouldReleaseFailedConfirmation(String replayId) {
+        return repository.findByReplayId(replayId)
+            .map(document -> document.getStatus() != ReplayLiteStatus.CONFIRMED)
+            .orElse(true);
     }
 
     public record ReplayLiteDownload(byte[] bytes, String contentType, Instant expiresAt) {}

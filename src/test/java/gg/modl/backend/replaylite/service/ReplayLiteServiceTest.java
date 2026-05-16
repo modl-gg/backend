@@ -9,7 +9,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -24,6 +23,7 @@ import gg.modl.backend.replaylite.dto.ReplayLitePublicResponse;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
 import gg.modl.backend.replaylite.repository.ReplayLiteMongoRepository;
 import gg.modl.backend.replaylite.repository.ReplayLiteQuotaMongoRepository;
+import gg.modl.backend.replaylite.repository.ReplayLiteQuotaMongoRepository.QuotaReservationResult;
 import gg.modl.backend.replaylite.storage.ReplayLiteStorageService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -123,7 +123,8 @@ class ReplayLiteServiceTest {
         when(repository.findByReplayId(document.getId())).thenReturn(Optional.of(document));
         when(storageService.headObject(document.getObjectKey()))
             .thenReturn(Optional.of(new ReplayLiteStorageService.ObjectMetadata(MAX_SIZE, NOW)));
-        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(100), eq(NOW))).thenReturn(false);
+        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(document.getId()), eq(100), eq(NOW)))
+            .thenReturn(QuotaReservationResult.LIMIT_REACHED);
 
         ValidationException exception = assertThrows(
             ValidationException.class,
@@ -325,8 +326,10 @@ class ReplayLiteServiceTest {
         });
 
         AtomicInteger reservedCount = new AtomicInteger(0);
-        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(100), eq(NOW)))
-            .thenAnswer(invocation -> reservedCount.incrementAndGet() == 1);
+        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), any(), eq(100), eq(NOW)))
+            .thenAnswer(invocation -> reservedCount.incrementAndGet() == 1
+                ? QuotaReservationResult.RESERVED
+                : QuotaReservationResult.LIMIT_REACHED);
         when(repository.confirmPendingUpload(
             any(),
             eq(2048L),
@@ -367,14 +370,61 @@ class ReplayLiteServiceTest {
     }
 
     @Test
-    void duplicateConcurrentConfirmOfSameReplayReleasesLostQuotaReservation() throws Exception {
+    void duplicateConfirmWithExistingReplayQuotaDoesNotAttemptSecondConfirm() {
         ReplayLiteDocument document = pendingDocument(NOW.minusSeconds(60), 2048);
         when(repository.findByReplayId(document.getId())).thenReturn(Optional.of(document));
         when(storageService.headObject(document.getObjectKey()))
             .thenReturn(Optional.of(new ReplayLiteStorageService.ObjectMetadata(2048, NOW)));
-        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(100), eq(NOW))).thenReturn(true);
+        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(document.getId()), eq(100), eq(NOW)))
+            .thenReturn(QuotaReservationResult.ALREADY_RESERVED);
+        ConflictException exception = assertThrows(
+            ConflictException.class,
+            () -> service.confirmUpload(authenticatedServer(), document.getId(), "203.0.113.10")
+        );
 
-        AtomicInteger transitionAttempts = new AtomicInteger(0);
+        assertEquals("Replay Lite upload is not pending", exception.getMessage());
+        verify(repository, never()).confirmPendingUpload(any(), org.mockito.ArgumentMatchers.anyLong(), any(), any(), any(), any());
+        verify(quotaRepository, never()).releaseConfirmedUpload(eq(SERVER_UUID), any(), eq(document.getId()), any());
+    }
+
+    @Test
+    void failedConfirmDoesNotReleaseWhenReplayIsNowConfirmed() {
+        ReplayLiteDocument pending = pendingDocument(NOW.minusSeconds(60), 2048);
+        ReplayLiteDocument confirmed = confirmedDocument(NOW, 2048);
+        when(repository.findByReplayId(pending.getId()))
+            .thenReturn(Optional.of(pending))
+            .thenReturn(Optional.of(confirmed));
+        when(storageService.headObject(pending.getObjectKey()))
+            .thenReturn(Optional.of(new ReplayLiteStorageService.ObjectMetadata(2048, NOW)));
+        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(pending.getId()), eq(100), eq(NOW)))
+            .thenReturn(QuotaReservationResult.RESERVED);
+        when(repository.confirmPendingUpload(
+            eq(pending.getId()),
+            eq(2048L),
+            eq(NOW),
+            eq(NOW.plusSeconds(24 * 60 * 60)),
+            eq("203.0.113.10"),
+            any()
+        )).thenThrow(new IllegalStateException("ambiguous write"));
+
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> service.confirmUpload(authenticatedServer(), pending.getId(), "203.0.113.10")
+        );
+
+        assertEquals("ambiguous write", exception.getMessage());
+        verify(quotaRepository, never()).releaseConfirmedUpload(eq(SERVER_UUID), any(), eq(pending.getId()), any());
+    }
+
+    @Test
+    void failedConfirmAfterNewQuotaReservationReleasesThatReservation() {
+        ReplayLiteDocument document = pendingDocument(NOW.minusSeconds(60), 2048);
+        when(repository.findByReplayId(document.getId())).thenReturn(Optional.of(document));
+        when(storageService.headObject(document.getObjectKey()))
+            .thenReturn(Optional.of(new ReplayLiteStorageService.ObjectMetadata(2048, NOW)));
+        when(quotaRepository.reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(document.getId()), eq(100), eq(NOW)))
+            .thenReturn(QuotaReservationResult.RESERVED);
+        IllegalStateException failure = new IllegalStateException("mongo failed");
         when(repository.confirmPendingUpload(
             eq(document.getId()),
             eq(2048L),
@@ -382,37 +432,15 @@ class ReplayLiteServiceTest {
             eq(NOW.plusSeconds(24 * 60 * 60)),
             eq("203.0.113.10"),
             any()
-        )).thenAnswer(invocation -> transitionAttempts.incrementAndGet() == 1);
+        )).thenThrow(failure);
 
-        CountDownLatch ready = new CountDownLatch(2);
-        CountDownLatch start = new CountDownLatch(1);
-        List<Throwable> failures = java.util.Collections.synchronizedList(new ArrayList<>());
-        Runnable confirm = () -> {
-            ready.countDown();
-            awaitLatch(start);
-            try {
-                service.confirmUpload(authenticatedServer(), document.getId(), "203.0.113.10");
-            } catch (Throwable throwable) {
-                failures.add(throwable);
-            }
-        };
+        IllegalStateException exception = assertThrows(
+            IllegalStateException.class,
+            () -> service.confirmUpload(authenticatedServer(), document.getId(), "203.0.113.10")
+        );
 
-        Thread firstThread = new Thread(confirm, "same-replay-1");
-        Thread secondThread = new Thread(confirm, "same-replay-2");
-        firstThread.start();
-        secondThread.start();
-
-        assertTrue(ready.await(1, TimeUnit.SECONDS));
-        start.countDown();
-        firstThread.join(2000);
-        secondThread.join(2000);
-
-        assertEquals(2, transitionAttempts.get());
-        assertEquals(1, failures.size());
-        assertTrue(failures.getFirst() instanceof ConflictException);
-        assertEquals("Replay Lite upload is not pending", failures.getFirst().getMessage());
-        verify(quotaRepository, times(2)).reserveConfirmedUpload(eq(SERVER_UUID), any(), eq(100), eq(NOW));
-        verify(quotaRepository).releaseConfirmedUpload(eq(SERVER_UUID), any(), eq(NOW));
+        assertEquals(failure, exception);
+        verify(quotaRepository).releaseConfirmedUpload(eq(SERVER_UUID), any(), eq(document.getId()), eq(NOW));
     }
 
     private ReplayLiteDocument pendingDocument(Instant createdAt, long requestedSize) {

@@ -3,6 +3,7 @@ package gg.modl.backend.replaylite.data;
 import gg.modl.backend.database.CollectionName;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -18,6 +19,7 @@ public class ReplayLiteDailyQuotaDocument {
     private UUID pluginServerUuid;
     private LocalDate day;
     private int count;
+    private List<String> replayIds;
     private Instant createdAt;
     private Instant updatedAt;
     private Instant expiresAt;
