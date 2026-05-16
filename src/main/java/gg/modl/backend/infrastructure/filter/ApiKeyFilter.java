@@ -34,6 +34,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         final String path = request.getRequestURI();
 
         return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT)
+            && !path.startsWith(RESTMappingV1.PREFIX_REPLAY_LITE)
             && !path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)
             && !path.startsWith(RESTMappingV3.PREFIX_MINECRAFT);
     }

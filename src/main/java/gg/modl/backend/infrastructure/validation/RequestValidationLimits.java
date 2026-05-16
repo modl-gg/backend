@@ -138,6 +138,13 @@ public final class RequestValidationLimits {
     public static final int ROLE_ORDER_MAX_ENTRIES = 200;
     public static final int DOMAIN_MAX_LENGTH = 255;
     public static final int PROMPT_MAX_LENGTH = 50_000;
+    public static final long REPLAY_LITE_MAX_REQUESTED_SIZE_BYTES = 10 * 1024 * 1024L;
+    public static final int REPLAY_LITE_MC_VERSION_MAX_LENGTH = 32;
+    public static final int REPLAY_LITE_LABELS_MAX_ENTRIES = 20;
+    public static final int REPLAY_LITE_LABEL_PLAYER_NAME_MAX_LENGTH = 64;
+    public static final int REPLAY_LITE_LABEL_VERDICT_MAX_LENGTH = 32;
+    public static final int REPLAY_LITE_LABEL_RANGES_MAX_ENTRIES = 100;
+    public static final int REPLAY_LITE_LABEL_NOTES_MAX_LENGTH = 1_000;
     public static final int GENERAL_SETTINGS_DISPLAY_NAME_MAX_LENGTH = 128;
     public static final int GENERAL_SETTINGS_URL_MAX_LENGTH = 2_048;
     public static final int STAFF_USERNAME_MAX_LENGTH = 64;

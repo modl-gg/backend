@@ -52,5 +52,32 @@ class RateLimitConfigTest {
             config.getTierForPath("/v3/minecraft/players/login", "POST")
         );
     }
-}
 
+    @Test
+    void replayLiteUploadAndConfirmUseDedicatedTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.REPLAY_LITE_UPLOAD,
+            config.getTierForPath("/v1/replay-lite/replays/upload", "POST")
+        );
+        assertEquals(
+            RateLimitConfig.RateLimitTier.REPLAY_LITE_UPLOAD,
+            config.getTierForPath("/v1/replay-lite/replays/75f4b741-67df-414c-957b-a8a08222fc30/confirm", "POST")
+        );
+    }
+
+    @Test
+    void publicReplayLiteLabelUsesDedicatedTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.REPLAY_LITE_LABEL,
+            config.getTierForPath("/v1/public/replay-lite/replays/75f4b741-67df-414c-957b-a8a08222fc30/label", "POST")
+        );
+    }
+
+    @Test
+    void publicReplayLiteReadRemainsStandardTier() {
+        assertEquals(
+            RateLimitConfig.RateLimitTier.PUBLIC_STANDARD,
+            config.getTierForPath("/v1/public/replay-lite/replays/75f4b741-67df-414c-957b-a8a08222fc30", "GET")
+        );
+    }
+}

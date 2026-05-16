@@ -24,15 +24,21 @@ class MongoIndexBootstrapServiceTest {
         MongoTemplate template = mock(MongoTemplate.class);
         IndexOperations servers = mock(IndexOperations.class);
         IndexOperations metrics = mock(IndexOperations.class);
+        IndexOperations replayLite = mock(IndexOperations.class);
+        IndexOperations replayLiteQuotas = mock(IndexOperations.class);
         IndexOperations adminUsers = mock(IndexOperations.class);
 
         when(tenantMongoAccess.global()).thenReturn(template);
         when(template.indexOps(CollectionName.MODL_SERVERS)).thenReturn(servers);
         when(template.indexOps(CollectionName.METRIC_SNAPSHOTS)).thenReturn(metrics);
+        when(template.indexOps(CollectionName.REPLAY_LITE_REPLAYS)).thenReturn(replayLite);
+        when(template.indexOps(CollectionName.REPLAY_LITE_DAILY_QUOTAS)).thenReturn(replayLiteQuotas);
         when(template.indexOps("admin_users")).thenReturn(adminUsers);
 
         when(servers.getIndexInfo()).thenReturn(List.of());
         when(metrics.getIndexInfo()).thenReturn(List.of());
+        when(replayLite.getIndexInfo()).thenReturn(List.of());
+        when(replayLiteQuotas.getIndexInfo()).thenReturn(List.of());
         when(adminUsers.getIndexInfo()).thenReturn(List.of(IndexInfo.indexInfoOf(
             new Document("name", "email_1")
                 .append("key", new Document("email", 1))
@@ -53,6 +59,8 @@ class MongoIndexBootstrapServiceTest {
                 .append("emailVerificationToken", 1));
         });
         verify(metrics, atLeastOnce()).createIndex(any());
+        verify(replayLite, atLeastOnce()).createIndex(any());
+        verify(replayLiteQuotas, atLeastOnce()).createIndex(any());
     }
 
     @Test
@@ -61,15 +69,21 @@ class MongoIndexBootstrapServiceTest {
         MongoTemplate template = mock(MongoTemplate.class);
         IndexOperations servers = mock(IndexOperations.class);
         IndexOperations metrics = mock(IndexOperations.class);
+        IndexOperations replayLite = mock(IndexOperations.class);
+        IndexOperations replayLiteQuotas = mock(IndexOperations.class);
         IndexOperations adminUsers = mock(IndexOperations.class);
 
         when(tenantMongoAccess.global()).thenReturn(template);
         when(template.indexOps(CollectionName.MODL_SERVERS)).thenReturn(servers);
         when(template.indexOps(CollectionName.METRIC_SNAPSHOTS)).thenReturn(metrics);
+        when(template.indexOps(CollectionName.REPLAY_LITE_REPLAYS)).thenReturn(replayLite);
+        when(template.indexOps(CollectionName.REPLAY_LITE_DAILY_QUOTAS)).thenReturn(replayLiteQuotas);
         when(template.indexOps("admin_users")).thenReturn(adminUsers);
 
         when(servers.getIndexInfo()).thenReturn(List.of());
         when(metrics.getIndexInfo()).thenReturn(List.of());
+        when(replayLite.getIndexInfo()).thenReturn(List.of());
+        when(replayLiteQuotas.getIndexInfo()).thenReturn(List.of());
         when(adminUsers.getIndexInfo()).thenReturn(List.of(IndexInfo.indexInfoOf(
             new Document("name", "email_1")
                 .append("key", new Document("email", 1))

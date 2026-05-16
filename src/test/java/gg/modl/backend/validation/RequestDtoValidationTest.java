@@ -6,6 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.replaylite.data.ReplayLiteLabel;
+import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
+import gg.modl.backend.replaylite.dto.ReplayLiteLabelRequest;
+import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
 import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
 import gg.modl.backend.settings.dto.request.UpdateWebhookSettingsRequest;
 import jakarta.validation.ConstraintViolation;
@@ -116,5 +120,59 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "embedTemplates.newTickets.fields");
+    }
+
+    @Test
+    void replayLiteUploadRejectsInvalidMinecraftVersion() {
+        ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
+            1024,
+            "../1.21.4"
+        );
+
+        assertHasViolation(validator.validate(request), "mcVersion");
+    }
+
+    @Test
+    void replayLiteUploadRejectsOversizedRequest() {
+        ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
+            RequestValidationLimits.REPLAY_LITE_MAX_REQUESTED_SIZE_BYTES + 1,
+            "1.21.4"
+        );
+
+        assertHasViolation(validator.validate(request), "requestedSize");
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsTooManyLabels() {
+        List<ReplayLiteLabel> labels = new ArrayList<>();
+        for (int i = 0; i < RequestValidationLimits.REPLAY_LITE_LABELS_MAX_ENTRIES + 1; i++) {
+            labels.add(new ReplayLiteLabel("player" + i, "legit", List.of(), "notes"));
+        }
+
+        assertHasViolation(validator.validate(new ReplayLiteLabelRequest(labels)), "labels");
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsInvalidNestedRange() {
+        ReplayLiteLabel label = new ReplayLiteLabel(
+            "player",
+            "aimbot",
+            List.of(new ReplayLiteLabelRange(5000, 1000)),
+            "notes"
+        );
+
+        assertFalse(validator.validate(new ReplayLiteLabelRequest(List.of(label))).isEmpty());
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsUnsupportedVerdict() {
+        ReplayLiteLabel label = new ReplayLiteLabel(
+            "player",
+            "cheating",
+            List.of(),
+            "notes"
+        );
+
+        assertHasViolation(validator.validate(new ReplayLiteLabelRequest(List.of(label))), "labels[0].verdict");
     }
 }

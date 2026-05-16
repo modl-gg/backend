@@ -16,4 +16,7 @@ public class ModlCorsProperties {
 
     @NotNull
     private String appDomains = "modl.gg,modl.top";
+
+    @NotNull
+    private String replayLiteOrigins = "https://replays.modl.gg";
 }

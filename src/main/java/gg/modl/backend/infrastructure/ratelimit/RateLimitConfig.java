@@ -29,6 +29,7 @@ public class RateLimitConfig {
     );
     private static final List<PathRule> PREFIX_RULES = List.of(
         new PathRule("/v1/webhooks/", RateLimitTier.WEBHOOK),
+        new PathRule("/v1/replay-lite/", RateLimitTier.REPLAY_LITE_UPLOAD),
         new PathRule("/v1/minecraft/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
@@ -105,6 +106,9 @@ public class RateLimitConfig {
     }
 
     private RateLimitTier resolvePublicTier(String path, String method) {
+        if (path.startsWith("/v1/public/replay-lite/") && isWriteMethod(method)) {
+            return RateLimitTier.REPLAY_LITE_LABEL;
+        }
         if (path.startsWith("/v1/public/media/") && isWriteMethod(method)) {
             return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
         }
@@ -160,6 +164,8 @@ public class RateLimitConfig {
         ADMIN_SESSION(30, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
         WEBHOOK(50, Duration.ofMinutes(1)),
+        REPLAY_LITE_UPLOAD(20, Duration.ofMinutes(1)),
+        REPLAY_LITE_LABEL(20, Duration.ofMinutes(1)),
         MIGRATION(5, Duration.ofHours(1)),
         MIGRATION_STATUS(60, Duration.ofMinutes(1));
 
