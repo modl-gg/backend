@@ -5,6 +5,7 @@ public final class CollectionName {
     public static final String MODL_SERVERS = "servers";
     public static final String METRIC_SNAPSHOTS = "metric_snapshots";
     public static final String SERVER_INSTANCE_SNAPSHOTS = "server_instance_snapshots";
+    public static final String STRIPE_WEBHOOK_EVENTS = "stripe_webhook_events";
 
     // Core
     public static final String PLAYERS = "players";

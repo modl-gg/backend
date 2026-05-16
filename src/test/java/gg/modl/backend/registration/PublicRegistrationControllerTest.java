@@ -2,6 +2,7 @@ package gg.modl.backend.registration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,8 @@ import gg.modl.backend.server.data.ServerPlan;
 import java.util.Date;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 
 class PublicRegistrationControllerTest {
 
@@ -40,5 +43,32 @@ class PublicRegistrationControllerTest {
         PublicRegistrationController.VerifyResponse body = (PublicRegistrationController.VerifyResponse) response.getBody();
         assertEquals("auto-login-token", body.autoLoginToken());
         verify(serverService).setAutoLoginToken(server, "auto-login-token", expiresAt);
+    }
+
+    @Test
+    void autoLoginDoesNotConsumeTokenBeforeServerIsReady() {
+        ServerService serverService = mock(ServerService.class);
+        RegistrationService registrationService = mock(RegistrationService.class);
+        PublicRegistrationController controller = new PublicRegistrationController(
+            serverService,
+            mock(TurnstileService.class),
+            mock(SessionService.class),
+            registrationService,
+            mock(CookieUtil.class)
+        );
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(serverService.getServerByAutoLoginToken("auto-login-token")).thenReturn(server);
+        when(registrationService.isTokenExpired(server)).thenReturn(false);
+        when(registrationService.checkServerReadiness(server))
+            .thenReturn(RegistrationService.ServerReadiness.PROVISIONING_INCOMPLETE);
+
+        ResponseEntity<?> response = controller.autoLogin(
+            new PublicRegistrationController.AutoLoginRequest("auto-login-token"),
+            new MockHttpServletRequest(),
+            new MockHttpServletResponse()
+        );
+
+        assertEquals(400, response.getStatusCode().value());
+        verify(serverService, never()).consumeAutoLoginToken("auto-login-token");
     }
 }

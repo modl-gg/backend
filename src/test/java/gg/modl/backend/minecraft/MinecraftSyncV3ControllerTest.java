@@ -68,7 +68,7 @@ class MinecraftSyncV3ControllerTest {
             eq("2.0.0"),
             eq(200),
             eq("hub"),
-            eq("203.0.113.20")
+            eq("127.0.0.1")
         )).thenReturn(Map.of(
             "panelUrl", "https://demo.modl.gg",
             "timestamp", "2026-05-12T00:00:00Z",
@@ -115,7 +115,7 @@ class MinecraftSyncV3ControllerTest {
             any(),
             any(),
             any(),
-            eq("203.0.113.20")
+            eq("127.0.0.1")
         )).thenReturn(Map.of(
             "timestamp", "2026-05-12T00:00:01Z",
             "data", Map.of(
@@ -182,7 +182,7 @@ class MinecraftSyncV3ControllerTest {
             any(),
             any(),
             any(),
-            eq("203.0.113.20")
+            eq("127.0.0.1")
         );
     }
 

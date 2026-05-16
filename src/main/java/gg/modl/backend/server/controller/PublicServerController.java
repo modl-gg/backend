@@ -37,58 +37,13 @@ public class PublicServerController {
 
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(@RequestBody @Valid RegisterRequest request) {
-        if (RESERVED_SUBDOMAINS.contains(request.customDomain)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_RESERVED_SUBDOMAIN));
-        }
-        // TODO: ratelimit
-        // TODO: cloudflare turnstile
-        ServerService.ServerExistResult existResult = serverService.doesServerExist(request.email, request.serverName, request.customDomain);
-        if (existResult.emailMatch()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_EMAIL_EXISTS));
-        }
-        if (existResult.nameMatch()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_NAME_EXISTS));
-        }
-        if (existResult.domainMatch()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(new RegisterResponse(false, ServerResponseMessage.REGISTER_DOMAIN_EXISTS));
-        }
-
-        serverService.createServer(request.serverName, request.customDomain, request.email);
-
-        return ResponseEntity.ok(new RegisterResponse(true, ServerResponseMessage.REGISTER_SUCCESS));
+        return ResponseEntity.status(HttpStatus.GONE).body(new RegisterResponse(false, "Use /v1/public/registration instead."));
     }
 
     @PostMapping("/check-availability")
     public ResponseEntity<AvailabilityResponse> checkAvailability(@RequestBody @Valid AvailabilityRequest request) {
-        boolean emailAvailable = true;
-        boolean nameAvailable = true;
-        boolean subdomainAvailable = true;
-        String message = null;
-
-        if (request.customDomain != null && !request.customDomain.isBlank() && RESERVED_SUBDOMAINS.contains(request.customDomain)) {
-            subdomainAvailable = false;
-            message = ServerResponseMessage.REGISTER_RESERVED_SUBDOMAIN;
-        }
-
-        ServerService.ServerExistResult existResult = serverService.doesServerExist(
-                request.email != null ? request.email : "",
-                request.serverName != null ? request.serverName : "",
-                request.customDomain != null ? request.customDomain : "");
-
-        if (existResult.emailMatch()) {
-            emailAvailable = false;
-            if (message == null) message = ServerResponseMessage.REGISTER_EMAIL_EXISTS;
-        }
-        if (existResult.nameMatch()) {
-            nameAvailable = false;
-            if (message == null) message = ServerResponseMessage.REGISTER_NAME_EXISTS;
-        }
-        if (existResult.domainMatch()) {
-            subdomainAvailable = false;
-            if (message == null) message = ServerResponseMessage.REGISTER_DOMAIN_EXISTS;
-        }
-
-        return ResponseEntity.ok(new AvailabilityResponse(emailAvailable, nameAvailable, subdomainAvailable, message));
+        return ResponseEntity.status(HttpStatus.GONE)
+            .body(new AvailabilityResponse(false, false, false, "Use /v1/public/registration/check-availability instead."));
     }
 
     public record AvailabilityRequest(

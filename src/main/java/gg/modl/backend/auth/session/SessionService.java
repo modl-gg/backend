@@ -21,8 +21,10 @@ public class SessionService {
     private final IdGenerator idGenerator;
 
     public AuthSessionData createSession(Server server, String email, String ipAddress, String userAgent) {
-        sessionRepository.deleteByEmail(server, email);
-        return createSessionInternal(email, ipAddress, userAgent, session -> sessionRepository.saveForServer(server, session));
+        synchronized (sessionLock(server.getId(), email)) {
+            sessionRepository.deleteByEmail(server, email);
+            return createSessionInternal(email, ipAddress, userAgent, session -> sessionRepository.saveForServer(server, session));
+        }
     }
 
     private AuthSessionData createSessionInternal(
@@ -56,8 +58,14 @@ public class SessionService {
     }
 
     public AuthSessionData createAdminSession(String email) {
-        sessionRepository.deleteByEmailGlobal(email);
-        return createSessionInternal(email, null, null, sessionRepository::saveForGlobal);
+        synchronized (sessionLock("global", email)) {
+            sessionRepository.deleteByEmailGlobal(email);
+            return createSessionInternal(email, null, null, sessionRepository::saveForGlobal);
+        }
+    }
+
+    private String sessionLock(String scope, String email) {
+        return (scope + ":" + EmailAddressUtil.normalize(email)).intern();
     }
 
     public List<AuthSessionData> findAllSessionsForEmail(Server server, String email) {

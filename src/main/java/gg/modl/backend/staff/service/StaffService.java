@@ -128,12 +128,13 @@ public class StaffService {
         return staffRepository.existsByUsername(server, username);
     }
 
-    public StaffResponse createStaff(Server server, CreateStaffRequest request) {
+    public StaffResponse createStaff(Server server, CreateStaffRequest request, String performerEmail, String performerRole) {
         if (staffRepository.existsByEmailOrUsername(server, request.email(), request.username())) {
             throw new ConflictException("Staff member with this email or username already exists");
         }
 
         String role = request.role() != null ? request.role() : "Helper";
+        role = validateGrantableRole(server, role, performerRole).getName();
 
         Staff staff = Staff.builder()
             .email(request.email())
@@ -225,13 +226,34 @@ public class StaffService {
             throw new ForbiddenException("You cannot change your own role");
         }
 
-        staff.setRole(newRole);
+        StaffRole validatedRole = validateGrantableRole(server, newRole, performerRole);
+        staff.setRole(validatedRole.getName());
         staff.setUpdatedAt(new Date());
         Staff saved = staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         return Optional.of(toStaffResponse(saved, "Active"));
+    }
+
+    private StaffRole validateGrantableRole(Server server, String targetRoleName, String performerRoleName) {
+        StaffRole targetRole = permissionService.getRoleByName(server, targetRoleName)
+            .orElseThrow(() -> new ValidationException("Unknown staff role"));
+        if ("super-admin".equals(targetRole.getId()) || "Super Admin".equals(targetRole.getName())) {
+            throw new ForbiddenException("You do not have authority to grant this role");
+        }
+        if (performerRoleName == null || performerRoleName.isBlank()) {
+            throw new ForbiddenException("You do not have authority to grant staff roles");
+        }
+        if ("Super Admin".equals(performerRoleName)) {
+            return targetRole;
+        }
+        StaffRole performerRole = permissionService.getRoleByName(server, performerRoleName)
+            .orElseThrow(() -> new ForbiddenException("You do not have authority to grant staff roles"));
+        if (performerRole.getOrder() >= targetRole.getOrder()) {
+            throw new ForbiddenException("You do not have authority to grant this role");
+        }
+        return targetRole;
     }
 
     public List<MinecraftStaffSummaryResponse> getMinecraftStaffSummary(Server server) {

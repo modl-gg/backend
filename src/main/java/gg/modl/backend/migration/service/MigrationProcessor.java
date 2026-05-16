@@ -1,5 +1,6 @@
 package gg.modl.backend.migration.service;
 
+import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
@@ -43,6 +44,8 @@ public class MigrationProcessor {
 
     private static final int BATCH_SIZE = 500;
     private static final int PROGRESS_UPDATE_INTERVAL = 1000;
+    private static final int MAX_JSON_NESTING_DEPTH = 100;
+    private static final int MAX_JSON_STRING_LENGTH = 1_000_000;
 
     @Async
     public void processFileAsync(Server server, Path filePath) {
@@ -64,7 +67,12 @@ public class MigrationProcessor {
                 0, 0, null
             ));
 
-            Map<String, Object> migrationData = objectMapper.readValue(filePath.toFile(), Map.class);
+            ObjectMapper constrainedMapper = objectMapper.copy();
+            constrainedMapper.getFactory().setStreamReadConstraints(StreamReadConstraints.builder()
+                .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
+                .maxStringLength(MAX_JSON_STRING_LENGTH)
+                .build());
+            Map<String, Object> migrationData = constrainedMapper.readValue(filePath.toFile(), Map.class);
 
             MigrationValidator.ValidationResult validation = validator.validateMigrationData(migrationData);
             if (!validation.valid()) {

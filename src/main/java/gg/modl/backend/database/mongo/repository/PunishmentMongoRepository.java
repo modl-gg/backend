@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
@@ -77,7 +78,8 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
         Update update = new Update().push("punishments.$.notes", note);
         if (dataUpdates != null) {
             for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
-                update.set("punishments.$." + entry.getKey(), entry.getValue());
+                MongoKeyUtils.validateUpdatePath(entry.getKey());
+                update.set("punishments.$." + entry.getKey(), MongoKeyUtils.sanitizeValue(entry.getValue()));
             }
         }
         updateFirst(server, query, update);

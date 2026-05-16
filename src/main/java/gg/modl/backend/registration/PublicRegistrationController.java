@@ -223,10 +223,13 @@ public class PublicRegistrationController {
             return ResponseEntity.badRequest().body(new AutoLoginResponse(false, message, null));
         }
 
+        server = serverService.consumeAutoLoginToken(request.token());
+        if (server == null) {
+            return ResponseEntity.badRequest().body(new AutoLoginResponse(false, "Invalid or expired token.", null));
+        }
+
         AuthSessionData session = sessionService.createSession(server, server.getAdminEmail(), RequestUtil.getClientIp(httpRequest),
             httpRequest.getHeader("User-Agent"));
-
-        serverService.clearAutoLoginToken(server);
 
         response.addCookie(cookieUtil.createSessionCookie(session.getId()));
 

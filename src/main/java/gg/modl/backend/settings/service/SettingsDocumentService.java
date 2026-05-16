@@ -1,6 +1,7 @@
 package gg.modl.backend.settings.service;
 
 import gg.modl.backend.database.mongo.repository.SettingsMongoRepository;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import java.util.Date;
@@ -28,7 +29,7 @@ public class SettingsDocumentService {
 
         Map<String, Object> normalizedData = data == null
                                              ? new LinkedHashMap<>()
-                                             : new LinkedHashMap<>(data);
+                                             : MongoKeyUtils.sanitizeKeys(data);
         Date now = new Date();
 
         if (!currentState.exists()) {

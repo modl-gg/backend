@@ -37,6 +37,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.infrastructure.util.IdGenerator;
@@ -92,7 +93,7 @@ public class PunishmentLifecycleService {
                 .toList();
         }
 
-        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
+        Map<String, Object> data = request.data() != null ? MongoKeyUtils.sanitizeKeys(new HashMap<>(request.data())) : new HashMap<>();
         data.put("pendingAcknowledgement", true);
 
         CreatePunishmentRequest serviceRequest = new CreatePunishmentRequest(
@@ -119,7 +120,7 @@ public class PunishmentLifecycleService {
             throw new ResourceNotFoundException("Player not found");
         }
         Date now = new Date();
-        Map<String, Object> data = request.data() != null ? new HashMap<>(request.data()) : new HashMap<>();
+        Map<String, Object> data = request.data() != null ? MongoKeyUtils.sanitizeKeys(new HashMap<>(request.data())) : new HashMap<>();
 
         if (request.severity() != null) {
             data.put("severity", request.severity());

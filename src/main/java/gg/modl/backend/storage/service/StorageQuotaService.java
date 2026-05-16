@@ -1,6 +1,7 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
@@ -17,6 +18,7 @@ public class StorageQuotaService {
     private final StorageMetadataService storageMetadataService;
     private final S3StorageService s3StorageService;
     private final UsageTrackingService usageTrackingService;
+    private final ServerMongoRepository serverRepository;
     public static final long MAX_PREMIUM_BYTES = 2200L * 1024L * 1024 * 1024; // 2200 GB (200 base + 2000 max overage)
     private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
     private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
@@ -26,6 +28,39 @@ public class StorageQuotaService {
         long used = s3StorageService.calculateStorageUsed(server);
         long max = getMaxBytesForServer(server);
         return used + fileSize <= max;
+    }
+
+    public boolean isWithinQuota(Server server) {
+        long used = s3StorageService.calculateStorageUsed(server);
+        long max = getMaxBytesForServer(server);
+        return used <= max;
+    }
+
+    public boolean confirmAndRecordFile(Server server, String key, long size, String contentType) {
+        if (size < 0) {
+            return false;
+        }
+        if (storageMetadataService.hasFile(server, key)) {
+            return true;
+        }
+
+        long maxBytes = getMaxBytesForServer(server);
+        reconcileTrackedStorageUsage(server);
+        if (!serverRepository.tryIncrementStorageUsedWithinLimit(server.getId(), size, maxBytes)) {
+            return false;
+        }
+
+        StorageMetadataService.RecordFileResult recordResult =
+            storageMetadataService.recordReservedFile(server, key, size, contentType);
+        if (recordResult == StorageMetadataService.RecordFileResult.INSERTED) {
+            if (server.getStorageUsedBytes() != null) {
+                server.setStorageUsedBytes(server.getStorageUsedBytes() + size);
+            }
+            return true;
+        }
+
+        serverRepository.decrementStorageUsed(server.getId(), size);
+        return recordResult == StorageMetadataService.RecordFileResult.ALREADY_EXISTS;
     }
 
     public StorageQuotaResponse getQuota(Server server) {
@@ -80,6 +115,15 @@ public class StorageQuotaService {
             return DEFAULT_PREMIUM_BYTES;
         }
         return FREE_TIER_BYTES;
+    }
+
+    private void reconcileTrackedStorageUsage(Server server) {
+        long liveUsed = s3StorageService.calculateStorageUsed(server);
+        if (server.getStorageUsedBytes() != null && server.getStorageUsedBytes() >= liveUsed) {
+            return;
+        }
+        serverRepository.setStorageUsed(server.getId(), liveUsed);
+        server.setStorageUsedBytes(liveUsed);
     }
 
 }

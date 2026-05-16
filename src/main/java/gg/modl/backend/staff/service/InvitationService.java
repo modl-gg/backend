@@ -3,10 +3,13 @@ package gg.modl.backend.staff.service;
 import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Invitation;
@@ -31,13 +34,14 @@ public class InvitationService {
     private final EmailService emailService;
     private final IdGenerator idGenerator;
     private final ModlProperties modlProperties;
+    private final PermissionService permissionService;
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
     private static final int FREE_TIER_STAFF_LIMIT = 5;
     private static final int PREMIUM_TIER_STAFF_LIMIT = 100_000;
 
-    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail) {
+    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail, String inviterRole) {
         List<String> emailsToInvite = new ArrayList<>();
         if (request.emails() != null && !request.emails().isEmpty()) {
             emailsToInvite.addAll(request.emails());
@@ -58,6 +62,7 @@ public class InvitationService {
         if (normalizedEmailsToInvite.isEmpty()) {
             throw new ValidationException("No valid emails provided");
         }
+        String role = validateGrantableRole(server, request.role(), inviterRole).getName();
 
         int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
         long currentStaffCount = staffRepository.countAll(server);
@@ -86,7 +91,7 @@ public class InvitationService {
 
         for (String email : normalizedEmailsToInvite) {
             try {
-                processInvitation(server, email, request.role(), failed);
+                processInvitation(server, email, role, failed);
                 if (failed.stream().noneMatch(f -> f.email().equals(email))) {
                     success.add(email);
                 }
@@ -198,6 +203,7 @@ public class InvitationService {
         if (staffRepository.existsByEmailExact(server, invitation.getEmail())) {
             throw new ConflictException("A staff member with this email already exists.");
         }
+        validateLegacyInvitationRole(server, invitation.getRole());
 
         String username = generateUsernameFromEmail(invitation.getEmail());
         String uniqueUsername = ensureUniqueUsername(server, username);
@@ -242,5 +248,33 @@ public class InvitationService {
         }
 
         return username;
+    }
+
+    private StaffRole validateGrantableRole(Server server, String targetRoleName, String inviterRoleName) {
+        StaffRole targetRole = permissionService.getRoleByName(server, targetRoleName)
+            .orElseThrow(() -> new ValidationException("Unknown staff role"));
+        if ("super-admin".equals(targetRole.getId()) || "Super Admin".equals(targetRole.getName())) {
+            throw new ForbiddenException("You do not have authority to grant this role");
+        }
+        if (inviterRoleName == null || inviterRoleName.isBlank()) {
+            throw new ForbiddenException("You do not have authority to grant staff roles");
+        }
+        if ("Super Admin".equals(inviterRoleName)) {
+            return targetRole;
+        }
+        StaffRole inviterRole = permissionService.getRoleByName(server, inviterRoleName)
+            .orElseThrow(() -> new ForbiddenException("You do not have authority to grant staff roles"));
+        if (inviterRole.getOrder() >= targetRole.getOrder()) {
+            throw new ForbiddenException("You do not have authority to grant this role");
+        }
+        return targetRole;
+    }
+
+    private void validateLegacyInvitationRole(Server server, String roleName) {
+        StaffRole role = permissionService.getRoleByName(server, roleName)
+            .orElseThrow(() -> new ValidationException("Unknown staff role"));
+        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName()) || role.getOrder() < 3) {
+            throw new ForbiddenException("This invitation role must be reissued by an administrator");
+        }
     }
 }

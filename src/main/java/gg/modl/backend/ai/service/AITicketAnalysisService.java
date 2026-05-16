@@ -96,10 +96,6 @@ public class AITicketAnalysisService {
             return; // failed but we can just ignore
         }
 
-        if (settings.isEnableAutomatedActions() && result.hasViolation()) {
-            executeAutomatedAction(server, ticket, result, settings);
-        }
-
         ticket.setAiAnalysis(result);
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);

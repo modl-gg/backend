@@ -3,6 +3,7 @@ package gg.modl.backend.ai.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -16,12 +17,16 @@ import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -134,5 +139,46 @@ class AITicketAnalysisServiceTest {
         assertEquals(1, updatedTicket.getReplies().size());
         assertEquals(1, updatedTicket.getNotes().size());
         verify(punishmentLifecycleService).createPunishment(any(Server.class), any(UUID.class), any());
+    }
+
+    @Test
+    void analyzeTicketDoesNotExecuteAutomatedActionsEvenWhenConfigured() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
+        server.setId("server-id");
+        String playerUuid = UUID.randomUUID().toString();
+        Ticket ticket = Ticket.builder()
+            .id("REPORT-3")
+            .type(TicketCategory.CHAT)
+            .reportedPlayer("Player")
+            .reportedPlayerUuid(playerUuid)
+            .chatMessages(List.of(new Ticket.ChatMessage("bad chat", new Date())))
+            .replies(new ArrayList<>())
+            .notes(new ArrayList<>())
+            .build();
+        AIModerationSettings settings = AIModerationSettings.builder()
+            .enableAIReview(true)
+            .enableAutomatedActions(true)
+            .aiPunishmentConfigs(Map.of(
+                "4",
+                AIModerationSettings.AIPunishmentConfig.builder()
+                    .id("4")
+                    .name("Ban")
+                    .enabled(true)
+                    .build()
+            ))
+            .build();
+
+        when(llmService.isAvailable()).thenReturn(true);
+        when(aiModerationSettingsService.getAIModerationSettings(server)).thenReturn(settings);
+        when(serverRepository.findAIUsageSnapshotById("server-id")).thenReturn(Optional.empty());
+        when(ticketRepository.findById(server, "REPORT-3")).thenReturn(Optional.of(ticket));
+        when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
+        when(llmService.generate(any())).thenReturn("""
+            {"analysis":"violation","suggestedAction":{"punishmentTypeId":4,"severity":"severe"}}
+            """);
+
+        aiTicketAnalysisService.analyzeTicketAsync(server, "REPORT-3");
+
+        verify(punishmentLifecycleService, never()).createPunishment(any(Server.class), any(UUID.class), any());
     }
 }

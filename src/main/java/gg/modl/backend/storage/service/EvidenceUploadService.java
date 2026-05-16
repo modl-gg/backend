@@ -116,7 +116,9 @@ public class EvidenceUploadService {
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server != null) {
-            storageMetadataService.recordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+            if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
+                return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
+            }
         } else {
             log.warn("Could not record storage metadata: server not found for database {}", uploadToken.serverDatabaseName());
         }
@@ -204,7 +206,8 @@ public class EvidenceUploadService {
         SUCCESS,
         INVALID_TOKEN,
         INVALID_KEY,
-        UPLOAD_NOT_FOUND
+        UPLOAD_NOT_FOUND,
+        QUOTA_EXCEEDED
     }
 
     public enum SubmitEvidenceStatus {

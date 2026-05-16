@@ -16,7 +16,7 @@ public final class RequestUtil {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
         Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
-            .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("true"))
+            .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
     );
 
     @NotNull
@@ -69,6 +69,10 @@ public final class RequestUtil {
             }
         }
         return request.getRemoteAddr();
+    }
+
+    public static boolean trustsProxyHeaders() {
+        return TRUST_PROXY_HEADERS;
     }
 
     public static String generateSecureToken(int byteLength) {

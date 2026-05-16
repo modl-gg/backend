@@ -97,6 +97,10 @@ public class EvidenceUploadController {
                 "status", 404,
                 "message", "Upload not found. File may not have been uploaded yet."
             ));
+            case QUOTA_EXCEEDED -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "status", 400,
+                "message", "Storage quota exceeded"
+            ));
             case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "key", result.upload().key(),

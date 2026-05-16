@@ -36,6 +36,7 @@ public class TrainingDataService {
     private final TrainingSegmentRepository trainingSegmentRepository;
 
     private static final int BLOCK_FILTER_RADIUS = 16;
+    private static final int SUPPORTED_TRAINING_REPLAY_FORMAT_VERSION = 4;
 
     /**
      * Asynchronously generates and persists training data segments for the given replay and labels.
@@ -65,6 +66,14 @@ public class TrainingDataService {
 
         try (ReplayReader reader = new ReplayReader(new ByteArrayInputStream(replayBytes))) {
             header = reader.readHeader();
+            if (!supportsTrainingReplayFormat(header)) {
+                log.warn(
+                    "Skipping training segment generation for replay {} on server {}: unsupported replay format version {}",
+                    doc.getId(), server.getDatabaseName(), header.getVersion()
+                );
+                return;
+            }
+
             snapshot = reader.readSnapshot();
 
             ReplayEvent event;
@@ -116,6 +125,10 @@ public class TrainingDataService {
         }
 
         log.debug("Generated training segments for replay {} on server {}", doc.getId(), server.getDatabaseName());
+    }
+
+    static boolean supportsTrainingReplayFormat(ReplayHeader header) {
+        return header.getVersion() == SUPPORTED_TRAINING_REPLAY_FORMAT_VERSION;
     }
 
     private TrainingSegmentDocument buildSegment(

@@ -71,8 +71,10 @@ public class PanelStaffController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        String performerEmail = RequestUtil.getSessionEmail(request);
+        String performerRole = resolvePerformerRole(server, performerEmail);
 
-        StaffResponse staff = staffService.createStaff(server, createRequest);
+        StaffResponse staff = staffService.createStaff(server, createRequest, performerEmail, performerRole);
         return ResponseEntity.status(HttpStatus.CREATED).body(staff);
     }
 
@@ -98,9 +100,7 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
-        String performerRole = staffService.getStaffByEmail(server, performerEmail)
-            .map(staff -> staff.getRole())
-            .orElse("");
+        String performerRole = resolvePerformerRole(server, performerEmail);
 
         return staffService.updateStaffRole(server, id, roleRequest.role(), performerEmail, performerRole)
             .map(staff -> ResponseEntity.ok(Map.of(
@@ -135,8 +135,9 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String inviterEmail = RequestUtil.getSessionEmail(request);
+        String inviterRole = resolvePerformerRole(server, inviterEmail);
 
-        InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail);
+        InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail, inviterRole);
 
         if (result.success().isEmpty()) {
             return ResponseEntity.badRequest().body(result);
@@ -184,5 +185,14 @@ public class PanelStaffController {
         Server server = RequestUtil.getRequestServer(request);
         List<AvailablePlayerResponse> players = staffService.getAvailablePlayers(server);
         return ResponseEntity.ok(Map.of("players", players));
+    }
+
+    private String resolvePerformerRole(Server server, String email) {
+        if (email != null && server.getAdminEmail() != null && email.equalsIgnoreCase(server.getAdminEmail())) {
+            return "Super Admin";
+        }
+        return staffService.getStaffByEmail(server, email)
+            .map(staff -> staff.getRole())
+            .orElse("");
     }
 }

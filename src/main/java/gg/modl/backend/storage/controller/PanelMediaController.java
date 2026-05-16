@@ -128,8 +128,10 @@ public class PanelMediaController {
                 "message", "The file was not uploaded or the presigned URL expired"
             ));
         }
+        if (!quotaService.confirmAndRecordFile(server, key, uploadDetails.size(), uploadDetails.contentType())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+        }
 
-        storageMetadataService.recordFile(server, key, uploadDetails.size(), uploadDetails.contentType());
         return ResponseEntity.ok(uploadDetails);
     }
 }

@@ -1,5 +1,6 @@
 package gg.modl.backend.database.mongo.repository;
 
+import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 
@@ -139,6 +140,20 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public Optional<Server> findByProvisioningSignInToken(String token) {
         return findOne(Query.query(Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token)));
+    }
+
+    public Optional<Server> consumeProvisioningSignInToken(String token, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token),
+            Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN_EXPIRES_AT).gt(now),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(true),
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED)
+        ));
+        Update update = new Update()
+            .unset(ServerFields.PROVISIONING_SIGN_IN_TOKEN)
+            .unset(ServerFields.PROVISIONING_SIGN_IN_TOKEN_EXPIRES_AT)
+            .set(ServerFields.UPDATED_AT, now);
+        return Optional.ofNullable(findAndModify(query, update, FindAndModifyOptions.options().returnNew(true)));
     }
 
     public Optional<Server> findByCliSetupToken(String token) {
@@ -563,6 +578,19 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public boolean tryIncrementStorageUsedWithinLimit(String serverId, long bytes, long maxBytes) {
+        long maxCurrentBytes = maxBytes - bytes;
+        if (bytes < 0 || maxCurrentBytes < 0) {
+            return false;
+        }
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            Criteria.where(ServerFields.STORAGE_USED_BYTES).lte(maxCurrentBytes)
+        ));
+        UpdateResult result = updateFirst(query, new Update().inc(ServerFields.STORAGE_USED_BYTES, bytes));
+        return result.getModifiedCount() == 1;
+    }
+
     public void decrementStorageUsed(String serverId, long bytes) {
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
@@ -616,6 +644,13 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().set(ServerFields.API_KEY, apiKey)
+        );
+    }
+
+    public void clearApiKey(String serverId) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update().unset(ServerFields.API_KEY)
         );
     }
 

@@ -11,9 +11,12 @@ import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HexFormat;
 import java.util.UUID;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import gg.modl.backend.ticket.config.TicketEmailVerificationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,8 +81,14 @@ public class TicketEmailVerificationService {
 
     private String hashCode(String code) {
         try {
+            String secret = verificationConfig.getCodeHashSecret();
+            if (secret != null && !secret.isBlank()) {
+                Mac mac = Mac.getInstance("HmacSHA256");
+                mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
+            }
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(code.getBytes());
+            byte[] hash = digest.digest(code.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(hash);
         } catch (Exception e) {
             throw new ExternalServiceException("Failed to hash code", e);
@@ -92,6 +101,7 @@ public class TicketEmailVerificationService {
         TicketVerification verification = ticketVerificationRepository.consumeMatchingCode(server, ticketId, codeHash, now)
             .orElse(null);
         if (verification == null) {
+            ticketVerificationRepository.incrementFailedAttempts(server, ticketId, now);
             return null;
         }
 

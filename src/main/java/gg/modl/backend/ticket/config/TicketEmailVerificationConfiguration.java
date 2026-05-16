@@ -14,4 +14,5 @@ import org.springframework.validation.annotation.Validated;
 public class TicketEmailVerificationConfiguration {
     private long codeExpirySeconds = 300;
     private long tokenExpirySeconds = 300;
+    private String codeHashSecret = "";
 }

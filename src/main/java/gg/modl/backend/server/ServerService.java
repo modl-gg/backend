@@ -190,6 +190,15 @@ public class ServerService {
         return serverRepository.findByProvisioningSignInToken(token).orElse(null);
     }
 
+    @Nullable
+    public Server consumeAutoLoginToken(@NotNull String token) {
+        Server server = serverRepository.consumeProvisioningSignInToken(token, new Date()).orElse(null);
+        if (server != null) {
+            evictAllServerCaches();
+        }
+        return server;
+    }
+
     public Server setAutoLoginToken(@NotNull Server server, @NotNull String token, @NotNull Date expiresAt) {
         server.setProvisioningSignInToken(token);
         server.setProvisioningSignInTokenExpiresAt(expiresAt);

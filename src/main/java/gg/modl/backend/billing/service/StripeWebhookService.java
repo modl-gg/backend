@@ -4,6 +4,7 @@ import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
+import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -23,16 +24,27 @@ public class StripeWebhookService {
     private final ServerMongoRepository serverRepository;
     private final UsageTrackingService usageTrackingService;
     private final ServerMutationHelper serverMutationHelper;
+    private final StripeWebhookEventMongoRepository webhookEventRepository;
 
     public void processEvent(Event event) {
-        switch (event.getType()) {
-            case "checkout.session.completed" -> handleCheckoutCompleted(event);
-            case "customer.subscription.created" -> handleSubscriptionCreated(event);
-            case "customer.subscription.updated" -> handleSubscriptionUpdated(event);
-            case "customer.subscription.deleted" -> handleSubscriptionDeleted(event);
-            case "invoice.payment_failed" -> handlePaymentFailed(event);
-            case "invoice.payment_succeeded" -> handlePaymentSucceeded(event);
-            default -> log.debug("Unhandled event type: {}", event.getType());
+        if (!webhookEventRepository.markProcessing(event.getId(), event.getType(), new Date())) {
+            log.info("Ignoring duplicate Stripe webhook event {}", event.getId());
+            return;
+        }
+        try {
+            switch (event.getType()) {
+                case "checkout.session.completed" -> handleCheckoutCompleted(event);
+                case "customer.subscription.created" -> handleSubscriptionCreated(event);
+                case "customer.subscription.updated" -> handleSubscriptionUpdated(event);
+                case "customer.subscription.deleted" -> handleSubscriptionDeleted(event);
+                case "invoice.payment_failed" -> handlePaymentFailed(event);
+                case "invoice.payment_succeeded" -> handlePaymentSucceeded(event);
+                default -> log.debug("Unhandled event type: {}", event.getType());
+            }
+            webhookEventRepository.markProcessed(event.getId(), new Date());
+        } catch (RuntimeException exception) {
+            webhookEventRepository.markFailed(event.getId(), new Date(), exception.getMessage());
+            throw exception;
         }
     }
 

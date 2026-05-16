@@ -3,6 +3,7 @@ package gg.modl.backend.infrastructure.filter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.util.HostExtractionUtil;
@@ -102,9 +103,11 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
     @Nullable
     private String resolveRequestHost(HttpServletRequest request) {
-        String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
-        if (forwardedHost != null) {
-            return forwardedHost;
+        if (RequestUtil.trustsProxyHeaders()) {
+            String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
+            if (forwardedHost != null) {
+                return forwardedHost;
+            }
         }
 
         String host = HostExtractionUtil.normalizeServerDomain(request.getHeader("Host"));

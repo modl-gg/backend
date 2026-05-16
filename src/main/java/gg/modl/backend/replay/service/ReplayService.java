@@ -86,7 +86,11 @@ public class ReplayService {
         replayRepository.saveEntity(server, doc);
 
         if (exists) {
-            storageMetadataService.recordFile(server, doc.getStorageKey(), doc.getFileSize(), "application/octet-stream");
+            if (!storageQuotaService.confirmAndRecordFile(server, doc.getStorageKey(), doc.getFileSize(), "application/octet-stream")) {
+                doc.setStatus(ReplayDocument.STATUS_FAILED);
+                replayRepository.saveEntity(server, doc);
+                throw new ValidationException("Storage quota exceeded");
+            }
             log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
         } else {
             log.warn("Replay {} upload not found in storage for server {}", replayId, server.getDatabaseName());
@@ -98,18 +102,13 @@ public class ReplayService {
     public enum SubmitLabelsResult { OK, NOT_FOUND, ALREADY_LABELED }
 
     public SubmitLabelsResult submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
-        Optional<ReplayDocument> opt = replayRepository.findByReplayId(server, replayId);
-        if (opt.isEmpty()) {
-            return SubmitLabelsResult.NOT_FOUND;
+        Optional<ReplayDocument> claimed = replayRepository.claimLabels(server, replayId, labels);
+        if (claimed.isEmpty()) {
+            return replayRepository.findByReplayId(server, replayId).isPresent()
+                   ? SubmitLabelsResult.ALREADY_LABELED
+                   : SubmitLabelsResult.NOT_FOUND;
         }
-
-        ReplayDocument doc = opt.get();
-        if (doc.getLabels() != null && !doc.getLabels().isEmpty()) {
-            return SubmitLabelsResult.ALREADY_LABELED;
-        }
-
-        doc.setLabels(labels);
-        replayRepository.saveEntity(server, doc);
+        ReplayDocument doc = claimed.get();
         log.debug("Saved {} labels for replay {} on server {}", labels.size(), replayId, server.getDatabaseName());
 
         trainingDataService.generateSegmentsAsync(server, doc, labels);

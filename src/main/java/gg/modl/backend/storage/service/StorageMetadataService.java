@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,20 +21,44 @@ public class StorageMetadataService {
     private final S3StorageService s3StorageService;
     private final StorageSyncService storageSyncService;
 
-    public void recordFile(Server server, String key, long size, String contentType) {
+    public boolean hasFile(Server server, String key) {
+        return storageFileRepository.findByKey(server, key).isPresent();
+    }
+
+    public RecordFileResult recordFile(Server server, String key, long size, String contentType) {
+        return recordFile(server, key, size, contentType, true);
+    }
+
+    public RecordFileResult recordReservedFile(Server server, String key, long size, String contentType) {
+        return recordFile(server, key, size, contentType, false);
+    }
+
+    private RecordFileResult recordFile(Server server, String key, long size, String contentType, boolean updateUsage) {
         try {
             if (storageFileRepository.findByKey(server, key).isPresent()) {
-                return;
+                return RecordFileResult.ALREADY_EXISTS;
             }
 
             String fileName = key.substring(key.lastIndexOf("/") + 1);
             String category = S3StorageService.categorizeFile(key);
             StorageFileDocument doc = new StorageFileDocument(key, fileName, size, contentType, category);
             storageFileRepository.saveEntity(server, doc);
-            serverRepository.incrementStorageUsed(server.getId(), size);
+            if (updateUsage) {
+                serverRepository.incrementStorageUsed(server.getId(), size);
+            }
+            return RecordFileResult.INSERTED;
+        } catch (DuplicateKeyException e) {
+            return RecordFileResult.ALREADY_EXISTS;
         } catch (Exception e) {
             log.warn("Failed to record file metadata for key: {}. Sync can recover this.", key, e);
+            return RecordFileResult.FAILED;
         }
+    }
+
+    public enum RecordFileResult {
+        INSERTED,
+        ALREADY_EXISTS,
+        FAILED
     }
 
     public void removeFile(Server server, String key) {

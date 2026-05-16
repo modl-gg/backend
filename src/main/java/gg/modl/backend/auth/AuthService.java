@@ -15,6 +15,8 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Optional;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,11 +49,6 @@ public class AuthService {
 
         storageAction.store(normalizedEmail, codeHash, expiresAt);
 
-        if (authConfiguration.isDevelopmentMode()) {
-            log.info("DEV MODE: Login code for {} is: {}", email, code);
-            return null;
-        }
-
         return code;
     }
 
@@ -65,11 +62,17 @@ public class AuthService {
 
     private String hashCode(String code) {
         try {
+            String secret = authConfiguration.getCodeHashSecret();
+            if (secret != null && !secret.isBlank()) {
+                Mac mac = Mac.getInstance("HmacSHA256");
+                mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+                return Base64.getEncoder().encodeToString(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
+            }
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(code.getBytes(StandardCharsets.UTF_8));
             return Base64.getEncoder().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to hash auth code", e);
         }
     }
 

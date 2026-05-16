@@ -77,7 +77,7 @@ public class WebAuthnService {
                 .user(userIdentity)
                 .authenticatorSelection(AuthenticatorSelectionCriteria.builder()
                     .residentKey(ResidentKeyRequirement.PREFERRED)
-                    .userVerification(UserVerificationRequirement.PREFERRED)
+                    .userVerification(UserVerificationRequirement.REQUIRED)
                     .build())
                 .build()
         );
@@ -203,7 +203,7 @@ public class WebAuthnService {
         RelyingParty rp = buildRelyingParty(server);
         AssertionRequest assertionRequest = rp.startAssertion(
             StartAssertionOptions.builder()
-                .userVerification(UserVerificationRequirement.PREFERRED)
+                .userVerification(UserVerificationRequirement.REQUIRED)
                 .build()
         );
 
@@ -226,7 +226,7 @@ public class WebAuthnService {
         AssertionRequest assertionRequest = rp.startAssertion(
             StartAssertionOptions.builder()
                 .username(normalizeEmail(email))
-                .userVerification(UserVerificationRequirement.PREFERRED)
+                .userVerification(UserVerificationRequirement.REQUIRED)
                 .build()
         );
 

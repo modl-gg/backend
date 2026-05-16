@@ -58,4 +58,35 @@ class PublicServerValidationTest {
             .andExpect(jsonPath("$.error").value("Invalid data provided."))
             .andExpect(jsonPath("$.errors").doesNotExist());
     }
+
+    @Test
+    void legacyRegisterEndpointIsGoneForValidRequests() throws Exception {
+        mockMvc.perform(post(RESTMappingV1.PUBLIC_SERVER + "/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "admin@example.com",
+                      "serverName": "Example Server",
+                      "customDomain": "example",
+                      "turnstileToken": "token"
+                    }
+                    """))
+            .andExpect(status().isGone())
+            .andExpect(jsonPath("$.success").value(false));
+    }
+
+    @Test
+    void legacyAvailabilityEndpointIsGone() throws Exception {
+        mockMvc.perform(post(RESTMappingV1.PUBLIC_SERVER + "/check-availability")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "email": "admin@example.com",
+                      "serverName": "Example Server",
+                      "customDomain": "example"
+                    }
+                    """))
+            .andExpect(status().isGone())
+            .andExpect(jsonPath("$.message").value("Use /v1/public/registration/check-availability instead."));
+    }
 }

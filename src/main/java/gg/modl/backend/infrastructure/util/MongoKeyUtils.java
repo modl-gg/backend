@@ -1,16 +1,18 @@
 package gg.modl.backend.infrastructure.util;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public final class MongoKeyUtils {
     private MongoKeyUtils() {}
 
     /**
-     * Sanitize map keys for MongoDB storage by replacing dots with the Unicode
-     * full-width full stop (U+FF0E). MongoDB does not allow dots in map keys
-     * because dots are used as path separators in field names.
-     * Handles nested maps recursively.
+     * Validate map keys for MongoDB storage and recursively copy the value.
+     * Rejecting invalid keys is intentional: lossy replacement can hide
+     * collisions and still misses Mongo operator-looking fields.
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> sanitizeKeys(Map<String, Object> map) {
@@ -19,14 +21,47 @@ public final class MongoKeyUtils {
         }
         Map<String, Object> sanitized = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : map.entrySet()) {
-            String key = entry.getKey().replace('.', '\uFF0E');
-            Object value = entry.getValue();
-            if (value instanceof Map) {
-                value = sanitizeKeys((Map<String, Object>) value);
-            }
-            sanitized.put(key, value);
+            validateKey(entry.getKey());
+            sanitized.put(entry.getKey(), sanitizeValue(entry.getValue()));
         }
         return sanitized;
+    }
+
+    public static Object sanitizeValue(Object value) {
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> typed = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+                if (!(entry.getKey() instanceof String key)) {
+                    throw new ValidationException("Mongo document keys must be strings");
+                }
+                validateKey(key);
+                typed.put(key, sanitizeValue(entry.getValue()));
+            }
+            return typed;
+        }
+        if (value instanceof List<?> rawList) {
+            List<Object> sanitized = new ArrayList<>(rawList.size());
+            for (Object item : rawList) {
+                sanitized.add(sanitizeValue(item));
+            }
+            return sanitized;
+        }
+        return value;
+    }
+
+    private static void validateKey(String key) {
+        if (key == null || key.isBlank() || key.indexOf('\0') >= 0 || key.indexOf('.') >= 0 || key.startsWith("$")) {
+            throw new ValidationException("Invalid Mongo document key");
+        }
+    }
+
+    public static void validateUpdatePath(String path) {
+        if (path == null || path.isBlank() || path.indexOf('\0') >= 0) {
+            throw new ValidationException("Invalid Mongo update path");
+        }
+        for (String segment : path.split("\\.")) {
+            validateKey(segment);
+        }
     }
 
     /**

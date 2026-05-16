@@ -10,10 +10,13 @@ import java.util.Date;
 import java.util.Optional;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class TicketVerificationMongoRepository extends AbstractServerMongoRepository<TicketVerification> {
+    private static final int MAX_FAILED_ATTEMPTS = 5;
+
     public TicketVerificationMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(TicketVerification.class, CollectionName.TICKET_VERIFICATIONS, tenantMongoAccess);
     }
@@ -35,9 +38,19 @@ public class TicketVerificationMongoRepository extends AbstractServerMongoReposi
             Criteria.where(TicketVerificationFields.TICKET_ID).is(ticketId),
             Criteria.where(TicketVerificationFields.CODE_HASH).is(codeHash),
             Criteria.where(TicketVerificationFields.TOKEN).exists(false),
-            Criteria.where(TicketVerificationFields.EXPIRES_AT).gte(now)
+            Criteria.where(TicketVerificationFields.EXPIRES_AT).gte(now),
+            Criteria.where("failedAttempts").lt(MAX_FAILED_ATTEMPTS)
         ));
         return Optional.ofNullable(findAndRemove(server, query));
+    }
+
+    public boolean incrementFailedAttempts(Server server, String ticketId, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(TicketVerificationFields.TICKET_ID).is(ticketId),
+            Criteria.where(TicketVerificationFields.TOKEN).exists(false),
+            Criteria.where(TicketVerificationFields.EXPIRES_AT).gte(now)
+        ));
+        return updateFirst(server, query, new Update().inc("failedAttempts", 1)).getMatchedCount() > 0;
     }
 
     public boolean existsActiveToken(Server server, String ticketId, String token, Date now) {

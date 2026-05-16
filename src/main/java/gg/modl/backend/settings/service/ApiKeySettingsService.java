@@ -5,7 +5,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.infrastructure.util.IdGenerator;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,33 +24,7 @@ public class ApiKeySettingsService {
 
     @Nullable
     public Server findServerByApiKey(@NotNull String apiKey) {
-        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
-        if (server != null) {
-            return server;
-        }
-
-        return findServerByApiKeyInSettings(apiKey);
-    }
-
-    @Nullable
-    private Server findServerByApiKeyInSettings(@NotNull String apiKey) {
-        List<Server> servers = serverRepository.findAll();
-        byte[] apiKeyBytes = apiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        for (Server server : servers) {
-            if (server.getDatabaseName() == null) {
-                continue;
-            }
-
-            String settingsApiKey = getApiKeyFromSettings(server);
-            if (settingsApiKey != null && java.security.MessageDigest.isEqual(
-                    apiKeyBytes, settingsApiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
-                syncApiKeyToServer(server, settingsApiKey);
-                server.setApiKey(apiKey);
-                return server;
-            }
-        }
-
-        return null;
+        return serverRepository.findByApiKey(apiKey).orElse(null);
     }
 
     @Nullable
@@ -83,6 +56,10 @@ public class ApiKeySettingsService {
 
         data.put(fieldName, newApiKey);
         settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
+        if (API_KEY_FIELD.equals(fieldName)) {
+            syncApiKeyToServer(server, newApiKey);
+            server.setApiKey(newApiKey);
+        }
 
         return newApiKey;
     }
@@ -116,6 +93,10 @@ public class ApiKeySettingsService {
 
         data.remove(fieldName);
         settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_API_KEYS, data);
+        if (API_KEY_FIELD.equals(fieldName)) {
+            serverRepository.clearApiKey(server.getId());
+            server.setApiKey(null);
+        }
 
         return true;
     }
