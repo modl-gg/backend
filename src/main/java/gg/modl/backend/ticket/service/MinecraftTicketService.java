@@ -222,6 +222,15 @@ public class MinecraftTicketService {
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
 
+    public ReportOperationResult dismissMinecraftReport(
+        Server server,
+        String ticketId,
+        String dismissedBy,
+        String reason
+    ) {
+        return dismissMinecraftReport(server, ticketId, new DismissReportRequest(dismissedBy, reason));
+    }
+
     private Map<String, Object> ensureTicketData(Ticket ticket) {
         if (ticket.getData() == null) {
             ticket.setData(new HashMap<>());
@@ -267,6 +276,16 @@ public class MinecraftTicketService {
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
 
+    public ReportOperationResult resolveMinecraftReport(
+        Server server,
+        String ticketId,
+        String resolvedBy,
+        String resolution,
+        String punishmentId
+    ) {
+        return resolveMinecraftReport(server, ticketId, new ResolveReportRequest(resolvedBy, resolution, punishmentId));
+    }
+
     public ReportOperationResult assignMinecraftReport(Server server, String ticketId, AssignReportRequest request) {
         Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
@@ -278,6 +297,10 @@ public class MinecraftTicketService {
         ticket.setUpdatedAt(new Date());
         Ticket saved = ticketRepository.saveEntity(server, ticket);
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
+    }
+
+    public ReportOperationResult assignMinecraftReport(Server server, String ticketId, String assignee) {
+        return assignMinecraftReport(server, ticketId, new AssignReportRequest(assignee));
     }
 
     public Map<String, Object> toTicketListItem(Ticket ticket) {
