@@ -107,6 +107,9 @@ public final class RESTMappingV1 {
     private static final String SECURITY = "/security";
     public static final String ADMIN_SECURITY = PREFIX_ADMIN + SECURITY;
 
+    private static final String ALERTS = "/alerts";
+    public static final String ADMIN_ALERTS = PREFIX_ADMIN + ALERTS;
+
     // Realtime
     private static final String REALTIME = "/realtime";
     public static final String REALTIME_WS = V1 + REALTIME + "/ws";
