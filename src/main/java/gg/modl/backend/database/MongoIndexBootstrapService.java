@@ -96,6 +96,12 @@ public class MongoIndexBootstrapService {
         ensureIndexes(template, "admin_users", List.of(
             IndexSpec.standard("uidx_admin_users_email", doc("email", 1), true, false)
         ));
+
+        ensureIndexes(template, CollectionName.SYSTEM_ALERTS, List.of(
+            IndexSpec.standard("idx_system_alerts_expiresAt", doc("expiresAt", 1), false, false),
+            IndexSpec.standard("idx_system_alerts_createdAt", doc("createdAt", -1), false, false),
+            IndexSpec.standard("idx_system_alerts_audience_expiresAt", doc("audience", 1).append("expiresAt", 1), false, false)
+        ));
     }
 
     public void createTenantIndexes(MongoTemplate template) {

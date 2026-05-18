@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
+import gg.modl.backend.alert.data.SystemAlertAudience;
+import gg.modl.backend.alert.data.SystemAlertSeverity;
+import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.replaylite.data.ReplayLiteLabel;
 import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
@@ -16,6 +19,7 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,6 +46,18 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "level");
+    }
+
+    @Test
+    void updateSystemAlertRequestRejectsPastExpiration() {
+        UpdateSystemAlertRequest request = new UpdateSystemAlertRequest(
+            "Maintenance soon",
+            SystemAlertSeverity.WARNING,
+            SystemAlertAudience.ALL_PANEL_USERS,
+            new Date(System.currentTimeMillis() - 60_000)
+        );
+
+        assertHasViolation(validator.validate(request), "expiresAt");
     }
 
     private void assertHasViolation(Set<? extends ConstraintViolation<?>> violations, String propertyPath) {

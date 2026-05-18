@@ -74,6 +74,11 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return;
         }
 
+        if (isPanelDashboardAlertsRead(request)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         if (permissionService.isSuperAdmin(server, email)) {
             filterChain.doFilter(request, response);
             return;
@@ -109,6 +114,11 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         return "POST".equalsIgnoreCase(method)
                && startsWithEndpoint(path, RESTMappingV1.PANEL_APPEALS)
                && path.endsWith("/replies");
+    }
+
+    private boolean isPanelDashboardAlertsRead(HttpServletRequest request) {
+        return isReadOnly(request.getMethod())
+               && startsWithEndpoint(request.getRequestURI(), RESTMappingV1.PANEL_DASHBOARD + "/alerts");
     }
 
     private void deny(HttpServletResponse response) throws IOException {
