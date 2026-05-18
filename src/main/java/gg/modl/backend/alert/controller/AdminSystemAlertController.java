@@ -3,6 +3,7 @@ package gg.modl.backend.alert.controller;
 import gg.modl.backend.alert.data.SystemAlert;
 import gg.modl.backend.alert.dto.request.CreateSystemAlertRequest;
 import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
+import gg.modl.backend.alert.dto.response.AdminSystemAlertResponse;
 import gg.modl.backend.alert.service.SystemAlertService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import jakarta.validation.Valid;
@@ -28,7 +29,12 @@ public class AdminSystemAlertController {
 
     @GetMapping
     public ResponseEntity<?> getAlerts() {
-        return ResponseEntity.ok(Map.of("success", true, "data", alertService.getAllAlerts()));
+        return ResponseEntity.ok(Map.of(
+            "success", true,
+            "data", alertService.getAllAlerts().stream()
+                .map(AdminSystemAlertResponse::from)
+                .toList()
+        ));
     }
 
     @PostMapping
@@ -36,7 +42,7 @@ public class AdminSystemAlertController {
         SystemAlert alert = alertService.createAlert(request, getAdminEmail());
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
             "success", true,
-            "data", alert,
+            "data", AdminSystemAlertResponse.from(alert),
             "message", "Alert created successfully"
         ));
     }
@@ -49,7 +55,7 @@ public class AdminSystemAlertController {
         return alertService.updateAlert(id, request, getAdminEmail())
             .<ResponseEntity<?>>map(alert -> ResponseEntity.ok(Map.of(
                 "success", true,
-                "data", alert,
+                "data", AdminSystemAlertResponse.from(alert),
                 "message", "Alert updated successfully"
             )))
             .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
