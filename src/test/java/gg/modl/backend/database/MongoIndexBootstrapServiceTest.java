@@ -12,6 +12,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.IndexDefinition;
 import org.springframework.data.mongodb.core.index.IndexInfo;
@@ -27,6 +28,7 @@ class MongoIndexBootstrapServiceTest {
         IndexOperations replayLite = mock(IndexOperations.class);
         IndexOperations replayLiteQuotas = mock(IndexOperations.class);
         IndexOperations adminUsers = mock(IndexOperations.class);
+        IndexOperations systemAlerts = mock(IndexOperations.class);
 
         when(tenantMongoAccess.global()).thenReturn(template);
         when(template.indexOps(CollectionName.MODL_SERVERS)).thenReturn(servers);
@@ -34,11 +36,13 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAY_LITE_REPLAYS)).thenReturn(replayLite);
         when(template.indexOps(CollectionName.REPLAY_LITE_DAILY_QUOTAS)).thenReturn(replayLiteQuotas);
         when(template.indexOps("admin_users")).thenReturn(adminUsers);
+        when(template.indexOps(CollectionName.SYSTEM_ALERTS)).thenReturn(systemAlerts);
 
         when(servers.getIndexInfo()).thenReturn(List.of());
         when(metrics.getIndexInfo()).thenReturn(List.of());
         when(replayLite.getIndexInfo()).thenReturn(List.of());
         when(replayLiteQuotas.getIndexInfo()).thenReturn(List.of());
+        when(systemAlerts.getIndexInfo()).thenReturn(List.of());
         when(adminUsers.getIndexInfo()).thenReturn(List.of(IndexInfo.indexInfoOf(
             new Document("name", "email_1")
                 .append("key", new Document("email", 1))
@@ -49,7 +53,7 @@ class MongoIndexBootstrapServiceTest {
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
-        org.mockito.ArgumentCaptor<IndexDefinition> serverIndexCaptor = org.mockito.ArgumentCaptor.forClass(IndexDefinition.class);
+        ArgumentCaptor<IndexDefinition> serverIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
         verify(servers, atLeastOnce()).createIndex(serverIndexCaptor.capture());
         assertThat(serverIndexCaptor.getAllValues()).anySatisfy(index -> {
             assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_servers_registration_cleanup");
@@ -72,6 +76,7 @@ class MongoIndexBootstrapServiceTest {
         IndexOperations replayLite = mock(IndexOperations.class);
         IndexOperations replayLiteQuotas = mock(IndexOperations.class);
         IndexOperations adminUsers = mock(IndexOperations.class);
+        IndexOperations systemAlerts = mock(IndexOperations.class);
 
         when(tenantMongoAccess.global()).thenReturn(template);
         when(template.indexOps(CollectionName.MODL_SERVERS)).thenReturn(servers);
@@ -79,11 +84,13 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAY_LITE_REPLAYS)).thenReturn(replayLite);
         when(template.indexOps(CollectionName.REPLAY_LITE_DAILY_QUOTAS)).thenReturn(replayLiteQuotas);
         when(template.indexOps("admin_users")).thenReturn(adminUsers);
+        when(template.indexOps(CollectionName.SYSTEM_ALERTS)).thenReturn(systemAlerts);
 
         when(servers.getIndexInfo()).thenReturn(List.of());
         when(metrics.getIndexInfo()).thenReturn(List.of());
         when(replayLite.getIndexInfo()).thenReturn(List.of());
         when(replayLiteQuotas.getIndexInfo()).thenReturn(List.of());
+        when(systemAlerts.getIndexInfo()).thenReturn(List.of());
         when(adminUsers.getIndexInfo()).thenReturn(List.of(IndexInfo.indexInfoOf(
             new Document("name", "email_1")
                 .append("key", new Document("email", 1))
@@ -99,8 +106,62 @@ class MongoIndexBootstrapServiceTest {
         assertThat(index.getIndexOptions().getBoolean("unique")).isTrue();
     }
 
+    @Test
+    void createTenantIndexesCreatesLegacyReplayLookupIndexes() {
+        TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
+        MongoTemplate template = mock(MongoTemplate.class);
+        IndexOperations replays = mock(IndexOperations.class);
+        stubTenantIndexOps(template);
+        when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
+        when(replays.getIndexInfo()).thenReturn(List.of());
+
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess);
+        service.createTenantIndexes(template);
+
+        ArgumentCaptor<IndexDefinition> replayIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
+        verify(replays, atLeastOnce()).createIndex(replayIndexCaptor.capture());
+        assertThat(replayIndexCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_replays_targetUuid_createdAt");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("targetUuid", 1).append("createdAt", -1));
+        });
+        assertThat(replayIndexCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_replays_status_createdAt");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("status", 1).append("createdAt", 1));
+        });
+    }
+
+    private void stubTenantIndexOps(MongoTemplate template) {
+        List<String> collectionNames = List.of(
+            CollectionName.SETTINGS,
+            CollectionName.PLAYERS,
+            CollectionName.STAFF,
+            CollectionName.STAFF_ROLES,
+            CollectionName.INVITATIONS,
+            CollectionName.TICKET_VERIFICATIONS,
+            CollectionName.TICKETS,
+            CollectionName.KNOWLEDGEBASE_CATEGORIES,
+            CollectionName.KNOWLEDGEBASE_ARTICLES,
+            CollectionName.WEBAUTHN_CREDENTIALS,
+            CollectionName.WEBAUTHN_CHALLENGES,
+            CollectionName.HOMEPAGE_CARDS,
+            CollectionName.SESSIONS,
+            CollectionName.AUTH_CODES,
+            CollectionName.SYSTEM_LOGS,
+            CollectionName.SECURITY_EVENTS,
+            CollectionName.CHAT_LOGS,
+            CollectionName.COMMAND_LOGS,
+            CollectionName.LOGS,
+            CollectionName.MIGRATIONS
+        );
+        for (String collectionName : collectionNames) {
+            IndexOperations indexOperations = mock(IndexOperations.class);
+            when(template.indexOps(collectionName)).thenReturn(indexOperations);
+            when(indexOperations.getIndexInfo()).thenReturn(List.of());
+        }
+    }
+
     private IndexDefinition captureCreatedIndex(IndexOperations indexOperations) {
-        org.mockito.ArgumentCaptor<IndexDefinition> captor = org.mockito.ArgumentCaptor.forClass(IndexDefinition.class);
+        ArgumentCaptor<IndexDefinition> captor = ArgumentCaptor.forClass(IndexDefinition.class);
         verify(indexOperations).createIndex(captor.capture());
         return captor.getValue();
     }

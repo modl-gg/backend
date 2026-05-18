@@ -132,6 +132,19 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         return find(server, query);
     }
 
+    public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
+        Query query = Query.query(new Criteria().andOperator(
+            new Criteria().orOperator(
+                Criteria.where(TicketFields.CREATOR_UUID).is(playerUuid),
+                Criteria.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid)
+            ),
+            Criteria.where("replayUrl").regex("\\S")
+        ));
+        query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 100));
+        return find(server, query);
+    }
+
     public List<Ticket> findReports(Server server, String status, String playerUuid, int limit, boolean sortByCreatedDesc) {
         Query query = Query.query(buildReportCriteria(status, playerUuid));
         if (sortByCreatedDesc) {

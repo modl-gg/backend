@@ -33,7 +33,7 @@ public class MinecraftReplayController {
         Server server = RequestUtil.getRequestServer(httpRequest);
 
         InitReplayUploadResponse response = replayService.initUpload(
-            server, request.mcVersion(), request.fileSize()
+            server, request.mcVersion(), request.fileSize(), request.targetUuid(), request.targetName()
         );
 
         return ResponseEntity.ok(Map.of(

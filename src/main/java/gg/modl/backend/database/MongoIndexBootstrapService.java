@@ -166,6 +166,11 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false)
         ));
 
+        ensureIndexes(template, CollectionName.REPLAYS, List.of(
+            IndexSpec.standard("idx_replays_targetUuid_createdAt", doc("targetUuid", 1).append("createdAt", -1), false, true),
+            IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1), false, false)
+        ));
+
         ensureIndexes(template, CollectionName.KNOWLEDGEBASE_CATEGORIES, List.of(
             IndexSpec.standard("uidx_knowledgebase_categories_slug", doc("slug", 1), true, false),
             IndexSpec.standard("idx_knowledgebase_categories_name", doc("name", 1), false, false),

@@ -19,6 +19,8 @@ import gg.modl.backend.player.service.AccountLinkingService;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.player.service.PunishmentMutationService;
+import gg.modl.backend.replay.dto.PlayerReplayResponse;
+import gg.modl.backend.replay.service.ReplayService;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -54,6 +56,7 @@ public class PanelPlayerController {
     private final PunishmentEvidenceService punishmentEvidenceService;
     private final PunishmentMutationService punishmentMutationService;
     private final AccountLinkingService accountLinkingService;
+    private final ReplayService replayService;
 
     @GetMapping
     public ResponseEntity<List<PlayerSearchResult>> searchPlayers(
@@ -261,6 +264,15 @@ public class PanelPlayerController {
         );
 
         return ResponseEntity.ok(Map.of("linkedAccounts", linkedAccounts));
+    }
+
+    @GetMapping("/{uuid}/replays")
+    public ResponseEntity<List<PlayerReplayResponse>> getPlayerReplays(
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        return ResponseEntity.ok(replayService.listPlayerReplays(server, uuid));
     }
 
     @GetMapping("/punishments/{punishmentId}/linked-bans")
