@@ -1,7 +1,10 @@
 package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
@@ -25,12 +28,14 @@ import org.junit.jupiter.api.Test;
 
 class PlayerLookupServiceTest {
     private PlayerLookupService service;
+    private PlayerMongoRepository playerRepository;
     private Server server;
 
     @BeforeEach
     void setUp() {
+        playerRepository = mock(PlayerMongoRepository.class);
         service = new PlayerLookupService(
-            mock(PlayerMongoRepository.class),
+            playerRepository,
             mock(PunishmentTypeService.class),
             mock(MojangApiService.class),
             mock(PlayerStatusCalculator.class),
@@ -39,6 +44,16 @@ class PlayerLookupServiceTest {
             mock(PlayerService.class)
         );
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
+    }
+
+    @Test
+    void getPlayerByUuidLowercasesUuidBeforeQueryingPlayerRepository() {
+        when(playerRepository.findByMinecraftUuid(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")))
+            .thenReturn(java.util.Optional.empty());
+
+        service.getPlayerByUuid(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", null, null);
+
+        verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
 
     @Test

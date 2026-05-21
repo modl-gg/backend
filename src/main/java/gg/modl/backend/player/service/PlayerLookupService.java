@@ -336,7 +336,7 @@ public class PlayerLookupService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findByMinecraftUuid(server, uuid);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(uuid));
     }
 
     private Optional<Player> findByUsername(Server server, String username) {
@@ -445,7 +445,7 @@ public class PlayerLookupService {
         List<Map<String, Object>> linkedAccounts = new ArrayList<>();
 
         if (!ips.isEmpty()) {
-            List<Player> relatedPlayers = playerRepository.findByIpAddressesExcludingUuid(server, ips, uuid, 20);
+            List<Player> relatedPlayers = playerRepository.findByIpAddressesExcludingUuid(server, ips, normalizeUuid(uuid), 20);
             for (Player related : relatedPlayers) {
                 linkedAccounts.add(toPlayerProfile(server, related, types));
                 addedUuids.add(related.getMinecraftUuid().toString());
@@ -474,5 +474,9 @@ public class PlayerLookupService {
 
     private MinecraftPlayerService.ServiceResponse badRequest(String message) {
         return new MinecraftPlayerService.ServiceResponse(HttpStatus.BAD_REQUEST, Map.of("status", 400, "message", message));
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

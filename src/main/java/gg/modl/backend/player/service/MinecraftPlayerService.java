@@ -238,7 +238,7 @@ public class MinecraftPlayerService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findByMinecraftUuid(server, uuid);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(uuid));
     }
 
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
@@ -253,12 +253,12 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
-        playerRepository.markDisconnected(server, minecraftUuid, sessionDurationMs);
+        playerRepository.markDisconnected(server, normalizeUuid(minecraftUuid), sessionDurationMs);
         return Map.of("status", 200, "success", true);
     }
 
     public Map<String, Object> updateServer(Server server, String minecraftUuid, String serverName) {
-        playerRepository.updateLastServer(server, minecraftUuid, serverName);
+        playerRepository.updateLastServer(server, normalizeUuid(minecraftUuid), serverName);
         return Map.of("status", 200, "success", true);
     }
 
@@ -413,7 +413,7 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> getPlayerReports(Server server, String uuid) {
-        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, uuid, 50)
+        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, normalizeUuid(uuid), 50)
             .stream()
             .map(ticket -> {
                 Map<String, Object> report = new LinkedHashMap<>();
@@ -442,7 +442,7 @@ public class MinecraftPlayerService {
         boolean proxy,
         boolean hosting
     ) {
-        playerService.updateIpGeoData(server, minecraftUuid, ip, Map.of(
+        playerService.updateIpGeoData(server, normalizeUuid(minecraftUuid), ip, Map.of(
             "country", country != null ? country : "",
             "region", region != null ? region : "",
             "asn", asn != null ? asn : "",
@@ -522,5 +522,9 @@ public class MinecraftPlayerService {
     }
 
     public record ServiceResponse(HttpStatus status, Map<String, Object> body) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

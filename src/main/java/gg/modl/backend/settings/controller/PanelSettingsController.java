@@ -11,12 +11,14 @@ import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.GeneralSettings;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import gg.modl.backend.settings.data.QuickResponseSettings;
+import gg.modl.backend.settings.data.ReplayRetentionSettings;
 import gg.modl.backend.settings.data.TicketFormSettings;
 import gg.modl.backend.settings.data.TicketLabelSettings;
 import gg.modl.backend.settings.data.WebhookSettings;
 import gg.modl.backend.settings.dto.request.ApplyAIPunishmentRequest;
 import gg.modl.backend.settings.dto.request.PatchGeneralSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchQuickResponsesRequest;
+import gg.modl.backend.settings.dto.request.PatchReplayRetentionSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchStatusThresholdSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchTicketFormSettingsRequest;
 import gg.modl.backend.settings.dto.request.PatchTicketLabelSettingsRequest;
@@ -29,6 +31,7 @@ import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.settings.service.IconUploadService;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.QuickResponseSettingsService;
+import gg.modl.backend.settings.service.ReplayRetentionSettingsService;
 import gg.modl.backend.settings.service.TicketFormSettingsService;
 import gg.modl.backend.settings.service.TicketLabelSettingsService;
 import gg.modl.backend.settings.service.VersionedSettings;
@@ -65,6 +68,7 @@ public class PanelSettingsController {
     private final AITicketAnalysisService aiTicketAnalysisService;
     private final OffenderThresholdSettingsService offenderThresholdSettingsService;
     private final PermissionService permissionService;
+    private final ReplayRetentionSettingsService replayRetentionSettingsService;
 
     @GetMapping("/general")
     public ResponseEntity<SettingsEnvelope<GeneralSettings>> getGeneralSettings(HttpServletRequest request) {
@@ -137,6 +141,27 @@ public class PanelSettingsController {
             server,
             body.expectedVersion(),
             body.settings()
+        );
+        return ResponseEntity.ok(toEnvelope(updated));
+    }
+
+    @GetMapping("/replay-retention")
+    public ResponseEntity<SettingsEnvelope<ReplayRetentionSettings>> getReplayRetentionSettings(HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+        return ResponseEntity.ok(toEnvelope(replayRetentionSettingsService.getReplayRetentionSettingsState(server)));
+    }
+
+    @PatchMapping("/replay-retention")
+    public ResponseEntity<SettingsEnvelope<ReplayRetentionSettings>> patchReplayRetentionSettings(
+        @RequestBody @Valid PatchReplayRetentionSettingsRequest body,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        VersionedSettings<ReplayRetentionSettings> updated = replayRetentionSettingsService.patchReplayRetentionSettings(
+            server,
+            body.expectedVersion(),
+            body.enabled(),
+            body.days()
         );
         return ResponseEntity.ok(toEnvelope(updated));
     }

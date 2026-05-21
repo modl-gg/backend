@@ -18,9 +18,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import java.util.Date;
-import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -78,17 +77,8 @@ public class AdminAuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(HttpServletRequest request, HttpServletResponse response) {
-        Set<String> sessionEmails = new LinkedHashSet<>();
-
         for (String sessionId : adminAuthService.extractSessionIds(request)) {
-            sessionService.findValidAdminSession(sessionId)
-                .map(AuthSessionData::getEmail)
-                .ifPresent(sessionEmails::add);
             sessionService.invalidateAdminSession(sessionId);
-        }
-
-        for (String sessionEmail : sessionEmails) {
-            sessionService.invalidateAllAdminSessionsForEmail(sessionEmail);
         }
 
         for (Cookie expiredCookie : cookieUtil.createExpiredSessionCookies(RESTSecurityRole.ADMIN_SESSION_COOKIE)) {
@@ -135,10 +125,10 @@ public class AdminAuthController {
 
     public record LoginResponse(boolean success, String message, UserData data) {}
 
-    public record UserData(String email, java.util.Date lastActivityAt) {}
+    public record UserData(String email, Date lastActivityAt) {}
 
     public record SessionResponse(boolean success, SessionData data) {}
 
-    public record SessionData(String email, java.util.Date lastActivityAt, java.util.List<String> loggedInIps, boolean isAuthenticated) {}
+    public record SessionData(String email, Date lastActivityAt, List<String> loggedInIps, boolean isAuthenticated) {}
 
 }

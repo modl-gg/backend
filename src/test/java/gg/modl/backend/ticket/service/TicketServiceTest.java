@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -292,6 +295,26 @@ class TicketServiceTest {
         assertEquals("creator-1", updatedTicket.getData().get("creatorIdentifier"));
         assertEquals(1, updatedTicket.getReplies().size());
         assertTrue(updatedTicket.getReplies().get(0).getContent().contains("Issue Type"));
+    }
+
+    @Test
+    void getMinecraftTicketsByCreatorLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.findRecentByCreator(any(Server.class), any(), anyInt())).thenReturn(List.of());
+
+        minecraftTicketService.getMinecraftTicketsByCreator(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 25);
+
+        verify(ticketRepository).findRecentByCreator(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 25);
+    }
+
+    @Test
+    void getMinecraftReportsForPlayerLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.findReports(any(Server.class), any(), any(), anyInt(), anyBoolean())).thenReturn(List.of());
+
+        minecraftTicketService.getMinecraftReportsForPlayer(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "open", 10);
+
+        verify(ticketRepository).findReports(eq(server), eq("open"), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), eq(10), eq(false));
     }
 
     @Test

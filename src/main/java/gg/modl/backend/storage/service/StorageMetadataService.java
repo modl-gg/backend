@@ -61,14 +61,16 @@ public class StorageMetadataService {
         FAILED
     }
 
-    public void removeFile(Server server, String key) {
+    public boolean removeFile(Server server, String key) {
         try {
             storageFileRepository.findByKey(server, key).ifPresent(doc -> {
                 storageFileRepository.deleteByKey(server, key);
                 serverRepository.decrementStorageUsed(server.getId(), doc.getSize());
             });
+            return true;
         } catch (Exception e) {
             log.warn("Failed to remove file metadata for key: {}", key, e);
+            return false;
         }
     }
 

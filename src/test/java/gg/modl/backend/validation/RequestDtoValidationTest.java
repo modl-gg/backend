@@ -9,6 +9,7 @@ import gg.modl.backend.alert.data.SystemAlertAudience;
 import gg.modl.backend.alert.data.SystemAlertSeverity;
 import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.replay.dto.InitReplayUploadRequest;
 import gg.modl.backend.replaylite.data.ReplayLiteLabel;
 import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
 import gg.modl.backend.replaylite.dto.ReplayLiteLabelRequest;
@@ -156,6 +157,30 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "requestedSize");
+    }
+
+    @Test
+    void legacyReplayUploadRejectsInvalidTargetUuid() {
+        InitReplayUploadRequest request = new InitReplayUploadRequest(
+            "1.21.4",
+            1024,
+            "not-a-uuid",
+            "byteful"
+        );
+
+        assertHasViolation(validator.validate(request), "targetUuid");
+    }
+
+    @Test
+    void legacyReplayUploadRejectsLongTargetName() {
+        InitReplayUploadRequest request = new InitReplayUploadRequest(
+            "1.21.4",
+            1024,
+            "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f",
+            "x".repeat(RequestValidationLimits.LOG_USERNAME_MAX_LENGTH + 1)
+        );
+
+        assertHasViolation(validator.validate(request), "targetName");
     }
 
     @Test

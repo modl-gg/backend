@@ -12,6 +12,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +130,25 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         Query query = Query.query(Criteria.where(TicketFields.CREATOR_UUID).is(creatorUuid));
         query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
         query.limit(Math.min(limit, 50));
+        return find(server, query);
+    }
+
+    public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
+        String lower = playerUuid == null ? null : playerUuid.toLowerCase(java.util.Locale.ROOT);
+        String upper = playerUuid == null ? null : playerUuid.toUpperCase(java.util.Locale.ROOT);
+        List<String> uuidCandidates = lower != null && lower.equals(upper)
+            ? List.of(lower)
+            : Arrays.asList(lower, upper);
+
+        Query query = Query.query(new Criteria().andOperator(
+            new Criteria().orOperator(
+                Criteria.where(TicketFields.CREATOR_UUID).in(uuidCandidates),
+                Criteria.where(TicketFields.REPORTED_PLAYER_UUID).in(uuidCandidates)
+            ),
+            Criteria.where(TicketFields.REPLAY_URL).exists(true).nin(Arrays.asList(null, ""))
+        ));
+        query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 100));
         return find(server, query);
     }
 

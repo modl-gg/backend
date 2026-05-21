@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -49,6 +50,52 @@ class MinecraftChatLogServiceTest {
         assertEquals("uuid-1", captor.getValue().getUuid());
         assertEquals("hello", captor.getValue().getMessage());
         assertEquals("lobby", captor.getValue().getServer());
+    }
+
+    @Test
+    void submitChatLogsLowercasesUuidBeforePersisting() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        minecraftChatLogService.submitChatLogs(server, List.of(
+            new MinecraftChatLogService.ChatLogCommand("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "PlayerOne", "hi", 1L, "lobby")
+        ));
+
+        ArgumentCaptor<ChatLogDocument> captor = ArgumentCaptor.forClass(ChatLogDocument.class);
+        verify(chatLogRepository).saveEntity(any(Server.class), captor.capture());
+        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().getUuid());
+    }
+
+    @Test
+    void submitCommandLogsLowercasesUuidBeforePersisting() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        minecraftChatLogService.submitCommandLogs(server, List.of(
+            new MinecraftChatLogService.CommandLogCommand("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "PlayerOne", "/help", 1L, "lobby")
+        ));
+
+        ArgumentCaptor<CommandLogDocument> captor = ArgumentCaptor.forClass(CommandLogDocument.class);
+        verify(commandLogRepository).saveEntity(any(Server.class), captor.capture());
+        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().getUuid());
+    }
+
+    @Test
+    void getChatLogsLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(chatLogRepository.findByUuidRecent(any(Server.class), any(), anyInt())).thenReturn(List.of());
+
+        minecraftChatLogService.getChatLogs(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 100);
+
+        verify(chatLogRepository).findByUuidRecent(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), eq(100));
+    }
+
+    @Test
+    void getCommandLogsLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(commandLogRepository.findByUuidRecent(any(Server.class), any(), anyInt())).thenReturn(List.of());
+
+        minecraftChatLogService.getCommandLogs(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 100);
+
+        verify(commandLogRepository).findByUuidRecent(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), eq(100));
     }
 
     @Test

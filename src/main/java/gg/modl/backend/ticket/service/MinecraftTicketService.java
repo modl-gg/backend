@@ -65,10 +65,10 @@ public class MinecraftTicketService {
             .subject(request.subject())
             .status(unfinished ? TicketStatus.UNFINISHED : TicketStatus.OPEN)
             .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
-            .creatorUuid(request.creatorUuid())
+            .creatorUuid(normalizeUuid(request.creatorUuid()))
             .creatorName(request.creatorName())
             .reportedPlayer(request.reportedPlayerName())
-            .reportedPlayerUuid(request.reportedPlayerUuid())
+            .reportedPlayerUuid(normalizeUuid(request.reportedPlayerUuid()))
             .tags(request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>())
             .replies(new ArrayList<>())
             .notes(new ArrayList<>())
@@ -86,7 +86,7 @@ public class MinecraftTicketService {
                 .id(UUID.randomUUID().toString())
                 .content(request.description())
                 .name(request.creatorName() != null ? request.creatorName() : "Player")
-                .creatorIdentifier(request.creatorUuid())
+                .creatorIdentifier(normalizeUuid(request.creatorUuid()))
                 .staff(false)
                 .type("user")
                 .created(now)
@@ -110,7 +110,7 @@ public class MinecraftTicketService {
     }
 
     public List<Ticket> getMinecraftTicketsByCreator(Server server, String creatorUuid, int limit) {
-        return ticketRepository.findRecentByCreator(server, creatorUuid, limit);
+        return ticketRepository.findRecentByCreator(server, normalizeUuid(creatorUuid), limit);
     }
 
     public MinecraftTicketClaimResult claimMinecraftTicket(Server server, String ticketId, MinecraftClaimTicketRequest request) {
@@ -124,7 +124,7 @@ public class MinecraftTicketService {
             return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
         }
         String oldCreatorName = ticket.getCreatorName();
-        ticket.setCreatorUuid(request.playerUuid());
+        ticket.setCreatorUuid(normalizeUuid(request.playerUuid()));
         ticket.setCreatorName(request.playerName());
         ticket.setUpdatedAt(new Date());
 
@@ -181,7 +181,7 @@ public class MinecraftTicketService {
     }
 
     public List<Map<String, Object>> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
-        return ticketRepository.findReports(server, status, playerUuid, limit, false)
+        return ticketRepository.findReports(server, status, normalizeUuid(playerUuid), limit, false)
             .stream()
             .map(this::toMinecraftReport)
             .toList();
@@ -394,4 +394,8 @@ public class MinecraftTicketService {
     public record MinecraftTicketClaimResult(MinecraftTicketClaimStatus status, Ticket ticket) {}
 
     public record ReportOperationResult(ReportOperationStatus status, Ticket ticket) {}
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+    }
 }

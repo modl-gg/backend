@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -100,14 +101,9 @@ public class PanelAuthController {
     public ResponseEntity<AuthResponse> logout(HttpServletRequest request, HttpServletResponse response) {
         Server server = RequestUtil.getRequestServer(request);
         Set<String> sessionIds = extractSessionIds(request);
-        String sessionEmail = RequestUtil.getSessionEmail(request);
 
         for (String sessionId : sessionIds) {
             sessionService.invalidateSession(server, sessionId);
-        }
-
-        if (sessionEmail != null && !sessionEmail.isBlank()) {
-            sessionService.invalidateAllSessionsForEmail(server, sessionEmail);
         }
 
         for (Cookie cookie : cookieUtil.createExpiredSessionCookies()) {
@@ -127,7 +123,7 @@ public class PanelAuthController {
             .filter(cookie -> authConfiguration.getSessionCookieName().equals(cookie.getName()))
             .map(Cookie::getValue)
             .filter(value -> value != null && !value.isBlank())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     @PatchMapping("/profile")

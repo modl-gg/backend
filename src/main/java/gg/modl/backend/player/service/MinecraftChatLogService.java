@@ -23,7 +23,7 @@ public class MinecraftChatLogService {
 
         for (ChatLogCommand entry : entries) {
             chatLogRepository.saveEntity(server, ChatLogDocument.builder()
-                .uuid(entry.uuid())
+                .uuid(normalizeUuid(entry.uuid()))
                 .username(entry.username())
                 .message(entry.message())
                 .timestamp(entry.timestamp())
@@ -39,7 +39,7 @@ public class MinecraftChatLogService {
 
         for (CommandLogCommand entry : entries) {
             commandLogRepository.saveEntity(server, CommandLogDocument.builder()
-                .uuid(entry.uuid())
+                .uuid(normalizeUuid(entry.uuid()))
                 .username(entry.username())
                 .command(entry.command())
                 .timestamp(entry.timestamp())
@@ -49,7 +49,7 @@ public class MinecraftChatLogService {
     }
 
     public List<ChatLogEntryView> getChatLogs(Server server, String uuid, int limit) {
-        return chatLogRepository.findByUuidRecent(server, uuid, Math.min(limit, MAX_FETCH_LIMIT))
+        return chatLogRepository.findByUuidRecent(server, normalizeUuid(uuid), Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new ChatLogEntryView(
                 entry.getUuid(),
@@ -62,7 +62,7 @@ public class MinecraftChatLogService {
     }
 
     public List<CommandLogEntryView> getCommandLogs(Server server, String uuid, int limit) {
-        return commandLogRepository.findByUuidRecent(server, uuid, Math.min(limit, MAX_FETCH_LIMIT))
+        return commandLogRepository.findByUuidRecent(server, normalizeUuid(uuid), Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new CommandLogEntryView(
                 entry.getUuid(),
@@ -84,5 +84,9 @@ public class MinecraftChatLogService {
     }
 
     public record CommandLogEntryView(String uuid, String username, String command, long timestamp, String server) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

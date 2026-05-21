@@ -333,7 +333,7 @@ public class PunishmentQueryService {
     }
 
     public PunishmentPreviewView previewPunishment(Server server, String playerUuid, int typeOrdinal) {
-        Player player = playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, normalizeUuid(playerUuid)).orElse(null);
         if (player == null) {
             return PunishmentPreviewResponse.error("Player not found");
         }
@@ -533,5 +533,9 @@ public class PunishmentQueryService {
         boolean success,
         int affectedCount
     ) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

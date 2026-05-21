@@ -42,7 +42,7 @@ public class EvidenceUploadService {
             return TokenValidationResult.invalid();
         }
 
-        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), uploadToken.playerUuid())
+        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), normalizeUuid(uploadToken.playerUuid()))
             .orElse(null);
         String playerName = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : "Unknown";
 
@@ -117,6 +117,14 @@ public class EvidenceUploadService {
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server != null) {
             if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
+                if (!s3StorageService.deleteFile(request.key())) {
+                    StorageMetadataService.RecordFileResult recordResult = storageMetadataService.recordReservedFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+                    if (recordResult == StorageMetadataService.RecordFileResult.FAILED) {
+                        log.error("Orphaned over-quota evidence object: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run (triggered on storage list/aggregate calls) will reconcile, manual cleanup may be needed sooner", request.key(), uploadToken.serverDatabaseName(), uploadDetails.size(), uploadDetails.contentType());
+                    } else {
+                        log.warn("Failed to delete over-quota evidence object key={}, recorded metadata to keep it trackable result={}", request.key(), recordResult);
+                    }
+                }
                 return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
             }
         } else {
@@ -255,5 +263,9 @@ public class EvidenceUploadService {
                 case INVALID_URL -> HttpStatus.BAD_REQUEST;
             };
         }
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

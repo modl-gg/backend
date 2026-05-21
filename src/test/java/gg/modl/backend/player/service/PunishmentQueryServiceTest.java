@@ -2,7 +2,9 @@ package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
@@ -97,5 +99,28 @@ class PunishmentQueryServiceTest {
         assertEquals(latestAppeal.getCreated(), existingAppeal.get("submittedDate"));
         assertEquals("rejected", existingAppeal.get("status"));
         assertEquals("rejected", existingAppeal.get("appealWorkflowStatus"));
+    }
+
+    @Test
+    void previewPunishmentLowercasesUuidBeforeQueryingPlayerRepository() {
+        PlayerMongoRepository playerRepository = mock(PlayerMongoRepository.class);
+        PunishmentQueryService service = new PunishmentQueryService(
+            playerRepository,
+            mock(PunishmentMongoRepository.class),
+            mock(PlayerStatusCalculator.class),
+            mock(PunishmentTypeService.class),
+            mock(OffenderThresholdSettingsService.class),
+            mock(EvidenceUploadTokenService.class),
+            mock(IssuerNameResolver.class),
+            mock(StaffMongoRepository.class),
+            mock(TicketMongoRepository.class)
+        );
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(playerRepository.findByMinecraftUuid(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")))
+            .thenReturn(Optional.empty());
+
+        service.previewPunishment(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 1);
+
+        verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
 }

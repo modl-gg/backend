@@ -106,10 +106,14 @@ public class TicketSearchService {
     }
 
     public List<Ticket> getTicketsByPlayer(Server server, String playerUuid) {
-        return ticketRepository.findByPlayer(server, playerUuid);
+        return ticketRepository.findByPlayer(server, normalizeUuid(playerUuid));
     }
 
     public List<Ticket> getTicketsByTag(Server server, String tag) {
         return ticketRepository.findByTag(server, tag);
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

@@ -14,6 +14,8 @@ public class ReplayDocument {
     @Id
     private String id;
     private String mcVersion;
+    private String targetUuid;
+    private String targetName;
     private long fileSize;
     private String storageKey;
     private String status;

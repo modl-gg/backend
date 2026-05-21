@@ -392,7 +392,7 @@ public class StaffService {
     }
 
     public boolean markStaffDisconnected(Server server, String minecraftUuid) {
-        return staffRepository.updateLastSeenByAssignedMinecraftUuid(server, minecraftUuid);
+        return staffRepository.updateLastSeenByAssignedMinecraftUuid(server, normalizeUuid(minecraftUuid));
     }
 
     public Optional<StaffResponse> assignMinecraftPlayer(Server server, String username, AssignMinecraftPlayerRequest request) {
@@ -414,7 +414,7 @@ public class StaffService {
         }
 
         Player player = request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()
-                        ? playerRepository.findByMinecraftUuid(server, request.minecraftUuid()).orElse(null)
+                        ? playerRepository.findByMinecraftUuid(server, normalizeUuid(request.minecraftUuid())).orElse(null)
                         : playerService.findBestByUsername(server, request.minecraftUsername()).orElse(null);
         if (player == null) {
             throw new ResourceNotFoundException("Minecraft player not found");
@@ -552,5 +552,9 @@ public class StaffService {
 
     public void evictAllStaffCaches() {
         staffByEmailCache.invalidateAll();
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }
