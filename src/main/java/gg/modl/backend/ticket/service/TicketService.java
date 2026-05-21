@@ -204,9 +204,9 @@ public class TicketService {
             .status(ticketStatus)
             .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
             .creatorName(creatorDisplayName)
-            .creatorUuid(request.creatorUuid())
+            .creatorUuid(normalizeUuid(request.creatorUuid()))
             .reportedPlayer(request.reportedPlayerName())
-            .reportedPlayerUuid(request.reportedPlayerUuid())
+            .reportedPlayerUuid(normalizeUuid(request.reportedPlayerUuid()))
             .tags(tags)
             .replies(replies)
             .notes(new ArrayList<>())
@@ -558,6 +558,10 @@ public class TicketService {
             return emailStr;
         }
         return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 
 }
