@@ -117,6 +117,9 @@ public class EvidenceUploadService {
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server != null) {
             if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
+                if (!s3StorageService.deleteFile(request.key())) {
+                    log.warn("Failed to delete over-quota evidence object key={}", request.key());
+                }
                 return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
             }
         } else {
