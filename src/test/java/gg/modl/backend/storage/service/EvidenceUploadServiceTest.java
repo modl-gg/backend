@@ -136,5 +136,36 @@ class EvidenceUploadServiceTest {
 
         assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
         verify(s3StorageService).deleteFile(key);
+        verify(storageMetadataService, org.mockito.Mockito.never()).recordFile(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
+    }
+
+    @Test
+    void confirmUploadRecordsMetadataWhenS3DeleteFailsAfterQuotaExceeded() {
+        String key = "db/evidence/PUN-1/orphan.png";
+        EvidenceUploadTokenService.UploadToken uploadToken = new EvidenceUploadTokenService.UploadToken(
+            "token-1",
+            "db",
+            "PUN-1",
+            "player-1",
+            "Moderator",
+            Instant.now()
+        );
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        UploadResponse uploadDetails = new UploadResponse(key, "https://cdn.example.com/" + key, "orphan.png", 99L, "image/png");
+
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
+        when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
+        when(serverService.getServerByDatabaseName("db")).thenReturn(server);
+        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(false);
+        when(s3StorageService.deleteFile(key)).thenReturn(false);
+
+        EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(
+            "token-1",
+            new EvidenceConfirmUploadRequest(key)
+        );
+
+        assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
+        verify(s3StorageService).deleteFile(key);
+        verify(storageMetadataService).recordFile(server, key, 99L, "image/png");
     }
 }

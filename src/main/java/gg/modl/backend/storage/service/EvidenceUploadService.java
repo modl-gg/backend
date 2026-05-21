@@ -118,7 +118,8 @@ public class EvidenceUploadService {
         if (server != null) {
             if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
                 if (!s3StorageService.deleteFile(request.key())) {
-                    log.warn("Failed to delete over-quota evidence object key={}", request.key());
+                    log.warn("Failed to delete over-quota evidence object key={}, recording metadata to keep it trackable", request.key());
+                    storageMetadataService.recordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
                 }
                 return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
             }
