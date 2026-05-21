@@ -70,15 +70,20 @@ public class LegacyReplayCleanupService {
 
         Instant cutoffInstant = clock.instant().minus(Duration.ofDays(settings.getDays()));
         Date cutoff = Date.from(cutoffInstant);
+
+        long missingStorageKey = replayRepository.countExpiredWithMissingStorageKey(server, cutoff);
+        if (missingStorageKey > 0) {
+            stats.skippedMissingStorageKey += missingStorageKey;
+            log.warn(
+                "Found {} expired replays with missing storageKey server={} - skipped",
+                missingStorageKey,
+                server.getId()
+            );
+        }
+
         List<ReplayDocument> expired = replayRepository.findExpiredCompletedOrFailed(server, cutoff, properties.getBatchSize());
         for (ReplayDocument replay : expired) {
             stats.scanned++;
-            if (replay.getStorageKey() == null || replay.getStorageKey().isBlank()) {
-                stats.skippedMissingStorageKey++;
-                replayRepository.deleteByReplayId(server, replay.getId());
-                continue;
-            }
-
             boolean storageDeleted = s3StorageService.deleteFile(replay.getStorageKey());
             if (!storageDeleted) {
                 continue;
@@ -96,9 +101,9 @@ public class LegacyReplayCleanupService {
     }
 
     private static class CleanupStats {
-        private int scanned;
-        private int deleted;
-        private int skippedRetentionDisabled;
-        private int skippedMissingStorageKey;
+        private long scanned;
+        private long deleted;
+        private long skippedRetentionDisabled;
+        private long skippedMissingStorageKey;
     }
 }

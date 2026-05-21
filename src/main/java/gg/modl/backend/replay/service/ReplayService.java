@@ -158,15 +158,16 @@ public class ReplayService {
     }
 
     public List<PlayerReplayResponse> listPlayerReplays(Server server, String playerUuid) {
+        String normalizedPlayerUuid = normalizeTargetUuid(playerUuid);
         Map<String, PlayerReplayResponse> responses = new LinkedHashMap<>();
 
-        List<ReplayDocument> directReplays = replayRepository.findByTargetUuid(server, playerUuid, 100);
+        List<ReplayDocument> directReplays = replayRepository.findByTargetUuid(server, normalizedPlayerUuid, 100);
         for (ReplayDocument replay : directReplays) {
             PlayerReplayResponse response = toPlayerReplayResponse(replay, PlayerReplayResponse.MatchSource.DIRECT_METADATA);
             responses.put(response.deduplicationKey(), response);
         }
 
-        List<Ticket> tickets = ticketRepository.findPlayerTicketsWithReplayUrl(server, playerUuid, 100);
+        List<Ticket> tickets = ticketRepository.findPlayerTicketsWithReplayUrl(server, normalizedPlayerUuid, 100);
         for (Ticket ticket : tickets) {
             String replayUrl = normalizeOptional(ticket.getReplayUrl());
             if (replayUrl == null) {

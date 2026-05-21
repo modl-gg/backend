@@ -36,16 +36,18 @@ public class ReplayRetentionSettingsService {
         Boolean enabled,
         Integer days
     ) {
-        ReplayRetentionSettings current = getReplayRetentionSettings(server);
+        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_REPLAY_RETENTION);
+        Map<String, Object> data = new LinkedHashMap<>(current.data());
+
+        ReplayRetentionSettings merged = mapToSettings(data);
         if (enabled != null) {
-            current.setEnabled(enabled);
+            merged.setEnabled(enabled);
         }
         if (days != null) {
-            current.setDays(days);
+            merged.setDays(days);
         }
 
-        ReplayRetentionSettings normalized = normalize(current);
-        Map<String, Object> data = new LinkedHashMap<>();
+        ReplayRetentionSettings normalized = normalize(merged);
         data.put("enabled", normalized.isEnabled());
         data.put("days", normalized.getDays());
 

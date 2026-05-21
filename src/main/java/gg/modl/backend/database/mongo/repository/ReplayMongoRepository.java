@@ -49,11 +49,25 @@ public class ReplayMongoRepository extends AbstractServerMongoRepository<ReplayD
     public List<ReplayDocument> findExpiredCompletedOrFailed(Server server, Date cutoff, int limit) {
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where("status").in(ReplayDocument.STATUS_COMPLETE, ReplayDocument.STATUS_FAILED),
-            Criteria.where("createdAt").lt(cutoff)
+            Criteria.where("createdAt").lt(cutoff),
+            Criteria.where("storageKey").exists(true).nin(null, "")
         ));
         query.with(Sort.by(Sort.Direction.ASC, "createdAt"));
         query.limit(Math.min(limit, 500));
         return find(server, query);
+    }
+
+    public long countExpiredWithMissingStorageKey(Server server, Date cutoff) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where("status").in(ReplayDocument.STATUS_COMPLETE, ReplayDocument.STATUS_FAILED),
+            Criteria.where("createdAt").lt(cutoff),
+            new Criteria().orOperator(
+                Criteria.where("storageKey").exists(false),
+                Criteria.where("storageKey").is(null),
+                Criteria.where("storageKey").is("")
+            )
+        ));
+        return count(server, query);
     }
 
     public boolean deleteByReplayId(Server server, String replayId) {

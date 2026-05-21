@@ -140,9 +140,12 @@ class ReplayServiceTest {
 
     @Test
     void listPlayerReplaysCombinesDirectMetadataAndTicketFallbackWithoutDuplicateUrls() {
+        String requestedPlayerUuid = "3F8C9C5A-6B6E-4F2C-9B7F-1A2B3C4D5E6F";
+        String normalizedPlayerUuid = "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f";
+
         ReplayDocument directReplay = new ReplayDocument();
         directReplay.setId("replay-1");
-        directReplay.setTargetUuid("player-uuid");
+        directReplay.setTargetUuid(normalizedPlayerUuid);
         directReplay.setTargetName("Player");
         directReplay.setMcVersion("1.21.4");
         directReplay.setFileSize(4096L);
@@ -152,40 +155,40 @@ class ReplayServiceTest {
 
         Ticket duplicateUrlTicket = Ticket.builder()
             .id("ticket-1")
-            .creatorUuid("player-uuid")
+            .creatorUuid(normalizedPlayerUuid)
             .creatorName("Player")
             .created(new Date(2000L))
             .replayUrl("https://cdn.example/db/replays/replay-1.modlreplay")
             .build();
         Ticket duplicateRawIdTicket = Ticket.builder()
             .id("ticket-raw-duplicate")
-            .creatorUuid("player-uuid")
+            .creatorUuid(normalizedPlayerUuid)
             .creatorName("Player")
             .created(new Date(2500L))
             .replayUrl("replay-1")
             .build();
         Ticket duplicateQueryIdTicket = Ticket.builder()
             .id("ticket-query-duplicate")
-            .creatorUuid("player-uuid")
+            .creatorUuid(normalizedPlayerUuid)
             .creatorName("Player")
             .created(new Date(2750L))
             .replayUrl("https://replays.example/?id=replay-1")
             .build();
         Ticket fallbackTicket = Ticket.builder()
             .id("ticket-2")
-            .reportedPlayerUuid("player-uuid")
+            .reportedPlayerUuid(normalizedPlayerUuid)
             .reportedPlayer("Player")
             .created(new Date(3000L))
             .replayUrl("replay-2")
             .build();
 
-        when(replayRepository.findByTargetUuid(server, "player-uuid", 100)).thenReturn(List.of(directReplay));
+        when(replayRepository.findByTargetUuid(server, normalizedPlayerUuid, 100)).thenReturn(List.of(directReplay));
         when(s3StorageService.getCdnUrl("db/replays/replay-1.modlreplay"))
             .thenReturn("https://cdn.example/db/replays/replay-1.modlreplay");
-        when(ticketRepository.findPlayerTicketsWithReplayUrl(server, "player-uuid", 100))
+        when(ticketRepository.findPlayerTicketsWithReplayUrl(server, normalizedPlayerUuid, 100))
             .thenReturn(List.of(duplicateUrlTicket, duplicateRawIdTicket, duplicateQueryIdTicket, fallbackTicket));
 
-        List<PlayerReplayResponse> replays = replayService.listPlayerReplays(server, "player-uuid");
+        List<PlayerReplayResponse> replays = replayService.listPlayerReplays(server, requestedPlayerUuid);
 
         assertEquals(2, replays.size());
         assertEquals(PlayerReplayResponse.MatchSource.DIRECT_METADATA, replays.get(0).matchSource());

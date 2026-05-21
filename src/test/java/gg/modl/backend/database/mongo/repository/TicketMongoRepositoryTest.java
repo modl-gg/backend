@@ -50,7 +50,7 @@ class TicketMongoRepositoryTest {
 
         String queryText = queryCaptor.getValue().getQueryObject().toJson();
         assertTrue(queryText.contains("replayUrl"), queryText);
-        assertTrue(queryText.contains("$regularExpression"), queryText);
-        assertTrue(queryText.contains("\\\\S"), queryText);
+        assertTrue(queryText.contains("$exists"), queryText);
+        assertTrue(queryText.contains("$nin"), queryText);
     }
 }

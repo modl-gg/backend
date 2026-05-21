@@ -9,6 +9,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerPlan;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
@@ -49,7 +52,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("unique", true)
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess);
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
@@ -96,7 +99,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("key", new Document("email", 1))
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess);
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
         service.initGlobalIndexes();
 
         verify(adminUsers).createIndex(any());
@@ -115,7 +118,7 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
         when(replays.getIndexInfo()).thenReturn(List.of());
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess);
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
         service.createTenantIndexes(template);
 
         ArgumentCaptor<IndexDefinition> replayIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
@@ -128,6 +131,58 @@ class MongoIndexBootstrapServiceTest {
             assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_replays_status_createdAt");
             assertThat(index.getIndexKeys()).isEqualTo(new Document("status", 1).append("createdAt", 1));
         });
+    }
+
+    @Test
+    void ensureIndexesForExistingTenantsAppliesIndexesToEachConfiguredServer() {
+        TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
+        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        MongoTemplate firstTemplate = mock(MongoTemplate.class);
+        MongoTemplate secondTemplate = mock(MongoTemplate.class);
+        IndexOperations firstReplays = mock(IndexOperations.class);
+        IndexOperations secondReplays = mock(IndexOperations.class);
+        stubTenantIndexOps(firstTemplate);
+        stubTenantIndexOps(secondTemplate);
+        when(firstTemplate.indexOps(CollectionName.REPLAYS)).thenReturn(firstReplays);
+        when(secondTemplate.indexOps(CollectionName.REPLAYS)).thenReturn(secondReplays);
+        when(firstReplays.getIndexInfo()).thenReturn(List.of());
+        when(secondReplays.getIndexInfo()).thenReturn(List.of());
+
+        Server configured = new Server("alpha", "alpha", "server_alpha", "alpha@example.com", true, ServerPlan.FREE);
+        Server alsoConfigured = new Server("beta", "beta", "server_beta", "beta@example.com", true, ServerPlan.FREE);
+        Server unprovisioned = new Server("gamma", "gamma", null, "gamma@example.com", false, ServerPlan.FREE);
+        when(serverRepository.findAll()).thenReturn(List.of(configured, alsoConfigured, unprovisioned));
+        when(tenantMongoAccess.forServer(configured)).thenReturn(firstTemplate);
+        when(tenantMongoAccess.forServer(alsoConfigured)).thenReturn(secondTemplate);
+
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository);
+        service.ensureIndexesForExistingTenants();
+
+        verify(firstReplays, atLeastOnce()).createIndex(any());
+        verify(secondReplays, atLeastOnce()).createIndex(any());
+        verify(tenantMongoAccess, never()).forServer(unprovisioned);
+    }
+
+    @Test
+    void ensureIndexesForExistingTenantsContinuesWhenIndividualTenantFails() {
+        TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
+        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        MongoTemplate goodTemplate = mock(MongoTemplate.class);
+        IndexOperations goodReplays = mock(IndexOperations.class);
+        stubTenantIndexOps(goodTemplate);
+        when(goodTemplate.indexOps(CollectionName.REPLAYS)).thenReturn(goodReplays);
+        when(goodReplays.getIndexInfo()).thenReturn(List.of());
+
+        Server broken = new Server("broken", "broken", "server_broken", "broken@example.com", true, ServerPlan.FREE);
+        Server healthy = new Server("healthy", "healthy", "server_healthy", "healthy@example.com", true, ServerPlan.FREE);
+        when(serverRepository.findAll()).thenReturn(List.of(broken, healthy));
+        when(tenantMongoAccess.forServer(broken)).thenThrow(new IllegalStateException("boom"));
+        when(tenantMongoAccess.forServer(healthy)).thenReturn(goodTemplate);
+
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository);
+        service.ensureIndexesForExistingTenants();
+
+        verify(goodReplays, atLeastOnce()).createIndex(any());
     }
 
     private void stubTenantIndexOps(MongoTemplate template) {

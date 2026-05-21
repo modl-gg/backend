@@ -68,6 +68,7 @@ class LegacyReplayCleanupServiceTest {
         when(serverRepository.findAll()).thenReturn(List.of(server));
         when(replayRetentionSettingsService.getReplayRetentionSettings(server))
             .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(0L);
         when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 100)).thenReturn(List.of(replay));
         when(s3StorageService.deleteFile("db/replays/replay-1.modlreplay")).thenReturn(true);
         when(storageMetadataService.removeFile(server, "db/replays/replay-1.modlreplay")).thenReturn(true);
@@ -88,6 +89,7 @@ class LegacyReplayCleanupServiceTest {
         when(serverRepository.findAll()).thenReturn(List.of(server));
         when(replayRetentionSettingsService.getReplayRetentionSettings(server))
             .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(0L);
         when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 100)).thenReturn(List.of(replay));
         when(s3StorageService.deleteFile("db/replays/replay-1.modlreplay")).thenReturn(false);
 
@@ -105,6 +107,7 @@ class LegacyReplayCleanupServiceTest {
         when(serverRepository.findAll()).thenReturn(List.of(server));
         when(replayRetentionSettingsService.getReplayRetentionSettings(server))
             .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(0L);
         when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 100)).thenReturn(List.of(replay));
         when(s3StorageService.deleteFile("db/replays/replay-1.modlreplay")).thenReturn(true);
         when(storageMetadataService.removeFile(server, "db/replays/replay-1.modlreplay")).thenReturn(false);
@@ -116,6 +119,25 @@ class LegacyReplayCleanupServiceTest {
     }
 
     @Test
+    void cleanupReportsMissingStorageKeyCountAndDoesNotProcessBlankRecords() {
+        Date cutoff = Date.from(NOW.minus(Duration.ofDays(7)));
+
+        when(serverRepository.findAll()).thenReturn(List.of(server));
+        when(replayRetentionSettingsService.getReplayRetentionSettings(server))
+            .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(3L);
+        // Repository filters out blank-storageKey docs entirely.
+        when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 100)).thenReturn(List.of());
+
+        cleanupService.runCleanupOnce();
+
+        verify(replayRepository).countExpiredWithMissingStorageKey(server, cutoff);
+        verify(s3StorageService, never()).deleteFile(any());
+        verify(storageMetadataService, never()).removeFile(eq(server), any());
+        verify(replayRepository, never()).deleteByReplayId(eq(server), any());
+    }
+
+    @Test
     void cleanupSkipsTenantWhenRetentionIsDisabled() {
         when(serverRepository.findAll()).thenReturn(List.of(server));
         when(replayRetentionSettingsService.getReplayRetentionSettings(server))
@@ -123,6 +145,7 @@ class LegacyReplayCleanupServiceTest {
 
         cleanupService.runCleanupOnce();
 
+        verify(replayRepository, never()).countExpiredWithMissingStorageKey(eq(server), any(Date.class));
         verify(replayRepository, never()).findExpiredCompletedOrFailed(
             eq(server),
             any(Date.class),

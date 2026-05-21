@@ -1,7 +1,9 @@
 package gg.modl.backend.database;
 
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.server.data.Server;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -10,6 +12,8 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
@@ -23,6 +27,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class MongoIndexBootstrapService {
     private final TenantMongoAccess tenantMongoAccess;
+    private final ServerMongoRepository serverRepository;
 
     @PostConstruct
     public void initGlobalIndexes() {
@@ -31,6 +36,40 @@ public class MongoIndexBootstrapService {
         } catch (Exception e) {
             log.error("Failed to create global database indexes", e);
         }
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void ensureIndexesForExistingTenants() {
+        List<Server> servers;
+        try {
+            servers = serverRepository.findAll();
+        } catch (Exception e) {
+            log.error("Failed to list servers for tenant index bootstrap", e);
+            return;
+        }
+
+        List<Server> targets = servers.stream()
+            .filter(server -> server != null
+                && server.getDatabaseName() != null
+                && !server.getDatabaseName().isBlank())
+            .toList();
+
+        log.info("Ensuring tenant indexes for {} existing tenants", targets.size());
+        int succeeded = 0;
+        int failed = 0;
+        for (Server server : targets) {
+            try {
+                log.debug("Ensuring tenant indexes for server id={} database={}",
+                    server.getId(), server.getDatabaseName());
+                createTenantIndexes(tenantMongoAccess.forServer(server));
+                succeeded++;
+            } catch (Exception e) {
+                failed++;
+                log.warn("Failed to ensure tenant indexes for server id={} database={}",
+                    server.getId(), server.getDatabaseName(), e);
+            }
+        }
+        log.info("Tenant index bootstrap complete succeeded={} failed={}", succeeded, failed);
     }
 
     private void createGlobalIndexes(MongoTemplate template) {
@@ -163,7 +202,8 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_tickets_assignedTo_updatedAt", doc("assignedTo", 1).append("updatedAt", -1), false, false),
             IndexSpec.standard("idx_tickets_creatorName_created", doc("creatorName", 1).append("created", -1), false, false),
             IndexSpec.standard("idx_tickets_replies_name_created", doc("replies.name", 1).append("replies.created", -1), false, false),
-            IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false)
+            IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false),
+            IndexSpec.standard("idx_tickets_replayUrl", doc("replayUrl", 1), false, true)
         ));
 
         ensureIndexes(template, CollectionName.REPLAYS, List.of(

@@ -12,6 +12,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -133,12 +134,14 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
+        // Relies on the sparse index `idx_tickets_replayUrl` declared in MongoIndexBootstrapService so the
+        // non-blank filter can be evaluated via the index instead of an unanchored regex collection scan.
         Query query = Query.query(new Criteria().andOperator(
             new Criteria().orOperator(
                 Criteria.where(TicketFields.CREATOR_UUID).is(playerUuid),
                 Criteria.where(TicketFields.REPORTED_PLAYER_UUID).is(playerUuid)
             ),
-            Criteria.where("replayUrl").regex("\\S")
+            Criteria.where(TicketFields.REPLAY_URL).exists(true).nin(Arrays.asList(null, ""))
         ));
         query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
         query.limit(Math.min(limit, 100));
