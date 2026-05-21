@@ -124,7 +124,7 @@ public class MinecraftTicketService {
             return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
         }
         String oldCreatorName = ticket.getCreatorName();
-        ticket.setCreatorUuid(request.playerUuid());
+        ticket.setCreatorUuid(normalizeUuid(request.playerUuid()));
         ticket.setCreatorName(request.playerName());
         ticket.setUpdatedAt(new Date());
 

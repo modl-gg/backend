@@ -126,7 +126,6 @@ class LegacyReplayCleanupServiceTest {
         when(replayRetentionSettingsService.getReplayRetentionSettings(server))
             .thenReturn(new ReplayRetentionSettings(true, 7));
         when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(3L);
-        // Repository filters out blank-storageKey docs entirely.
         when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 100)).thenReturn(List.of());
 
         cleanupService.runCleanupOnce();

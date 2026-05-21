@@ -139,7 +139,7 @@ public class AppealService {
             .subject("Appeal for Punishment: " + request.punishmentId())
             .tags(new ArrayList<>())
             .creatorName(username)
-            .creatorUuid(request.playerUuid())
+            .creatorUuid(normalizeUuid(request.playerUuid()))
             .notes(new ArrayList<>())
             .replies(new ArrayList<>(List.of(initialReply)))
             .data(data)
@@ -423,5 +423,9 @@ public class AppealService {
             .staff(true)
             .action(action)
             .build();
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

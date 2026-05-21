@@ -134,17 +134,12 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
-        // Tickets created before write-side normalization may have stored the UUID with uppercase hex,
-        // while modern callers pass the lowercased canonical form. Match both via $in so the indexed
-        // equality lookup still hits either stored form.
         String lower = playerUuid == null ? null : playerUuid.toLowerCase(java.util.Locale.ROOT);
         String upper = playerUuid == null ? null : playerUuid.toUpperCase(java.util.Locale.ROOT);
         List<String> uuidCandidates = lower != null && lower.equals(upper)
             ? List.of(lower)
             : Arrays.asList(lower, upper);
 
-        // Relies on the sparse index `idx_tickets_replayUrl` declared in MongoIndexBootstrapService so the
-        // non-blank filter can be evaluated via the index instead of an unanchored regex collection scan.
         Query query = Query.query(new Criteria().andOperator(
             new Criteria().orOperator(
                 Criteria.where(TicketFields.CREATOR_UUID).in(uuidCandidates),

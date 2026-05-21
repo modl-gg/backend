@@ -41,6 +41,7 @@ public final class CollectionName {
     public static final String SYSTEM_ALERTS = "system_alerts";
     public static final String SECURITY_EVENTS = "security_events";
     public static final String MIGRATIONS = "migrations";
+    public static final String TENANT_MIGRATIONS = "tenant_migrations";
 
     // Replays
     public static final String REPLAYS = "replays";
