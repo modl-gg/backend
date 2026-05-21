@@ -118,8 +118,12 @@ public class EvidenceUploadService {
         if (server != null) {
             if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
                 if (!s3StorageService.deleteFile(request.key())) {
-                    log.warn("Failed to delete over-quota evidence object key={}, recording metadata to keep it trackable", request.key());
-                    storageMetadataService.recordReservedFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+                    StorageMetadataService.RecordFileResult recordResult = storageMetadataService.recordReservedFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+                    if (recordResult == StorageMetadataService.RecordFileResult.FAILED) {
+                        log.error("Orphaned over-quota evidence object: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run (triggered on storage list/aggregate calls) will reconcile, manual cleanup may be needed sooner", request.key(), uploadToken.serverDatabaseName(), uploadDetails.size(), uploadDetails.contentType());
+                    } else {
+                        log.warn("Failed to delete over-quota evidence object key={}, recorded metadata to keep it trackable result={}", request.key(), recordResult);
+                    }
                 }
                 return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
             }
