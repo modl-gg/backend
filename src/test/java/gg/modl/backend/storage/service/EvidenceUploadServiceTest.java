@@ -136,7 +136,7 @@ class EvidenceUploadServiceTest {
 
         assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
         verify(s3StorageService).deleteFile(key);
-        verify(storageMetadataService, org.mockito.Mockito.never()).recordFile(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
+        verify(storageMetadataService, org.mockito.Mockito.never()).recordReservedFile(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
     }
 
     @Test
@@ -166,6 +166,6 @@ class EvidenceUploadServiceTest {
 
         assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
         verify(s3StorageService).deleteFile(key);
-        verify(storageMetadataService).recordFile(server, key, 99L, "image/png");
+        verify(storageMetadataService).recordReservedFile(server, key, 99L, "image/png");
     }
 }
