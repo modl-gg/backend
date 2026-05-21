@@ -118,7 +118,7 @@ public class TicketNotificationService {
     }
 
     private Player findPlayer(Server server, String playerUuid) {
-        return playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(playerUuid)).orElse(null);
     }
 
     private void appendNotification(Server server, Player player, Map<String, Object> notification) {
@@ -239,5 +239,9 @@ public class TicketNotificationService {
             log.error("Failed to create in-game closed notification for player {} for ticket {}: {}",
                 playerUuid, ticket.getId(), exception.getMessage());
         }
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

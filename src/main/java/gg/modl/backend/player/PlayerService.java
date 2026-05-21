@@ -55,7 +55,7 @@ public class PlayerService {
 
         List<Player> players;
         if (isUuid(normalizedSearch)) {
-            players = playerRepository.findByMinecraftUuid(server, normalizedSearch)
+            players = playerRepository.findByMinecraftUuid(server, normalizeUuid(normalizedSearch))
                 .map(List::of)
                 .orElseGet(List::of);
         } else {
@@ -518,7 +518,7 @@ public class PlayerService {
             return;
         }
 
-        Player player = playerRepository.findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, normalizeUuid(minecraftUuid)).orElse(null);
         if (player == null) {
             return;
         }
@@ -575,5 +575,9 @@ public class PlayerService {
             player.setData(new HashMap<>());
         }
         return player.getData();
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

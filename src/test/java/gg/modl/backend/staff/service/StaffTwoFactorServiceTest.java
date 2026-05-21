@@ -3,6 +3,7 @@ package gg.modl.backend.staff.service;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -19,6 +20,22 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class StaffTwoFactorServiceTest {
+
+    @Test
+    void generateTokenLowercasesUuidBeforeQueryingRepository() {
+        StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
+        ModlProperties properties = mock(ModlProperties.class);
+        when(properties.getDomain()).thenReturn("example.com");
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, properties);
+        Server server = server();
+        when(staffRepository.createTwoFactorToken(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            anyString(), anyString(), anyLong())).thenReturn(true);
+
+        service.generateToken(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "127.0.0.1");
+
+        verify(staffRepository).createTwoFactorToken(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+            anyString(), eq("127.0.0.1"), anyLong());
+    }
 
     @Test
     void verifyTokenAllowsInitialPublicVerificationWithoutSessionEmail() {

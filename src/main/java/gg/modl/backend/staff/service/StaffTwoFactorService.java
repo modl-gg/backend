@@ -22,7 +22,7 @@ public class StaffTwoFactorService {
         String token = UUID.randomUUID().toString();
         long now = Instant.now().toEpochMilli();
 
-        if (!staffRepository.createTwoFactorToken(server, minecraftUuid, token, ip, now)) {
+        if (!staffRepository.createTwoFactorToken(server, normalizeUuid(minecraftUuid), token, ip, now)) {
             return Optional.empty();
         }
 
@@ -62,5 +62,9 @@ public class StaffTwoFactorService {
     }
 
     public record TwoFactorTokenResult(String token, String verifyUrl) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

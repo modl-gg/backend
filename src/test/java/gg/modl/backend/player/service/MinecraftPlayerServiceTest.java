@@ -1,6 +1,10 @@
 package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -121,6 +125,55 @@ class MinecraftPlayerServiceTest {
         List<Map<String, Object>> remaining = (List<Map<String, Object>>) player.getData().get("pendingNotifications");
         assertEquals(1, remaining.size());
         assertEquals("notif-2", remaining.get(0).get("id"));
+    }
+
+    @Test
+    void getPlayerReportsLowercasesUuidBeforeQueryingTicketRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.findReportedPlayerTickets(any(Server.class), any(), anyInt())).thenReturn(List.of());
+
+        minecraftPlayerService.getPlayerReports(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE");
+
+        verify(ticketRepository).findReportedPlayerTickets(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 50);
+    }
+
+    @Test
+    void disconnectLowercasesUuidBeforeQueryingPlayerRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        minecraftPlayerService.disconnect(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 5_000L);
+
+        verify(playerRepository).markDisconnected(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), anyLong());
+    }
+
+    @Test
+    void updateServerLowercasesUuidBeforeQueryingPlayerRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        minecraftPlayerService.updateServer(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "lobby");
+
+        verify(playerRepository).updateLastServer(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "lobby");
+    }
+
+    @Test
+    void submitIpInfoLowercasesUuidBeforeForwardingToPlayerService() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        minecraftPlayerService.submitIpInfo(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            "1.2.3.4", "US", "CA", "ASN", false, false);
+
+        verify(playerService).updateIpGeoData(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), eq("1.2.3.4"), any());
+    }
+
+    @Test
+    void getPlayerPunishmentsLowercasesUuidBeforeQueryingPlayerRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(playerRepository.findByMinecraftUuid(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")))
+            .thenReturn(Optional.empty());
+
+        minecraftPlayerService.getPlayerPunishments(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 1, 10);
+
+        verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
 
     @SuppressWarnings("unchecked")

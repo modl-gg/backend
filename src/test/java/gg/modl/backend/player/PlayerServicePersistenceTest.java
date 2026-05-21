@@ -97,6 +97,21 @@ class PlayerServicePersistenceTest {
     }
 
     @Test
+    void updateIpGeoDataLowercasesUuidBeforeQueryingRepository() {
+        when(playerRepository.findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
+            .thenReturn(Optional.empty());
+
+        playerService.updateIpGeoData(
+            server,
+            "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            "1.2.3.4",
+            Map.of()
+        );
+
+        verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    }
+
+    @Test
     void updateIpGeoDataMutatesExistingIpEntryAndPersistsThroughRepository() {
         Player player = Player.builder()
             .id(UUID.randomUUID().toString())

@@ -293,18 +293,18 @@ public class PunishmentMutationService {
 
     public void linkAppealToPunishment(Server server, String playerUuid, String punishmentId,
                                        String appealId, PunishmentNote note) {
-        punishmentRepository.linkAppealToPunishment(server, playerUuid, punishmentId, appealId, note);
+        punishmentRepository.linkAppealToPunishment(server, normalizeUuid(playerUuid), punishmentId, appealId, note);
     }
 
     public void addPunishmentNote(Server server, String playerUuid, String punishmentId,
                                   PunishmentNote note, Map<String, Object> dataUpdates) {
-        punishmentRepository.addPunishmentNote(server, playerUuid, punishmentId, note, dataUpdates);
+        punishmentRepository.addPunishmentNote(server, normalizeUuid(playerUuid), punishmentId, note, dataUpdates);
     }
 
     public void applyAppealApproval(Server server, String playerUuid, String punishmentId,
                                     PunishmentModification modification, PunishmentNote note,
                                     String appealOutcome, String appealTicketId) {
-        punishmentRepository.applyAppealApproval(server, playerUuid, punishmentId,
+        punishmentRepository.applyAppealApproval(server, normalizeUuid(playerUuid), punishmentId,
             modification, note, appealOutcome, appealTicketId);
     }
 
@@ -331,5 +331,9 @@ public class PunishmentMutationService {
                 return null;
             }
         }
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

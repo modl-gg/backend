@@ -88,7 +88,8 @@ public class AppealService {
     }
 
     public TicketResponse createAppeal(Server server, CreateAppealRequest request) {
-        Player player = findPlayerWithPunishment(server, request.playerUuid(), request.punishmentId());
+        String playerUuid = normalizeUuid(request.playerUuid());
+        Player player = findPlayerWithPunishment(server, playerUuid, request.punishmentId());
         if (player == null) {
             throw new IllegalArgumentException("Punishment not found for the specified player");
         }
@@ -107,7 +108,7 @@ public class AppealService {
 
         Map<String, Object> data = new HashMap<>();
         data.put("punishmentId", request.punishmentId());
-        data.put("playerUuid", request.playerUuid());
+        data.put("playerUuid", playerUuid);
         data.put("contactEmail", request.email());
 
         if (request.additionalData() != null) {
@@ -139,7 +140,7 @@ public class AppealService {
             .subject("Appeal for Punishment: " + request.punishmentId())
             .tags(new ArrayList<>())
             .creatorName(username)
-            .creatorUuid(normalizeUuid(request.playerUuid()))
+            .creatorUuid(playerUuid)
             .notes(new ArrayList<>())
             .replies(new ArrayList<>(List.of(initialReply)))
             .data(data)
@@ -150,7 +151,7 @@ public class AppealService {
 
         ticketRepository.saveAppeal(server, appeal);
 
-        linkAppealToPunishment(server, request.playerUuid(), request.punishmentId(), appealId);
+        linkAppealToPunishment(server, playerUuid, request.punishmentId(), appealId);
 
         return toTicketResponse(appeal);
     }
@@ -331,7 +332,7 @@ public class AppealService {
         }
 
         String punishmentId = (String) data.get("punishmentId");
-        String playerUuid = (String) data.get("playerUuid");
+        String playerUuid = normalizeUuid((String) data.get("playerUuid"));
 
         if (punishmentId == null || playerUuid == null) {
             return;
@@ -367,7 +368,7 @@ public class AppealService {
         }
 
         String punishmentId = (String) data.get("punishmentId");
-        String playerUuid = (String) data.get("playerUuid");
+        String playerUuid = normalizeUuid((String) data.get("playerUuid"));
 
         if (punishmentId == null || playerUuid == null) {
             return;

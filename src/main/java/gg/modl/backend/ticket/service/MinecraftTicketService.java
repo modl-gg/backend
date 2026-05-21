@@ -86,7 +86,7 @@ public class MinecraftTicketService {
                 .id(UUID.randomUUID().toString())
                 .content(request.description())
                 .name(request.creatorName() != null ? request.creatorName() : "Player")
-                .creatorIdentifier(request.creatorUuid())
+                .creatorIdentifier(normalizeUuid(request.creatorUuid()))
                 .staff(false)
                 .type("user")
                 .created(now)
@@ -110,7 +110,7 @@ public class MinecraftTicketService {
     }
 
     public List<Ticket> getMinecraftTicketsByCreator(Server server, String creatorUuid, int limit) {
-        return ticketRepository.findRecentByCreator(server, creatorUuid, limit);
+        return ticketRepository.findRecentByCreator(server, normalizeUuid(creatorUuid), limit);
     }
 
     public MinecraftTicketClaimResult claimMinecraftTicket(Server server, String ticketId, MinecraftClaimTicketRequest request) {
@@ -181,7 +181,7 @@ public class MinecraftTicketService {
     }
 
     public List<Map<String, Object>> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
-        return ticketRepository.findReports(server, status, playerUuid, limit, false)
+        return ticketRepository.findReports(server, status, normalizeUuid(playerUuid), limit, false)
             .stream()
             .map(this::toMinecraftReport)
             .toList();

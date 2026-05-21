@@ -82,7 +82,7 @@ public class MinecraftSyncService {
         if (onlinePlayers != null) {
             for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
                 if (onlinePlayer.uuid() != null) {
-                    onlineUuids.add(onlinePlayer.uuid());
+                    onlineUuids.add(normalizeUuid(onlinePlayer.uuid()));
                 }
             }
         }
@@ -240,7 +240,7 @@ public class MinecraftSyncService {
         if (onlinePlayers != null) {
             for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
                 if (onlinePlayer.uuid() != null && onlinePlayer.ipAddress() != null) {
-                    onlinePlayerIps.put(onlinePlayer.uuid(), onlinePlayer.ipAddress());
+                    onlinePlayerIps.put(normalizeUuid(onlinePlayer.uuid()), onlinePlayer.ipAddress());
                 }
             }
         }
@@ -449,5 +449,9 @@ public class MinecraftSyncService {
     }
 
     public record CommandLogInput(String uuid, String username, String command, long timestamp, String server) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

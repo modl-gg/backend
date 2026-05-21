@@ -42,7 +42,7 @@ public class EvidenceUploadService {
             return TokenValidationResult.invalid();
         }
 
-        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), uploadToken.playerUuid())
+        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), normalizeUuid(uploadToken.playerUuid()))
             .orElse(null);
         String playerName = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : "Unknown";
 
@@ -255,5 +255,9 @@ public class EvidenceUploadService {
                 case INVALID_URL -> HttpStatus.BAD_REQUEST;
             };
         }
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }
