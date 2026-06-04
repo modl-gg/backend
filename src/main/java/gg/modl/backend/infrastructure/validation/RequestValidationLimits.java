@@ -39,6 +39,7 @@ public final class RequestValidationLimits {
     public static final int PUNISHMENT_TYPE_NAME_MIN_LENGTH = 2;
     public static final int PUNISHMENT_TYPE_NAME_MAX_LENGTH = 64;
     public static final int PUNISHMENT_DESCRIPTION_MAX_LENGTH = 500;
+    public static final int PUNISHMENT_STAFF_DESCRIPTION_MAX_LENGTH = 4_000;
     public static final int PUNISHMENT_POINTS_MIN = 0;
     public static final int PUNISHMENT_POINTS_MAX = 1_000;
     public static final int PUNISHMENT_CATEGORY_MAX_LENGTH = 64;
