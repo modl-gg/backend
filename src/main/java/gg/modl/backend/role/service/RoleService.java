@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -201,6 +202,7 @@ public class RoleService {
         }
     }
 
+    @Transactional
     public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         // Cannot update Super Admin role
         if (id.contains("super-admin")) {
