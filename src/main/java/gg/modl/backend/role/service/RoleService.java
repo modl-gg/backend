@@ -240,16 +240,16 @@ public class RoleService {
 
         String oldRoleName = updated.getName();
 
+        if (!oldRoleName.equals(roleName)) {
+            staffService.updateRoleNameCascade(server, oldRoleName, roleName);
+        }
+
         updated.setName(roleName);
         updated.setDescription(request.description());
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
         updated = staffRoleRepository.saveEntity(server, updated);
         permissionService.evictPermissionCache();
-
-        if (!oldRoleName.equals(roleName)) {
-            staffService.updateRoleNameCascade(server, oldRoleName, roleName);
-        }
 
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 

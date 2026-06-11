@@ -236,7 +236,9 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public void updateRoleName(Server server, String oldRoleName, String newRoleName) {
         Query query = Query.query(Criteria.where(StaffFields.ROLE).is(oldRoleName));
-        Update update = new Update().set(StaffFields.ROLE, newRoleName);
+        Update update = new Update()
+            .set(StaffFields.ROLE, newRoleName)
+            .set(StaffFields.UPDATED_AT, new Date());
         updateMulti(server, query, update);
     }
 }

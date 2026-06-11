@@ -54,7 +54,9 @@ public class InvitationMongoRepository extends AbstractServerMongoRepository<Inv
 
     public void updateRoleName(Server server, String oldRoleName, String newRoleName) {
         Query query = Query.query(Criteria.where(InvitationFields.ROLE).is(oldRoleName));
-        Update update = new Update().set(InvitationFields.ROLE, newRoleName);
+        Update update = new Update()
+            .set(InvitationFields.ROLE, newRoleName)
+            .set(InvitationFields.UPDATED_AT, new Date());
         updateMulti(server, query, update);
     }
 }
