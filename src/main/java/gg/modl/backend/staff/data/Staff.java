@@ -39,8 +39,9 @@ public class Staff {
     @Field("username")
     private String username;
 
+    // Mongo column stays "role", but this holds the StaffRole id, not the display name
     @Field("role")
-    private String role;
+    private String roleId;
 
 
     @Field("assignedMinecraftUuid")

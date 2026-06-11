@@ -6,11 +6,15 @@ import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +30,10 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class TenantMigrationService {
     static final String LOWERCASE_TICKET_UUIDS_MIGRATION_ID = "lowercase-ticket-uuids";
+    static final String BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID = "backfill-staff-role-ids";
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
+    private static final String ROLE_FIELD = "role";
+    private static final String ID_FIELD = "_id";
 
     private final TenantMongoAccess tenantMongoAccess;
     private final ServerMongoRepository serverRepository;
@@ -67,6 +74,7 @@ public class TenantMigrationService {
 
     void applyMigrationsForTenant(MongoTemplate template) {
         runMigrationOnce(template, LOWERCASE_TICKET_UUIDS_MIGRATION_ID, this::lowercaseTicketUuids);
+        runMigrationOnce(template, BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID, this::backfillStaffRoleIds);
     }
 
     private void runMigrationOnce(MongoTemplate template, String migrationId, MigrationStep step) {
@@ -108,6 +116,52 @@ public class TenantMigrationService {
         UpdateResult result = tickets.updateMany(filter, pipeline);
         log.info("Lowercased ticket UUIDs in database={} matched={} modified={}",
             template.getDb().getName(), result.getMatchedCount(), result.getModifiedCount());
+    }
+
+    // Staff and invitations historically stored the role display name; this rewrites those references to the
+    // immutable StaffRole id so a later role rename can no longer orphan them. Idempotent and safe to re-run:
+    // a value that is already a role id is left alone, and names that collide with a role id are skipped.
+    private void backfillStaffRoleIds(MongoTemplate template) {
+        List<Document> roles = template.getCollection(CollectionName.STAFF_ROLES)
+            .find()
+            .into(new ArrayList<>());
+
+        Set<String> roleIds = new HashSet<>();
+        for (Document role : roles) {
+            String id = role.getString(ID_FIELD);
+            if (id != null) {
+                roleIds.add(id);
+            }
+        }
+
+        MongoCollection<Document> staff = template.getCollection(CollectionName.STAFF);
+        MongoCollection<Document> invitations = template.getCollection(CollectionName.INVITATIONS);
+
+        long staffUpdated = 0;
+        long invitationsUpdated = 0;
+        for (Document role : roles) {
+            String id = role.getString(ID_FIELD);
+            String name = role.getString(StaffRoleFields.NAME);
+            if (id == null || name == null || name.equals(id)) {
+                continue;
+            }
+            if (roleIds.contains(name)) {
+                log.warn("Skipping role-id backfill for role name '{}' in database={} because it collides with an existing role id",
+                    name, template.getDb().getName());
+                continue;
+            }
+            staffUpdated += staff.updateMany(Filters.eq(ROLE_FIELD, name), Updates.set(ROLE_FIELD, id)).getModifiedCount();
+            invitationsUpdated += invitations.updateMany(Filters.eq(ROLE_FIELD, name), Updates.set(ROLE_FIELD, id)).getModifiedCount();
+        }
+
+        long staffOrphans = staff.countDocuments(Filters.nin(ROLE_FIELD, roleIds));
+        long invitationOrphans = invitations.countDocuments(Filters.nin(ROLE_FIELD, roleIds));
+        if (staffOrphans > 0 || invitationOrphans > 0) {
+            log.warn("Role-id backfill left unresolved role references in database={} staffOrphans={} invitationOrphans={}",
+                template.getDb().getName(), staffOrphans, invitationOrphans);
+        }
+        log.info("Backfilled staff role ids in database={} staffUpdated={} invitationsUpdated={}",
+            template.getDb().getName(), staffUpdated, invitationsUpdated);
     }
 
     private static Document conditionalLowercase(String field) {

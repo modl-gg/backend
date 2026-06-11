@@ -11,7 +11,6 @@ import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
@@ -51,7 +50,7 @@ class StaffServiceUuidNormalizationTest {
             .id("staff-id")
             .email("target@example.com")
             .username("target")
-            .role("Helper")
+            .roleId("helper")
             .build();
         Player player = Player.builder()
             .minecraftUuid(UUID.randomUUID())
@@ -78,7 +77,6 @@ class StaffServiceUuidNormalizationTest {
         return new StaffService(
             mock(InvitationMongoRepository.class),
             staffRepository,
-            mock(StaffRoleMongoRepository.class),
             playerRepository,
             mock(PunishmentMongoRepository.class),
             mock(ServerMongoRepository.class),

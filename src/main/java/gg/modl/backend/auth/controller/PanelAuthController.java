@@ -151,7 +151,7 @@ public class PanelAuthController {
             return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
         }
         Staff staff = result.get();
-        String role = isSuperAdmin ? "Super Admin" : staff.getRole();
+        String role = isSuperAdmin ? "Super Admin" : permissionService.resolveRoleName(server, staff.getRoleId());
         String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                                    ? staff.getAssignedMinecraftUsername()
                                    : staff.getUsername();
@@ -243,7 +243,7 @@ public class PanelAuthController {
 
         if (staffOpt.isPresent()) {
             Staff staff = staffOpt.get();
-            String role = isSuperAdmin ? "Super Admin" : staff.getRole();
+            String role = isSuperAdmin ? "Super Admin" : permissionService.resolveRoleName(server, staff.getRoleId());
             // Include Minecraft username if assigned, fall back to panel username
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                                        ? staff.getAssignedMinecraftUsername()
@@ -310,8 +310,8 @@ public class PanelAuthController {
             return ResponseEntity.ok(Collections.emptyList());
         }
 
-        String roleName = staffOpt.get().getRole();
-        Optional<StaffRole> roleOpt = permissionService.getRoleByName(server, roleName);
+        String roleId = staffOpt.get().getRoleId();
+        Optional<StaffRole> roleOpt = permissionService.getRoleById(server, roleId);
 
         return roleOpt.map(staffRole -> ResponseEntity.ok(staffRole.getPermissions()))
             .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));

@@ -68,7 +68,7 @@ public class AuditMongoRepository {
 
     public List<Staff> findAllStaff(Server server) {
         Query query = new Query();
-        query.fields().include(StaffFields.ID, StaffFields.USERNAME, StaffFields.EMAIL, StaffFields.ROLE, StaffFields.ASSIGNED_MINECRAFT_USERNAME, StaffFields.UPDATED_AT);
+        query.fields().include(StaffFields.ID, StaffFields.USERNAME, StaffFields.EMAIL, StaffFields.ROLE_ID, StaffFields.ASSIGNED_MINECRAFT_USERNAME, StaffFields.UPDATED_AT);
         return tenantMongoAccess.forServer(server).find(query, Staff.class, CollectionName.STAFF);
     }
 

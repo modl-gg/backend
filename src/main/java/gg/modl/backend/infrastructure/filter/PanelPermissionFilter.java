@@ -91,8 +91,8 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         }
 
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
-        String role = staffOpt.map(Staff::getRole).orElse(null);
-        boolean authorized = role != null && hasRequiredPermission(server, role, requiredPermission, request.getRequestURI(), request.getMethod());
+        String roleId = staffOpt.map(Staff::getRoleId).orElse(null);
+        boolean authorized = roleId != null && hasRequiredPermission(server, roleId, requiredPermission, request.getRequestURI(), request.getMethod());
         if (!authorized) {
             deny(response);
             return;

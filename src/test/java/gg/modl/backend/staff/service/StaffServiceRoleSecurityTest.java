@@ -9,7 +9,6 @@ import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.role.data.StaffRole;
@@ -27,12 +26,10 @@ class StaffServiceRoleSecurityTest {
     @Test
     void memberManagerCannotAssignHigherRole() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
         StaffService service = new StaffService(
             mock(InvitationMongoRepository.class),
             staffRepository,
-            roleRepository,
             mock(PlayerMongoRepository.class),
             mock(PunishmentMongoRepository.class),
             mock(ServerMongoRepository.class),
@@ -45,15 +42,16 @@ class StaffServiceRoleSecurityTest {
             .id("staff-id")
             .email("target@example.com")
             .username("target")
-            .role("Helper")
+            .roleId("helper")
             .build();
         when(staffRepository.findById(server, "staff-id")).thenReturn(Optional.of(target));
-        when(permissionService.getRoleByName(server, "Helper")).thenReturn(Optional.of(role("helper", "Helper", 3)));
+        // The requested role arrives as a name; the performer is identified by their stored role id.
         when(permissionService.getRoleByName(server, "Admin")).thenReturn(Optional.of(role("admin", "Admin", 1)));
+        when(permissionService.getRoleById(server, "helper")).thenReturn(Optional.of(role("helper", "Helper", 3)));
 
         assertThrows(
             ForbiddenException.class,
-            () -> service.updateStaffRole(server, "staff-id", "Admin", "actor@example.com", "Helper")
+            () -> service.updateStaffRole(server, "staff-id", "Admin", "actor@example.com", "helper")
         );
     }
 

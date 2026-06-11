@@ -73,11 +73,11 @@ public class PunishmentLifecycleService {
             .orElseThrow(() -> new ValidationException("Invalid punishment type"));
 
         String applyPermission = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
-        String role = staffRepository.findByEmailIgnoreCase(server, email)
-            .map(Staff::getRole)
+        String roleId = staffRepository.findByEmailIgnoreCase(server, email)
+            .map(Staff::getRoleId)
             .orElse(null);
 
-        if (!permissionService.hasPermission(server, role, applyPermission)) {
+        if (!permissionService.hasPermission(server, roleId, applyPermission)) {
             throw new ForbiddenException("You do not have permission to apply this punishment type");
         }
     }

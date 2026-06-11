@@ -38,10 +38,10 @@ public class RoleService {
         fixCustomRoleOrdering(server);
 
         List<StaffRole> roles = staffRoleRepository.findAllOrdered(server);
-        Map<String, Integer> roleCounts = staffRepository.countByRoleName(server);
+        Map<String, Integer> roleCounts = staffRepository.countByRoleId(server);
 
         return roles.stream()
-            .map(role -> toRoleResponse(role, roleCounts.getOrDefault(role.getName(), 0)))
+            .map(role -> toRoleResponse(role, roleCounts.getOrDefault(role.getId(), 0)))
             .toList();
     }
 
@@ -81,12 +81,12 @@ public class RoleService {
             return Optional.empty();
         }
 
-        int staffCount = getStaffCountForRole(server, role.getName());
+        int staffCount = getStaffCountForRole(server, role.getId());
         return Optional.of(toRoleResponse(role, staffCount));
     }
 
-    private int getStaffCountForRole(Server server, String roleName) {
-        return staffRepository.countByRoleName(server, roleName);
+    private int getStaffCountForRole(Server server, String roleId) {
+        return staffRepository.countByRoleId(server, roleId);
     }
 
     public boolean updateRolePermissions(Server server, String id, List<String> permissions) {
@@ -103,7 +103,7 @@ public class RoleService {
         return true;
     }
 
-    public RoleResponse createRole(Server server, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
+    public RoleResponse createRole(Server server, RoleRequest request, String performerRoleId, boolean isSuperAdmin) {
         String roleName = request.name() != null ? request.name().trim() : "";
         ensureRoleNameAvailable(server, roleName, null);
 
@@ -116,7 +116,7 @@ public class RoleService {
 
         // Filter permissions to only those the performer can grant
         if (!isSuperAdmin) {
-            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
             filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
         }
 
@@ -143,7 +143,7 @@ public class RoleService {
         return toRoleResponse(newRole, 0);
     }
 
-    private StaffRole resolvePerformerRole(Server server, String roleName, boolean isSuperAdmin) {
+    private StaffRole resolvePerformerRole(Server server, String roleId, boolean isSuperAdmin) {
         if (isSuperAdmin) {
             // Synthetic super-admin role with order 0 and all permissions
             return StaffRole.builder()
@@ -153,10 +153,10 @@ public class RoleService {
                 .order(0)
                 .build();
         }
-        if (roleName == null || roleName.isBlank()) {
+        if (roleId == null || roleId.isBlank()) {
             throw new ForbiddenException("You do not have authority to perform this action");
         }
-        return permissionService.getRoleByName(server, roleName)
+        return permissionService.getRoleById(server, roleId)
             .orElseThrow(() -> new ForbiddenException("You do not have authority to perform this action"));
     }
 
@@ -194,7 +194,7 @@ public class RoleService {
         }
     }
 
-    public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
+    public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleId, boolean isSuperAdmin) {
         // Cannot update Super Admin role
         if (id.contains("super-admin")) {
             throw new ForbiddenException("Cannot modify Super Admin role");
@@ -202,7 +202,7 @@ public class RoleService {
 
         // Hierarchy check: performer must have higher authority than the target role
         if (!isSuperAdmin) {
-            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
             StaffRole targetRole = staffRoleRepository.findById(server, id).orElse(null);
             if (targetRole != null) {
                 assertHigherAuthority(performerRole, targetRole);
@@ -221,7 +221,7 @@ public class RoleService {
 
         // Filter permissions to only those the performer can grant
         if (!isSuperAdmin) {
-            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
             filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
         }
 
@@ -240,7 +240,7 @@ public class RoleService {
 
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
-        int staffCount = getStaffCountForRole(server, updated.getName());
+        int staffCount = getStaffCountForRole(server, updated.getId());
         return Optional.of(toRoleResponse(updated, staffCount));
     }
 
@@ -250,7 +250,7 @@ public class RoleService {
         }
     }
 
-    public boolean deleteRole(Server server, String id, String performerRoleName, boolean isSuperAdmin) {
+    public boolean deleteRole(Server server, String id, String performerRoleId, boolean isSuperAdmin) {
         // Cannot delete Super Admin role
         if (id.contains("super-admin")) {
             throw new ForbiddenException("Cannot delete Super Admin role");
@@ -265,11 +265,11 @@ public class RoleService {
 
         // Hierarchy check: performer must have higher authority than the target role
         if (!isSuperAdmin) {
-            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
             assertHigherAuthority(performerRole, role);
         }
 
-        int staffCount = getStaffCountForRole(server, role.getName());
+        int staffCount = getStaffCountForRole(server, role.getId());
         if (staffCount > 0) {
             throw new ConflictException("Cannot delete role that is currently assigned to staff members");
         }
@@ -281,12 +281,12 @@ public class RoleService {
         return deleted;
     }
 
-    public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleName, boolean isSuperAdmin) {
+    public void reorderRoles(Server server, ReorderRolesRequest request, String performerRoleId, boolean isSuperAdmin) {
         List<ReorderRolesRequest.RoleOrderItem> items = request.roleOrder();
         if (items.isEmpty()) return;
 
         if (!isSuperAdmin) {
-            StaffRole performerRole = resolvePerformerRole(server, performerRoleName, false);
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
             int performerOrder = performerRole.getOrder();
 
             List<String> ids = items.stream().map(ReorderRolesRequest.RoleOrderItem::id).toList();

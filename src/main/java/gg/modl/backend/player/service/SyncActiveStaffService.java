@@ -23,11 +23,13 @@ public class SyncActiveStaffService {
 
     public List<Map<String, Object>> getActiveStaffMembers(Server server, Map<String, String> onlinePlayerIps) {
         List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
-        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
+        Map<String, StaffRole> rolesById = loadRolesById(server, staffWithMinecraft);
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Staff staff : staffWithMinecraft) {
-            List<String> permissions = permissionsByRole.getOrDefault(staff.getRole(), List.of());
+            StaffRole role = staff.getRoleId() != null ? rolesById.get(staff.getRoleId()) : null;
+            List<String> permissions = role != null && role.getPermissions() != null ? role.getPermissions() : List.of();
+            String roleName = role != null ? role.getName() : (staff.getRoleId() != null ? staff.getRoleId() : "");
 
             String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
             boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null
@@ -40,7 +42,7 @@ public class SyncActiveStaffService {
             entry.put("minecraftUsername", staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "");
             entry.put("staffUsername", staff.getUsername() != null ? staff.getUsername() : "");
             entry.put("staffId", staff.getId());
-            entry.put("staffRole", staff.getRole() != null ? staff.getRole() : "");
+            entry.put("staffRole", roleName);
             entry.put("permissions", permissions);
             entry.put("email", staff.getEmail() != null ? staff.getEmail() : "");
             entry.put("twoFactorSessionValid", sessionValid);
@@ -50,19 +52,19 @@ public class SyncActiveStaffService {
         return result;
     }
 
-    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
-        Set<String> roleNames = new HashSet<>();
+    private Map<String, StaffRole> loadRolesById(Server server, List<Staff> staffMembers) {
+        Set<String> roleIds = new HashSet<>();
         for (Staff staff : staffMembers) {
-            if (staff.getRole() != null && !staff.getRole().isBlank()) {
-                roleNames.add(staff.getRole());
+            if (staff.getRoleId() != null && !staff.getRoleId().isBlank()) {
+                roleIds.add(staff.getRoleId());
             }
         }
-        if (roleNames.isEmpty()) {
+        if (roleIds.isEmpty()) {
             return Map.of();
         }
-        Map<String, List<String>> result = new HashMap<>();
-        for (StaffRole role : staffRoleRepository.findByNames(server, roleNames)) {
-            result.put(role.getName(), role.getPermissions() != null ? role.getPermissions() : List.of());
+        Map<String, StaffRole> result = new HashMap<>();
+        for (StaffRole role : staffRoleRepository.findByIds(server, roleIds)) {
+            result.put(role.getId(), role);
         }
         return result;
     }

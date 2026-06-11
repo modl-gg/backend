@@ -12,7 +12,6 @@ import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
@@ -33,12 +32,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -49,13 +47,14 @@ import org.springframework.stereotype.Service;
 public class StaffService {
     private final InvitationMongoRepository invitationRepository;
     private final StaffMongoRepository staffRepository;
-    private final StaffRoleMongoRepository staffRoleRepository;
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final ServerMongoRepository serverRepository;
     private final PlayerService playerService;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
+
+    private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
 
     private final Cache<String, Optional<Staff>> staffByEmailCache = Caffeine.newBuilder()
         .maximumSize(1000)
@@ -66,6 +65,12 @@ public class StaffService {
         List<Staff> staffMembers = staffRepository.findAll(server);
         List<Invitation> pendingInvitations = invitationRepository.findActiveInvitations(server, new Date());
 
+        Set<String> roleIds = new HashSet<>();
+        staffMembers.forEach(staff -> roleIds.add(staff.getRoleId()));
+        pendingInvitations.forEach(invitation -> roleIds.add(invitation.getRoleId()));
+        roleIds.add(SUPER_ADMIN_ROLE_ID);
+        Map<String, String> roleNamesById = permissionService.resolveRoleNames(server, roleIds);
+
         List<StaffResponse> result = new ArrayList<>();
 
         // Check if the Super Admin already has a staff record
@@ -73,7 +78,7 @@ public class StaffService {
         boolean superAdminFound = false;
 
         for (Staff staff : staffMembers) {
-            result.add(toStaffResponse(staff, "Active"));
+            result.add(toStaffResponse(staff, "Active", fallbackRoleName(roleNamesById, staff.getRoleId())));
             if (adminEmail != null && adminEmail.equalsIgnoreCase(staff.getEmail())) {
                 superAdminFound = true;
             }
@@ -84,11 +89,11 @@ public class StaffService {
             Staff superAdmin = Staff.builder()
                 .email(adminEmail)
                 .username("Admin")
-                .role("Super Admin")
+                .roleId(SUPER_ADMIN_ROLE_ID)
                 .createdAt(server.getCreatedAt())
                 .updatedAt(new Date())
                 .build();
-            result.add(0, toStaffResponse(superAdmin, "Active"));
+            result.add(0, toStaffResponse(superAdmin, "Active", fallbackRoleName(roleNamesById, SUPER_ADMIN_ROLE_ID)));
         }
 
         for (Invitation invitation : pendingInvitations) {
@@ -96,7 +101,7 @@ public class StaffService {
                 invitation.getId(),
                 invitation.getEmail(),
                 null,
-                invitation.getRole(),
+                fallbackRoleName(roleNamesById, invitation.getRoleId()),
                 "Pending Invitation",
                 null,
                 null,
@@ -107,12 +112,12 @@ public class StaffService {
         return result;
     }
 
-    private StaffResponse toStaffResponse(Staff staff, String status) {
+    private StaffResponse toStaffResponse(Staff staff, String status, String roleName) {
         return new StaffResponse(
             staff.getId(),
             staff.getEmail(),
             staff.getUsername(),
-            staff.getRole(),
+            roleName,
             status,
             staff.getAssignedMinecraftUuid(),
             staff.getAssignedMinecraftUsername(),
@@ -120,8 +125,19 @@ public class StaffService {
         );
     }
 
+    private StaffResponse toStaffResponse(Server server, Staff staff, String status) {
+        return toStaffResponse(staff, status, permissionService.resolveRoleName(server, staff.getRoleId()));
+    }
+
+    private static String fallbackRoleName(Map<String, String> roleNamesById, String roleId) {
+        if (roleId == null) {
+            return "";
+        }
+        return roleNamesById.getOrDefault(roleId, roleId);
+    }
+
     public Optional<StaffResponse> getStaffByUsername(Server server, String username) {
-        return staffRepository.findByUsername(server, username).map(s -> toStaffResponse(s, "Active"));
+        return staffRepository.findByUsername(server, username).map(s -> toStaffResponse(server, s, "Active"));
     }
 
     public boolean checkUsernameExists(Server server, String username) {
@@ -133,13 +149,13 @@ public class StaffService {
             throw new ConflictException("Staff member with this email or username already exists");
         }
 
-        String role = request.role() != null ? request.role() : "Helper";
-        role = validateGrantableRole(server, role, performerRole).getName();
+        String requestedRole = request.role() != null ? request.role() : "Helper";
+        StaffRole grantedRole = validateGrantableRole(server, requestedRole, performerRole);
 
         Staff staff = Staff.builder()
             .email(request.email())
             .username(request.username())
-            .role(role)
+            .roleId(grantedRole.getId())
             .createdAt(new Date())
             .updatedAt(new Date())
             .build();
@@ -147,7 +163,7 @@ public class StaffService {
         staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
 
-        return toStaffResponse(staff, "Active");
+        return toStaffResponse(server, staff, "Active");
     }
 
     public Optional<StaffResponse> updateStaff(Server server, String username, UpdateStaffRequest request, String currentUserEmail) {
@@ -181,10 +197,10 @@ public class StaffService {
             staff = staffRepository.saveEntity(server, staff);
         }
 
-        return Optional.ofNullable(staff).map(s -> toStaffResponse(s, "Active"));
+        return Optional.ofNullable(staff).map(s -> toStaffResponse(server, s, "Active"));
     }
 
-    public boolean deleteStaff(Server server, String id, String removerEmail, String removerRole) {
+    public boolean deleteStaff(Server server, String id, String removerEmail) {
         if (invitationRepository.deleteById(server, id)) {
             return true;
         }
@@ -227,28 +243,29 @@ public class StaffService {
         }
 
         StaffRole validatedRole = validateGrantableRole(server, newRole, performerRole);
-        staff.setRole(validatedRole.getName());
+        staff.setRoleId(validatedRole.getId());
         staff.setUpdatedAt(new Date());
         Staff saved = staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
-        return Optional.of(toStaffResponse(saved, "Active"));
+        return Optional.of(toStaffResponse(server, saved, "Active"));
     }
 
-    private StaffRole validateGrantableRole(Server server, String targetRoleName, String performerRoleName) {
+    // targetRoleName is the requested role (clients send role names); performerRoleId is the acting staff's stored role id.
+    private StaffRole validateGrantableRole(Server server, String targetRoleName, String performerRoleId) {
         StaffRole targetRole = permissionService.getRoleByName(server, targetRoleName)
             .orElseThrow(() -> new ValidationException("Unknown staff role"));
-        if ("super-admin".equals(targetRole.getId()) || "Super Admin".equals(targetRole.getName())) {
+        if (SUPER_ADMIN_ROLE_ID.equals(targetRole.getId())) {
             throw new ForbiddenException("You do not have authority to grant this role");
         }
-        if (performerRoleName == null || performerRoleName.isBlank()) {
+        if (performerRoleId == null || performerRoleId.isBlank()) {
             throw new ForbiddenException("You do not have authority to grant staff roles");
         }
-        if ("Super Admin".equals(performerRoleName)) {
+        if (SUPER_ADMIN_ROLE_ID.equals(performerRoleId)) {
             return targetRole;
         }
-        StaffRole performerRole = permissionService.getRoleByName(server, performerRoleName)
+        StaffRole performerRole = permissionService.getRoleById(server, performerRoleId)
             .orElseThrow(() -> new ForbiddenException("You do not have authority to grant staff roles"));
         if (performerRole.getOrder() >= targetRole.getOrder()) {
             throw new ForbiddenException("You do not have authority to grant this role");
@@ -261,7 +278,7 @@ public class StaffService {
 
         PlayerStaffData playerStaffData = loadPlayerStaffData(server, allStaff);
         Map<String, Integer> punishmentCounts = loadPunishmentCounts(server);
-        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, allStaff);
+        Map<String, StaffRole> rolesById = loadRolesByStaffRoleId(server, allStaff);
 
         return allStaff.stream()
             .map(staff -> {
@@ -276,10 +293,10 @@ public class StaffService {
                     staff.getId(),
                     staff.getUsername(),
                     staff.getEmail(),
-                    staff.getRole(),
+                    roleNameOrFallback(rolesById, staff.getRoleId()),
                     staff.getAssignedMinecraftUuid(),
                     staff.getAssignedMinecraftUsername(),
-                    permissionsByRole.getOrDefault(staff.getRole(), List.of()),
+                    rolePermissions(rolesById, staff.getRoleId()),
                     staff.getLastSeen(),
                     playerStaffData.playtimeMap().getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
                     playerStaffData.lastServerMap().get(staff.getAssignedMinecraftUuid()),
@@ -337,28 +354,29 @@ public class StaffService {
         }
     }
 
-    private Map<String, List<String>> loadPermissionsByRole(Server server, List<Staff> staffMembers) {
-        Set<String> roleNames = staffMembers.stream()
-            .map(Staff::getRole)
-            .filter(role -> role != null && !role.isBlank())
-            .collect(Collectors.toSet());
-        if (roleNames.isEmpty()) {
-            return Map.of();
-        }
+    private Map<String, StaffRole> loadRolesByStaffRoleId(Server server, List<Staff> staffMembers) {
+        List<String> roleIds = staffMembers.stream()
+            .map(Staff::getRoleId)
+            .toList();
+        return permissionService.getRolesByIds(server, roleIds);
+    }
 
-        return staffRoleRepository.findByNames(server, roleNames)
-            .stream()
-            .collect(Collectors.toMap(
-                StaffRole::getName,
-                role -> role.getPermissions() != null ? role.getPermissions() : List.of(),
-                (left, right) -> left,
-                LinkedHashMap::new
-            ));
+    private static String roleNameOrFallback(Map<String, StaffRole> rolesById, String roleId) {
+        StaffRole role = roleId != null ? rolesById.get(roleId) : null;
+        if (role != null) {
+            return role.getName();
+        }
+        return roleId != null ? roleId : "";
+    }
+
+    private static List<String> rolePermissions(Map<String, StaffRole> rolesById, String roleId) {
+        StaffRole role = roleId != null ? rolesById.get(roleId) : null;
+        return role != null && role.getPermissions() != null ? role.getPermissions() : List.of();
     }
 
     public List<MinecraftStaffPermissionsResponse> getMinecraftStaffPermissions(Server server) {
         List<Staff> staffWithMinecraft = staffRepository.findAssignedMinecraftStaff(server);
-        Map<String, List<String>> permissionsByRole = loadPermissionsByRole(server, staffWithMinecraft);
+        Map<String, StaffRole> rolesById = loadRolesByStaffRoleId(server, staffWithMinecraft);
 
         return staffWithMinecraft.stream()
             .map(staff -> new MinecraftStaffPermissionsResponse(
@@ -366,8 +384,8 @@ public class StaffService {
                 staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
                 staff.getUsername() != null ? staff.getUsername() : "",
                 staff.getId(),
-                staff.getRole() != null ? staff.getRole() : "",
-                permissionsByRole.getOrDefault(staff.getRole(), List.of()),
+                roleNameOrFallback(rolesById, staff.getRoleId()),
+                rolePermissions(rolesById, staff.getRoleId()),
                 staff.getEmail() != null ? staff.getEmail() : ""
             ))
             .toList();
@@ -379,11 +397,10 @@ public class StaffService {
             return false;
         }
 
-        if (!staffRoleRepository.existsByName(server, roleName)) {
-            throw new ResourceNotFoundException("Role not found");
-        }
+        StaffRole role = permissionService.getRoleByName(server, roleName)
+            .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
 
-        staff.setRole(roleName);
+        staff.setRoleId(role.getId());
         staff.setUpdatedAt(new Date());
         staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
@@ -410,7 +427,7 @@ public class StaffService {
             staffRepository.saveEntity(server, staff);
             evictStaffByEmailCache(server, staff.getEmail());
             serverTimestampService.updateStaffPermissionsTimestamp(server);
-            return Optional.of(toStaffResponse(staff, "Active"));
+            return Optional.of(toStaffResponse(server, staff, "Active"));
         }
 
         Player player = request.minecraftUuid() != null && !request.minecraftUuid().isEmpty()
@@ -435,7 +452,7 @@ public class StaffService {
         staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
-        return Optional.of(toStaffResponse(staff, "Active"));
+        return Optional.of(toStaffResponse(server, staff, "Active"));
     }
 
     public List<AvailablePlayerResponse> getAvailablePlayers(Server server) {
@@ -510,7 +527,7 @@ public class StaffService {
             staff = Staff.builder()
                 .email(newEmail)
                 .username("Admin")
-                .role("Super Admin")
+                .roleId(SUPER_ADMIN_ROLE_ID)
                 .createdAt(new Date())
                 .updatedAt(new Date())
                 .build();

@@ -55,10 +55,10 @@ class PanelPermissionFilterTest {
         request.setAttribute(RequestAttribute.SESSION, session);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
-        Staff staff = Staff.builder().email("staff@example.com").role("Helper").build();
+        Staff staff = Staff.builder().email("staff@example.com").roleId("helper").build();
         when(permissionService.isSuperAdmin(server, "staff@example.com")).thenReturn(false);
         when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
-        when(permissionService.hasPermission(server, "Helper", "admin.audit.view.dashboard")).thenReturn(false);
+        when(permissionService.hasPermission(server, "helper", "admin.audit.view.dashboard")).thenReturn(false);
 
         filter.doFilter(request, response, chain);
 
@@ -79,10 +79,10 @@ class PanelPermissionFilterTest {
         request.setAttribute(RequestAttribute.SESSION, session);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
-        Staff staff = Staff.builder().email("staff@example.com").role("Helper").build();
+        Staff staff = Staff.builder().email("staff@example.com").roleId("helper").build();
         when(permissionService.isSuperAdmin(server, "staff@example.com")).thenReturn(false);
         when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
-        when(permissionService.hasPermission(server, "Helper", "admin.audit.view.dashboard")).thenReturn(false);
+        when(permissionService.hasPermission(server, "helper", "admin.audit.view.dashboard")).thenReturn(false);
 
         filter.doFilter(request, response, chain);
 
@@ -103,11 +103,11 @@ class PanelPermissionFilterTest {
         request.setAttribute(RequestAttribute.SESSION, session);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
-        Staff staff = Staff.builder().email("staff@example.com").role("Helper").build();
+        Staff staff = Staff.builder().email("staff@example.com").roleId("helper").build();
         when(permissionService.isSuperAdmin(server, "staff@example.com")).thenReturn(false);
         when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
-        when(permissionService.hasPermission(server, "Helper", "appeal.modify")).thenReturn(false);
-        when(permissionService.hasPermission(server, "Helper", "ticket.reply.all")).thenReturn(true);
+        when(permissionService.hasPermission(server, "helper", "appeal.modify")).thenReturn(false);
+        when(permissionService.hasPermission(server, "helper", "ticket.reply.all")).thenReturn(true);
 
         filter.doFilter(request, response, chain);
 
@@ -127,10 +127,10 @@ class PanelPermissionFilterTest {
         request.setAttribute(RequestAttribute.SESSION, session);
         MockHttpServletResponse response = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
-        Staff staff = Staff.builder().email("staff@example.com").role("Helper").build();
+        Staff staff = Staff.builder().email("staff@example.com").roleId("helper").build();
         when(permissionService.isSuperAdmin(server, "staff@example.com")).thenReturn(false);
         when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
-        when(permissionService.hasPermission(server, "Helper", "appeal.modify")).thenReturn(false);
+        when(permissionService.hasPermission(server, "helper", "appeal.modify")).thenReturn(false);
 
         filter.doFilter(request, response, chain);
 

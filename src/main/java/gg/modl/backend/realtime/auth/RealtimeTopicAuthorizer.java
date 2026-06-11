@@ -47,8 +47,8 @@ public class RealtimeTopicAuthorizer {
         }
 
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
-        String role = staffOpt.map(Staff::getRole).orElse(null);
-        return role != null && permissionService.hasPermission(server, role, permission);
+        String roleId = staffOpt.map(Staff::getRoleId).orElse(null);
+        return roleId != null && permissionService.hasPermission(server, roleId, permission);
     }
 
     private boolean isMinecraftTopic(RealtimePrincipal principal, Topic topic) {

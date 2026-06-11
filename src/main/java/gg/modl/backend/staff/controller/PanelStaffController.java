@@ -117,11 +117,8 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String removerEmail = RequestUtil.getSessionEmail(request);
-        String removerRole = staffService.getStaffByEmail(server, removerEmail)
-            .map(staff -> staff.getRole())
-            .orElse("");
 
-        boolean deleted = staffService.deleteStaff(server, id, removerEmail, removerRole);
+        boolean deleted = staffService.deleteStaff(server, id, removerEmail);
         if (deleted) {
             return ResponseEntity.ok(Map.of("message", "Removed successfully."));
         }
@@ -189,10 +186,10 @@ public class PanelStaffController {
 
     private String resolvePerformerRole(Server server, String email) {
         if (email != null && server.getAdminEmail() != null && email.equalsIgnoreCase(server.getAdminEmail())) {
-            return "Super Admin";
+            return "super-admin";
         }
         return staffService.getStaffByEmail(server, email)
-            .map(staff -> staff.getRole())
+            .map(staff -> staff.getRoleId())
             .orElse("");
     }
 }

@@ -11,9 +11,14 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -129,18 +134,18 @@ public class PermissionService {
         return permissions;
     }
 
-    public boolean hasPermission(Server server, String staffRole, String permission) {
-        if (staffRole == null || staffRole.isBlank()) {
+    public boolean hasPermission(Server server, String roleId, String permission) {
+        if (roleId == null || roleId.isBlank()) {
             return false;
         }
 
-        String trimmedRole = staffRole.trim();
+        String trimmedRole = roleId.trim();
         String cacheKey = server.getId() + ":" + trimmedRole + ":" + permission;
         return permissionCache.get(cacheKey, key -> computeHasPermission(server, trimmedRole, permission));
     }
 
-    private boolean computeHasPermission(Server server, String staffRole, String permission) {
-        StaffRole role = staffRoleRepository.findByName(server, staffRole).orElse(null);
+    private boolean computeHasPermission(Server server, String roleId, String permission) {
+        StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
 
         if (role == null) {
             return false;
@@ -171,6 +176,39 @@ public class PermissionService {
         }
 
         return staffRoleRepository.findByName(server, roleName.trim());
+    }
+
+    public Optional<StaffRole> getRoleById(Server server, String roleId) {
+        if (roleId == null || roleId.isBlank()) {
+            return Optional.empty();
+        }
+
+        return staffRoleRepository.findById(server, roleId.trim());
+    }
+
+    public Map<String, StaffRole> getRolesByIds(Server server, Collection<String> roleIds) {
+        Set<String> ids = roleIds.stream()
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return staffRoleRepository.findByIds(server, ids).stream()
+            .collect(Collectors.toMap(StaffRole::getId, Function.identity(), (left, right) -> left, LinkedHashMap::new));
+    }
+
+    public Map<String, String> resolveRoleNames(Server server, Collection<String> roleIds) {
+        Map<String, String> names = new LinkedHashMap<>();
+        getRolesByIds(server, roleIds).forEach((id, role) -> names.put(id, role.getName()));
+        return names;
+    }
+
+    // Resolves a stored role id to its display name; falls back to the raw id so an orphaned reference stays visible.
+    public String resolveRoleName(Server server, String roleId) {
+        if (roleId == null || roleId.isBlank()) {
+            return "";
+        }
+        return getRoleById(server, roleId).map(StaffRole::getName).orElse(roleId);
     }
 
     public boolean isSuperAdmin(Server server, String staffEmail) {

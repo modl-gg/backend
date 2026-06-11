@@ -72,18 +72,18 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = getStaffRole(server, performerEmail);
+        String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        RoleResponse role = roleService.createRole(server, createRequest, performerRoleName, isSuperAdmin);
+        RoleResponse role = roleService.createRole(server, createRequest, performerRoleId, isSuperAdmin);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
             "message", "Role created successfully",
             "role", role
         ));
     }
 
-    private String getStaffRole(Server server, String email) {
+    private String getStaffRoleId(Server server, String email) {
         return staffService.getStaffByEmail(server, email)
-            .map(Staff::getRole).orElse(null);
+            .map(Staff::getRoleId).orElse(null);
     }
 
     @PutMapping("/{id}")
@@ -95,9 +95,9 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = getStaffRole(server, performerEmail);
+        String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        return roleService.updateRole(server, id, updateRequest, performerRoleName, isSuperAdmin)
+        return roleService.updateRole(server, id, updateRequest, performerRoleId, isSuperAdmin)
             .map(role -> ResponseEntity.ok(Map.of(
                 "message", "Role updated successfully",
                 "role", role
@@ -113,9 +113,9 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = getStaffRole(server, performerEmail);
+        String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        boolean deleted = roleService.deleteRole(server, id, performerRoleName, isSuperAdmin);
+        boolean deleted = roleService.deleteRole(server, id, performerRoleId, isSuperAdmin);
         if (deleted) {
             return ResponseEntity.ok(Map.of("message", "Role deleted successfully"));
         } else {
@@ -131,9 +131,9 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
-        String performerRoleName = getStaffRole(server, performerEmail);
+        String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        roleService.reorderRoles(server, reorderRequest, performerRoleName, isSuperAdmin);
+        roleService.reorderRoles(server, reorderRequest, performerRoleId, isSuperAdmin);
         return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
     }
 }

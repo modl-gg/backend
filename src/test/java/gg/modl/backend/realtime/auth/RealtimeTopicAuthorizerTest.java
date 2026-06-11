@@ -25,10 +25,10 @@ class RealtimeTopicAuthorizerTest {
 
         Staff staff = Staff.builder()
             .email("staff@example.com")
-            .role("Support")
+            .roleId("support")
             .build();
         when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
-        when(permissionService.hasPermission(server, "Support", "ticket.view.all")).thenReturn(true);
+        when(permissionService.hasPermission(server, "support", "ticket.view.all")).thenReturn(true);
 
         assertTrue(authorizer.canSubscribe(
             RealtimePrincipal.panel(server, "staff@example.com"),

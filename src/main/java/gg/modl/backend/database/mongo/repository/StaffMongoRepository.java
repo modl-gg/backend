@@ -98,20 +98,20 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         return updateFirst(server, query, update).getModifiedCount() > 0;
     }
 
-    public int countByRoleName(Server server, String roleName) {
-        return (int) count(server, Query.query(Criteria.where(StaffFields.ROLE).is(roleName)));
+    public int countByRoleId(Server server, String roleId) {
+        return (int) count(server, Query.query(Criteria.where(StaffFields.ROLE_ID).is(roleId)));
     }
 
-    public Map<String, Integer> countByRoleName(Server server) {
+    public Map<String, Integer> countByRoleId(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.group(StaffFields.ROLE).count().as("count")
+            Aggregation.group(StaffFields.ROLE_ID).count().as("count")
         );
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Document document : results.getMappedResults()) {
-            String roleName = document.getString("_id");
-            if (roleName != null) {
-                counts.put(roleName, document.getInteger("count", 0));
+            String roleId = document.getString("_id");
+            if (roleId != null) {
+                counts.put(roleId, document.getInteger("count", 0));
             }
         }
         return counts;
@@ -130,13 +130,6 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
             }
         }
         return result;
-    }
-
-    public List<Staff> findByRoleNames(Server server, Collection<String> roleNames) {
-        if (roleNames == null || roleNames.isEmpty()) {
-            return List.of();
-        }
-        return find(server, Query.query(Criteria.where(StaffFields.ROLE).in(roleNames)));
     }
 
     public boolean createTwoFactorToken(Server server, String minecraftUuid, String token, String ip, long createdAt) {
