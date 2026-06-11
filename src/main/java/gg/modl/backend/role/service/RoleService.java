@@ -23,6 +23,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import gg.modl.backend.staff.service.StaffService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +36,10 @@ public class RoleService {
     private final StaffMongoRepository staffRepository;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
+
+    @Autowired
+    @Lazy
+    private StaffService staffService;
 
     public List<RoleResponse> getAllRoles(Server server) {
         fixCustomRoleOrdering(server);
@@ -231,12 +238,18 @@ public class RoleService {
             return Optional.empty();
         }
 
+        String oldRoleName = updated.getName();
+
         updated.setName(roleName);
         updated.setDescription(request.description());
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
         updated = staffRoleRepository.saveEntity(server, updated);
         permissionService.evictPermissionCache();
+
+        if (!oldRoleName.equals(roleName)) {
+            staffService.updateRoleNameCascade(server, oldRoleName, roleName);
+        }
 
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 

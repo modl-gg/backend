@@ -543,4 +543,10 @@ public class StaffService {
     public void evictAllStaffCaches() {
         staffByEmailCache.invalidateAll();
     }
+
+    public void updateRoleNameCascade(Server server, String oldRoleName, String newRoleName) {
+        staffRepository.updateRoleName(server, oldRoleName, newRoleName);
+        invitationRepository.updateRoleName(server, oldRoleName, newRoleName);
+        evictAllStaffCaches();
+    }
 }

@@ -233,5 +233,11 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         Query query = Query.query(Criteria.where(StaffFields.USERNAME).in(usernames));
         return find(server, query);
     }
+
+    public void updateRoleName(Server server, String oldRoleName, String newRoleName) {
+        Query query = Query.query(Criteria.where(StaffFields.ROLE).is(oldRoleName));
+        Update update = new Update().set(StaffFields.ROLE, newRoleName);
+        updateMulti(server, query, update);
+    }
 }
 
