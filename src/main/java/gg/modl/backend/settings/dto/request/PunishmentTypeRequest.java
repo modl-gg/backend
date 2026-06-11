@@ -36,7 +36,7 @@ public record PunishmentTypeRequest(
     @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
     @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
     Integer customPoints,
-    @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
+    @Size(max = RequestValidationLimits.PUNISHMENT_STAFF_DESCRIPTION_MAX_LENGTH)
     String staffDescription,
     @Size(max = RequestValidationLimits.PUNISHMENT_DESCRIPTION_MAX_LENGTH)
     String playerDescription,
