@@ -257,14 +257,15 @@ public class RoleService {
 
         try {
             updated = staffRoleRepository.saveEntity(server, updated);
-            permissionService.evictPermissionCache();
-            serverTimestampService.updateStaffPermissionsTimestamp(server);
         } catch (Exception e) {
             if (nameChanged) {
                 staffService.updateRoleNameCascade(server, roleName, oldRoleName);
             }
             throw e;
         }
+
+        permissionService.evictPermissionCache();
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         int staffCount = getStaffCountForRole(server, updated.getName());
         return Optional.of(toRoleResponse(updated, staffCount));
