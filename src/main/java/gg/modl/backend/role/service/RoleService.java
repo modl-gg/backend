@@ -28,7 +28,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -202,7 +201,6 @@ public class RoleService {
         }
     }
 
-    @Transactional
     public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleName, boolean isSuperAdmin) {
         // Cannot update Super Admin role
         if (id.contains("super-admin")) {
@@ -241,19 +239,32 @@ public class RoleService {
         }
 
         String oldRoleName = updated.getName();
+        boolean nameChanged = !oldRoleName.equals(roleName);
 
-        if (!oldRoleName.equals(roleName)) {
-            staffService.updateRoleNameCascade(server, oldRoleName, roleName);
+        if (nameChanged) {
+            try {
+                staffService.updateRoleNameCascade(server, oldRoleName, roleName);
+            } catch (Exception e) {
+                staffService.updateRoleNameCascade(server, roleName, oldRoleName);
+                throw e;
+            }
         }
 
         updated.setName(roleName);
         updated.setDescription(request.description());
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
-        updated = staffRoleRepository.saveEntity(server, updated);
-        permissionService.evictPermissionCache();
 
-        serverTimestampService.updateStaffPermissionsTimestamp(server);
+        try {
+            updated = staffRoleRepository.saveEntity(server, updated);
+            permissionService.evictPermissionCache();
+            serverTimestampService.updateStaffPermissionsTimestamp(server);
+        } catch (Exception e) {
+            if (nameChanged) {
+                staffService.updateRoleNameCascade(server, roleName, oldRoleName);
+            }
+            throw e;
+        }
 
         int staffCount = getStaffCountForRole(server, updated.getName());
         return Optional.of(toRoleResponse(updated, staffCount));
