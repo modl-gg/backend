@@ -1,6 +1,6 @@
 package gg.modl.backend.staff.service;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -46,7 +46,23 @@ class StaffTwoFactorServiceTest {
         when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff));
         when(staffRepository.activateTwoFactorSession(eq(server), eq("staff-1"), eq("token"), eq("127.0.0.1"), anyLong())).thenReturn(true);
 
-        assertTrue(service.verifyToken(server, "token", null));
+        assertTrue(service.verifyToken(server, "token", null).isPresent());
+    }
+
+    @Test
+    void verifyTokenReturnsAssignedMinecraftUuidWhenPresent() {
+        StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(ModlProperties.class));
+        Server server = server();
+        Staff staff = staff();
+        staff.setAssignedMinecraftUuid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff));
+        when(staffRepository.activateTwoFactorSession(eq(server), eq("staff-1"), eq("token"), eq("127.0.0.1"), anyLong())).thenReturn(true);
+
+        Optional<StaffTwoFactorService.VerificationResult> result = service.verifyToken(server, "token", null);
+
+        assertTrue(result.isPresent());
+        assertEquals(Optional.of("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), result.get().minecraftUuidOptional());
     }
 
     @Test
@@ -56,7 +72,7 @@ class StaffTwoFactorServiceTest {
         Server server = server();
         when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff()));
 
-        assertFalse(service.verifyToken(server, "token", "other@example.com"));
+        assertTrue(service.verifyToken(server, "token", "other@example.com").isEmpty());
         verify(staffRepository, never()).activateTwoFactorSession(server, "staff-1", "token", "127.0.0.1", 0L);
     }
 
@@ -69,7 +85,7 @@ class StaffTwoFactorServiceTest {
         staff.setTwoFactorTokenCreatedAt(Instant.now().minusSeconds(601).toEpochMilli());
         when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff));
 
-        assertFalse(service.verifyToken(server, "token", null));
+        assertTrue(service.verifyToken(server, "token", null).isEmpty());
         verify(staffRepository, never()).activateTwoFactorSession(server, "staff-1", "token", "127.0.0.1", 0L);
     }
 

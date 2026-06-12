@@ -409,7 +409,7 @@ public class AppealService {
                     .orElse(null);
                 if (appealedPunishment != null && appealedPunishment.getData() != null
                     && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
-                    punishmentLifecycleService.cascadePardonLinkedBans(server.getDatabaseName(), punishmentId);
+                    punishmentLifecycleService.cascadePardonLinkedBans(server, punishmentId);
                 }
             });
     }

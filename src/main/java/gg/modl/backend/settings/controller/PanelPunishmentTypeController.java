@@ -3,12 +3,14 @@ package gg.modl.backend.settings.controller;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
-import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.proto.modl.v1.PanelPunishmentTypesResponse;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.PunishmentTypeRequest;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -27,56 +29,63 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PanelPunishmentTypeController {
     private final PunishmentTypeService punishmentTypeService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping
-    public ResponseEntity<List<PunishmentType>> getPunishmentTypes(HttpServletRequest request) {
+    public PanelPunishmentTypesResponse getPunishmentTypes(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        return ResponseEntity.ok(types);
+        return PanelSettingsProtoMapper.toPunishmentTypesResponse(types);
     }
 
     @GetMapping("/{ordinal}")
-    public ResponseEntity<PunishmentType> getPunishmentType(
+    public ResponseEntity<gg.modl.proto.modl.v1.PunishmentType> getPunishmentType(
         @PathVariable int ordinal,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
+            .map(PanelSettingsProtoMapper::toPunishmentType)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{ordinal}")
-    public ResponseEntity<PunishmentType> updatePunishmentType(
+    public gg.modl.proto.modl.v1.PunishmentType updatePunishmentType(
         @PathVariable int ordinal,
-        @RequestBody @Valid PunishmentTypeRequest requestBody,
+        @RequestBody PunishmentTypeRequest requestBody,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        PunishmentType updatedType = requestBody.toPunishmentType();
+        PunishmentType updatedType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
 
         PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
-        return ResponseEntity.ok(result);
+        invalidatePunishmentTypes(server, ordinal);
+        return PanelSettingsProtoMapper.toPunishmentType(result);
     }
 
     @PostMapping
-    public ResponseEntity<PunishmentType> createPunishmentType(
-        @RequestBody @Valid PunishmentTypeRequest requestBody,
+    public gg.modl.proto.modl.v1.PunishmentType createPunishmentType(
+        @RequestBody PunishmentTypeRequest requestBody,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        PunishmentType newType = requestBody.toPunishmentType();
+        PunishmentType newType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
         PunishmentType created = punishmentTypeService.createPunishmentType(server, newType);
-        return ResponseEntity.ok(created);
+        invalidatePunishmentTypes(server, created.getOrdinal());
+        return PanelSettingsProtoMapper.toPunishmentType(created);
     }
 
     @PostMapping("/reset")
-    public ResponseEntity<List<PunishmentType>> resetPunishmentTypes(HttpServletRequest request) {
+    public PanelPunishmentTypesResponse resetPunishmentTypes(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<PunishmentType> types = punishmentTypeService.initializeDefaultTypes(server);
-        return ResponseEntity.ok(types);
+        invalidatePunishmentTypes(server, null);
+        return PanelSettingsProtoMapper.toPunishmentTypesResponse(types);
     }
 
+    // No PunishmentTypeDeleteResponse proto message exists (settings.proto only defines ApiKeyDeleteResponse), so this
+    // endpoint keeps the legacy {message} JSON body via Jackson rather than inventing an out-of-lane proto change.
     @DeleteMapping("/{ordinal}")
     public ResponseEntity<?> deletePunishmentType(
         @PathVariable int ordinal,
@@ -89,10 +98,18 @@ public class PanelPunishmentTypeController {
         }
 
         boolean deleted = punishmentTypeService.deletePunishmentType(server, ordinal);
-        if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Punishment type deleted successfully"));
-        } else {
+        if (!deleted) {
             return ResponseEntity.notFound().build();
         }
+        invalidatePunishmentTypes(server, ordinal);
+        return ResponseEntity.ok(Map.of("message", "Punishment type deleted successfully"));
+    }
+
+    private void invalidatePunishmentTypes(Server server, Integer ordinal) {
+        realtimeEventPublisher.invalidatePanel(
+            server,
+            PanelResource.PANEL_RESOURCE_PUNISHMENT_TYPES,
+            ordinal != null ? String.valueOf(ordinal) : null
+        );
     }
 }

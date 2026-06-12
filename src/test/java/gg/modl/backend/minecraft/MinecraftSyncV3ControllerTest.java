@@ -22,6 +22,7 @@ import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.player.controller.MinecraftSyncV3Controller;
 import gg.modl.backend.player.service.MinecraftStartupService;
 import gg.modl.backend.player.service.MinecraftSyncService;
+import gg.modl.backend.player.service.SyncProtoFactory;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.StartupRequest;
@@ -50,7 +51,7 @@ class MinecraftSyncV3ControllerTest {
         minecraftStartupService = mock(MinecraftStartupService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftSyncV3Controller(minecraftSyncService, minecraftStartupService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftSyncV3Controller(minecraftSyncService, minecraftStartupService, new SyncProtoFactory()))
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/")

@@ -1,13 +1,13 @@
 package gg.modl.backend.alert.controller;
 
 import gg.modl.backend.alert.data.SystemAlert;
-import gg.modl.backend.alert.dto.request.CreateSystemAlertRequest;
-import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
-import gg.modl.backend.alert.dto.response.AdminSystemAlertResponse;
 import gg.modl.backend.alert.service.SystemAlertService;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import jakarta.validation.Valid;
-import java.util.Map;
+import gg.modl.proto.modl.v1.AdminSystemAlertResponse;
+import gg.modl.proto.modl.v1.AdminSystemAlertsResponse;
+import gg.modl.proto.modl.v1.CreateSystemAlertRequest;
+import gg.modl.proto.modl.v1.UpdateSystemAlertRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,40 +28,36 @@ public class AdminSystemAlertController {
     private final SystemAlertService alertService;
 
     @GetMapping
-    public ResponseEntity<?> getAlerts() {
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", alertService.getAllAlerts().stream()
-                .map(AdminSystemAlertResponse::from)
-                .toList()
-        ));
+    public ResponseEntity<AdminSystemAlertsResponse> getAlerts() {
+        return ResponseEntity.ok(AlertProtoMapper.toAdminAlerts(alertService.getAllAlerts()));
     }
 
     @PostMapping
-    public ResponseEntity<?> createAlert(@RequestBody @Valid CreateSystemAlertRequest request) {
-        SystemAlert alert = alertService.createAlert(request, getAdminEmail());
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-            "success", true,
-            "data", AdminSystemAlertResponse.from(alert),
-            "message", "Alert created successfully"
-        ));
+    public ResponseEntity<AdminSystemAlertResponse> createAlert(@RequestBody CreateSystemAlertRequest request) {
+        SystemAlert alert = alertService.createAlert(
+            request.getMessage(),
+            AlertProtoMapper.parseSeverity(request.getSeverity()),
+            AlertProtoMapper.parseAudience(request.getAudience()),
+            AlertProtoMapper.toExpiresAt(request.getExpiresAt()),
+            getAdminEmail()
+        );
+        return ResponseEntity.status(HttpStatus.CREATED).body(AlertProtoMapper.toAdminAlert(alert));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateAlert(
+    public ResponseEntity<AdminSystemAlertResponse> updateAlert(
         @PathVariable String id,
-        @RequestBody @Valid UpdateSystemAlertRequest request
+        @RequestBody UpdateSystemAlertRequest request
     ) {
-        return alertService.updateAlert(id, request, getAdminEmail())
-            .<ResponseEntity<?>>map(alert -> ResponseEntity.ok(Map.of(
-                "success", true,
-                "data", AdminSystemAlertResponse.from(alert),
-                "message", "Alert updated successfully"
-            )))
-            .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "success", false,
-                "error", "Alert not found"
-            )));
+        SystemAlert alert = alertService.updateAlert(
+            id,
+            request.hasMessage() ? request.getMessage() : null,
+            request.hasSeverity() ? AlertProtoMapper.parseSeverity(request.getSeverity()) : null,
+            request.hasAudience() ? AlertProtoMapper.parseAudience(request.getAudience()) : null,
+            request.hasExpiresAt() ? AlertProtoMapper.toExpiresAt(request.getExpiresAt()) : null,
+            getAdminEmail()
+        ).orElseThrow(() -> new ResourceNotFoundException("Alert not found"));
+        return ResponseEntity.ok(AlertProtoMapper.toAdminAlert(alert));
     }
 
     private String getAdminEmail() {

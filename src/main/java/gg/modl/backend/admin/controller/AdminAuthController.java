@@ -9,16 +9,11 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.util.CookieUtil;
+import gg.modl.proto.modl.v1.AdminLoginRequest;
+import gg.modl.proto.modl.v1.AdminRequestCodeRequest;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import java.util.Date;
-import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -39,28 +34,28 @@ public class AdminAuthController {
     private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
 
     @PostMapping("/request-code")
-    public ResponseEntity<?> requestCode(@RequestBody @Valid RequestCodeRequest request) throws Exception {
+    public ResponseEntity<?> requestCode(@RequestBody AdminRequestCodeRequest request) throws Exception {
 
-        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.email());
+        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(request.getEmail());
         if (adminOpt.isPresent()) {
-            authService.sendAdminLoginCode(request.email());
+            authService.sendAdminLoginCode(request.getEmail());
         }
 
-        return ResponseEntity.ok(new ApiResponse(true, "If this email is registered, a verification code has been sent"));
+        return ResponseEntity.ok(AdminAuthProtoMapper.toAuthResponse(true, "If this email is registered, a verification code has been sent"));
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(
         HttpServletRequest request,
         HttpServletResponse response,
-        @RequestBody @Valid LoginRequest loginRequest) {
+        @RequestBody AdminLoginRequest loginRequest) {
 
         // Always verify code regardless of user existence to prevent timing-based enumeration
-        boolean codeValid = authService.verifyAdminCode(loginRequest.email(), loginRequest.code());
-        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.email());
+        boolean codeValid = authService.verifyAdminCode(loginRequest.getEmail(), loginRequest.getCode());
+        Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.getEmail());
 
         if (adminOpt.isEmpty() || !codeValid) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Invalid credentials"));
+            return ResponseEntity.status(401).body(AdminAuthProtoMapper.toAuthResponse(false, "Invalid credentials"));
         }
 
         AdminUser admin = adminOpt.get();
@@ -71,8 +66,7 @@ public class AdminAuthController {
 
         response.addCookie(cookieUtil.createSessionCookie(RESTSecurityRole.ADMIN_SESSION_COOKIE, session.getId(), SESSION_MAX_AGE));
 
-        return ResponseEntity.ok(new LoginResponse(true, "Login successful",
-            new UserData(admin.getEmail(), admin.getLastActivityAt())));
+        return ResponseEntity.ok(AdminAuthProtoMapper.toLoginResponse(true, "Login successful", admin));
     }
 
     @PostMapping("/logout")
@@ -85,50 +79,33 @@ public class AdminAuthController {
             response.addCookie(expiredCookie);
         }
 
-        return ResponseEntity.ok(new ApiResponse(true, "Logout successful"));
+        return ResponseEntity.ok(AdminAuthProtoMapper.toAuthResponse(true, "Logout successful"));
     }
 
     @GetMapping("/session")
     public ResponseEntity<?> getSession(HttpServletRequest request) {
         String sessionId = adminAuthService.extractSessionId(request);
         if (sessionId == null) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(AdminAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
         Optional<AuthSessionData> sessionOpt = sessionService.findAndRefreshAdminSession(sessionId);
         if (sessionOpt.isEmpty()) {
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
+            return ResponseEntity.status(401).body(AdminAuthProtoMapper.toAuthResponse(false, "Session expired"));
         }
         AuthSessionData session = sessionOpt.get();
         if (adminAuthService.isAdminSessionExpired(session)) {
             sessionService.invalidateAdminSession(sessionId);
-            return ResponseEntity.status(401).body(new ApiResponse(false, "Session expired"));
+            return ResponseEntity.status(401).body(AdminAuthProtoMapper.toAuthResponse(false, "Session expired"));
         }
 
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(session.getEmail());
         if (adminOpt.isEmpty()) {
             sessionService.invalidateAdminSession(sessionId);
-            return ResponseEntity.status(401).body(new ApiResponse(false, "User not found"));
+            return ResponseEntity.status(401).body(AdminAuthProtoMapper.toAuthResponse(false, "User not found"));
         }
 
         AdminUser admin = adminOpt.get();
-        return ResponseEntity.ok(new SessionResponse(true,
-            new SessionData(admin.getEmail(), admin.getLastActivityAt(), admin.getLoggedInIps(), true)));
+        return ResponseEntity.ok(AdminAuthProtoMapper.toSessionResponse(true, admin));
     }
-
-    // Request/Response records
-    public record RequestCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
-
-    public record LoginRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email, @NotBlank @Size(max = RequestValidationLimits.TICKET_VERIFY_CODE_MAX_LENGTH) String code) {}
-
-    public record ApiResponse(boolean success, String message) {}
-
-    public record LoginResponse(boolean success, String message, UserData data) {}
-
-    public record UserData(String email, Date lastActivityAt) {}
-
-    public record SessionResponse(boolean success, SessionData data) {}
-
-    public record SessionData(String email, Date lastActivityAt, List<String> loggedInIps, boolean isAuthenticated) {}
-
 }

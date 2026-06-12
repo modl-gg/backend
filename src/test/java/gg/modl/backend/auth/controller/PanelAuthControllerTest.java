@@ -18,6 +18,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.proto.modl.v1.PanelUpdateEmailWithCodeRequest;
 import jakarta.servlet.http.Cookie;
 import java.util.Date;
 import java.util.Optional;
@@ -83,7 +84,10 @@ class PanelAuthControllerTest {
         when(staffService.updateEmail(server, "old@example.com", "new@example.com", false)).thenReturn(Optional.of(staff));
         when(sessionService.createSession(server, "new@example.com", "127.0.0.1", null)).thenReturn(newSession);
 
-        controller.updateEmail(request, response, new PanelAuthController.UpdateEmailWithCodeRequest("new@example.com", "123456"));
+        controller.updateEmail(request, response, PanelUpdateEmailWithCodeRequest.newBuilder()
+            .setNewEmail("new@example.com")
+            .setCode("123456")
+            .build());
 
         verify(sessionService).invalidateAllSessionsForEmail(server, "old@example.com");
         verify(sessionService).createSession(server, "new@example.com", "127.0.0.1", null);

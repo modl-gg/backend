@@ -11,8 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
+import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.ticket.data.Ticket;
@@ -29,6 +32,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -43,11 +47,13 @@ class PublicTicketControllerTest {
         ticketService = mock(TicketService.class);
         TicketReplyService ticketReplyService = mock(TicketReplyService.class);
         verificationService = mock(TicketEmailVerificationService.class);
+        RealtimeEventPublisher realtimeEventPublisher = mock(RealtimeEventPublisher.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService))
+            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, realtimeEventPublisher))
             .setControllerAdvice(new GlobalExceptionHandler())
+            .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }
@@ -183,7 +189,7 @@ class PublicTicketControllerTest {
             .andExpect(jsonPath("$.data.email").doesNotExist())
             .andExpect(jsonPath("$.data.contact_email").doesNotExist())
             .andExpect(jsonPath("$.data.playerUuid").doesNotExist())
-            .andExpect(jsonPath("$.replies[0].creatorIdentifier").doesNotExist())
+            .andExpect(jsonPath("$.replies[0].creatorIdentifier").value(""))
             .andExpect(jsonPath("$.creatorUuid").value(""))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
@@ -230,7 +236,7 @@ class PublicTicketControllerTest {
             .andExpect(jsonPath("$.creatorUuid").value(""))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
-            .andExpect(jsonPath("$.chatMessages").isEmpty());
+            .andExpect(jsonPath("$.chatMessages[0]").doesNotExist());
     }
 
     @Test

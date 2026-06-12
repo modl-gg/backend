@@ -26,6 +26,7 @@ public class PunishmentEvidenceService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final PunishmentQueryService punishmentQueryService;
+    private final PunishmentRealtimePublisher realtimePublisher;
 
     public PunishmentOperationResult addEvidence(Server server, String punishmentId, String evidenceUrl, String issuerName, String issuerId) {
         PunishmentContext context = punishmentQueryService.findPunishmentContext(server, punishmentId).orElse(null);
@@ -83,6 +84,7 @@ public class PunishmentEvidenceService {
         ));
 
         punishmentRepository.replacePunishments(server, player);
+        realtimePublisher.invalidatePunishments(server, punishmentId);
         return player;
     }
 
@@ -148,6 +150,7 @@ public class PunishmentEvidenceService {
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         punishment.getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
         punishmentRepository.replacePunishments(server, player);
+        realtimePublisher.invalidatePunishments(server, punishmentId);
         return player;
     }
 }

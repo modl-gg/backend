@@ -38,7 +38,7 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
 
-final class MinecraftPlayerProtoMapper {
+public final class MinecraftPlayerProtoMapper {
     private MinecraftPlayerProtoMapper() {
     }
 
@@ -193,7 +193,7 @@ final class MinecraftPlayerProtoMapper {
             .build();
     }
 
-    static SimplePunishment toSimplePunishment(Map<String, Object> punishment) {
+    public static SimplePunishment toSimplePunishment(Map<String, Object> punishment) {
         SimplePunishment.Builder builder = SimplePunishment.newBuilder()
             .setType(stringValue(punishment.get("type")))
             .setDescription(stringValue(punishment.get("description")))
@@ -494,7 +494,7 @@ final class MinecraftPlayerProtoMapper {
             .build();
     }
 
-    static Struct toStruct(Map<String, Object> map) {
+    public static Struct toStruct(Map<String, Object> map) {
         Struct.Builder builder = Struct.newBuilder();
         map.forEach((key, value) -> builder.putFields(key, objectToValue(value)));
         return builder.build();

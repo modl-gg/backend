@@ -1,0 +1,266 @@
+package gg.modl.backend.infrastructure.proto;
+
+import com.google.protobuf.ListValue;
+import com.google.protobuf.NullValue;
+import com.google.protobuf.Struct;
+import com.google.protobuf.Timestamp;
+import com.google.protobuf.Value;
+
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.IntConsumer;
+import java.util.function.LongConsumer;
+
+/**
+ * Shared value-coercion toolkit for panel/admin/public proto mappers. Mirrors the conversions used by the
+ * minecraft V3 {@code MinecraftPlayerProtoMapper}: null-safe scalars, epoch-millis longs from {@link Date},
+ * free-form {@code Map<String,Object>} to {@link Struct}, and {@code List} to repeated helpers.
+ *
+ * <p>Timestamp policy: backend DTOs carry {@link Date}, mapped to {@code int64} epoch millis ({@link #longValue}).
+ * Use {@link #toTimestamp} only for the rare proto field actually typed {@code google.protobuf.Timestamp}.
+ */
+public final class ProtoMapperSupport {
+
+    // 2^53 is the largest integer a double represents exactly; integral values beyond it must travel as
+    // strings inside free-form Structs to survive the double-backed google.protobuf.Value.
+    private static final BigInteger MAX_SAFE_DOUBLE_INTEGER = BigInteger.valueOf(2).pow(53);
+
+    private ProtoMapperSupport() {
+    }
+
+    public static String stringValue(Object value) {
+        return value == null ? "" : Objects.toString(value);
+    }
+
+    public static int intValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String string && !string.isBlank()) {
+            return Integer.parseInt(string.trim());
+        }
+        return 0;
+    }
+
+    public static long longValue(Object value) {
+        if (value instanceof Date date) {
+            return date.getTime();
+        }
+        if (value instanceof Instant instant) {
+            return instant.toEpochMilli();
+        }
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String string && !string.isBlank()) {
+            return Long.parseLong(string.trim());
+        }
+        return 0L;
+    }
+
+    public static double doubleValue(Object value) {
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value instanceof String string && !string.isBlank()) {
+            return Double.parseDouble(string.trim());
+        }
+        return 0d;
+    }
+
+    public static boolean booleanValue(Object value) {
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value instanceof String string) {
+            return Boolean.parseBoolean(string);
+        }
+        return false;
+    }
+
+    public static void setOptionalString(Consumer<String> setter, Object value) {
+        if (value != null) {
+            setter.accept(Objects.toString(value));
+        }
+    }
+
+    public static void setOptionalInt(IntConsumer setter, Object value) {
+        if (value != null) {
+            setter.accept(intValue(value));
+        }
+    }
+
+    public static void setOptionalLong(LongConsumer setter, Object value) {
+        if (value != null) {
+            setter.accept(longValue(value));
+        }
+    }
+
+    public static void setOptionalBoolean(Consumer<Boolean> setter, Object value) {
+        if (value != null) {
+            setter.accept(booleanValue(value));
+        }
+    }
+
+    public static void setOptionalDouble(Consumer<Double> setter, Object value) {
+        if (value != null) {
+            setter.accept(doubleValue(value));
+        }
+    }
+
+    public static Struct toStruct(Map<String, Object> map) {
+        Struct.Builder builder = Struct.newBuilder();
+        if (map != null) {
+            map.forEach((key, value) -> builder.putFields(Objects.toString(key), objectToValue(value)));
+        }
+        return builder.build();
+    }
+
+    public static Map<String, Object> structToMap(Struct struct) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        struct.getFieldsMap().forEach((key, value) -> result.put(key, valueToObject(value)));
+        return result;
+    }
+
+    public static Timestamp toTimestamp(Object value) {
+        long millis = longValue(value);
+        return Timestamp.newBuilder()
+            .setSeconds(Math.floorDiv(millis, 1000L))
+            .setNanos((int) (Math.floorMod(millis, 1000L) * 1_000_000L))
+            .build();
+    }
+
+    public static List<?> list(Object object) {
+        if (object instanceof List<?> values) {
+            return values;
+        }
+        return List.of();
+    }
+
+    public static List<Map<String, Object>> listOfMaps(Object object) {
+        return list(object).stream()
+            .filter(Map.class::isInstance)
+            .map(value -> stringObjectMap((Map<?, ?>) value))
+            .toList();
+    }
+
+    public static Map<String, Object> map(Object object) {
+        if (object instanceof Map<?, ?> rawMap) {
+            return stringObjectMap(rawMap);
+        }
+        return Map.of();
+    }
+
+    public static Map<String, Object> stringObjectMap(Map<?, ?> rawMap) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> result.put(Objects.toString(key), value));
+        return result;
+    }
+
+    /**
+     * Maps a nullable domain collection to a repeated proto field. {@code adder} is the builder's {@code addX}
+     * method; {@code converter} maps each element to its proto type. Null/empty collections add nothing.
+     */
+    public static <T, P> void addAll(Collection<T> source,
+                                     Function<? super T, ? extends P> converter,
+                                     Consumer<? super P> adder) {
+        if (source == null) {
+            return;
+        }
+        source.forEach(element -> adder.accept(converter.apply(element)));
+    }
+
+    /**
+     * Maps a domain {@code Map} to a proto {@code map<string, V>} field. {@code putter} is the builder's
+     * {@code putX(key, value)} method; {@code converter} maps each value to its proto type.
+     */
+    public static <V, P> void putAll(Map<String, V> source,
+                                     Function<? super V, ? extends P> converter,
+                                     BiConsumer<String, ? super P> putter) {
+        if (source == null) {
+            return;
+        }
+        source.forEach((key, value) -> putter.accept(key, converter.apply(value)));
+    }
+
+    private static Value objectToValue(Object object) {
+        Value.Builder builder = Value.newBuilder();
+        if (object == null) {
+            return builder.setNullValue(NullValue.NULL_VALUE).build();
+        }
+        if (object instanceof String string) {
+            return builder.setStringValue(string).build();
+        }
+        if (object instanceof Number number) {
+            return numberValue(builder, number);
+        }
+        if (object instanceof Boolean bool) {
+            return builder.setBoolValue(bool).build();
+        }
+        if (object instanceof Map<?, ?> rawMap) {
+            Struct.Builder struct = Struct.newBuilder();
+            rawMap.forEach((key, value) -> struct.putFields(Objects.toString(key), objectToValue(value)));
+            return builder.setStructValue(struct).build();
+        }
+        if (object instanceof Iterable<?> iterable) {
+            ListValue.Builder listValue = ListValue.newBuilder();
+            iterable.forEach(item -> listValue.addValues(objectToValue(item)));
+            return builder.setListValue(listValue).build();
+        }
+        if (object instanceof Date date) {
+            return integralValue(builder, BigInteger.valueOf(date.getTime()));
+        }
+        return builder.setStringValue(Objects.toString(object)).build();
+    }
+
+    // google.protobuf.Value carries numbers as a double, so an integral 64-bit value (epoch millis,
+    // snowflake-style IDs) above 2^53 loses precision once coerced to double. Emit those as a string so
+    // the panel's fromJson rehydration preserves the exact value; genuine floating-point and
+    // small integers stay number values.
+    private static Value numberValue(Value.Builder builder, Number number) {
+        if (number instanceof Double || number instanceof Float) {
+            return builder.setNumberValue(number.doubleValue()).build();
+        }
+        if (number instanceof BigDecimal decimal) {
+            return decimal.stripTrailingZeros().scale() <= 0
+                ? integralValue(builder, decimal.toBigInteger())
+                : builder.setNumberValue(decimal.doubleValue()).build();
+        }
+        if (number instanceof BigInteger bigInteger) {
+            return integralValue(builder, bigInteger);
+        }
+        if (number instanceof Long || number instanceof Integer || number instanceof Short || number instanceof Byte) {
+            return integralValue(builder, BigInteger.valueOf(number.longValue()));
+        }
+        return builder.setNumberValue(number.doubleValue()).build();
+    }
+
+    private static Value integralValue(Value.Builder builder, BigInteger value) {
+        return value.abs().compareTo(MAX_SAFE_DOUBLE_INTEGER) > 0
+            ? builder.setStringValue(value.toString()).build()
+            : builder.setNumberValue(value.doubleValue()).build();
+    }
+
+    private static Object valueToObject(Value value) {
+        return switch (value.getKindCase()) {
+            case NULL_VALUE, KIND_NOT_SET -> null;
+            case NUMBER_VALUE -> value.getNumberValue();
+            case STRING_VALUE -> value.getStringValue();
+            case BOOL_VALUE -> value.getBoolValue();
+            case STRUCT_VALUE -> structToMap(value.getStructValue());
+            case LIST_VALUE -> value.getListValue().getValuesList().stream()
+                .map(ProtoMapperSupport::valueToObject)
+                .toList();
+        };
+    }
+}

@@ -3,13 +3,12 @@ package gg.modl.backend.alert.service;
 import gg.modl.backend.alert.data.SystemAlert;
 import gg.modl.backend.alert.data.SystemAlertAudience;
 import gg.modl.backend.alert.data.SystemAlertSeverity;
-import gg.modl.backend.alert.dto.request.CreateSystemAlertRequest;
-import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
 import gg.modl.backend.database.mongo.repository.SystemAlertMongoRepository;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,13 +26,19 @@ public class SystemAlertService {
             .toList();
     }
 
-    public SystemAlert createAlert(CreateSystemAlertRequest request, String createdBy) {
+    public SystemAlert createAlert(
+        String message,
+        @Nullable SystemAlertSeverity severity,
+        @Nullable SystemAlertAudience audience,
+        @Nullable Date expiresAt,
+        String createdBy
+    ) {
         Date now = new Date();
         SystemAlert alert = SystemAlert.builder()
-            .message(request.message().trim())
-            .severity(request.severity() != null ? request.severity() : SystemAlertSeverity.BASIC)
-            .audience(request.audience() != null ? request.audience() : SystemAlertAudience.ALL_PANEL_USERS)
-            .expiresAt(request.expiresAt())
+            .message(message.trim())
+            .severity(severity != null ? severity : SystemAlertSeverity.BASIC)
+            .audience(audience != null ? audience : SystemAlertAudience.ALL_PANEL_USERS)
+            .expiresAt(expiresAt)
             .createdAt(now)
             .updatedAt(now)
             .createdBy(createdBy)
@@ -42,17 +47,24 @@ public class SystemAlertService {
         return alertRepository.saveEntity(alert);
     }
 
-    public Optional<SystemAlert> updateAlert(String id, UpdateSystemAlertRequest request, String updatedBy) {
-        String message = request.message() != null ? request.message().trim() : null;
-        if (message != null && message.isEmpty()) {
+    public Optional<SystemAlert> updateAlert(
+        String id,
+        @Nullable String message,
+        @Nullable SystemAlertSeverity severity,
+        @Nullable SystemAlertAudience audience,
+        @Nullable Date expiresAt,
+        String updatedBy
+    ) {
+        String trimmedMessage = message != null ? message.trim() : null;
+        if (trimmedMessage != null && trimmedMessage.isEmpty()) {
             throw new IllegalArgumentException("Alert message cannot be blank");
         }
         return alertRepository.updateAlert(
             id,
-            message,
-            request.severity(),
-            request.audience(),
-            request.expiresAt(),
+            trimmedMessage,
+            severity,
+            audience,
+            expiresAt,
             new Date(),
             updatedBy
         );

@@ -5,13 +5,16 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.player.service.MinecraftStartupService;
 import gg.modl.backend.player.service.MinecraftSyncService;
+import gg.modl.backend.player.service.SyncProtoFactory;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.SimpleResponse;
 import gg.modl.proto.modl.v1.StartupRequest;
 import gg.modl.proto.modl.v1.StartupResponse;
 import gg.modl.proto.modl.v1.SyncRequest;
 import gg.modl.proto.modl.v1.SyncResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.time.Instant;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MinecraftSyncV3Controller {
     private final MinecraftSyncService minecraftSyncService;
     private final MinecraftStartupService minecraftStartupService;
+    private final SyncProtoFactory syncProtoFactory;
 
     @PostMapping(
         value = "/startup",
@@ -73,6 +77,67 @@ public class MinecraftSyncV3Controller {
             clientIp
         );
 
-        return ResponseEntity.ok(MinecraftSyncProtoMapper.toSyncResponse(response));
+        return ResponseEntity.ok(syncProtoFactory.toSyncResponse(response));
+    }
+
+    @PostMapping(
+        value = "/presence",
+        consumes = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE,
+        produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE
+    )
+    public ResponseEntity<SimpleResponse> presence(
+        @RequestBody @Valid SyncRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        minecraftSyncService.applyPresence(
+            server,
+            MinecraftSyncProtoMapper.toOnlinePlayers(request),
+            request.hasServerName() ? request.getServerName() : null,
+            Instant.now()
+        );
+
+        return ResponseEntity.ok(SimpleResponse.newBuilder().setSuccess(true).build());
+    }
+
+    @PostMapping(
+        value = "/logs",
+        consumes = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE,
+        produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE
+    )
+    public ResponseEntity<SimpleResponse> logs(
+        @RequestBody @Valid SyncRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        minecraftSyncService.submitLogs(
+            server,
+            MinecraftSyncProtoMapper.toChatLogs(request),
+            MinecraftSyncProtoMapper.toCommandLogs(request)
+        );
+
+        return ResponseEntity.ok(SimpleResponse.newBuilder().setSuccess(true).build());
+    }
+
+    @PostMapping(
+        value = "/status",
+        consumes = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE,
+        produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE
+    )
+    public ResponseEntity<SimpleResponse> status(
+        @RequestBody @Valid SyncRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        Server server = RequestUtil.getRequestServer(httpRequest);
+        String clientIp = RequestUtil.getClientIp(httpRequest);
+        minecraftSyncService.applyServerStatus(
+            server,
+            MinecraftSyncProtoMapper.toServerStatus(request),
+            request.hasServerName() ? request.getServerName() : null,
+            clientIp,
+            Instant.now()
+        );
+
+        return ResponseEntity.ok(SimpleResponse.newBuilder().setSuccess(true).build());
     }
 }

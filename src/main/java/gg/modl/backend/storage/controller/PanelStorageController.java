@@ -5,17 +5,19 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.storage.dto.request.BulkDeleteRequest;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
-import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.storage.service.StorageSyncService;
+import gg.modl.proto.modl.v1.BulkDeleteRequest;
+import gg.modl.proto.modl.v1.StorageBulkDeleteResponse;
+import gg.modl.proto.modl.v1.StorageDownloadUrlResponse;
+import gg.modl.proto.modl.v1.StorageFilesResponse;
+import gg.modl.proto.modl.v1.StorageQuotaResponse;
+import gg.modl.proto.modl.v1.StorageSyncResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,27 +41,26 @@ public class PanelStorageController {
     @GetMapping("/quota")
     public ResponseEntity<StorageQuotaResponse> getQuota(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        StorageQuotaResponse quota = quotaService.getQuota(server);
-        return ResponseEntity.ok(quota);
+        return ResponseEntity.ok(StorageProtoMapper.toStorageQuotaResponse(quotaService.getQuota(server)));
     }
 
     @GetMapping("/files")
-    public ResponseEntity<Map<String, Object>> getFiles(
+    public ResponseEntity<StorageFilesResponse> getFiles(
         @RequestParam(required = false) String prefix,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<StorageFileResponse> files = storageMetadataService.listFiles(server, prefix);
-        return ResponseEntity.ok(Map.of("files", files));
+        return ResponseEntity.ok(StorageProtoMapper.toStorageFilesResponse(files));
     }
 
     @PostMapping("/bulk-delete")
-    public ResponseEntity<?> bulkDelete(
-        @RequestBody @Valid BulkDeleteRequest body,
+    public ResponseEntity<StorageBulkDeleteResponse> bulkDelete(
+        @RequestBody BulkDeleteRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<String> keys = body.keys();
+        List<String> keys = body.getKeysList();
 
         String prefix = server.getDatabaseName() + "/";
         for (String key : keys) {
@@ -70,17 +71,17 @@ public class PanelStorageController {
 
         int deleted = s3StorageService.bulkDelete(keys);
         storageMetadataService.removeFiles(server, keys);
-        return ResponseEntity.ok(Map.of("deleted", deleted));
+        return ResponseEntity.ok(StorageProtoMapper.toStorageBulkDeleteResponse(deleted));
     }
 
     @PostMapping("/sync")
-    public ResponseEntity<?> syncFiles(HttpServletRequest request) {
+    public ResponseEntity<StorageSyncResponse> syncFiles(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         if (!permissionService.isSuperAdmin(server, RequestUtil.getSessionEmail(request))) {
             throw new ForbiddenException("Only super admins can trigger a storage sync");
         }
         int synced = storageSyncService.syncServerFiles(server);
-        return ResponseEntity.ok(Map.of("synced", synced));
+        return ResponseEntity.ok(StorageProtoMapper.toStorageSyncResponse(synced));
     }
 
     @GetMapping("/download/{*key}")
@@ -101,6 +102,6 @@ public class PanelStorageController {
             return ResponseEntity.notFound().build();
         }
 
-        return ResponseEntity.ok(Map.of("url", url));
+        return ResponseEntity.ok(StorageProtoMapper.toStorageDownloadUrlResponse(url));
     }
 }

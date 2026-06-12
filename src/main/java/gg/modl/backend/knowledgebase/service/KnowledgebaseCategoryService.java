@@ -4,9 +4,9 @@ import com.github.slugify.Slugify;
 import gg.modl.backend.database.mongo.repository.KnowledgebaseArticleMongoRepository;
 import gg.modl.backend.database.mongo.repository.KnowledgebaseCategoryMongoRepository;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
-import gg.modl.backend.knowledgebase.dto.request.CreateCategoryRequest;
-import gg.modl.backend.knowledgebase.dto.request.UpdateCategoryRequest;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.CreateCategoryRequest;
+import gg.modl.proto.modl.v1.UpdateCategoryRequest;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -36,9 +36,9 @@ public class KnowledgebaseCategoryService {
 
     public KnowledgebaseCategory createCategory(Server server, CreateCategoryRequest request) {
         KnowledgebaseCategory category = KnowledgebaseCategory.builder()
-            .name(request.name())
-            .slug(slugify.slugify(request.name()))
-            .description(request.description())
+            .name(request.getName())
+            .slug(slugify.slugify(request.getName()))
+            .description(request.hasDescription() ? request.getDescription() : null)
             .ordinal(categoryRepository.findMaxOrdinal(server) + 1)
             .isVisible(true)
             .createdAt(new Date())
@@ -49,13 +49,14 @@ public class KnowledgebaseCategoryService {
     }
 
     public Optional<KnowledgebaseCategory> updateCategory(Server server, String id, UpdateCategoryRequest request) {
+        String name = request.hasName() ? request.getName() : null;
         return categoryRepository.updateCategory(
             server,
             id,
-            request.name(),
-            request.name() != null ? slugify.slugify(request.name()) : null,
-            request.description(),
-            request.isVisible(),
+            name,
+            name != null ? slugify.slugify(name) : null,
+            request.hasDescription() ? request.getDescription() : null,
+            request.hasIsVisible() ? request.getIsVisible() : null,
             new Date()
         );
     }

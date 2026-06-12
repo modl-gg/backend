@@ -37,6 +37,25 @@ class RealtimeTopicAuthorizerTest {
     }
 
     @Test
+    void panelPermissionScopesAreEnforcedPerTopic() {
+        PermissionService permissionService = mock(PermissionService.class);
+        StaffService staffService = mock(StaffService.class);
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffService);
+        Server server = server();
+
+        Staff staff = Staff.builder()
+            .email("staff@example.com")
+            .roleId("support")
+            .build();
+        when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
+        when(permissionService.hasPermission(server, "support", "ticket.view.all")).thenReturn(true);
+
+        RealtimePrincipal principal = RealtimePrincipal.panel(server, "staff@example.com");
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_PANEL_NOTIFICATIONS));
+        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_PANEL_STAFF));
+    }
+
+    @Test
     void panelCannotSubscribeToMinecraftTopics() {
         RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
 
@@ -47,35 +66,20 @@ class RealtimeTopicAuthorizerTest {
     }
 
     @Test
-    void minecraftCanSubscribeOnlyToRuntimeMinecraftTopics() {
+    void minecraftCanSubscribeToAllMinecraftTopics() {
         RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
         RealtimePrincipal principal = RealtimePrincipal.minecraft(server(), "instance-1");
 
         assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PERMISSIONS));
         assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES));
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PRESENCE));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_STAFF_NOTIFICATIONS));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PRESENCE));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PUNISHMENTS));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PLAYER_NOTIFICATIONS));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_STAFF_2FA));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_MIGRATION_TASKS));
+        assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_STAT_WIPES));
         assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_PANEL_TICKETS));
-    }
-
-    @Test
-    void minecraftPresenceIsNotAcceptedUntilRuntimeSupportExists() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
-
-        assertFalse(authorizer.canSubscribe(RealtimePrincipal.minecraft(server()), Topic.TOPIC_MINECRAFT_PRESENCE));
-        assertFalse(authorizer.canSubscribe(RealtimePrincipal.minecraft(server(), " "), Topic.TOPIC_MINECRAFT_PRESENCE));
-        assertFalse(authorizer.canSubscribe(RealtimePrincipal.minecraft(server(), "instance-1"), Topic.TOPIC_MINECRAFT_PRESENCE));
-    }
-
-    @Test
-    void minecraftCannotSubscribeToCriticalTopics() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
-        RealtimePrincipal principal = RealtimePrincipal.minecraft(server(), "instance-1");
-
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_STAFF_NOTIFICATIONS));
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PUNISHMENTS));
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PLAYER_NOTIFICATIONS));
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_STAFF_2FA));
-        assertFalse(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_MIGRATION_TASKS));
     }
 
     private Server server() {

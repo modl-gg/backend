@@ -5,17 +5,16 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.storage.dto.request.ConfirmUploadRequest;
-import gg.modl.backend.storage.dto.request.PresignUploadRequest;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
+import gg.modl.proto.modl.v1.ConfirmUploadRequest;
+import gg.modl.proto.modl.v1.MediaConfigResponse;
+import gg.modl.proto.modl.v1.PresignUploadRequest;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -37,19 +36,18 @@ public class PanelMediaController {
     private final StorageMetadataService storageMetadataService;
 
     @GetMapping("/config")
-    public ResponseEntity<Map<String, Object>> getMediaConfig(HttpServletRequest request) {
+    public ResponseEntity<MediaConfigResponse> getMediaConfig(HttpServletRequest request) {
         boolean isConfigured = s3StorageService.isConfigured();
         String cdnDomain = s3StorageService.getCdnDomain();
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("backblazeConfigured", isConfigured);
-        response.put("supportedTypes", validationService.getAllSupportedTypes());
-        response.put("fileSizeLimits", validationService.getAllSizeLimits(isPremium));
-        response.put("cdnDomain", cdnDomain != null && !cdnDomain.isBlank() ? cdnDomain : null);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(StorageProtoMapper.toMediaConfigResponse(
+            isConfigured,
+            validationService.getAllSupportedTypes(),
+            validationService.getAllSizeLimits(isPremium),
+            cdnDomain
+        ));
     }
 
     @DeleteMapping("/{*key}")
@@ -75,17 +73,17 @@ public class PanelMediaController {
 
     @PostMapping("/presign")
     public ResponseEntity<?> getPresignedUploadUrl(
-        @RequestBody @Valid PresignUploadRequest presignRequest,
+        @RequestBody PresignUploadRequest presignRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
 
         MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-            presignRequest.fileName(),
-            presignRequest.contentType(),
-            presignRequest.fileSize(),
-            presignRequest.uploadType(),
+            presignRequest.getFileName(),
+            presignRequest.getContentType(),
+            presignRequest.getFileSize(),
+            presignRequest.getUploadType(),
             isPremium
         );
 
@@ -93,29 +91,29 @@ public class PanelMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
         }
 
-        if (!quotaService.canUpload(server, presignRequest.fileSize())) {
+        if (!quotaService.canUpload(server, presignRequest.getFileSize())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
 
         PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
             server,
-            presignRequest.uploadType(),
-            presignRequest.fileName(),
-            presignRequest.contentType(),
-            presignRequest.fileSize(),
-            presignRequest.entityId()
+            presignRequest.getUploadType(),
+            presignRequest.getFileName(),
+            presignRequest.getContentType(),
+            presignRequest.getFileSize(),
+            presignRequest.hasEntityId() ? presignRequest.getEntityId() : null
         );
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(StorageProtoMapper.toPresignUploadResponse(response));
     }
 
     @PostMapping("/confirm")
     public ResponseEntity<?> confirmUpload(
-        @RequestBody @Valid ConfirmUploadRequest confirmRequest,
+        @RequestBody ConfirmUploadRequest confirmRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        String key = confirmRequest.key();
+        String key = confirmRequest.getKey();
 
         if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
             throw new ForbiddenException("Access denied");
@@ -132,6 +130,6 @@ public class PanelMediaController {
             return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
         }
 
-        return ResponseEntity.ok(uploadDetails);
+        return ResponseEntity.ok(StorageProtoMapper.toUploadResponse(uploadDetails));
     }
 }

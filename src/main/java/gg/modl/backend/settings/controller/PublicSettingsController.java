@@ -7,13 +7,12 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
 import gg.modl.backend.settings.data.TicketFormSettings;
-import gg.modl.backend.settings.dto.response.PublicSettingsResponse;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.settings.service.TicketFormSettingsService;
+import gg.modl.proto.modl.v1.PublicSettingsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,17 +26,17 @@ public class PublicSettingsController {
     private final GlobalSystemService globalSystemService;
 
     @GetMapping
-    public ResponseEntity<PublicSettingsResponse> getPublicSettings(HttpServletRequest request) {
+    public PublicSettingsResponse getPublicSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
 
         if (server == null) {
-            return ResponseEntity.ok(getNotFoundSettings());
+            return getNotFoundSettings();
         }
 
         GeneralSettings generalSettings = generalSettingsService.getGeneralSettings(server);
         TicketFormSettings ticketForms = ticketFormSettingsService.getTicketFormSettings(server);
         SystemConfig.GeneralConfig globalConfig = getGlobalMaintenanceConfig();
-        return ResponseEntity.ok(new PublicSettingsResponse(
+        return PanelSettingsProtoMapper.toPublicSettingsResponse(new gg.modl.backend.settings.dto.response.PublicSettingsResponse(
             true,
             generalSettings.getServerDisplayName() != null ? generalSettings.getServerDisplayName() : "modl",
             generalSettings.getPanelIconUrl(),
@@ -50,7 +49,7 @@ public class PublicSettingsController {
 
     private PublicSettingsResponse getNotFoundSettings() {
         SystemConfig.GeneralConfig globalConfig = getGlobalMaintenanceConfig();
-        return new PublicSettingsResponse(
+        return PanelSettingsProtoMapper.toPublicSettingsResponse(new gg.modl.backend.settings.dto.response.PublicSettingsResponse(
             false,
             null,
             null,
@@ -58,7 +57,7 @@ public class PublicSettingsController {
             Map.of(),
             globalConfig.isMaintenanceMode(),
             globalConfig.getMaintenanceMessage()
-        );
+        ));
     }
 
     private SystemConfig.GeneralConfig getGlobalMaintenanceConfig() {

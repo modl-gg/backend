@@ -2,19 +2,22 @@ package gg.modl.backend.role.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
 import gg.modl.backend.role.dto.request.RoleRequest;
-import gg.modl.backend.role.dto.response.PermissionsResponse;
-import gg.modl.backend.role.dto.response.RoleListResponse;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.PanelRoleListResponse;
+import gg.modl.proto.modl.v1.PermissionsResponse;
+import gg.modl.proto.modl.v1.RoleDetailResponse;
+import gg.modl.proto.modl.v1.RoleMutationResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -36,12 +39,13 @@ public class PanelRoleController {
     private final RoleService roleService;
     private final PermissionService permissionService;
     private final StaffService staffService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping
-    public ResponseEntity<RoleListResponse> getAllRoles(HttpServletRequest request) {
+    public ResponseEntity<PanelRoleListResponse> getAllRoles(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<RoleResponse> roles = roleService.getAllRoles(server);
-        return ResponseEntity.ok(new RoleListResponse(roles));
+        return ResponseEntity.ok(PanelRoleProtoMapper.toRoleListResponse(roles));
     }
 
     @GetMapping("/permissions")
@@ -49,24 +53,25 @@ public class PanelRoleController {
         Server server = RequestUtil.getRequestServer(request);
         List<Permission> permissions = permissionService.getAllPermissions(server);
         Map<String, String> categories = permissionService.getPermissionCategories();
-        return ResponseEntity.ok(new PermissionsResponse(permissions, categories));
+        return ResponseEntity.ok(PanelRoleProtoMapper.toPermissionsResponse(permissions, categories));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, RoleResponse>> getRoleById(
+    public ResponseEntity<RoleDetailResponse> getRoleById(
         @PathVariable String id,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return roleService.getRoleById(server, id)
-            .map(role -> ResponseEntity.ok(Map.of("role", role)))
+            .map(PanelRoleProtoMapper::toRoleDetailResponse)
+            .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<?> createRole(
-        @RequestBody @Valid RoleRequest createRequest,
+    public ResponseEntity<RoleMutationResponse> createRole(
+        @RequestBody gg.modl.proto.modl.v1.RoleRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -74,11 +79,11 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        RoleResponse role = roleService.createRole(server, createRequest, performerRoleId, isSuperAdmin);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-            "message", "Role created successfully",
-            "role", role
-        ));
+        RoleRequest mappedRequest = PanelRoleProtoMapper.toRoleRequest(createRequest);
+        RoleResponse role = roleService.createRole(server, mappedRequest, performerRoleId, isSuperAdmin);
+        invalidateRoles(server, role.id());
+        return ResponseEntity.status(HttpStatus.CREATED)
+            .body(PanelRoleProtoMapper.toRoleMutationResponse("Role created successfully", role));
     }
 
     private String getStaffRoleId(Server server, String email) {
@@ -87,9 +92,9 @@ public class PanelRoleController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateRole(
+    public ResponseEntity<RoleMutationResponse> updateRole(
         @PathVariable String id,
-        @RequestBody @Valid RoleRequest updateRequest,
+        @RequestBody gg.modl.proto.modl.v1.RoleRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -97,16 +102,18 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        return roleService.updateRole(server, id, updateRequest, performerRoleId, isSuperAdmin)
-            .map(role -> ResponseEntity.ok(Map.of(
-                "message", "Role updated successfully",
-                "role", role
-            )))
+        RoleRequest mappedRequest = PanelRoleProtoMapper.toRoleRequest(updateRequest);
+        return roleService.updateRole(server, id, mappedRequest, performerRoleId, isSuperAdmin)
+            .map(role -> {
+                invalidateRoles(server, role.id());
+                return ResponseEntity.ok(
+                    PanelRoleProtoMapper.toRoleMutationResponse("Role updated successfully", role));
+            })
             .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteRole(
+    public ResponseEntity<RoleMutationResponse> deleteRole(
         @PathVariable String id,
         HttpServletRequest request
     ) {
@@ -117,15 +124,16 @@ public class PanelRoleController {
 
         boolean deleted = roleService.deleteRole(server, id, performerRoleId, isSuperAdmin);
         if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Role deleted successfully"));
-        } else {
-            return ResponseEntity.notFound().build();
+            invalidateRoles(server, id);
+            return ResponseEntity.ok(
+                PanelRoleProtoMapper.toRoleMutationResponse("Role deleted successfully", null));
         }
+        return ResponseEntity.notFound().build();
     }
 
     @PostMapping("/reorder")
-    public ResponseEntity<?> reorderRoles(
-        @RequestBody @Valid ReorderRolesRequest reorderRequest,
+    public ResponseEntity<RoleMutationResponse> reorderRoles(
+        @RequestBody gg.modl.proto.modl.v1.ReorderRolesRequest reorderRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -133,7 +141,14 @@ public class PanelRoleController {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, performerEmail);
         String performerRoleId = getStaffRoleId(server, performerEmail);
 
-        roleService.reorderRoles(server, reorderRequest, performerRoleId, isSuperAdmin);
-        return ResponseEntity.ok(Map.of("message", "Role order updated successfully"));
+        ReorderRolesRequest mappedRequest = PanelRoleProtoMapper.toReorderRolesRequest(reorderRequest);
+        roleService.reorderRoles(server, mappedRequest, performerRoleId, isSuperAdmin);
+        invalidateRoles(server, null);
+        return ResponseEntity.ok(
+            PanelRoleProtoMapper.toRoleMutationResponse("Role order updated successfully", null));
+    }
+
+    private void invalidateRoles(Server server, String roleId) {
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_ROLES, roleId);
     }
 }

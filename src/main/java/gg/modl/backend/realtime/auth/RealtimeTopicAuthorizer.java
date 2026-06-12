@@ -25,9 +25,24 @@ public class RealtimeTopicAuthorizer {
         }
 
         if (principal.clientKind() == RealtimeClientKind.PANEL) {
+            // Permission keys mirror the READ guard each resource's panel route enforces
+            // (PanelPermissionFilter). PermissionService grants a child permission when the
+            // role holds its parent, so a specific key (e.g. admin.audit.view.dashboard) is
+            // satisfied by the broader admin.audit.view, matching the HTTP route guard exactly.
             return switch (topic) {
-                case TOPIC_PANEL_TICKETS, TOPIC_PANEL_ASSIGNED_TICKETS -> hasPanelPermission(principal, "ticket.view.all");
+                case TOPIC_PANEL_TICKETS, TOPIC_PANEL_ASSIGNED_TICKETS,
+                     TOPIC_PANEL_NOTIFICATIONS, TOPIC_PANEL_APPEALS
+                    -> hasPanelPermission(principal, "ticket.view.all");
                 case TOPIC_PANEL_MIGRATIONS -> hasPanelPermission(principal, "admin.settings.view.migration");
+                case TOPIC_PANEL_PLAYERS, TOPIC_PANEL_PUNISHMENTS -> hasPanelPermission(principal, "punishment.modify");
+                case TOPIC_PANEL_STAFF -> hasPanelPermission(principal, "admin.staff.manage.members");
+                case TOPIC_PANEL_ROLES -> hasPanelPermission(principal, "admin.staff.manage.roles");
+                case TOPIC_PANEL_PUNISHMENT_TYPES -> hasPanelPermission(principal, "admin.settings.view.punishments");
+                case TOPIC_PANEL_KNOWLEDGEBASE, TOPIC_PANEL_HOMEPAGE
+                    -> hasPanelPermission(principal, "admin.settings.view.content");
+                case TOPIC_PANEL_SETTINGS -> hasPanelPermission(principal, "admin.settings.view");
+                case TOPIC_PANEL_AUDIT -> hasPanelPermission(principal, "admin.audit.view.logs");
+                case TOPIC_PANEL_DASHBOARD -> hasPanelPermission(principal, "admin.audit.view.dashboard");
                 default -> false;
             };
         }
@@ -54,7 +69,14 @@ public class RealtimeTopicAuthorizer {
     private boolean isMinecraftTopic(RealtimePrincipal principal, Topic topic) {
         return switch (topic) {
             case TOPIC_MINECRAFT_PERMISSIONS,
-                 TOPIC_MINECRAFT_PUNISHMENT_TYPES -> true;
+                 TOPIC_MINECRAFT_PUNISHMENT_TYPES,
+                 TOPIC_MINECRAFT_STAFF_NOTIFICATIONS,
+                 TOPIC_MINECRAFT_PRESENCE,
+                 TOPIC_MINECRAFT_PUNISHMENTS,
+                 TOPIC_MINECRAFT_PLAYER_NOTIFICATIONS,
+                 TOPIC_MINECRAFT_STAFF_2FA,
+                 TOPIC_MINECRAFT_MIGRATION_TASKS,
+                 TOPIC_MINECRAFT_STAT_WIPES -> true;
             default -> false;
         };
     }

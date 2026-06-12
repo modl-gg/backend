@@ -7,7 +7,6 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.alert.data.SystemAlert;
 import gg.modl.backend.alert.data.SystemAlertAudience;
 import gg.modl.backend.alert.data.SystemAlertSeverity;
-import gg.modl.backend.alert.dto.request.UpdateSystemAlertRequest;
 import gg.modl.backend.database.mongo.repository.SystemAlertMongoRepository;
 import java.util.Date;
 import java.util.List;
@@ -57,14 +56,16 @@ class SystemAlertServiceTest {
 
     @Test
     void updateAlertRejectsBlankMessage() {
-        UpdateSystemAlertRequest request = new UpdateSystemAlertRequest(
+        Date expiresAt = new Date(System.currentTimeMillis() + 60_000);
+
+        assertThrows(IllegalArgumentException.class, () -> alertService.updateAlert(
+            "alert-1",
             "   ",
             SystemAlertSeverity.WARNING,
             SystemAlertAudience.ALL_PANEL_USERS,
-            new Date(System.currentTimeMillis() + 60_000)
-        );
-
-        assertThrows(IllegalArgumentException.class, () -> alertService.updateAlert("alert-1", request, "admin@example.com"));
+            expiresAt,
+            "admin@example.com"
+        ));
     }
 
     private static SystemAlert alert(String id, SystemAlertAudience audience, Date expiresAt) {

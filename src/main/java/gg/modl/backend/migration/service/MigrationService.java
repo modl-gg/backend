@@ -3,9 +3,10 @@ package gg.modl.backend.migration.service;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.migration.data.MigrationStatus;
-import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.SyncMigrationTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,10 +14,12 @@ import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import gg.modl.backend.migration.config.MigrationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,6 +29,9 @@ import org.springframework.web.multipart.MultipartFile;
 public class MigrationService {
     private final MigrationMongoRepository migrationRepository;
     private final MigrationConfiguration migrationConfiguration;
+    private final RealtimeEventPublisher publisher;
+
+    public record CooldownState(boolean onCooldown, @Nullable Long remainingTime) {}
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
@@ -35,41 +41,24 @@ public class MigrationService {
     private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
     private static final int MAX_MESSAGE_LENGTH = 1000;
 
-    public MigrationStatusResponse getMigrationStatus(Server server) {
-        MigrationStatus status = migrationRepository.findLatest(server).orElse(null);
-
-        MigrationStatusResponse.CurrentMigration currentMigration = null;
-        if (status != null) {
-            currentMigration = new MigrationStatusResponse.CurrentMigration(
-                status.getTaskId(),
-                status.getType(),
-                status.getStatus(),
-                status.getProgress(),
-                status.getStartedAt(),
-                status.getCompletedAt(),
-                status.getError()
-            );
-        }
-
-        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
-
-        return new MigrationStatusResponse(currentMigration, cooldown);
+    public Optional<MigrationStatus> getLatestMigration(Server server) {
+        return migrationRepository.findLatest(server);
     }
 
-    public MigrationStatusResponse.CooldownInfo checkCooldown(Server server) {
+    public CooldownState checkCooldown(Server server) {
         MigrationStatus lastMigration = migrationRepository.findLatestCompletedOrFailed(server).orElse(null);
 
         if (lastMigration == null || lastMigration.getCompletedAt() == null) {
-            return new MigrationStatusResponse.CooldownInfo(false, null);
+            return new CooldownState(false, null);
         }
 
         long timeSinceCompletion = System.currentTimeMillis() - lastMigration.getCompletedAt().getTime();
 
         if (timeSinceCompletion < COOLDOWN_MS) {
-            return new MigrationStatusResponse.CooldownInfo(true, COOLDOWN_MS - timeSinceCompletion);
+            return new CooldownState(true, COOLDOWN_MS - timeSinceCompletion);
         }
 
-        return new MigrationStatusResponse.CooldownInfo(false, null);
+        return new CooldownState(false, null);
     }
 
     public Map<String, Object> startMigration(Server server, String migrationType) {
@@ -81,17 +70,18 @@ public class MigrationService {
             return Map.of("success", false, "error", "A migration is already in progress");
         }
 
-        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
+        CooldownState cooldown = checkCooldown(server);
         if (cooldown.onCooldown()) {
             return Map.of("success", false, "error", "Migration on cooldown. Please wait before starting another migration.");
         }
 
         String taskId = UUID.randomUUID().toString();
+        String type = migrationType.toLowerCase();
         Date now = new Date();
 
         MigrationStatus status = MigrationStatus.builder()
             .taskId(taskId)
-            .type(migrationType.toLowerCase())
+            .type(type)
             .status("building_json")
             .progress(MigrationStatus.MigrationProgress.builder()
                 .message("Waiting for Minecraft server to build migration file...")
@@ -102,6 +92,11 @@ public class MigrationService {
             .build();
 
         migrationRepository.saveEntity(server, status);
+
+        publisher.pushMigrationTask(server, SyncMigrationTask.newBuilder()
+            .setTaskId(taskId)
+            .setType(type)
+            .build());
 
         return Map.of(
             "success", true,

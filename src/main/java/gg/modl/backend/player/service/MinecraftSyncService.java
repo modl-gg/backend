@@ -62,12 +62,7 @@ public class MinecraftSyncService {
     ) {
         Instant now = Instant.now();
 
-        serverRepository.updateFirst(
-            Query.query(Criteria.where("_id").is(server.getId())),
-            new Update()
-                .set("lastActivityAt", Date.from(now))
-                .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
-        );
+        applyPresence(server, onlinePlayers, serverName, now);
 
         Instant lastSync = lastSyncTimestamp != null
                            ? Instant.parse(lastSyncTimestamp)
@@ -78,16 +73,7 @@ public class MinecraftSyncService {
         List<Map<String, Object>> recentlyModifiedPunishments = new ArrayList<>();
         List<Map<String, Object>> playerNotifications = new ArrayList<>();
 
-        Set<String> onlineUuids = new HashSet<>();
-        if (onlinePlayers != null) {
-            for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
-                if (onlinePlayer.uuid() != null) {
-                    onlineUuids.add(normalizeUuid(onlinePlayer.uuid()));
-                }
-            }
-        }
-
-        markOfflinePlayers(server, onlineUuids, serverName, Date.from(now));
+        Set<String> onlineUuids = collectOnlineUuids(onlinePlayers);
 
         if (!onlineUuids.isEmpty()) {
             List<Player> players = playerRepository.findByMinecraftUuids(server, onlineUuids);
@@ -247,28 +233,7 @@ public class MinecraftSyncService {
 
         List<Map<String, Object>> activeStaffMembers = syncActiveStaffService.getActiveStaffMembers(server, onlinePlayerIps);
 
-        if (chatLogs != null && !chatLogs.isEmpty()) {
-            minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
-                .map(entry -> new MinecraftChatLogService.ChatLogCommand(
-                    entry.uuid(),
-                    entry.username(),
-                    entry.message(),
-                    entry.timestamp(),
-                    entry.server()
-                ))
-                .toList());
-        }
-        if (commandLogs != null && !commandLogs.isEmpty()) {
-            minecraftChatLogService.submitCommandLogs(server, commandLogs.stream()
-                .map(entry -> new MinecraftChatLogService.CommandLogCommand(
-                    entry.uuid(),
-                    entry.username(),
-                    entry.command(),
-                    entry.timestamp(),
-                    entry.server()
-                ))
-                .toList());
-        }
+        submitLogs(server, chatLogs, commandLogs);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pendingPunishments", pendingPunishments);
@@ -307,25 +272,7 @@ public class MinecraftSyncService {
             log.warn("Failed to check active migration during sync", e);
         }
 
-        if (serverStatus != null) {
-            try {
-                long epochSeconds = now.getEpochSecond();
-                Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
-                serverInstanceSnapshotRepository.upsertServerEntry(
-                    fiveMinBoundary,
-                    server.getId(),
-                    serverName,
-                    serverStatus.onlinePlayerCount(),
-                    serverStatus.platformType(),
-                    serverStatus.serverVersion(),
-                    clientIp,
-                    serverStatus.pluginVersion(),
-                    Date.from(now)
-                );
-            } catch (Exception e) {
-                log.warn("Failed to upsert server instance snapshot during sync", e);
-            }
-        }
+        applyServerStatus(server, serverStatus, serverName, clientIp, now);
 
         return Map.of(
             "timestamp", now.toString(),
@@ -333,8 +280,89 @@ public class MinecraftSyncService {
         );
     }
 
-    private void markOfflinePlayers(Server server, Set<String> onlineUuids, String serverName, Date logoutTime) {
-        playerRepository.markStalePlayersOffline(server, onlineUuids, serverName, logoutTime);
+    /**
+     * Presence slice of the sync: refresh the server's last-activity / online
+     * count and reconcile which players the plugin no longer reports online.
+     * Shared by the baseline {@code sync()} and the dedicated presence upload
+     * endpoint so both go through one Mongo write path.
+     */
+    public void applyPresence(Server server, List<OnlinePlayerInput> onlinePlayers, String serverName, Instant now) {
+        serverRepository.updateFirst(
+            Query.query(Criteria.where("_id").is(server.getId())),
+            new Update()
+                .set("lastActivityAt", Date.from(now))
+                .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
+        );
+
+        playerRepository.markStalePlayersOffline(server, collectOnlineUuids(onlinePlayers), serverName, Date.from(now));
+    }
+
+    /**
+     * Chat + command log slice. Append-only and idempotent on the backend; shared
+     * by the baseline {@code sync()} and the dedicated logs upload endpoint.
+     */
+    public void submitLogs(Server server, List<ChatLogInput> chatLogs, List<CommandLogInput> commandLogs) {
+        if (chatLogs != null && !chatLogs.isEmpty()) {
+            minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
+                .map(entry -> new MinecraftChatLogService.ChatLogCommand(
+                    entry.uuid(),
+                    entry.username(),
+                    entry.message(),
+                    entry.timestamp(),
+                    entry.server()
+                ))
+                .toList());
+        }
+        if (commandLogs != null && !commandLogs.isEmpty()) {
+            minecraftChatLogService.submitCommandLogs(server, commandLogs.stream()
+                .map(entry -> new MinecraftChatLogService.CommandLogCommand(
+                    entry.uuid(),
+                    entry.username(),
+                    entry.command(),
+                    entry.timestamp(),
+                    entry.server()
+                ))
+                .toList());
+        }
+    }
+
+    /**
+     * Server-status heartbeat slice. Upserts the per-instance snapshot. Shared by
+     * the baseline {@code sync()} and the dedicated status upload endpoint.
+     */
+    public void applyServerStatus(Server server, ServerStatusInput serverStatus, String serverName, String clientIp, Instant now) {
+        if (serverStatus == null) {
+            return;
+        }
+        try {
+            long epochSeconds = now.getEpochSecond();
+            Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
+            serverInstanceSnapshotRepository.upsertServerEntry(
+                fiveMinBoundary,
+                server.getId(),
+                serverName,
+                serverStatus.onlinePlayerCount(),
+                serverStatus.platformType(),
+                serverStatus.serverVersion(),
+                clientIp,
+                serverStatus.pluginVersion(),
+                Date.from(now)
+            );
+        } catch (Exception e) {
+            log.warn("Failed to upsert server instance snapshot during sync", e);
+        }
+    }
+
+    private Set<String> collectOnlineUuids(List<OnlinePlayerInput> onlinePlayers) {
+        Set<String> onlineUuids = new HashSet<>();
+        if (onlinePlayers != null) {
+            for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
+                if (onlinePlayer.uuid() != null) {
+                    onlineUuids.add(normalizeUuid(onlinePlayer.uuid()));
+                }
+            }
+        }
+        return onlineUuids;
     }
 
     private List<Map<String, Object>> deduplicatePendingPunishments(List<Map<String, Object>> punishments) {

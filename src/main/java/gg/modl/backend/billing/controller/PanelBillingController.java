@@ -1,23 +1,23 @@
 package gg.modl.backend.billing.controller;
 
-import gg.modl.backend.billing.dto.request.UpdateOverageLimitsRequest;
-import gg.modl.backend.billing.dto.request.UpdateStorageLimitRequest;
-import gg.modl.backend.billing.dto.request.UsageBillingSettingsRequest;
-import gg.modl.backend.billing.dto.response.BillingStatusResponse;
-import gg.modl.backend.billing.dto.response.CancelResponse;
-import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
-import gg.modl.backend.billing.dto.response.PortalSessionResponse;
-import gg.modl.backend.billing.dto.response.ResubscribeResponse;
-import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
-import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.billing.service.BillingService;
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.BillingStatusResponse;
+import gg.modl.proto.modl.v1.CancelResponse;
+import gg.modl.proto.modl.v1.CheckoutSessionResponse;
+import gg.modl.proto.modl.v1.PortalSessionResponse;
+import gg.modl.proto.modl.v1.ResubscribeResponse;
+import gg.modl.proto.modl.v1.UpdateOverageLimitsRequest;
+import gg.modl.proto.modl.v1.UpdateOverageLimitsResponse;
+import gg.modl.proto.modl.v1.UpdateStorageLimitRequest;
+import gg.modl.proto.modl.v1.UpdateStorageLimitResponse;
+import gg.modl.proto.modl.v1.UsageBillingSettingsRequest;
+import gg.modl.proto.modl.v1.UsageBillingSettingsResponse;
+import gg.modl.proto.modl.v1.UsageResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,7 +39,7 @@ public class PanelBillingController {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        return ResponseEntity.ok(billingService.createCheckoutSession(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toCheckoutSessionResponse(billingService.createCheckoutSession(server)));
     }
 
     @PostMapping("/portal-session")
@@ -48,7 +48,7 @@ public class PanelBillingController {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        return ResponseEntity.ok(billingService.createPortalSession(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toPortalSessionResponse(billingService.createPortalSession(server)));
     }
 
     @PostMapping("/cancel")
@@ -57,7 +57,7 @@ public class PanelBillingController {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        return ResponseEntity.ok(billingService.cancelSubscription(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toCancelResponse(billingService.cancelSubscription(server)));
     }
 
     @PostMapping("/resubscribe")
@@ -66,64 +66,62 @@ public class PanelBillingController {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        return ResponseEntity.ok(billingService.resubscribe(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toResubscribeResponse(billingService.resubscribe(server)));
     }
 
     @GetMapping("/status")
     public ResponseEntity<BillingStatusResponse> getBillingStatus(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        return ResponseEntity.ok(billingService.getBillingStatus(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toBillingStatusResponse(billingService.getBillingStatus(server)));
     }
 
     @GetMapping("/usage")
     public ResponseEntity<UsageResponse> getUsage(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        return ResponseEntity.ok(usageTrackingService.getUsage(server));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toUsageResponse(usageTrackingService.getUsage(server)));
     }
 
     @PostMapping("/usage-settings")
     public ResponseEntity<UsageBillingSettingsResponse> updateUsageBillingSettings(
-        @RequestBody @Valid UsageBillingSettingsRequest settingsRequest,
+        @RequestBody UsageBillingSettingsRequest settingsRequest,
         HttpServletRequest request
     ) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        return ResponseEntity.ok(usageTrackingService.updateUsageBillingSettings(server, settingsRequest.enabled()));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toUsageBillingSettingsResponse(
+            usageTrackingService.updateUsageBillingSettings(server, settingsRequest.getEnabled())));
     }
 
     @PostMapping("/storage-limit")
-    public ResponseEntity<?> updateStorageLimit(
-        @RequestBody @Valid UpdateStorageLimitRequest body,
+    public ResponseEntity<UpdateStorageLimitResponse> updateStorageLimit(
+        @RequestBody UpdateStorageLimitRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        usageTrackingService.updateStorageLimit(server, body.maxStorageLimitBytes());
+        long maxStorageLimitBytes = body.getMaxStorageLimitBytes();
+        usageTrackingService.updateStorageLimit(server, maxStorageLimitBytes);
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "maxStorageLimitBytes", body.maxStorageLimitBytes()
-        ));
+        return ResponseEntity.ok(PanelBillingProtoMapper.toUpdateStorageLimitResponse(maxStorageLimitBytes));
     }
 
     @PostMapping("/overage-limits")
-    public ResponseEntity<?> updateOverageLimits(
-        @RequestBody @Valid UpdateOverageLimitsRequest body,
+    public ResponseEntity<UpdateOverageLimitsResponse> updateOverageLimits(
+        @RequestBody UpdateOverageLimitsRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
-        long maxStorageLimitBytes = (200L + body.maxStorageOverageGB()) * 1024L * 1024 * 1024;
-        usageTrackingService.updateOverageLimits(server, maxStorageLimitBytes, body.maxAiOverageRequests());
+        int maxStorageOverageGB = body.hasMaxStorageOverageGbValue() ? body.getMaxStorageOverageGbValue() : body.getMaxStorageOverageGb();
+        int maxAiOverageRequests = body.hasMaxAiOverageRequestsValue() ? body.getMaxAiOverageRequestsValue() : body.getMaxAiOverageRequests();
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "maxStorageLimitBytes", maxStorageLimitBytes,
-            "maxAiOverageRequests", body.maxAiOverageRequests()
-        ));
+        long maxStorageLimitBytes = (200L + maxStorageOverageGB) * 1024L * 1024 * 1024;
+        usageTrackingService.updateOverageLimits(server, maxStorageLimitBytes, maxAiOverageRequests);
+
+        return ResponseEntity.ok(PanelBillingProtoMapper.toUpdateOverageLimitsResponse(maxStorageLimitBytes, maxAiOverageRequests));
     }
 }

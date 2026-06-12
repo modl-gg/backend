@@ -2,11 +2,11 @@ package gg.modl.backend.homepage.service;
 
 import gg.modl.backend.database.mongo.repository.HomepageCardMongoRepository;
 import gg.modl.backend.homepage.data.HomepageCard;
-import gg.modl.backend.homepage.dto.request.CreateCardRequest;
-import gg.modl.backend.homepage.dto.request.UpdateCardRequest;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.CreateCardRequest;
+import gg.modl.proto.modl.v1.UpdateCardRequest;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -34,17 +34,17 @@ public class HomepageCardService {
 
     public HomepageCard createCard(Server server, CreateCardRequest request) {
         HomepageCard card = HomepageCard.builder()
-            .title(request.title())
-            .description(request.description())
-            .icon(request.icon())
-            .iconColor(request.iconColor())
-            .actionType(request.actionType())
-            .actionUrl(request.actionUrl())
-            .actionButtonText(request.actionButtonText())
-            .categoryId(request.categoryId())
-            .backgroundColor(request.backgroundColor())
+            .title(request.getTitle())
+            .description(request.hasDescription() ? request.getDescription() : null)
+            .icon(request.hasIcon() ? request.getIcon() : null)
+            .iconColor(request.hasIconColor() ? request.getIconColor() : null)
+            .actionType(request.hasActionType() ? request.getActionType() : null)
+            .actionUrl(request.hasActionUrl() ? request.getActionUrl() : null)
+            .actionButtonText(request.hasActionButtonText() ? request.getActionButtonText() : null)
+            .categoryId(request.hasCategoryId() ? request.getCategoryId() : null)
+            .backgroundColor(request.hasBackgroundColor() ? request.getBackgroundColor() : null)
             .ordinal(homepageCardRepository.findMaxOrdinal(server) + 1)
-            .isEnabled(request.isEnabled() != null ? request.isEnabled() : true)
+            .isEnabled(!request.hasIsEnabled() || request.getIsEnabled())
             .createdAt(new Date())
             .updatedAt(new Date())
             .build();
@@ -56,16 +56,16 @@ public class HomepageCardService {
         return homepageCardRepository.updateCard(
             server,
             id,
-            request.title(),
-            request.description(),
-            request.icon(),
-            request.iconColor(),
-            request.actionType(),
-            request.actionUrl(),
-            request.actionButtonText(),
-            request.categoryId(),
-            request.backgroundColor(),
-            request.isEnabled(),
+            request.hasTitle() ? request.getTitle() : null,
+            request.hasDescription() ? request.getDescription() : null,
+            request.hasIcon() ? request.getIcon() : null,
+            request.hasIconColor() ? request.getIconColor() : null,
+            request.hasActionType() ? request.getActionType() : null,
+            request.hasActionUrl() ? request.getActionUrl() : null,
+            request.hasActionButtonText() ? request.getActionButtonText() : null,
+            request.hasCategoryId() ? request.getCategoryId() : null,
+            request.hasBackgroundColor() ? request.getBackgroundColor() : null,
+            request.hasIsEnabled() ? request.getIsEnabled() : null,
             new Date()
         );
     }

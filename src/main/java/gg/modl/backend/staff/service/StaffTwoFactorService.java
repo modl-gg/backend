@@ -34,31 +34,49 @@ public class StaffTwoFactorService {
         return Optional.of(new TwoFactorTokenResult(token, "https://" + domain + "/verify/" + token));
     }
 
-    public boolean verifyToken(Server server, String token, String sessionEmail) {
+    /**
+     * Verifies a staff 2fa token and, on success, activates the session. An empty result means the
+     * token was rejected. A present result carries the staff's assigned Minecraft UUID (if any) so
+     * the caller can push the verification to the plugin.
+     */
+    public Optional<VerificationResult> verifyToken(Server server, String token, String sessionEmail) {
         Staff staff = staffRepository.findByTwoFactorToken(server, token).orElse(null);
         if (staff == null) {
-            return false;
+            return Optional.empty();
         }
 
         if (sessionEmail != null && !sessionEmail.isBlank()
             && (staff.getEmail() == null || !staff.getEmail().equalsIgnoreCase(sessionEmail))) {
-            return false;
+            return Optional.empty();
         }
 
         Long tokenCreatedAt = staff.getTwoFactorTokenCreatedAt();
         long now = Instant.now().toEpochMilli();
         if (tokenCreatedAt == null || now - tokenCreatedAt > TOKEN_TTL_MILLIS) {
-            return false;
+            return Optional.empty();
         }
 
         String sessionIp = staff.getTwoFactorTokenIp();
-        return staffRepository.activateTwoFactorSession(
+        boolean activated = staffRepository.activateTwoFactorSession(
             server,
             staff.getId(),
             token,
             sessionIp,
             now + SESSION_DURATION_MILLIS
         );
+        if (!activated) {
+            return Optional.empty();
+        }
+
+        String minecraftUuid = staff.getAssignedMinecraftUuid();
+        return Optional.of(new VerificationResult(
+            minecraftUuid != null && !minecraftUuid.isBlank() ? minecraftUuid : null));
+    }
+
+    public record VerificationResult(String minecraftUuid) {
+        public Optional<String> minecraftUuidOptional() {
+            return Optional.ofNullable(minecraftUuid);
+        }
     }
 
     public record TwoFactorTokenResult(String token, String verifyUrl) {

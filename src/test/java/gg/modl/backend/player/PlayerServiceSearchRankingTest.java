@@ -12,6 +12,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.time.Instant;
@@ -40,13 +41,16 @@ class PlayerServiceSearchRankingTest {
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
+    private RealtimeEventPublisher realtimePublisher;
+
+    @Mock
     private Server server;
 
     private PlayerService playerService;
 
     @BeforeEach
     void setUp() {
-        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService);
+        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService, realtimePublisher);
     }
 
     @Test

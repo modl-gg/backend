@@ -13,22 +13,23 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.infrastructure.util.CookieUtil;
+import gg.modl.proto.modl.v1.PanelAuthResponse;
+import gg.modl.proto.modl.v1.PanelPermissionsResponse;
+import gg.modl.proto.modl.v1.PanelProfileResponse;
+import gg.modl.proto.modl.v1.PanelSendEmailCodeRequest;
+import gg.modl.proto.modl.v1.PanelSessionsResponse;
+import gg.modl.proto.modl.v1.PanelUpdateEmailRequest;
+import gg.modl.proto.modl.v1.PanelUpdateEmailWithCodeRequest;
+import gg.modl.proto.modl.v1.PanelUpdateProfileRequest;
+import gg.modl.proto.modl.v1.PanelVerifyEmailCodeRequest;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
-import java.text.SimpleDateFormat;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.TimeZone;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,52 +54,52 @@ public class PanelAuthController {
     private final CookieUtil cookieUtil;
 
     @PostMapping("/send-email-code")
-    public ResponseEntity<AuthResponse> sendEmailCode(
+    public ResponseEntity<PanelAuthResponse> sendEmailCode(
         HttpServletRequest request,
-        @RequestBody @Valid SendEmailCodeRequest requestData) throws Exception {
+        @RequestBody PanelSendEmailCodeRequest requestData) throws Exception {
 
         Server server = RequestUtil.getRequestServer(request);
 
         // Always return generic success to prevent email enumeration
-        if (!permissionService.isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
+        if (!permissionService.isAuthorizedEmail(server, requestData.getEmail())) {
+            return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
         }
 
-        authService.sendUserLoginCode(server, requestData.email());
+        authService.sendUserLoginCode(server, requestData.getEmail());
 
-        return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
     }
 
     @PostMapping("/verify-email-code")
-    public ResponseEntity<AuthResponse> verifyEmailCode(
+    public ResponseEntity<PanelAuthResponse> verifyEmailCode(
         HttpServletRequest request,
         HttpServletResponse response,
-        @RequestBody @Valid VerifyCodeRequest requestData) {
+        @RequestBody PanelVerifyEmailCodeRequest requestData) {
 
         Server server = RequestUtil.getRequestServer(request);
 
         // Return same error as invalid code to prevent email enumeration
-        if (!permissionService.isAuthorizedEmail(server, requestData.email())) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
+        if (!permissionService.isAuthorizedEmail(server, requestData.getEmail())) {
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 
-        boolean valid = authService.verifyCode(server, requestData.email(), requestData.code());
+        boolean valid = authService.verifyCode(server, requestData.getEmail(), requestData.getCode());
 
         if (!valid) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, AuthResponseMessage.INVALID_CODE));
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, AuthResponseMessage.INVALID_CODE));
         }
 
         String clientIp = RequestUtil.getClientIp(request);
         String userAgent = request.getHeader("User-Agent");
-        AuthSessionData session = sessionService.createSession(server, requestData.email(), clientIp, userAgent);
+        AuthSessionData session = sessionService.createSession(server, requestData.getEmail(), clientIp, userAgent);
 
         response.addCookie(cookieUtil.createSessionCookie(session.getId()));
 
-        return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGIN_SUCCESS));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.LOGIN_SUCCESS));
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<AuthResponse> logout(HttpServletRequest request, HttpServletResponse response) {
+    public ResponseEntity<PanelAuthResponse> logout(HttpServletRequest request, HttpServletResponse response) {
         Server server = RequestUtil.getRequestServer(request);
         Set<String> sessionIds = extractSessionIds(request);
 
@@ -110,7 +111,7 @@ public class PanelAuthController {
             response.addCookie(cookie);
         }
 
-        return ResponseEntity.ok(new AuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
     }
 
     private Set<String> extractSessionIds(HttpServletRequest request) {
@@ -129,111 +130,115 @@ public class PanelAuthController {
     @PatchMapping("/profile")
     public ResponseEntity<?> updateProfile(
         HttpServletRequest request,
-        @RequestBody @Valid UpdateProfileRequest requestData) {
+        @RequestBody PanelUpdateProfileRequest requestData) {
 
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
-        Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, requestData.username(), isSuperAdmin, requestData.language(),
-            requestData.dateFormat());
+        String username = requestData.hasUsername() ? requestData.getUsername() : null;
+        String language = requestData.hasLanguage() ? requestData.getLanguage() : null;
+        String dateFormat = requestData.hasDateFormat() ? requestData.getDateFormat() : null;
+
+        Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, username, isSuperAdmin, language, dateFormat);
         if (result.isEmpty()) {
             if (isSuperAdmin) {
-                String username = requestData.username() != null ? requestData.username() : "Admin";
-                String language = requestData.language() != null ? requestData.language() : "en";
-                String dateFormat = requestData.dateFormat() != null ? requestData.dateFormat() : "MM/DD/YYYY";
-                return ResponseEntity.ok(new ProfileResponse(null, email, username, "Super Admin", username, language, dateFormat));
+                String resolvedUsername = username != null ? username : "Admin";
+                String resolvedLanguage = language != null ? language : "en";
+                String resolvedDateFormat = dateFormat != null ? dateFormat : "MM/DD/YYYY";
+                return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
+                    null, email, resolvedUsername, "Super Admin", resolvedUsername, resolvedLanguage, resolvedDateFormat));
             }
-            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+            return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
         }
         Staff staff = result.get();
         String role = isSuperAdmin ? "Super Admin" : permissionService.resolveRoleName(server, staff.getRoleId());
         String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                                    ? staff.getAssignedMinecraftUsername()
                                    : staff.getUsername();
-        return ResponseEntity.ok(
-            new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
+            staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
     }
 
     @PostMapping("/email/send-code")
-    public ResponseEntity<?> sendEmailChangeCode(
+    public ResponseEntity<PanelAuthResponse> sendEmailChangeCode(
         HttpServletRequest request,
-        @RequestBody @Valid UpdateEmailRequest requestData) {
+        @RequestBody PanelUpdateEmailRequest requestData) {
 
         String currentEmail = RequestUtil.getSessionEmail(request);
         if (currentEmail == null) {
-            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
-        String newEmail = requestData.newEmail().trim();
+        String newEmail = requestData.getNewEmail().trim();
         if (currentEmail.equalsIgnoreCase(newEmail)) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "New email must be different from your current email."));
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "New email must be different from your current email."));
         }
 
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
 
         if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "This email is not authorized for this panel."));
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "This email is not authorized for this panel."));
         }
 
         try {
             authService.sendUserLoginCode(server, newEmail);
         } catch (Exception e) {
-            return ResponseEntity.status(500).body(new AuthResponse(false, "Failed to send verification code."));
+            return ResponseEntity.status(500).body(PanelAuthProtoMapper.toAuthResponse(false, "Failed to send verification code."));
         }
 
-        return ResponseEntity.ok(new AuthResponse(true, "Verification code sent to new email."));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, "Verification code sent to new email."));
     }
 
     @PatchMapping("/email")
-    public ResponseEntity<?> updateEmail(
+    public ResponseEntity<PanelAuthResponse> updateEmail(
         HttpServletRequest request,
         HttpServletResponse response,
-        @RequestBody @Valid UpdateEmailWithCodeRequest requestData) {
+        @RequestBody PanelUpdateEmailWithCodeRequest requestData) {
 
         String currentEmail = RequestUtil.getSessionEmail(request);
         if (currentEmail == null) {
-            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
-        String newEmail = requestData.newEmail().trim();
+        String newEmail = requestData.getNewEmail().trim();
         if (currentEmail.equalsIgnoreCase(newEmail)) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "New email must be different from your current email."));
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "New email must be different from your current email."));
         }
 
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
 
         if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "This email is not authorized for this panel."));
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "This email is not authorized for this panel."));
         }
 
-        if (!authService.verifyCode(server, newEmail, requestData.code())) {
-            return ResponseEntity.badRequest().body(new AuthResponse(false, "Invalid or expired verification code."));
+        if (!authService.verifyCode(server, newEmail, requestData.getCode())) {
+            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "Invalid or expired verification code."));
         }
 
         Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
         if (result.isEmpty()) {
-            return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+            return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
         }
 
         sessionService.invalidateAllSessionsForEmail(server, currentEmail);
         AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
         response.addCookie(cookieUtil.createSessionCookie(newSession.getId()));
 
-        return ResponseEntity.ok(new AuthResponse(true, "Email updated successfully."));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, "Email updated successfully."));
     }
 
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
         Server server = RequestUtil.getRequestServer(request);
@@ -248,23 +253,23 @@ public class PanelAuthController {
             String minecraftUsername = staff.getAssignedMinecraftUsername() != null
                                        ? staff.getAssignedMinecraftUsername()
                                        : staff.getUsername();
-            return ResponseEntity.ok(
-                new ProfileResponse(staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
+            return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
+                staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         }
 
         // Super Admin without a staff record - return default username
         if (isSuperAdmin) {
-            return ResponseEntity.ok(new ProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", "MM/DD/YYYY"));
+            return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", "MM/DD/YYYY"));
         }
 
-        return ResponseEntity.status(404).body(new AuthResponse(false, "Staff member not found"));
+        return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
     }
 
     @GetMapping("/sessions")
     public ResponseEntity<?> getSessions(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(new AuthResponse(false, "Not authenticated"));
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
         Server server = RequestUtil.getRequestServer(request);
@@ -273,70 +278,33 @@ public class PanelAuthController {
 
         List<AuthSessionData> sessions = sessionService.findAllSessionsForEmail(server, email);
 
-        SimpleDateFormat isoFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        isoFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
-
-        List<SessionInfoResponse> result = sessions.stream()
-            .map(s -> new SessionInfoResponse(
-                s.getId(),
-                s.getIpAddress(),
-                s.getUserAgent(),
-                s.getCreatedAt() != null ? isoFormat.format(s.getCreatedAt()) : null,
-                s.getExpiresAt() != null ? isoFormat.format(s.getExpiresAt()) : null,
-                s.getId().equals(currentSessionId)
-            ))
-            .toList();
-
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(PanelAuthProtoMapper.toSessionsResponse(sessions, currentSessionId));
     }
 
     @GetMapping("/permissions")
-    public ResponseEntity<List<String>> getUserPermissions(HttpServletRequest request) {
+    public ResponseEntity<PanelPermissionsResponse> getUserPermissions(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
-            return ResponseEntity.status(401).body(Collections.emptyList());
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toPermissionsResponse(List.of()));
         }
 
         Server server = RequestUtil.getRequestServer(request);
 
         // Check if user is Super Admin (server admin)
         if (permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.ok(permissionService.getAllPermissionIds(server));
+            return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(permissionService.getAllPermissionIds(server)));
         }
 
         // Get staff member and their role
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         if (staffOpt.isEmpty()) {
-            return ResponseEntity.ok(Collections.emptyList());
+            return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of()));
         }
 
         String roleId = staffOpt.get().getRoleId();
         Optional<StaffRole> roleOpt = permissionService.getRoleById(server, roleId);
 
-        return roleOpt.map(staffRole -> ResponseEntity.ok(staffRole.getPermissions()))
-            .orElseGet(() -> ResponseEntity.ok(Collections.emptyList()));
+        return roleOpt.map(staffRole -> ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(staffRole.getPermissions())))
+            .orElseGet(() -> ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of())));
     }
-
-    public record AuthResponse(boolean success, String message) {}
-
-    public record SendEmailCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
-
-    public record VerifyCodeRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email, @NotBlank @Size(max = RequestValidationLimits.TICKET_VERIFY_CODE_MAX_LENGTH) String code) {}
-
-    public record UpdateProfileRequest(
-        @Size(max = RequestValidationLimits.STAFF_USERNAME_MAX_LENGTH) String username,
-        @Size(max = RequestValidationLimits.ADMIN_DEFAULT_LANGUAGE_MAX_LENGTH) String language,
-        @Size(max = RequestValidationLimits.TIMEZONE_MAX_LENGTH) String dateFormat
-    ) {}
-
-    public record UpdateEmailRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String newEmail) {}
-
-    public record UpdateEmailWithCodeRequest(
-        @Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String newEmail,
-        @NotBlank @Size(min = 1, max = 10) String code
-    ) {}
-
-    public record ProfileResponse(String id, String email, String username, String role, String minecraftUsername, String language, String dateFormat) {}
-
-    public record SessionInfoResponse(String id, String ipAddress, String userAgent, String createdAt, String expiresAt, boolean isCurrent) {}
 }

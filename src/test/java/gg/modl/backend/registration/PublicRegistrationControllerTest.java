@@ -12,6 +12,8 @@ import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.proto.modl.v1.AutoLoginRequest;
+import gg.modl.proto.modl.v1.EmailVerificationResponse;
 import java.util.Date;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
@@ -40,8 +42,8 @@ class PublicRegistrationControllerTest {
         ResponseEntity<?> response = controller.verifyEmail("verify-token");
 
         assertEquals(200, response.getStatusCode().value());
-        PublicRegistrationController.VerifyResponse body = (PublicRegistrationController.VerifyResponse) response.getBody();
-        assertEquals("auto-login-token", body.autoLoginToken());
+        EmailVerificationResponse body = (EmailVerificationResponse) response.getBody();
+        assertEquals("auto-login-token", body.getAutoLoginToken());
         verify(serverService).setAutoLoginToken(server, "auto-login-token", expiresAt);
     }
 
@@ -63,7 +65,7 @@ class PublicRegistrationControllerTest {
             .thenReturn(RegistrationService.ServerReadiness.PROVISIONING_INCOMPLETE);
 
         ResponseEntity<?> response = controller.autoLogin(
-            new PublicRegistrationController.AutoLoginRequest("auto-login-token"),
+            AutoLoginRequest.newBuilder().setToken("auto-login-token").build(),
             new MockHttpServletRequest(),
             new MockHttpServletResponse()
         );

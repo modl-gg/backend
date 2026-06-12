@@ -3,17 +3,18 @@ package gg.modl.backend.settings.controller;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
-import gg.modl.backend.settings.dto.request.ConfigureDomainRequest;
-import gg.modl.backend.settings.dto.request.VerifyDomainRequest;
 import gg.modl.backend.settings.service.CustomDomainAccessService;
 import gg.modl.backend.settings.service.DomainSettingsService;
+import gg.modl.proto.modl.v1.ConfigureDomainRequest;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.RemoveDomainResponse;
+import gg.modl.proto.modl.v1.VerifyDomainRequest;
+import gg.modl.proto.modl.v1.VerifyDomainResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,25 +28,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelDomainSettingsController {
     private final DomainSettingsService domainSettingsService;
     private final CustomDomainAccessService customDomainAccessService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping
-    public ResponseEntity<DomainSettings> getDomainSettings(HttpServletRequest request) {
+    public gg.modl.proto.modl.v1.DomainSettings getDomainSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         String host = request.getHeader("Host");
         DomainSettings settings = domainSettingsService.getDomainSettings(server, host);
-        return ResponseEntity.ok(settings);
+        return PanelSettingsProtoMapper.toDomainSettings(settings);
     }
 
     @PostMapping
-    public ResponseEntity<?> configureDomain(
-        @RequestBody @Valid ConfigureDomainRequest body,
+    public gg.modl.proto.modl.v1.DomainSettings configureDomain(
+        @RequestBody ConfigureDomainRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         requireCustomDomainWriteAccess(server);
 
-        DomainSettings settings = domainSettingsService.configureDomain(server, body.customDomain().trim());
-        return ResponseEntity.ok(settings);
+        DomainSettings settings = domainSettingsService.configureDomain(server, body.getCustomDomain().trim());
+        invalidateSettings(server);
+        return PanelSettingsProtoMapper.toDomainSettings(settings);
     }
 
     private void requireCustomDomainWriteAccess(Server server) {
@@ -55,14 +58,14 @@ public class PanelDomainSettingsController {
     }
 
     @PostMapping("/verify")
-    public ResponseEntity<?> verifyDomain(
-        @RequestBody @Valid VerifyDomainRequest body,
+    public VerifyDomainResponse verifyDomain(
+        @RequestBody VerifyDomainRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         requireCustomDomainWriteAccess(server);
 
-        DomainSettings settings = domainSettingsService.verifyDomain(server, body.domain().trim());
+        DomainSettings settings = domainSettingsService.verifyDomain(server, body.getDomain().trim());
         DomainSettings.DomainStatus status = settings.getStatus();
 
         String message = switch (status.getStatus()) {
@@ -75,18 +78,21 @@ public class PanelDomainSettingsController {
             default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
         };
 
-        return ResponseEntity.ok(Map.of(
-            "status", status,
-            "message", message
-        ));
+        invalidateSettings(server);
+        return PanelSettingsProtoMapper.toVerifyDomainResponse(settings, message);
     }
 
     @DeleteMapping
-    public ResponseEntity<?> removeDomain(HttpServletRequest request) {
+    public RemoveDomainResponse removeDomain(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         requireCustomDomainWriteAccess(server);
 
         domainSettingsService.removeDomain(server);
-        return ResponseEntity.ok(Map.of("message", "Domain removed successfully"));
+        invalidateSettings(server);
+        return PanelSettingsProtoMapper.toRemoveDomainResponse("Domain removed successfully");
+    }
+
+    private void invalidateSettings(Server server) {
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_SETTINGS);
     }
 }

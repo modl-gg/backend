@@ -10,6 +10,7 @@ import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.PublicHomepageCardsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import java.util.Optional;
@@ -26,9 +27,10 @@ public class PublicHomepageCardController {
     private final HomepageCardService cardService;
     private final KnowledgebaseCategoryService categoryService;
     private final KnowledgebaseArticleService articleService;
+    private final HomepageProtoMapper mapper;
 
     @GetMapping
-    public ResponseEntity<List<HomepageCardResponse>> getCards(HttpServletRequest request) {
+    public ResponseEntity<PublicHomepageCardsResponse> getCards(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         List<HomepageCard> cards = cardService.getVisibleCards(server);
 
@@ -36,7 +38,7 @@ public class PublicHomepageCardController {
             .map(card -> enrichCard(server, card))
             .toList();
 
-        return ResponseEntity.ok(enrichedCards);
+        return ResponseEntity.ok(mapper.toPublicCardsResponse(enrichedCards));
     }
 
     private HomepageCardResponse enrichCard(Server server, HomepageCard card) {

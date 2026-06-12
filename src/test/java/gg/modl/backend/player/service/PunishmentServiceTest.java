@@ -78,6 +78,9 @@ class PunishmentServiceTest {
     @Mock
     private WebhookSettingsService webhookSettingsService;
 
+    @Mock
+    private PunishmentRealtimePublisher realtimePublisher;
+
     private PunishmentLifecycleService punishmentLifecycleService;
 
     private PunishmentMutationService punishmentMutationService;
@@ -96,7 +99,8 @@ class PunishmentServiceTest {
             staffRepository,
             punishmentQueryService,
             permissionService,
-            webhookSettingsService
+            webhookSettingsService,
+            realtimePublisher
         );
         punishmentMutationService = new PunishmentMutationService(
             playerRepository,
@@ -105,7 +109,8 @@ class PunishmentServiceTest {
             issuerNameResolver,
             staffRepository,
             punishmentQueryService,
-            punishmentLifecycleService
+            punishmentLifecycleService,
+            realtimePublisher
         );
     }
 
@@ -259,13 +264,14 @@ class PunishmentServiceTest {
             .punishments(new ArrayList<>(List.of(linkedBan)))
             .build();
 
-        when(punishmentRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(punishmentRepository.findByLinkedBanId(server, "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(true);
 
-        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
+        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans(server, "parent-1");
 
         assertEquals(1, updatedCount);
-        verify(punishmentRepository).replacePunishments(eq("db"), eq(player));
+        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals("SYSTEM_PARDON", updatedPunishment.getModifications().get(0).type());
     }
@@ -291,12 +297,13 @@ class PunishmentServiceTest {
             .punishments(new ArrayList<>(List.of(linkedBan)))
             .build();
 
-        when(punishmentRepository.findByLinkedBanId("db", "parent-1")).thenReturn(List.of(player));
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(punishmentRepository.findByLinkedBanId(server, "parent-1")).thenReturn(List.of(player));
         when(statusCalculator.isPunishmentActive(linkedBan)).thenReturn(false);
 
-        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans("db", "parent-1");
+        int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans(server, "parent-1");
 
         assertEquals(0, updatedCount);
-        verify(punishmentRepository, never()).replacePunishments(eq("db"), any(Player.class));
+        verify(punishmentRepository, never()).replacePunishments(eq(server), any(Player.class));
     }
 }

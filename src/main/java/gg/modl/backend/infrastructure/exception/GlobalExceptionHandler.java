@@ -184,11 +184,7 @@ public class GlobalExceptionHandler {
                 .forEach(error::addFieldViolations);
             return protobufError(HttpStatus.BAD_REQUEST, error.build());
         }
-        Map<String, Object> body = Map.of(
-                "status", 400,
-                "error", ex.getMessage()
-        );
-        return ResponseEntity.badRequest().body(body);
+        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, INVALID_DATA_MESSAGE));
     }
 
     @ExceptionHandler(Exception.class)

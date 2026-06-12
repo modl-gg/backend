@@ -5,9 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import gg.modl.proto.modl.v1.AssignedTicketSubscriptionChangedEvent;
 import gg.modl.proto.modl.v1.MigrationStatusChangedEvent;
+import gg.modl.proto.modl.v1.PanelInvalidatedEvent;
+import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PermissionInvalidatedEvent;
+import gg.modl.proto.modl.v1.PunishmentPushEvent;
 import gg.modl.proto.modl.v1.PunishmentTypeInvalidatedEvent;
 import gg.modl.proto.modl.v1.RealtimeEnvelope;
+import gg.modl.proto.modl.v1.StatWipePushEvent;
 import gg.modl.proto.modl.v1.TicketChangedEvent;
 import gg.modl.proto.modl.v1.Topic;
 import org.junit.jupiter.api.Test;
@@ -29,6 +33,11 @@ class RealtimeTopicPayloadValidatorTest {
             Topic.TOPIC_PANEL_MIGRATIONS,
             RealtimeEnvelope.newBuilder().setMigrationStatusChanged(MigrationStatusChangedEvent.newBuilder().setMigrationId("migration-1").build()).build()
         )));
+        assertTrue(validator.isValid(event(
+            Topic.TOPIC_PANEL_PUNISHMENTS,
+            RealtimeEnvelope.newBuilder().setPanelInvalidated(
+                PanelInvalidatedEvent.newBuilder().setResource(PanelResource.PANEL_RESOURCE_PUNISHMENTS).build()).build()
+        )));
     }
 
     @Test
@@ -40,6 +49,14 @@ class RealtimeTopicPayloadValidatorTest {
         assertTrue(validator.isValid(event(
             Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES,
             RealtimeEnvelope.newBuilder().setPunishmentTypeInvalidated(PunishmentTypeInvalidatedEvent.newBuilder()).build()
+        )));
+        assertTrue(validator.isValid(event(
+            Topic.TOPIC_MINECRAFT_PUNISHMENTS,
+            RealtimeEnvelope.newBuilder().setPunishmentPush(PunishmentPushEvent.newBuilder().build()).build()
+        )));
+        assertTrue(validator.isValid(event(
+            Topic.TOPIC_MINECRAFT_STAT_WIPES,
+            RealtimeEnvelope.newBuilder().setStatWipePush(StatWipePushEvent.newBuilder().build()).build()
         )));
     }
 

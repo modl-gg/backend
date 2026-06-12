@@ -12,10 +12,12 @@ import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.proto.modl.v1.PanelResource;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -37,6 +39,7 @@ public class PlayerService {
     private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final RealtimeEventPublisher realtimePublisher;
     private static final int SEARCH_RESULT_LIMIT = 20;
     private static final int SEARCH_CANDIDATE_LIMIT = 100;
     private static final int RANK_EXACT_CURRENT_USERNAME = 0;
@@ -358,7 +361,9 @@ public class PlayerService {
     }
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
-        return playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        Player player = playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
+        return player;
     }
 
     private Player newPlayer(UUID minecraftUuid, String username) {
@@ -409,6 +414,7 @@ public class PlayerService {
 
         ensureUsernames(player).add(new UsernameEntry(username, new Date()));
         playerRepository.replaceUsernames(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 
@@ -433,6 +439,7 @@ public class PlayerService {
 
         ensureNotes(player).add(entry);
         playerRepository.replaceNotes(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 
@@ -448,6 +455,7 @@ public class PlayerService {
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
         addIpToPlayer(player, ipAddress, null);
         playerRepository.replaceIpAddresses(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 

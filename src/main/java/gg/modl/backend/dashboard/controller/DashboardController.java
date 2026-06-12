@@ -11,11 +11,13 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.proto.modl.v1.DashboardActivityResponse;
+import gg.modl.proto.modl.v1.DashboardRecentPunishmentsResponse;
+import gg.modl.proto.modl.v1.DashboardRecentTicketsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -32,34 +34,34 @@ public class DashboardController {
     private final DashboardService dashboardService;
 
     @GetMapping("/metrics")
-    public ResponseEntity<DashboardMetricsResponse> getMetrics(HttpServletRequest request) {
+    public ResponseEntity<gg.modl.proto.modl.v1.DashboardMetricsResponse> getMetrics(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         DashboardMetricsResponse metrics = dashboardService.getMetrics(server);
-        return ResponseEntity.ok(metrics);
+        return ResponseEntity.ok(DashboardProtoMapper.toMetrics(metrics));
     }
 
     @GetMapping("/recent-tickets")
-    public ResponseEntity<List<RecentTicketResponse>> getRecentTickets(
+    public ResponseEntity<DashboardRecentTicketsResponse> getRecentTickets(
         @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<RecentTicketResponse> tickets = dashboardService.getRecentTickets(server, limit);
-        return ResponseEntity.ok(tickets);
+        return ResponseEntity.ok(DashboardProtoMapper.toRecentTickets(tickets));
     }
 
     @GetMapping("/recent-punishments")
-    public ResponseEntity<List<RecentPunishmentResponse>> getRecentPunishments(
+    public ResponseEntity<DashboardRecentPunishmentsResponse> getRecentPunishments(
         @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<RecentPunishmentResponse> punishments = dashboardService.getRecentPunishments(server, limit);
-        return ResponseEntity.ok(punishments);
+        return ResponseEntity.ok(DashboardProtoMapper.toRecentPunishments(punishments));
     }
 
     @GetMapping("/activity/recent")
-    public ResponseEntity<?> getRecentActivity(
+    public ResponseEntity<DashboardActivityResponse> getRecentActivity(
         @RequestParam(defaultValue = "20") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(defaultValue = "7") @Min(1) @Max(365) int days,
         HttpServletRequest request
@@ -73,6 +75,6 @@ public class DashboardController {
 
         String staffEmail = session.getEmail();
         List<ActivityItemResponse> activities = dashboardService.getRecentActivity(server, staffEmail, limit, days);
-        return ResponseEntity.ok(activities);
+        return ResponseEntity.ok(DashboardProtoMapper.toActivity(activities));
     }
 }

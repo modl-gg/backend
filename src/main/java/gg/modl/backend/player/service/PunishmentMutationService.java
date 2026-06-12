@@ -39,6 +39,7 @@ public class PunishmentMutationService {
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
     private final PunishmentLifecycleService punishmentLifecycleService;
+    private final PunishmentRealtimePublisher realtimePublisher;
 
     public Player addModification(Server server, UUID playerUuid, String punishmentId, AddModificationRequest request) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
@@ -73,6 +74,7 @@ public class PunishmentMutationService {
         }
 
         punishmentRepository.replacePunishments(server, player);
+        realtimePublisher.punishmentModified(server, player, punishment);
         return player;
     }
 
@@ -119,6 +121,7 @@ public class PunishmentMutationService {
         }
 
         punishmentRepository.replacePunishments(server, context.player());
+        realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         if (PunishmentData.isAltBlocking(punishment.getData())) {
             int cascaded = punishmentLifecycleService.cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
@@ -158,6 +161,7 @@ public class PunishmentMutationService {
             issuerId
         ));
         punishmentRepository.replacePunishments(server, context.player());
+        realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Option toggled", true, 1);
     }
@@ -229,6 +233,7 @@ public class PunishmentMutationService {
             .orElseThrow(() -> new ResourceNotFoundException("Punishment not found"));
 
         applyPunishmentTicketModifications(server, player, punishment, request);
+        realtimePublisher.invalidatePunishments(server, punishmentId);
         return player;
     }
 
@@ -304,8 +309,16 @@ public class PunishmentMutationService {
     public void applyAppealApproval(Server server, String playerUuid, String punishmentId,
                                     PunishmentModification modification, PunishmentNote note,
                                     String appealOutcome, String appealTicketId) {
-        punishmentRepository.applyAppealApproval(server, normalizeUuid(playerUuid), punishmentId,
+        String normalizedUuid = normalizeUuid(playerUuid);
+        punishmentRepository.applyAppealApproval(server, normalizedUuid, punishmentId,
             modification, note, appealOutcome, appealTicketId);
+
+        playerRepository.findByMinecraftUuid(server, normalizedUuid).ifPresent(player -> {
+            Punishment punishment = findPunishment(player, punishmentId);
+            if (punishment != null) {
+                realtimePublisher.punishmentModified(server, player, punishment);
+            }
+        });
     }
 
     private enum PunishmentToggleOption {

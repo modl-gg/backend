@@ -6,6 +6,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.proto.modl.v1.PanelLogsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -26,12 +27,12 @@ public class PanelLogController {
     private final LogService logService;
 
     @GetMapping
-    public ResponseEntity<List<SystemLogResponse>> getLogs(
+    public ResponseEntity<PanelLogsResponse> getLogs(
         @RequestParam(defaultValue = "100") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         List<SystemLogResponse> logs = logService.getLogs(server, limit);
-        return ResponseEntity.ok(logs);
+        return ResponseEntity.ok(LogProtoMapper.toPanelLogsResponse(logs));
     }
 }

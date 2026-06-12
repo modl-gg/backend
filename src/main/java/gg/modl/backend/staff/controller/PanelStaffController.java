@@ -2,21 +2,22 @@ package gg.modl.backend.staff.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
 import gg.modl.backend.staff.dto.request.CreateStaffRequest;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
 import gg.modl.backend.staff.dto.request.UpdateStaffRequest;
-import gg.modl.backend.staff.dto.request.UpdateStaffRoleRequest;
-import gg.modl.backend.staff.dto.response.AvailablePlayerResponse;
 import gg.modl.backend.staff.dto.response.InviteResultResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.InvitationService;
 import gg.modl.backend.staff.service.StaffService;
+import gg.modl.proto.modl.v1.AvailablePlayersResponse;
+import gg.modl.proto.modl.v1.CheckUsernameResponse;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.PanelStaffListResponse;
+import gg.modl.proto.modl.v1.StaffMutationResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,83 +36,91 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelStaffController {
     private final StaffService staffService;
     private final InvitationService invitationService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping
-    public ResponseEntity<List<StaffResponse>> getAllStaff(HttpServletRequest request) {
+    public ResponseEntity<PanelStaffListResponse> getAllStaff(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<StaffResponse> staff = staffService.getAllStaff(server);
-        return ResponseEntity.ok(staff);
+        return ResponseEntity.ok(PanelStaffProtoMapper.toStaffListResponse(staffService.getAllStaff(server)));
     }
 
     @GetMapping("/check-username/{username}")
-    public ResponseEntity<Map<String, Boolean>> checkUsername(
+    public ResponseEntity<CheckUsernameResponse> checkUsername(
         @PathVariable String username,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean exists = staffService.checkUsernameExists(server, username);
-        return ResponseEntity.ok(Map.of("exists", exists));
+        return ResponseEntity.ok(PanelStaffProtoMapper.toCheckUsernameResponse(exists));
     }
 
     @GetMapping("/{username}")
-    public ResponseEntity<StaffResponse> getStaffByUsername(
+    public ResponseEntity<gg.modl.proto.modl.v1.StaffResponse> getStaffByUsername(
         @PathVariable String username,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
         return staffService.getStaffByUsername(server, username)
+            .map(PanelStaffProtoMapper::toStaffResponse)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PostMapping
-    public ResponseEntity<?> createStaff(
-        @RequestBody @Valid CreateStaffRequest createRequest,
+    public ResponseEntity<gg.modl.proto.modl.v1.StaffResponse> createStaff(
+        @RequestBody gg.modl.proto.modl.v1.CreateStaffRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         String performerRole = resolvePerformerRole(server, performerEmail);
 
-        StaffResponse staff = staffService.createStaff(server, createRequest, performerEmail, performerRole);
-        return ResponseEntity.status(HttpStatus.CREATED).body(staff);
+        CreateStaffRequest mappedRequest = PanelStaffProtoMapper.toCreateStaffRequest(createRequest);
+        StaffResponse staff = staffService.createStaff(server, mappedRequest, performerEmail, performerRole);
+        invalidateStaff(server);
+        return ResponseEntity.status(HttpStatus.CREATED).body(PanelStaffProtoMapper.toStaffResponse(staff));
     }
 
     @PatchMapping("/{username}")
-    public ResponseEntity<?> updateStaff(
+    public ResponseEntity<gg.modl.proto.modl.v1.StaffResponse> updateStaff(
         @PathVariable String username,
-        @RequestBody @Valid UpdateStaffRequest updateRequest,
+        @RequestBody gg.modl.proto.modl.v1.UpdateStaffRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String currentUserEmail = RequestUtil.getSessionEmail(request);
 
-        return staffService.updateStaff(server, username, updateRequest, currentUserEmail)
-            .map(ResponseEntity::ok)
+        UpdateStaffRequest mappedRequest = PanelStaffProtoMapper.toUpdateStaffRequest(updateRequest);
+        return staffService.updateStaff(server, username, mappedRequest, currentUserEmail)
+            .map(staff -> {
+                invalidateStaff(server);
+                return ResponseEntity.ok(PanelStaffProtoMapper.toStaffResponse(staff));
+            })
             .orElse(ResponseEntity.notFound().build());
     }
 
     @PatchMapping("/{id}/role")
-    public ResponseEntity<?> updateStaffRole(
+    public ResponseEntity<StaffMutationResponse> updateStaffRole(
         @PathVariable String id,
-        @RequestBody @Valid UpdateStaffRoleRequest roleRequest,
+        @RequestBody gg.modl.proto.modl.v1.UpdateStaffRoleRequest roleRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String performerEmail = RequestUtil.getSessionEmail(request);
         String performerRole = resolvePerformerRole(server, performerEmail);
 
-        return staffService.updateStaffRole(server, id, roleRequest.role(), performerEmail, performerRole)
-            .map(staff -> ResponseEntity.ok(Map.of(
-                "message", "Role updated successfully.",
-                "staffMember", staff
-            )))
+        return staffService.updateStaffRole(server, id, roleRequest.getRole(), performerEmail, performerRole)
+            .map(staff -> {
+                invalidateStaff(server);
+                return ResponseEntity.ok(
+                    PanelStaffProtoMapper.toStaffMutationResponse("Role updated successfully.", staff));
+            })
             .orElse(ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteStaff(
+    public ResponseEntity<StaffMutationResponse> deleteStaff(
         @PathVariable String id,
         HttpServletRequest request
     ) {
@@ -120,33 +129,42 @@ public class PanelStaffController {
 
         boolean deleted = staffService.deleteStaff(server, id, removerEmail);
         if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Removed successfully."));
+            invalidateStaff(server);
+            return ResponseEntity.ok(
+                PanelStaffProtoMapper.toStaffMutationResponse("Removed successfully.", null));
         }
         return ResponseEntity.notFound().build();
     }
 
     @PostMapping("/invite")
-    public ResponseEntity<?> inviteStaff(
-        @RequestBody @Valid InviteStaffRequest inviteRequest,
+    public ResponseEntity<gg.modl.proto.modl.v1.InviteResultResponse> inviteStaff(
+        @RequestBody gg.modl.proto.modl.v1.InviteStaffRequest inviteRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String inviterEmail = RequestUtil.getSessionEmail(request);
         String inviterRole = resolvePerformerRole(server, inviterEmail);
 
-        InviteResultResponse result = invitationService.sendInvitations(server, inviteRequest, inviterEmail, inviterRole);
+        InviteStaffRequest mappedRequest = PanelStaffProtoMapper.toInviteStaffRequest(inviteRequest);
+        InviteResultResponse result = invitationService.sendInvitations(server, mappedRequest, inviterEmail, inviterRole);
 
         if (result.success().isEmpty()) {
-            return ResponseEntity.badRequest().body(result);
-        } else if (result.failed().isEmpty()) {
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", result.message()));
-        } else {
-            return ResponseEntity.status(HttpStatus.MULTI_STATUS).body(result);
+            return ResponseEntity.badRequest().body(PanelStaffProtoMapper.toInviteResultResponse(result));
         }
+
+        invalidateStaff(server);
+        if (result.failed().isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                .body(gg.modl.proto.modl.v1.InviteResultResponse.newBuilder()
+                    .setMessage(result.message())
+                    .build());
+        }
+        return ResponseEntity.status(HttpStatus.MULTI_STATUS)
+            .body(PanelStaffProtoMapper.toInviteResultResponse(result));
     }
 
     @PostMapping("/invitations/{id}/resend")
-    public ResponseEntity<?> resendInvitation(
+    public ResponseEntity<StaffMutationResponse> resendInvitation(
         @PathVariable String id,
         HttpServletRequest request
     ) {
@@ -154,34 +172,43 @@ public class PanelStaffController {
 
         boolean resent = invitationService.resendInvitation(server, id);
         if (resent) {
-            return ResponseEntity.ok(Map.of("message", "Invitation resent successfully"));
+            invalidateStaff(server);
+            return ResponseEntity.ok(
+                PanelStaffProtoMapper.toStaffMutationResponse("Invitation resent successfully", null));
         }
         return ResponseEntity.notFound().build();
     }
 
     @PatchMapping("/{username}/minecraft-player")
-    public ResponseEntity<?> assignMinecraftPlayer(
+    public ResponseEntity<StaffMutationResponse> assignMinecraftPlayer(
         @PathVariable String username,
-        @RequestBody @Valid AssignMinecraftPlayerRequest assignRequest,
+        @RequestBody gg.modl.proto.modl.v1.AssignMinecraftPlayerRequest assignRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return staffService.assignMinecraftPlayer(server, username, assignRequest)
-            .map(staff -> ResponseEntity.ok(Map.of(
-                "message", (assignRequest.minecraftUuid() == null && assignRequest.minecraftUsername() == null)
-                           ? "Minecraft player assignment cleared successfully"
-                           : "Minecraft player assigned successfully",
-                "staffMember", staff
-            )))
+        boolean clearing = !assignRequest.hasMinecraftUuid() && !assignRequest.hasMinecraftUsername();
+        AssignMinecraftPlayerRequest mappedRequest = PanelStaffProtoMapper.toAssignMinecraftPlayerRequest(assignRequest);
+        return staffService.assignMinecraftPlayer(server, username, mappedRequest)
+            .map(staff -> {
+                invalidateStaff(server);
+                String message = clearing
+                    ? "Minecraft player assignment cleared successfully"
+                    : "Minecraft player assigned successfully";
+                return ResponseEntity.ok(PanelStaffProtoMapper.toStaffMutationResponse(message, staff));
+            })
             .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/available-players")
-    public ResponseEntity<Map<String, List<AvailablePlayerResponse>>> getAvailablePlayers(HttpServletRequest request) {
+    public ResponseEntity<AvailablePlayersResponse> getAvailablePlayers(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<AvailablePlayerResponse> players = staffService.getAvailablePlayers(server);
-        return ResponseEntity.ok(Map.of("players", players));
+        return ResponseEntity.ok(
+            PanelStaffProtoMapper.toAvailablePlayersResponse(staffService.getAvailablePlayers(server)));
+    }
+
+    private void invalidateStaff(Server server) {
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_STAFF);
     }
 
     private String resolvePerformerRole(Server server, String email) {

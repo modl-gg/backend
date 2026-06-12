@@ -1,14 +1,16 @@
 package gg.modl.backend.appeal.controller;
 
-import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
-import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.proto.modl.v1.AddTicketReplyResponse;
+import gg.modl.proto.modl.v1.AppealTicketsResponse;
+import gg.modl.proto.modl.v1.PanelResource;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,9 +28,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PanelAppealController {
     private final AppealService appealService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping("/punishment/{punishmentId}")
-    public ResponseEntity<List<TicketResponse>> getAppealsByPunishment(
+    public ResponseEntity<AppealTicketsResponse> getAppealsByPunishment(
         @PathVariable String punishmentId,
         HttpServletRequest request
     ) {
@@ -39,35 +42,40 @@ public class PanelAppealController {
             return ResponseEntity.notFound().build();
         }
 
-        return ResponseEntity.ok(appeals);
+        return ResponseEntity.ok(PanelAppealProtoMapper.toAppealTicketsResponse(appeals));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<TicketResponse> getAppealById(
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketResponse> getAppealById(
         @PathVariable String id,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        return ResponseEntity.ok(appealService.getAppealById(server, id));
+        return ResponseEntity.ok(PanelAppealProtoMapper.toTicketResponse(appealService.getAppealById(server, id)));
     }
 
     @PostMapping("/{id}/replies")
-    public ResponseEntity<?> addReply(
+    public ResponseEntity<AddTicketReplyResponse> addReply(
         @PathVariable String id,
-        @RequestBody @Valid AddAppealReplyRequest replyRequest,
+        @RequestBody gg.modl.proto.modl.v1.AddAppealReplyRequest replyRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(appealService.addReply(server, id, replyRequest));
+        TicketReply reply = appealService.addReply(server, id, PanelAppealProtoMapper.fromAddAppealReplyRequest(replyRequest));
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_APPEALS, id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(PanelAppealProtoMapper.toAddReplyResponse(reply));
     }
 
     @PatchMapping("/{id}/status")
-    public ResponseEntity<?> updateStatus(
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketResponse> updateStatus(
         @PathVariable String id,
-        @RequestBody @Valid UpdateAppealStatusRequest statusRequest,
+        @RequestBody gg.modl.proto.modl.v1.UpdateAppealStatusRequest statusRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        return ResponseEntity.ok(appealService.updateStatus(server, id, statusRequest));
+        TicketResponse appeal = appealService.updateStatus(server, id, PanelAppealProtoMapper.fromUpdateAppealStatusRequest(statusRequest));
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_APPEALS, id);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS);
+        return ResponseEntity.ok(PanelAppealProtoMapper.toTicketResponse(appeal));
     }
 }

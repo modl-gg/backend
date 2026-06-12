@@ -60,6 +60,7 @@ public class PunishmentLifecycleService {
     private final PunishmentQueryService punishmentQueryService;
     private final PermissionService permissionService;
     private final WebhookSettingsService webhookSettingsService;
+    private final PunishmentRealtimePublisher realtimePublisher;
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
         if (email == null) {
@@ -296,6 +297,8 @@ public class PunishmentLifecycleService {
             closeAttachedTickets(server, request.attachedTicketIds(), ticketIssuerName);
         }
 
+        realtimePublisher.punishmentIssued(server, player, punishment);
+
         return punishmentId;
     }
 
@@ -409,6 +412,8 @@ public class PunishmentLifecycleService {
         punishment.getData().put("status", PunishmentStatus.PARDONED);
         persistPlayerPunishments(server, context.player());
 
+        realtimePublisher.punishmentModified(server, context.player(), punishment);
+
         if (PunishmentData.isAltBlocking(punishment.getData())) {
             cascadePardonLinkedBans(server, punishmentId);
         }
@@ -417,22 +422,27 @@ public class PunishmentLifecycleService {
     }
 
     public int cascadePardonLinkedBans(Server server, String parentPunishmentId) {
-        return cascadePardonLinkedBansInternal(
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified = new ArrayList<>();
+        int count = cascadePardonLinkedBansInternal(
             punishmentRepository.findByLinkedBanId(server, parentPunishmentId),
             parentPunishmentId,
-            player -> persistPlayerPunishments(server, player)
+            player -> persistPlayerPunishments(server, player),
+            modified
         );
+        realtimePublisher.punishmentsModified(server, modified);
+        return count;
     }
 
     private int cascadePardonLinkedBansInternal(
         List<Player> players,
         String parentPunishmentId,
-        LinkedBanSaveAction saveAction
+        LinkedBanSaveAction saveAction,
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified
     ) {
         int count = 0;
 
         for (Player player : players) {
-            int pardonedPunishments = applyLinkedBanSystemPardon(player, parentPunishmentId);
+            int pardonedPunishments = applyLinkedBanSystemPardon(player, parentPunishmentId, modified);
             if (pardonedPunishments <= 0) {
                 continue;
             }
@@ -444,7 +454,11 @@ public class PunishmentLifecycleService {
         return count;
     }
 
-    private int applyLinkedBanSystemPardon(Player player, String parentPunishmentId) {
+    private int applyLinkedBanSystemPardon(
+        Player player,
+        String parentPunishmentId,
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified
+    ) {
         int count = 0;
 
         for (Punishment punishment : player.getPunishments()) {
@@ -456,6 +470,7 @@ public class PunishmentLifecycleService {
             }
 
             addSystemPardon(punishment, "Auto-pardoned: parent ban was pardoned", new Date());
+            modified.add(new PunishmentRealtimePublisher.PlayerPunishment(player, punishment));
             count++;
         }
 
@@ -490,23 +505,12 @@ public class PunishmentLifecycleService {
                 PunishmentModificationType.isPardon(modification.type()));
     }
 
-    public int cascadePardonLinkedBans(String databaseName, String parentPunishmentId) {
-        return cascadePardonLinkedBansInternal(
-            punishmentRepository.findByLinkedBanId(databaseName, parentPunishmentId),
-            parentPunishmentId,
-            player -> persistPlayerPunishments(databaseName, player)
-        );
-    }
-
-    private void persistPlayerPunishments(String databaseName, Player player) {
-        punishmentRepository.replacePunishments(databaseName, player);
-    }
-
     public int cascadeDurationChangeToLinkedBans(Server server, String parentPunishmentId, Long newDuration, String issuerName) {
         int count = 0;
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified = new ArrayList<>();
 
         for (Player player : punishmentRepository.findByLinkedBanId(server, parentPunishmentId)) {
-            int updatedPunishments = applyLinkedBanDurationChange(player, parentPunishmentId, newDuration);
+            int updatedPunishments = applyLinkedBanDurationChange(player, parentPunishmentId, newDuration, modified);
             if (updatedPunishments <= 0) {
                 continue;
             }
@@ -515,10 +519,16 @@ public class PunishmentLifecycleService {
             count += updatedPunishments;
         }
 
+        realtimePublisher.punishmentsModified(server, modified);
         return count;
     }
 
-    private int applyLinkedBanDurationChange(Player player, String parentPunishmentId, Long newDuration) {
+    private int applyLinkedBanDurationChange(
+        Player player,
+        String parentPunishmentId,
+        Long newDuration,
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified
+    ) {
         int count = 0;
 
         for (Punishment punishment : player.getPunishments()) {
@@ -552,6 +562,7 @@ public class PunishmentLifecycleService {
             if (punishment.getStarted() == null) {
                 punishment.setStarted(now);
             }
+            modified.add(new PunishmentRealtimePublisher.PlayerPunishment(player, punishment));
             count++;
         }
 
@@ -561,6 +572,7 @@ public class PunishmentLifecycleService {
     public List<String> promoteUnstartedPunishments(Server server, Player player) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<String> promotedIds = new ArrayList<>();
+        List<Punishment> promoted = new ArrayList<>();
 
         for (String category : List.of(EnforcementCategory.BAN.name(), EnforcementCategory.MUTE.name())) {
             boolean hasActive = player.getPunishments()
@@ -584,9 +596,15 @@ public class PunishmentLifecycleService {
             if (oldest.isPresent()) {
                 Punishment toPromote = oldest.get();
                 punishmentRepository.unsetPunishmentStatus(server, player.getMinecraftUuid().toString(), toPromote.getId());
+                if (toPromote.getData() != null) {
+                    toPromote.getData().remove("status");
+                }
                 promotedIds.add(toPromote.getId());
+                promoted.add(toPromote);
             }
         }
+
+        realtimePublisher.punishmentsPromoted(server, player, promoted);
 
         return promotedIds;
     }
@@ -781,6 +799,8 @@ public class PunishmentLifecycleService {
 
         addSystemPardon(punishment, reason, new Date());
         persistPlayerPunishments(server, player);
+
+        realtimePublisher.punishmentModified(server, player, punishment);
     }
 
     @FunctionalInterface
