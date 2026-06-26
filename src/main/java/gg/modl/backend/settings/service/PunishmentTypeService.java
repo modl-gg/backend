@@ -40,37 +40,42 @@ public class PunishmentTypeService {
     }
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
-        return typesCache.get(server.getId(), id -> {
-            Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
+        return typesCache.get(server.getId(), id -> loadOrInitializeTypes(server));
+    }
 
-            if (settings == null || settings.getData() == null) {
-                return initializeDefaultTypes(server);
-            }
+    private List<PunishmentType> loadOrInitializeTypes(@NotNull Server server) {
+        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
 
-            try {
-                return objectMapper.convertValue(
-                    settings.getData(),
-                    new TypeReference<List<PunishmentType>>() {}
-                );
-            } catch (Exception e) {
-                log.error("Failed to convert punishment types from settings, initializing defaults", e);
-                return initializeDefaultTypes(server);
-            }
-        });
+        if (settings == null || settings.getData() == null) {
+            return persistPunishmentTypes(server, DefaultPunishmentTypes.getAll());
+        }
+
+        try {
+            return objectMapper.convertValue(
+                settings.getData(),
+                new TypeReference<List<PunishmentType>>() {}
+            );
+        } catch (Exception e) {
+            log.error("Failed to convert punishment types from settings, initializing defaults", e);
+            return persistPunishmentTypes(server, DefaultPunishmentTypes.getAll());
+        }
     }
 
     public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {
-        List<PunishmentType> defaultTypes = DefaultPunishmentTypes.getAll();
-        return savePunishmentTypes(server, defaultTypes);
+        return savePunishmentTypes(server, DefaultPunishmentTypes.getAll());
     }
 
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
         try {
-            settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
-            serverTimestampService.updatePunishmentTypesTimestamp(server);
+            return persistPunishmentTypes(server, types);
         } finally {
             typesCache.invalidate(server.getId());
         }
+    }
+
+    private List<PunishmentType> persistPunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
+        settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
+        serverTimestampService.updatePunishmentTypesTimestamp(server);
         return types;
     }
 

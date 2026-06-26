@@ -4,6 +4,8 @@ import gg.modl.backend.beta.data.BetaAudit;
 import gg.modl.backend.database.mongo.repository.AuthSessionMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
+import gg.modl.backend.email.EmailHTMLTemplate;
+import gg.modl.backend.email.EmailService;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.registration.RegistrationService;
@@ -36,6 +38,7 @@ public class AdminBetaTesterService {
     private final BetaResetService betaResetService;
     private final BetaAuditService betaAuditService;
     private final SubdomainValidator subdomainValidator;
+    private final EmailService emailService;
 
     public BetaTesterListResponse list(int page, int limit, String search) {
         int normalizedPage = PaginationHelper.normalizePage(page);
@@ -103,7 +106,18 @@ public class AdminBetaTesterService {
         Server reloaded = serverRepository.findById(saved.getId()).orElse(saved);
         betaAuditService.record(BetaAuditAction.CREATE, reloaded.getId(), actingAdminEmail,
             "Created beta tester panel " + subdomain);
+        sendBetaReadyEmail(reloaded);
         return toRecord(reloaded);
+    }
+
+    private void sendBetaReadyEmail(Server server) {
+        try {
+            String panelLink = registrationService.buildPanelUrl(server);
+            emailService.send(server.getAdminEmail(),
+                EmailHTMLTemplate.BETA_PANEL_READY.build(server.getServerName(), panelLink));
+        } catch (Exception e) {
+            log.error("Failed to send beta ready email for {}", server.getCustomDomain(), e);
+        }
     }
 
     private Server persistBetaServer(String serverName, String subdomain, String adminEmail, String actingAdminEmail) {
