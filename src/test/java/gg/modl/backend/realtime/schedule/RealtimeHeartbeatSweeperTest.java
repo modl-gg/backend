@@ -77,6 +77,7 @@ class RealtimeHeartbeatSweeperTest {
         assertTrue(registry.get(session).isEmpty());
         assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "timeout_close").count());
         assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
+        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reconnect_close", "reason", "heartbeat_timeout").count());
     }
 
     @Test
@@ -107,6 +108,7 @@ class RealtimeHeartbeatSweeperTest {
         assertTrue(registry.get(session).isEmpty());
         assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reject", "reason", "handshake_timeout").count());
         assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
+        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reconnect_close", "reason", "handshake_timeout").count());
     }
 
     @Test
@@ -185,6 +187,60 @@ class RealtimeHeartbeatSweeperTest {
         sweeper.closeTimedOutSessions();
 
         verify(session, org.mockito.Mockito.never()).close(org.mockito.Mockito.any(CloseStatus.class));
+        assertTrue(registry.get(session).isPresent());
+    }
+
+    @Test
+    void forceEvictsTerminalSessionWedgedOpenPastGrace() {
+        RealtimeProperties properties = properties();
+        RealtimeConnectionRegistry registry = new RealtimeConnectionRegistry(properties);
+        RealtimeMessageRateLimiter rateLimiter = new RealtimeMessageRateLimiter(properties);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        RealtimeMetrics metrics = new RealtimeMetrics(meterRegistry);
+        RealtimeConnectionCleanup cleanup = new RealtimeConnectionCleanup(registry, rateLimiter, metrics);
+        RealtimeHeartbeatSweeper sweeper = new RealtimeHeartbeatSweeper(
+            properties,
+            registry,
+            cleanup,
+            metrics,
+            new RealtimeSessionOperations(registry, cleanup, metrics)
+        );
+        WebSocketSession session = session("wedged-open", true);
+        RealtimeConnectionState state = registry.register(session);
+        state.authenticate(RealtimePrincipal.minecraft(server()), 1);
+        rateLimiter.tryAcquire(state);
+        // Session is wedged open (isOpen stays true) and has been terminal since the epoch.
+        ReflectionTestUtils.setField(state, "terminalSince", Instant.EPOCH);
+
+        sweeper.closeTimedOutSessions();
+
+        assertTrue(registry.get(session).isEmpty());
+        assertTrue(rateLimiter.tryAcquire(state));
+        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reject", "reason", "terminal_force_evict").count());
+    }
+
+    @Test
+    void freshTerminalSessionIsNotForceEvicted() {
+        RealtimeProperties properties = properties();
+        RealtimeConnectionRegistry registry = new RealtimeConnectionRegistry(properties);
+        RealtimeMessageRateLimiter rateLimiter = new RealtimeMessageRateLimiter(properties);
+        RealtimeMetrics metrics = new RealtimeMetrics(new SimpleMeterRegistry());
+        RealtimeConnectionCleanup cleanup = new RealtimeConnectionCleanup(registry, rateLimiter, metrics);
+        RealtimeHeartbeatSweeper sweeper = new RealtimeHeartbeatSweeper(
+            properties,
+            registry,
+            cleanup,
+            metrics,
+            new RealtimeSessionOperations(registry, cleanup, metrics)
+        );
+        WebSocketSession session = session("fresh-terminal", true);
+        RealtimeConnectionState state = registry.register(session);
+        state.authenticate(RealtimePrincipal.minecraft(server()), 1);
+        // Fresh terminal stamp (now) is within the grace window.
+        state.markTerminal();
+
+        sweeper.closeTimedOutSessions();
+
         assertTrue(registry.get(session).isPresent());
     }
 

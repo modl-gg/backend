@@ -48,6 +48,11 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
     }
 
     public void deleteByKeyNotIn(Server server, List<String> keys) {
+        // $nin against an empty array matches EVERY document, which would wipe the whole
+        // collection. With no authoritative keep-set there is nothing to prune, so no-op.
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
         remove(server, Query.query(Criteria.where("key").nin(keys)));
     }
 

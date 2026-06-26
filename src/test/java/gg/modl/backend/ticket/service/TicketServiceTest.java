@@ -80,9 +80,14 @@ class TicketServiceTest {
     @Test
     void createMinecraftTicketMapsPluginTypeAndPersistsReply() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("CHAT-123456");
-        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
-            .thenAnswer(invocation -> invocation.getArgument(1));
+        when(ticketIdGenerator.insertWithUniqueId(any(Server.class), any(String.class), any(Ticket.class)))
+            .thenAnswer(invocation -> {
+                Ticket t = invocation.getArgument(2);
+                if (t.getId() == null) {
+                    t.setId("CHAT-123456");
+                }
+                return t;
+            });
 
         Ticket ticket = minecraftTicketService.createMinecraftTicket(server, new MinecraftCreateTicketRequest(
             "uuid-1",
@@ -109,9 +114,14 @@ class TicketServiceTest {
     @Test
     void createTicketAcceptsLegacyTypeSpacingAndPriorityAliases() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("STAFF-123456");
-        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
-            .thenAnswer(invocation -> invocation.getArgument(1));
+        when(ticketIdGenerator.insertWithUniqueId(any(Server.class), any(String.class), any(Ticket.class)))
+            .thenAnswer(invocation -> {
+                Ticket t = invocation.getArgument(2);
+                if (t.getId() == null) {
+                    t.setId("STAFF-123456");
+                }
+                return t;
+            });
 
         ticketService.createTicket(server, new CreateTicketRequest(
             "staff application",
@@ -133,7 +143,7 @@ class TicketServiceTest {
         ));
 
         ArgumentCaptor<Ticket> savedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveEntity(any(Server.class), savedTicketCaptor.capture());
+        verify(ticketIdGenerator).insertWithUniqueId(any(Server.class), any(String.class), savedTicketCaptor.capture());
         Ticket savedTicket = savedTicketCaptor.getValue();
 
         assertEquals(TicketCategory.APPLICATION, savedTicket.getType());
@@ -278,7 +288,8 @@ class TicketServiceTest {
                 List.of(),
                 "creator-1",
                 null
-            )
+            ),
+            true
         );
 
         assertNotNull(response);
@@ -345,7 +356,8 @@ class TicketServiceTest {
                 List.of(),
                 "creator-1",
                 null
-            )
+            ),
+            false
         );
 
         ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);

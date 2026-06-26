@@ -119,8 +119,7 @@ public class PanelBillingController {
         int maxStorageOverageGB = body.hasMaxStorageOverageGbValue() ? body.getMaxStorageOverageGbValue() : body.getMaxStorageOverageGb();
         int maxAiOverageRequests = body.hasMaxAiOverageRequestsValue() ? body.getMaxAiOverageRequestsValue() : body.getMaxAiOverageRequests();
 
-        long maxStorageLimitBytes = (200L + maxStorageOverageGB) * 1024L * 1024 * 1024;
-        usageTrackingService.updateOverageLimits(server, maxStorageLimitBytes, maxAiOverageRequests);
+        long maxStorageLimitBytes = usageTrackingService.updateOverageLimits(server, maxStorageOverageGB, maxAiOverageRequests);
 
         return ResponseEntity.ok(PanelBillingProtoMapper.toUpdateOverageLimitsResponse(maxStorageLimitBytes, maxAiOverageRequests));
     }

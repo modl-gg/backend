@@ -3,6 +3,8 @@ package gg.modl.backend.replaylite.controller;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -30,14 +32,14 @@ class PublicReplayLiteControllerTest {
         ReplayLiteService service = Mockito.mock(ReplayLiteService.class);
         PublicReplayLiteController controller = new PublicReplayLiteController(service);
         byte[] replayBytes = new byte[] {1, 2, 3};
-        when(service.getPublicReplayDownload(REPLAY_ID.toString()))
+        when(service.getPublicReplayDownload(eq(REPLAY_ID.toString()), any()))
             .thenReturn(Optional.of(new ReplayLiteService.ReplayLiteDownload(
                 replayBytes,
                 "application/octet-stream",
                 Instant.parse("2026-04-25T12:00:00Z")
             )));
 
-        ResponseEntity<?> response = controller.downloadReplay(REPLAY_ID);
+        ResponseEntity<?> response = controller.downloadReplay(REPLAY_ID, new org.springframework.mock.web.MockHttpServletRequest());
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertArrayEquals(replayBytes, (byte[]) response.getBody());

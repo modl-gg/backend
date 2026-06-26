@@ -30,11 +30,18 @@ public class ReplayMongoRepository extends AbstractServerMongoRepository<ReplayD
     public Optional<ReplayDocument> claimLabels(Server server, String replayId, List<ReplayLabel> labels) {
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where("_id").is(replayId),
+            Criteria.where("status").is(ReplayDocument.STATUS_COMPLETE),
             new Criteria().orOperator(
                 Criteria.where("labels").exists(false),
                 Criteria.where("labels").size(0)
             )
         ));
+        Update update = new Update().set("labels", labels);
+        return Optional.ofNullable(findAndModify(server, query, update, FindAndModifyOptions.options().returnNew(true)));
+    }
+
+    public Optional<ReplayDocument> replaceLabels(Server server, String replayId, List<ReplayLabel> labels) {
+        Query query = Query.query(Criteria.where("_id").is(replayId));
         Update update = new Update().set("labels", labels);
         return Optional.ofNullable(findAndModify(server, query, update, FindAndModifyOptions.options().returnNew(true)));
     }
@@ -50,6 +57,17 @@ public class ReplayMongoRepository extends AbstractServerMongoRepository<ReplayD
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where("status").in(ReplayDocument.STATUS_COMPLETE, ReplayDocument.STATUS_FAILED),
             Criteria.where("createdAt").lt(cutoff),
+            Criteria.where("storageKey").exists(true).nin(null, "")
+        ));
+        query.with(Sort.by(Sort.Direction.ASC, "createdAt"));
+        query.limit(Math.min(limit, 500));
+        return find(server, query);
+    }
+
+    public List<ReplayDocument> findExpiredCompletedOrFailedAfter(Server server, Date cutoff, Date afterExclusive, int limit) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where("status").in(ReplayDocument.STATUS_COMPLETE, ReplayDocument.STATUS_FAILED),
+            Criteria.where("createdAt").gt(afterExclusive).lt(cutoff),
             Criteria.where("storageKey").exists(true).nin(null, "")
         ));
         query.with(Sort.by(Sort.Direction.ASC, "createdAt"));

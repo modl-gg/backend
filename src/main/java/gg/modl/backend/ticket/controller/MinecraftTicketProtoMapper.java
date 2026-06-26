@@ -5,6 +5,7 @@ import com.google.protobuf.NullValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.Value;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
@@ -22,13 +23,17 @@ import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.TicketsResponse;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.StreamSupport;
+import org.bson.types.Binary;
+import org.bson.types.ObjectId;
 
 final class MinecraftTicketProtoMapper {
     private MinecraftTicketProtoMapper() {
@@ -252,7 +257,16 @@ final class MinecraftTicketProtoMapper {
             iterable.forEach(item -> list.addValues(toValue(item)));
             return Value.newBuilder().setListValue(list).build();
         }
-        return Value.newBuilder().setStringValue(Objects.toString(value)).build();
+        if (value instanceof ObjectId objectId) {
+            return Value.newBuilder().setStringValue(objectId.toHexString()).build();
+        }
+        if (value instanceof UUID uuid) {
+            return Value.newBuilder().setStringValue(uuid.toString()).build();
+        }
+        if (value instanceof Binary binary) {
+            return Value.newBuilder().setStringValue(Base64.getEncoder().encodeToString(binary.getData())).build();
+        }
+        return Value.newBuilder().setStringValue(ProtoMapperSupport.coerceUnexpectedToString(value)).build();
     }
 
     private static void setOptionalString(Consumer<String> setter, Object value) {

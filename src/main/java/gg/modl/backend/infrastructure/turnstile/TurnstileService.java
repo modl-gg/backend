@@ -55,7 +55,26 @@ public class TurnstileService {
                 return false;
             }
 
-            return response.success();
+            if (!response.success()) {
+                log.warn("Turnstile validation rejected token, error-codes={}", response.errorCodes());
+                return false;
+            }
+
+            final List<String> expected = config.getExpectedHostnames();
+            final List<String> allowed = expected == null
+                ? List.of()
+                : expected.stream().filter(h -> h != null && !h.isBlank()).map(String::trim).toList();
+            if (!allowed.isEmpty() && !modlProperties.isDevelopmentMode()) {
+                final String host = response.hostname();
+                final boolean hostAllowed = host != null
+                    && allowed.stream().anyMatch(h -> h.equalsIgnoreCase(host.trim()));
+                if (!hostAllowed) {
+                    log.warn("Turnstile token solved on unexpected hostname '{}', expected one of {}", host, allowed);
+                    return false;
+                }
+            }
+
+            return true;
         } catch (Exception e) {
             log.error("Error validating Turnstile token", e);
             return false;

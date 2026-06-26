@@ -35,6 +35,16 @@ public final class RequestUtil {
         return (AuthSessionData) request.getAttribute(RequestAttribute.SESSION);
     }
 
+    @Nullable
+    public static String getActingStaffId(HttpServletRequest request) {
+        String actingStaffId = request.getHeader("X-Acting-Staff-Id");
+        if (actingStaffId == null) {
+            return null;
+        }
+        String trimmed = actingStaffId.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     @NotNull
     public static String getCurrentUsername(HttpServletRequest request) {
         AuthSessionData session = getSession(request);

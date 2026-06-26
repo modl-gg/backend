@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -31,6 +32,8 @@ public class LegacyReplayCleanupService {
     private final StorageMetadataService storageMetadataService;
     private final Clock clock;
 
+    private static final int MAX_PAGES_PER_RUN = 1000;
+
     @Scheduled(fixedDelayString = "${modl.replay.cleanup.interval-ms:3600000}")
     public void runScheduledCleanup() {
         runCleanupOnce();
@@ -44,16 +47,24 @@ public class LegacyReplayCleanupService {
         CleanupStats stats = new CleanupStats();
         List<Server> servers = serverRepository.findAll();
         for (Server server : servers) {
-            processServer(server, stats);
+            try {
+                processServer(server, stats);
+            } catch (Exception e) {
+                stats.failed++;
+                log.error("Legacy replay cleanup failed for server {} - skipping", server != null ? server.getId() : "null", e);
+            }
         }
 
         log.info(
-            "Legacy replay cleanup servers={} scanned={} deleted={} skippedRetentionDisabled={} skippedMissingStorageKey={}",
+            "Legacy replay cleanup servers={} scanned={} deleted={} skippedRetentionDisabled={} skippedMissingStorageKey={} storageDeleteFailures={} metadataRemoveFailures={} failedServers={}",
             servers.size(),
             stats.scanned,
             stats.deleted,
             stats.skippedRetentionDisabled,
-            stats.skippedMissingStorageKey
+            stats.skippedMissingStorageKey,
+            stats.storageDeleteFailures,
+            stats.metadataRemoveFailures,
+            stats.failed
         );
     }
 
@@ -81,22 +92,55 @@ public class LegacyReplayCleanupService {
             );
         }
 
-        List<ReplayDocument> expired = replayRepository.findExpiredCompletedOrFailed(server, cutoff, properties.getBatchSize());
-        for (ReplayDocument replay : expired) {
-            stats.scanned++;
-            boolean storageDeleted = s3StorageService.deleteFile(replay.getStorageKey());
-            if (!storageDeleted) {
-                continue;
+        int pageSize = Math.min(Math.max(properties.getBatchSize(), 1), 500);
+        Date cursor = null;
+        int pages = 0;
+        while (pages++ < MAX_PAGES_PER_RUN) {
+            List<ReplayDocument> page = (cursor == null)
+                ? replayRepository.findExpiredCompletedOrFailed(server, cutoff, pageSize)
+                : replayRepository.findExpiredCompletedOrFailedAfter(server, cutoff, cursor, pageSize);
+            if (page.isEmpty()) {
+                break;
             }
 
-            boolean metadataRemoved = storageMetadataService.removeFile(server, replay.getStorageKey());
-            if (!metadataRemoved) {
-                continue;
+            for (ReplayDocument replay : page) {
+                stats.scanned++;
+                if (!s3StorageService.deleteFile(replay.getStorageKey())) {
+                    stats.storageDeleteFailures++;
+                    continue;
+                }
+                if (!storageMetadataService.removeFile(server, replay.getStorageKey())) {
+                    stats.metadataRemoveFailures++;
+                    continue;
+                }
+                if (replayRepository.deleteByReplayId(server, replay.getId())) {
+                    stats.deleted++;
+                }
             }
 
-            if (replayRepository.deleteByReplayId(server, replay.getId())) {
-                stats.deleted++;
+            // Advance the cursor past the page's max createdAt over ALL rows (including retained/failed
+            // ones) so a persistently-failing head object can no longer block forward progress.
+            Date pageMax = page.stream()
+                .map(ReplayDocument::getCreatedAt)
+                .filter(Objects::nonNull)
+                .max(Date::compareTo)
+                .orElse(null);
+            if (page.size() < pageSize) {
+                break; // exhausted
             }
+            if (pageMax == null || (cursor != null && !pageMax.after(cursor))) {
+                break; // cannot advance (degenerate all-same-timestamp page) - retry next run
+            }
+            cursor = pageMax;
+        }
+
+        if (stats.storageDeleteFailures > 0 || stats.metadataRemoveFailures > 0) {
+            log.warn(
+                "Legacy replay cleanup encountered deletion failures server={} storageDeleteFailures={} metadataRemoveFailures={}",
+                server.getId(),
+                stats.storageDeleteFailures,
+                stats.metadataRemoveFailures
+            );
         }
     }
 
@@ -105,5 +149,8 @@ public class LegacyReplayCleanupService {
         private long deleted;
         private long skippedRetentionDisabled;
         private long skippedMissingStorageKey;
+        private long storageDeleteFailures;
+        private long metadataRemoveFailures;
+        private long failed;
     }
 }

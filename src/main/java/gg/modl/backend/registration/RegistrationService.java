@@ -33,20 +33,20 @@ public class RegistrationService {
 
     public record RateLimitResult(boolean limited, long remainingMinutes) {}
 
-    public RateLimitResult checkRateLimit(String clientIp) {
-        return checkLimit(rateLimitMap, RATE_LIMIT_WINDOW_MS, clientIp);
+    public RateLimitResult reserveRateLimit(String clientIp) {
+        return reserve(rateLimitMap, RATE_LIMIT_WINDOW_MS, clientIp);
     }
 
-    public RateLimitResult checkCliRateLimit(String clientIp) {
-        return checkLimit(cliRateLimitMap, CLI_RATE_LIMIT_WINDOW_MS, clientIp);
+    public RateLimitResult reserveCliRateLimit(String clientIp) {
+        return reserve(cliRateLimitMap, CLI_RATE_LIMIT_WINDOW_MS, clientIp);
     }
 
-    public void recordRateLimit(String clientIp) {
-        rateLimitMap.put(clientIp, System.currentTimeMillis());
+    public void releaseRateLimit(String clientIp) {
+        rateLimitMap.remove(clientIp);
     }
 
-    public void recordCliRateLimit(String clientIp) {
-        cliRateLimitMap.put(clientIp, System.currentTimeMillis());
+    public void releaseCliRateLimit(String clientIp) {
+        cliRateLimitMap.remove(clientIp);
     }
 
     private void evictExpired(ConcurrentHashMap<String, Long> map, long windowMs) {
@@ -54,12 +54,20 @@ public class RegistrationService {
         map.entrySet().removeIf(entry -> (now - entry.getValue()) >= windowMs);
     }
 
-    private RateLimitResult checkLimit(ConcurrentHashMap<String, Long> map, long windowMs, String clientIp) {
+    private RateLimitResult reserve(ConcurrentHashMap<String, Long> map, long windowMs, String clientIp) {
         evictExpired(map, windowMs);
         long now = System.currentTimeMillis();
-        Long last = map.get(clientIp);
-        if (last != null && (now - last) < windowMs) {
-            return new RateLimitResult(true, (windowMs - (now - last)) / 1000 / 60 + 1);
+        long[] prior = { -1L };
+        map.compute(clientIp, (k, last) -> {
+            if (last != null && (now - last) < windowMs) {
+                prior[0] = last;
+                return last;
+            }
+            prior[0] = -1L;
+            return now;
+        });
+        if (prior[0] != -1L) {
+            return new RateLimitResult(true, (windowMs - (now - prior[0])) / 1000 / 60 + 1);
         }
         return new RateLimitResult(false, 0);
     }

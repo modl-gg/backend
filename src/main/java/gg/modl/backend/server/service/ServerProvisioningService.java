@@ -35,19 +35,43 @@ public class ServerProvisioningService {
     private final RoleService roleService;
 
     public void provision(Server server) {
-        try {
-            mongoIndexBootstrapService.createTenantIndexes(tenantMongoAccess.forServer(server));
-            seedAIModerationSettings(server);
-            seedTicketForms(server);
-            seedQuickResponses(server);
-            seedGeneralSettings(server);
-            seedTicketLabelSettings(server);
-            List<KnowledgebaseCategory> categories = seedKnowledgebaseCategories(server);
-            seedHomepageCards(server, categories);
-            roleService.createDefaultRoles(server);
-        } catch (Exception e) {
-            log.error("[Provisioning] Error provisioning server: {}", server.getCustomDomain(), e);
+        List<String> failures = new ArrayList<>();
+        Exception firstError = null;
+
+        // Each seed step runs in isolation so one failing independent step does not abort the others.
+        // Each step short-circuits if its slice already exists, so re-running provision() repairs only
+        // missing slices (idempotent, re-runnable).
+        for (Map.Entry<String, Runnable> step : provisioningSteps(server).entrySet()) {
+            try {
+                step.getValue().run();
+            } catch (Exception e) {
+                log.error("[Provisioning] Step '{}' failed for server: {}", step.getKey(), server.getCustomDomain(), e);
+                failures.add(step.getKey() + ": " + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+                if (firstError == null) {
+                    firstError = e;
+                }
+            }
         }
+
+        if (!failures.isEmpty()) {
+            throw new ProvisioningException(
+                "Provisioning failed for " + server.getCustomDomain() + " [" + String.join("; ", failures) + "]",
+                firstError);
+        }
+    }
+
+    private Map<String, Runnable> provisioningSteps(Server server) {
+        Map<String, Runnable> steps = new LinkedHashMap<>();
+        steps.put("createTenantIndexes", () -> mongoIndexBootstrapService.createTenantIndexes(tenantMongoAccess.forServer(server)));
+        steps.put("seedAIModerationSettings", () -> seedAIModerationSettings(server));
+        steps.put("seedTicketForms", () -> seedTicketForms(server));
+        steps.put("seedQuickResponses", () -> seedQuickResponses(server));
+        steps.put("seedGeneralSettings", () -> seedGeneralSettings(server));
+        steps.put("seedTicketLabelSettings", () -> seedTicketLabelSettings(server));
+        steps.put("seedKnowledgebaseCategories", () -> seedKnowledgebaseCategories(server));
+        steps.put("seedHomepageCards", () -> seedHomepageCards(server));
+        steps.put("createDefaultRoles", () -> roleService.createDefaultRoles(server));
+        return steps;
     }
 
     private void seedAIModerationSettings(Server server) {
@@ -468,10 +492,14 @@ public class ServerProvisioningService {
         return categories;
     }
 
-    private void seedHomepageCards(Server server, List<KnowledgebaseCategory> categories) {
+    private void seedHomepageCards(Server server) {
         if (homepageCardRepository.hasAny(server)) {
             return;
         }
+
+        // Resolve category ids from the repository (the source of truth) so re-provision with pre-existing
+        // KB categories but missing homepage cards still links the category_dropdown cards correctly.
+        List<KnowledgebaseCategory> categories = knowledgebaseCategoryRepository.findAllOrdered(server);
 
         // Find category IDs for category_dropdown cards
         String rulesCategoryId = categories.stream()

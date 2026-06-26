@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -13,6 +14,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class TicketFormSettings {
     private TicketForm bug;
     private TicketForm support;
@@ -24,13 +26,13 @@ public class TicketFormSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class TicketForm {
         @Builder.Default
         private boolean requireEmail = false;
         @Builder.Default
         private boolean requireEmailAuth = false;
-        @Builder.Default
-        private boolean allowEmailNotifications = true;
+        private Boolean allowEmailNotifications;
         @Builder.Default
         private List<FormField> fields = new ArrayList<>();
         @Builder.Default
@@ -41,6 +43,7 @@ public class TicketFormSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class FormField {
         private String id;
         private String type;
@@ -60,6 +63,7 @@ public class TicketFormSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class FormSection {
         private String id;
         private String title;

@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.server.data.Server;
@@ -31,6 +32,7 @@ public class SyncStaffEventService {
     private final PunishmentMongoRepository punishmentRepository;
     private final IssuerNameResolver issuerNameResolver;
     private final ModlProperties modlProperties;
+    private final PlayerStatusCalculator statusCalculator;
 
     public List<Map<String, Object>> collectStaffEvents(
         Server server,
@@ -145,9 +147,10 @@ public class SyncStaffEventService {
                     }
                     PunishmentType punishmentType = typesByOrdinal.get(punishment.getTypeOrdinal());
                     String typeName = punishmentType != null ? punishmentType.getName() : "Unknown";
-                    String action = punishmentType != null && punishmentType.isBan() ? "banned"
-                                  : punishmentType != null && punishmentType.isMute() ? "muted"
-                                  : punishmentType != null && punishmentType.isKick() ? "kicked"
+                    String category = statusCalculator.getEffectiveCategory(punishment, typesByOrdinal);
+                    String action = punishmentType != null && punishmentType.isKick() ? "kicked"
+                                  : EnforcementCategory.BAN.name().equals(category) ? "banned"
+                                  : EnforcementCategory.MUTE.name().equals(category) ? "muted"
                                   : "punished";
 
                     String issuerName = issuerNameResolver.resolve(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
@@ -166,34 +169,43 @@ public class SyncStaffEventService {
 
     @SuppressWarnings("unchecked")
     private void collectPardonNotifications(List<Map<String, Object>> recentlyModifiedPunishments, List<Map<String, Object>> notifications) {
-        for (Map<String, Object> modified : recentlyModifiedPunishments) {
-            if (!(modified.get("punishment") instanceof Map<?, ?> rawPunishment)) {
-                continue;
-            }
-            Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
-            String username = modified.get("username") instanceof String value ? value : "Unknown";
-
-            if (!(punishment.get("modifications") instanceof List<?> rawModifications)) {
-                continue;
-            }
-
-            for (Object rawModification : rawModifications) {
-                if (!(rawModification instanceof Map<?, ?> rawModificationMap)) {
+        try {
+            for (Map<String, Object> modified : recentlyModifiedPunishments) {
+                if (!(modified.get("punishment") instanceof Map<?, ?> rawPunishment)) {
                     continue;
                 }
-                Map<String, Object> modification = (Map<String, Object>) rawModificationMap;
-                String type = modification.get("type") instanceof String value ? value : null;
-                if (PunishmentModificationType.isPardon(type)) {
-                    String pardoner = modification.get("issuerName") instanceof String value ? value : "System";
-                    String punishmentType = punishment.get("type") instanceof String value ? value : "punishment";
-                    notifications.add(Map.of(
-                        "id", "pardon_" + punishment.get("id"),
-                        "type", "PUNISHMENT_PARDONED",
-                        "message", pardoner + ": pardoned " + username + "'s " + punishmentType,
-                        "timestamp", modification.get("timestamp")
-                    ));
+                Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
+                String username = modified.get("username") instanceof String value ? value : "Unknown";
+
+                if (!(punishment.get("modifications") instanceof List<?> rawModifications)) {
+                    continue;
+                }
+
+                for (Object rawModification : rawModifications) {
+                    if (!(rawModification instanceof Map<?, ?> rawModificationMap)) {
+                        continue;
+                    }
+                    Map<String, Object> modification = (Map<String, Object>) rawModificationMap;
+                    String type = modification.get("type") instanceof String value ? value : null;
+                    if (PunishmentModificationType.isPardon(type)) {
+                        String pardoner = modification.get("issuerName") instanceof String value ? value : "System";
+                        String punishmentType = punishment.get("type") instanceof String value ? value : "punishment";
+                        Object timestamp = modification.get("timestamp");
+                        // Map.of forbids null values; a modification can carry a null timestamp
+                        // (toSimplePunishment emits null when the mod date is null), which would
+                        // otherwise NPE and abort the whole sync. Coalesce to now, mirroring the
+                        // ticket collector, and use a mutable map.
+                        Map<String, Object> notification = new LinkedHashMap<>();
+                        notification.put("id", "pardon_" + punishment.get("id"));
+                        notification.put("type", "PUNISHMENT_PARDONED");
+                        notification.put("message", pardoner + ": pardoned " + username + "'s " + punishmentType);
+                        notification.put("timestamp", timestamp != null ? timestamp : System.currentTimeMillis());
+                        notifications.add(notification);
+                    }
                 }
             }
+        } catch (Exception e) {
+            log.warn("Failed to collect pardon notifications during sync", e);
         }
     }
 }

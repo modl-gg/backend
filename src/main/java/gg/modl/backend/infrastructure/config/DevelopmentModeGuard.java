@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 public class DevelopmentModeGuard {
     private final Environment environment;
     private final ModlProperties modlProperties;
-    private static final Set<String> PRODUCTION_PROFILES = Set.of("prod", "production", "staging");
+    private static final Set<String> DEV_PROFILES = Set.of("dev", "local", "test");
 
     @PostConstruct
     public void validate() {
@@ -22,14 +22,17 @@ public class DevelopmentModeGuard {
             return;
         }
 
-        boolean isProductionProfile = Arrays.stream(environment.getActiveProfiles())
-            .anyMatch(profile -> PRODUCTION_PROFILES.contains(profile.toLowerCase()));
+        boolean isDevProfile = Arrays.stream(environment.getActiveProfiles())
+            .anyMatch(profile -> DEV_PROFILES.contains(profile.toLowerCase()));
+        boolean explicitlyAllowed = environment.getProperty("MODL_ALLOW_DEV_MODE", Boolean.class, false);
 
-        if (isProductionProfile) {
+        if (!isDevProfile && !explicitlyAllowed) {
             throw new IllegalStateException(
-                "FATAL: modl.development-mode=true is set with a production Spring profile active. " +
-                "Development mode disables CSRF protection, captcha validation, and weakens cookie security. " +
-                "Remove modl.development-mode or set it to false for production deployments."
+                "FATAL: modl.development-mode=true is set but no development context was detected. " +
+                "Development mode disables CSRF protection, captcha validation, and weakens cookie security, " +
+                "and must never run in production. To run development mode, activate a dev/local/test Spring " +
+                "profile (e.g. SPRING_PROFILES_ACTIVE=dev) or set MODL_ALLOW_DEV_MODE=true. For production, " +
+                "remove modl.development-mode or set it to false."
             );
         }
 

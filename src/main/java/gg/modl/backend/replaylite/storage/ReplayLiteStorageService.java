@@ -1,6 +1,8 @@
 package gg.modl.backend.replaylite.storage;
 
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
@@ -155,26 +157,13 @@ public class ReplayLiteStorageService {
             throw new ExternalServiceException("Replay Lite storage is not configured");
         }
 
-        Optional<ObjectMetadata> metadata = headObject(objectKey);
-        if (metadata.isEmpty()) {
-            return Optional.empty();
-        }
-        if (metadata.get().size() > maxSizeBytes) {
-            throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
-        }
+        try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(GetObjectRequest.builder()
+            .bucket(configuration.getBucketName())
+            .key(objectKey)
+            .build())) {
+            byte[] bytes = readBounded(stream, maxSizeBytes, stream.response().contentLength());
 
-        try {
-            ResponseBytes<GetObjectResponse> response = s3Client.getObjectAsBytes(GetObjectRequest.builder()
-                .bucket(configuration.getBucketName())
-                .key(objectKey)
-                .build());
-            Long contentLength = response.response().contentLength();
-            byte[] bytes = response.asByteArray();
-            if ((contentLength != null && contentLength > maxSizeBytes) || bytes.length > maxSizeBytes) {
-                throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
-            }
-
-            String contentType = response.response().contentType();
+            String contentType = stream.response().contentType();
             if (contentType == null || contentType.isBlank()) {
                 contentType = CONTENT_TYPE;
             }
@@ -186,7 +175,32 @@ public class ReplayLiteStorageService {
                 return Optional.empty();
             }
             throw e;
+        } catch (IOException e) {
+            throw new ExternalServiceException("Failed to read Replay Lite object");
         }
+    }
+
+    private static byte[] readBounded(ResponseInputStream<GetObjectResponse> stream, long maxSizeBytes, @Nullable Long contentLength) throws IOException {
+        if (contentLength != null && contentLength > maxSizeBytes) {
+            stream.abort();
+            throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
+        }
+        int initialCapacity = (contentLength != null && contentLength > 0 && contentLength <= maxSizeBytes)
+            ? (int) (long) contentLength
+            : 8192;
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(initialCapacity);
+        byte[] chunk = new byte[8192];
+        long total = 0;
+        int read;
+        while ((read = stream.read(chunk)) != -1) {
+            total += read;
+            if (total > maxSizeBytes) {
+                stream.abort();
+                throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
+            }
+            buffer.write(chunk, 0, read);
+        }
+        return buffer.toByteArray();
     }
 
     public boolean deleteObject(String objectKey) {

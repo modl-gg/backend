@@ -1,5 +1,6 @@
 package gg.modl.backend.replay.controller;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.proto.modl.v1.PublicReplayResponse;
 import gg.modl.proto.modl.v1.ReplayLabelResponse;
@@ -10,6 +11,8 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class ReplayProtoMapper {
+
+    private static final int MAX_REPLAY_LABELS = 64;
 
     public PublicReplayResponse toReplayResponse(gg.modl.backend.replay.dto.PublicReplayResponse replay) {
         return PublicReplayResponse.newBuilder()
@@ -30,6 +33,9 @@ public class ReplayProtoMapper {
     }
 
     public List<ReplayLabel> toReplayLabels(SubmitReplayLabelsRequest request) {
+        if (request.getPlayersCount() > MAX_REPLAY_LABELS) {
+            throw new ValidationException("Too many player labels (max " + MAX_REPLAY_LABELS + ")");
+        }
         List<ReplayLabel> labels = new ArrayList<>(request.getPlayersCount());
         for (SubmitReplayLabelsRequest.ReplayLabel player : request.getPlayersList()) {
             labels.add(toReplayLabel(player));

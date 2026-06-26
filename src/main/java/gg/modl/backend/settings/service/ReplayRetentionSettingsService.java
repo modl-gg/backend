@@ -47,7 +47,7 @@ public class ReplayRetentionSettingsService {
             merged.setDays(days);
         }
 
-        ReplayRetentionSettings normalized = normalize(merged);
+        ReplayRetentionSettings normalized = validateForWrite(merged);
         data.put("enabled", normalized.isEnabled());
         data.put("days", normalized.getDays());
 
@@ -71,14 +71,24 @@ public class ReplayRetentionSettingsService {
             merged.put("enabled", defaults.isEnabled());
             merged.put("days", defaults.getDays());
             merged.putAll(data);
-            return normalize(objectMapper.convertValue(merged, ReplayRetentionSettings.class));
+            return normalizeForRead(objectMapper.convertValue(merged, ReplayRetentionSettings.class));
         } catch (IllegalArgumentException exception) {
             log.warn("Failed to map replay retention settings, using defaults: {}", exception.getMessage());
             return ReplayRetentionSettings.defaults();
         }
     }
 
-    private ReplayRetentionSettings normalize(ReplayRetentionSettings settings) {
+    private ReplayRetentionSettings normalizeForRead(ReplayRetentionSettings settings) {
+        ReplayRetentionSettings normalized = settings != null ? settings : ReplayRetentionSettings.defaults();
+        if (normalized.getDays() < MIN_DAYS) {
+            normalized.setDays(MIN_DAYS);
+        } else if (normalized.getDays() > MAX_DAYS) {
+            normalized.setDays(MAX_DAYS);
+        }
+        return normalized;
+    }
+
+    private ReplayRetentionSettings validateForWrite(ReplayRetentionSettings settings) {
         ReplayRetentionSettings normalized = settings != null ? settings : ReplayRetentionSettings.defaults();
         if (normalized.getDays() < MIN_DAYS) {
             if (normalized.isEnabled()) {

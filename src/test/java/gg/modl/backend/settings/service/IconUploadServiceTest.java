@@ -38,7 +38,7 @@ class IconUploadServiceTest {
         when(s3StorageService.uploadFile(eq(server), eq("icons/homepage"), eq("icon.png"), eq("image/png"), any(byte[].class)))
             .thenReturn(new S3StorageService.UploadFileResult("db/icons/homepage/icon.png", "https://cdn/icon.png"));
         when(storageQuotaService.confirmAndRecordFile(server, "db/icons/homepage/icon.png", 1024L, "image/png"))
-            .thenReturn(false);
+            .thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
 
         ResponseEntity<?> response = service.uploadIcon(server, file, "homepage");
 

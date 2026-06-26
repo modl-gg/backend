@@ -20,7 +20,7 @@ public class UsageTrackingService {
     private final ServerMongoRepository serverRepository;
     private final ServerMutationHelper serverMutationHelper;
     private static final double FREE_CDN_LIMIT_GB = 1.0;
-    private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = 200.0;
+    private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = StorageQuotaService.PREMIUM_BASE_BYTES / (1024.0 * 1024 * 1024);
     private static final long AI_BASE_LIMIT_REQUESTS = 1000L;
     private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.02;
@@ -46,11 +46,9 @@ public class UsageTrackingService {
         boolean usageBillingEnabled = Boolean.TRUE.equals(freshServer.getUsageBillingEnabled());
 
         double cdnLimitGB = getCdnLimitGB(freshServer);
-        double cdnOverageGB = Math.max(0, cdnUsageGB - cdnLimitGB);
+        double cdnOverageGB = Math.max(0, cdnUsageGB - getCdnOverageThresholdGB(freshServer));
         long aiLimitRequests = getAiRequestLimit(freshServer);
-        long aiOverageRequests = usageBillingEnabled
-                                 ? Math.max(0, aiRequestsUsed - getAiBaseLimitRequests())
-                                 : 0L;
+        long aiOverageRequests = Math.max(0, aiRequestsUsed - getAiBaseLimitRequests());
 
         double cdnOverageCost = usageBillingEnabled ? cdnOverageGB * CDN_OVERAGE_RATE : 0.0;
         double aiOverageCost = usageBillingEnabled ? aiOverageRequests * AI_OVERAGE_RATE : 0.0;
@@ -87,6 +85,11 @@ public class UsageTrackingService {
             return DEFAULT_PREMIUM_CDN_LIMIT_GB;
         }
         return FREE_CDN_LIMIT_GB;
+    }
+
+    // CDN overage accrues above the BASE allowance (mirroring AI overage), not above base+overage cap.
+    private double getCdnOverageThresholdGB(Server server) {
+        return server.getPlan() == ServerPlan.PREMIUM ? DEFAULT_PREMIUM_CDN_LIMIT_GB : FREE_CDN_LIMIT_GB;
     }
 
     public long getAiRequestLimit(Server server) {
@@ -137,20 +140,38 @@ public class UsageTrackingService {
         if (server.getPlan() != ServerPlan.PREMIUM) {
             throw new ValidationException("Storage limit configuration is only available for premium servers");
         }
-        if (bytes > StorageQuotaService.MAX_PREMIUM_BYTES) {
-            throw new ValidationException("Storage limit cannot exceed 2200 GB. Please contact support for higher limits.");
-        }
+        validatePremiumStorageBytes(bytes);
         serverMutationHelper.mutate(server, current -> current.setMaxStorageLimitBytes(bytes));
     }
 
-    public void updateOverageLimits(Server server, long maxStorageLimitBytes, long maxAiOverageRequests) {
+    public long updateOverageLimits(Server server, long maxStorageOverageGb, long maxAiOverageRequests) {
         if (server.getPlan() != ServerPlan.PREMIUM) {
             throw new ValidationException("Overage limits configuration is only available for premium servers");
         }
+        if (maxStorageOverageGb < 0 || maxAiOverageRequests < 0) {
+            throw new ValidationException("Overage limits cannot be negative");
+        }
+        if (maxStorageOverageGb > StorageQuotaService.MAX_STORAGE_OVERAGE_BYTES / (1024L * 1024 * 1024)) {
+            throw new ValidationException("Storage overage cannot exceed 2000 GB. Please contact support for higher limits.");
+        }
+        if (maxAiOverageRequests > StorageQuotaService.MAX_AI_OVERAGE_REQUESTS) {
+            throw new ValidationException("AI request overage cannot exceed 5000 requests. Please contact support for higher limits.");
+        }
+
+        long maxStorageLimitBytes = StorageQuotaService.PREMIUM_BASE_BYTES + maxStorageOverageGb * (1024L * 1024 * 1024);
+        validatePremiumStorageBytes(maxStorageLimitBytes);
+
         serverMutationHelper.mutate(server, current -> {
             current.setMaxStorageLimitBytes(maxStorageLimitBytes);
             current.setMaxAiOverageRequests(maxAiOverageRequests);
         });
+        return maxStorageLimitBytes;
+    }
+
+    private void validatePremiumStorageBytes(long bytes) {
+        if (bytes > StorageQuotaService.MAX_PREMIUM_BYTES) {
+            throw new ValidationException("Storage limit cannot exceed 2200 GB. Please contact support for higher limits.");
+        }
     }
 
 }

@@ -180,7 +180,9 @@ public class ReplayLiteService {
             ));
     }
 
-    public Optional<ReplayLiteDownload> getPublicReplayDownload(String replayId) {
+    public Optional<ReplayLiteDownload> getPublicReplayDownload(String replayId, String clientIp) {
+        abuseGuard.checkIp(clientIp);
+        abuseGuard.checkDownload(replayId);
         return findAvailablePublicReplay(replayId)
             .flatMap(document -> storageService.downloadObject(document.getObjectKey(), MAX_REPLAY_SIZE_BYTES)
                 .map(download -> new ReplayLiteDownload(

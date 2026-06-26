@@ -118,6 +118,7 @@ public final class RESTMappingV1 {
     private static final String REPLAYS = "/replays";
     public static final String MINECRAFT_REPLAYS = PREFIX_MINECRAFT + REPLAYS;
     public static final String PUBLIC_REPLAYS = PREFIX_PUBLIC + REPLAYS;
+    public static final String PANEL_REPLAYS = PREFIX_PANEL + REPLAYS;
     public static final String REPLAY_LITE_REPLAYS = PREFIX_REPLAY_LITE + REPLAYS;
     public static final String PUBLIC_REPLAY_LITE_REPLAYS = PREFIX_PUBLIC + "/replay-lite" + REPLAYS;
 }

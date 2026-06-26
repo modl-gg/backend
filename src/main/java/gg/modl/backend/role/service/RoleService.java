@@ -13,6 +13,7 @@ import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -34,6 +35,8 @@ public class RoleService {
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
 
+    private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
+
     public List<RoleResponse> getAllRoles(Server server) {
         fixCustomRoleOrdering(server);
 
@@ -47,17 +50,26 @@ public class RoleService {
 
     private void fixCustomRoleOrdering(Server server) {
         List<StaffRole> problematicRoles = staffRoleRepository.findCustomRolesWithOrderZero(server);
-
-        if (!problematicRoles.isEmpty()) {
-            StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
-            int nextOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
-
-            Map<String, Integer> orderById = new LinkedHashMap<>();
-            for (StaffRole role : problematicRoles) {
-                orderById.put(role.getId(), nextOrder++);
-            }
-            staffRoleRepository.bulkUpdateOrder(server, orderById);
+        if (problematicRoles.isEmpty()) {
+            return;
         }
+
+        StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
+        int baseOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
+
+        // Assign orders deterministically so concurrent readers compute the same target per role
+        // and the compare-and-set repair (matches order == 0) cannot create cross-role duplicates.
+        List<StaffRole> sorted = problematicRoles.stream()
+            .sorted(Comparator.comparing(StaffRole::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(StaffRole::getId))
+            .toList();
+
+        Map<String, Integer> orderById = new LinkedHashMap<>();
+        int nextOrder = baseOrder;
+        for (StaffRole role : sorted) {
+            orderById.put(role.getId(), nextOrder++);
+        }
+        staffRoleRepository.bulkRepairOrderFromZero(server, orderById);
     }
 
     private RoleResponse toRoleResponse(StaffRole role, int userCount) {
@@ -89,18 +101,49 @@ public class RoleService {
         return staffRepository.countByRoleId(server, roleId);
     }
 
-    public boolean updateRolePermissions(Server server, String id, List<String> permissions) {
-        StaffRole role = staffRoleRepository.findById(server, id).orElse(null);
-        if (role == null) {
+    public boolean updateRolePermissions(Server server, String id, List<String> permissions,
+                                         String performerRoleId, boolean isSuperAdmin, boolean hasPerformerIdentity) {
+        // Super Admin role permissions are immutable (mirror updateRole/deleteRole).
+        if (id != null && id.contains(SUPER_ADMIN_ROLE_ID)) {
+            throw new ForbiddenException("Cannot modify Super Admin role");
+        }
+
+        StaffRole targetRole = staffRoleRepository.findById(server, id).orElse(null);
+        if (targetRole == null) {
             return false;
         }
 
-        role.setPermissions(permissions != null ? new ArrayList<>(permissions) : new ArrayList<>());
-        role.setUpdatedAt(new Date());
-        staffRoleRepository.saveEntity(server, role);
+        // Drop unknown/stale permission ids (matches createRole/updateRole).
+        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        List<String> requested = permissions != null ? permissions : List.of();
+        List<String> filtered = requested.stream()
+            .filter(validPermissions::contains)
+            .distinct()
+            .collect(Collectors.toCollection(ArrayList::new));
+
+        // When the caller carries a trustworthy performer identity (panel/header), enforce hierarchy and
+        // grantability so a lower-tier actor cannot escalate. Pre-existing higher perms are preserved
+        // (this whole-list-replace endpoint must not silently DOWNGRADE perms the performer cannot grant).
+        if (hasPerformerIdentity && !isSuperAdmin) {
+            StaffRole performerRole = resolvePerformerRole(server, performerRoleId, false);
+            assertHigherAuthority(performerRole, targetRole);
+            Set<String> existing = new HashSet<>(targetRole.getPermissions() != null
+                ? targetRole.getPermissions() : List.of());
+            filtered = filtered.stream()
+                .filter(p -> performerHasPermission(performerRole, p) || existing.contains(p))
+                .collect(Collectors.toCollection(ArrayList::new));
+        }
+
+        targetRole.setPermissions(filtered);
+        targetRole.setUpdatedAt(new Date());
+        staffRoleRepository.saveEntity(server, targetRole);
+        invalidatePermissionState(server);
+        return true;
+    }
+
+    private void invalidatePermissionState(Server server) {
         permissionService.evictPermissionCache();
         serverTimestampService.updateStaffPermissionsTimestamp(server);
-        return true;
     }
 
     public RoleResponse createRole(Server server, RoleRequest request, String performerRoleId, boolean isSuperAdmin) {
@@ -139,6 +182,8 @@ public class RoleService {
             .build();
 
         staffRoleRepository.saveEntity(server, newRole);
+        // No permission-state invalidation: a new role has no staff assigned and no cached entries;
+        // the bump happens on staff assignment via StaffService.
 
         return toRoleResponse(newRole, 0);
     }
@@ -196,7 +241,7 @@ public class RoleService {
 
     public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, String performerRoleId, boolean isSuperAdmin) {
         // Cannot update Super Admin role
-        if (id.contains("super-admin")) {
+        if (SUPER_ADMIN_ROLE_ID.equals(id)) {
             throw new ForbiddenException("Cannot modify Super Admin role");
         }
 
@@ -236,9 +281,7 @@ public class RoleService {
         updated.setPermissions(new ArrayList<>(filteredPermissions));
         updated.setUpdatedAt(new Date());
         updated = staffRoleRepository.saveEntity(server, updated);
-        permissionService.evictPermissionCache();
-
-        serverTimestampService.updateStaffPermissionsTimestamp(server);
+        invalidatePermissionState(server);
 
         int staffCount = getStaffCountForRole(server, updated.getId());
         return Optional.of(toRoleResponse(updated, staffCount));
@@ -252,7 +295,7 @@ public class RoleService {
 
     public boolean deleteRole(Server server, String id, String performerRoleId, boolean isSuperAdmin) {
         // Cannot delete Super Admin role
-        if (id.contains("super-admin")) {
+        if (SUPER_ADMIN_ROLE_ID.equals(id)) {
             throw new ForbiddenException("Cannot delete Super Admin role");
         }
 
@@ -276,7 +319,7 @@ public class RoleService {
 
         boolean deleted = staffRoleRepository.deleteById(server, id);
         if (deleted) {
-            permissionService.evictPermissionCache();
+            invalidatePermissionState(server);
         }
         return deleted;
     }
@@ -313,6 +356,9 @@ public class RoleService {
             orderById.put(item.id(), item.order());
         }
         staffRoleRepository.bulkUpdateOrder(server, orderById);
+        // Reorder changes grant-hierarchy authority the plugin displays; bump the timestamp so it re-syncs.
+        // No cache evict needed: permissionCache keys are order-independent (serverId:roleId:permission).
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
     }
 
     public void createDefaultRoles(Server server) {
@@ -328,7 +374,7 @@ public class RoleService {
 
         List<String> adminPerms = new ArrayList<>(List.of(
             "admin.settings.view", "admin.staff.manage", "admin.audit.view",
-            "punishment.modify",
+            "punishment.view", "punishment.modify",
             "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
             "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
             "staff.maintenance", "staff.modactions",
@@ -337,7 +383,7 @@ public class RoleService {
         adminPerms.addAll(allPunishmentPerms);
 
         List<String> moderatorPerms = new ArrayList<>(List.of(
-            "punishment.modify",
+            "punishment.view", "punishment.modify",
             "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
             "staff.modactions",
             "staff.chatlogs", "staff.commandlogs"

@@ -40,14 +40,18 @@ final class PublicAppealProtoMapper {
             .setStatus(stringValue(workflowStatus))
             .setAppealWorkflowStatus(stringValue(workflowStatus))
             .setCreatorName(stringValue(appeal.creatorName()))
-            .setCreatorUuid(stringValue(appeal.creatorUuid()))
+            .setCreatorUuid("")
             .setLocked(appeal.locked())
             .setData(toStruct(filterPublicData(appeal.data())));
 
         if (appeal.date() != null) {
             builder.setCreated(toTimestamp(appeal.date()));
         }
-        addAll(appeal.messages(), PanelTicketProtoMapper::toTicketReply, builder::addMessages);
+        List<TicketReply> publicReplies = appeal.messages() == null ? List.of()
+            : appeal.messages().stream()
+                .filter(r -> !r.isStaff() && !"system".equalsIgnoreCase(r.getType()))
+                .toList();
+        addAll(publicReplies, PanelTicketProtoMapper::toTicketReply, builder::addMessages);
         addAll(appeal.tags(), value -> value, builder::addTags);
         return builder.build();
     }

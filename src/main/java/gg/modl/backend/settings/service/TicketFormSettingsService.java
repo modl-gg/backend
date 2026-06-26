@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.TicketFormSettings;
@@ -115,6 +116,9 @@ public class TicketFormSettingsService {
         if (form.getSections() == null) {
             form.setSections(new ArrayList<>());
         }
+        if (form.getAllowEmailNotifications() == null) {
+            form.setAllowEmailNotifications(true);
+        }
     }
 
     private TicketFormSettings getDefaultTicketFormSettings() {
@@ -129,6 +133,7 @@ public class TicketFormSettingsService {
 
     private TicketFormSettings.TicketForm emptyForm() {
         return TicketFormSettings.TicketForm.builder()
+            .allowEmailNotifications(true)
             .fields(new ArrayList<>())
             .sections(new ArrayList<>())
             .build();
@@ -163,7 +168,7 @@ public class TicketFormSettingsService {
 
     private void putFormIfNotNull(Map<String, Object> forms, String key, TicketFormSettings.TicketForm form) {
         if (form != null) {
-            forms.put(key, form);
+            forms.put(key, objectMapper.convertValue(form, new TypeReference<Map<String, Object>>() {}));
         }
     }
 }

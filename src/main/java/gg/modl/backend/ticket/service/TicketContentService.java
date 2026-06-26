@@ -6,6 +6,7 @@ import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -30,8 +31,21 @@ public class TicketContentService {
         if (value instanceof Date date) {
             return date;
         }
-        if (value instanceof String str) {
-            return Date.from(Instant.parse(str));
+        if (value instanceof Number number) {
+            return new Date(number.longValue());
+        }
+        if (value instanceof String str && !str.isBlank()) {
+            String trimmed = str.trim();
+            try {
+                return Date.from(Instant.parse(trimmed));
+            } catch (DateTimeParseException ignored) {
+                // not an ISO-8601 timestamp; fall through to epoch-millis parsing
+            }
+            try {
+                return new Date(Long.parseLong(trimmed));
+            } catch (NumberFormatException ignored) {
+                // not epoch-millis either; fall through to current instant
+            }
         }
         return new Date();
     }

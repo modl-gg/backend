@@ -38,7 +38,6 @@ public class MinecraftTicketService {
 
     private Ticket createMinecraftTicketInternal(Server server, MinecraftCreateTicketRequest request, boolean unfinished) {
         TicketCategory ticketCategory = TicketCategory.fromCanonicalId(request.type());
-        String ticketId = ticketIdGenerator.generate(server, ticketCategory);
         Date now = new Date();
 
         List<Ticket.ChatMessage> chatMessages = new ArrayList<>();
@@ -60,7 +59,6 @@ public class MinecraftTicketService {
         }
 
         Ticket ticket = Ticket.builder()
-            .id(ticketId)
             .type(ticketCategory)
             .subject(request.subject())
             .status(unfinished ? TicketStatus.UNFINISHED : TicketStatus.OPEN)
@@ -94,7 +92,7 @@ public class MinecraftTicketService {
             ticket.getReplies().add(initialReply);
         }
 
-        return ticketRepository.saveEntity(server, ticket);
+        return ticketIdGenerator.insertWithUniqueId(server, ticketCategory.getTicketPrefix(), ticket);
     }
 
     public Ticket createUnfinishedMinecraftTicket(Server server, MinecraftCreateTicketRequest request) {
@@ -124,23 +122,54 @@ public class MinecraftTicketService {
             return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
         }
         String oldCreatorName = ticket.getCreatorName();
-        ticket.setCreatorUuid(normalizeUuid(request.playerUuid()));
+        String originalCreatorIdentifier = resolveOriginalCreatorIdentifier(ticket);
+        String claimerUuid = normalizeUuid(request.playerUuid());
+        ticket.setCreatorUuid(claimerUuid);
         ticket.setCreatorName(request.playerName());
         ticket.setUpdatedAt(new Date());
 
-        if (ticket.getReplies() != null && oldCreatorName != null) {
-            List<TicketReply> updatedReplies = new ArrayList<>();
+        if (ticket.getReplies() != null) {
             for (TicketReply reply : ticket.getReplies()) {
-                if (!reply.isStaff() && oldCreatorName.equals(reply.getName())) {
-                    reply.setName(request.playerName());
+                if (reply.isStaff()) {
+                    continue;
                 }
-                updatedReplies.add(reply);
+                String replyIdentifier = reply.getCreatorIdentifier();
+                boolean owned;
+                if (replyIdentifier != null && !replyIdentifier.isBlank()) {
+                    owned = originalCreatorIdentifier != null && replyIdentifier.equals(originalCreatorIdentifier);
+                } else {
+                    owned = oldCreatorName != null && oldCreatorName.equals(reply.getName());
+                }
+                if (owned) {
+                    reply.setName(request.playerName());
+                    reply.setCreatorIdentifier(claimerUuid);
+                }
             }
-            ticket.setReplies(updatedReplies);
         }
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
         return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.SUCCESS, saved);
+    }
+
+    private String resolveOriginalCreatorIdentifier(Ticket ticket) {
+        if (ticket.getData() != null) {
+            Object stored = ticket.getData().get("creatorIdentifier");
+            if (stored instanceof String identifier && !identifier.isBlank()) {
+                return identifier;
+            }
+        }
+        if (ticket.getReplies() != null) {
+            for (TicketReply reply : ticket.getReplies()) {
+                if (reply.isStaff()) {
+                    continue;
+                }
+                String identifier = reply.getCreatorIdentifier();
+                if (identifier != null && !identifier.isBlank()) {
+                    return identifier;
+                }
+            }
+        }
+        return null;
     }
 
     public List<Ticket> getMinecraftTicketsByIds(Server server, List<String> ids) {
@@ -188,16 +217,40 @@ public class MinecraftTicketService {
     }
 
     public ReportOperationResult dismissMinecraftReport(Server server, String ticketId, DismissReportRequest request) {
+        return closeReport(server, ticketId, request.dismissedBy(),
+            "Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.",
+            (ticket, now) -> {
+                if (request.reason() != null && !request.reason().isBlank()) {
+                    ensureTicketData(ticket).put("dismissReason", request.reason());
+                }
+                if (request.dismissedBy() != null) {
+                    Map<String, Object> data = ensureTicketData(ticket);
+                    data.put("dismissedBy", request.dismissedBy());
+                    data.put("dismissedAt", now);
+                }
+            });
+    }
+
+    private ReportOperationResult closeReport(
+        Server server,
+        String ticketId,
+        String staffName,
+        String closeMessage,
+        java.util.function.BiConsumer<Ticket, Date> applyMetadata
+    ) {
         Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
             return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
         }
+        if (ticket.isLocked() || (ticket.getStatus() != null && ticket.getStatus().isTerminal())) {
+            return new ReportOperationResult(ReportOperationStatus.SUCCESS, ticket);
+        }
+
         Date now = new Date();
-        String staffName = request.dismissedBy() != null ? request.dismissedBy() : "Staff";
         TicketReply reply = TicketReply.builder()
             .id(UUID.randomUUID().toString())
-            .name(staffName)
-            .content("Thank you for submitting this report. After careful review, we have found insufficient evidence to take action at this time.")
+            .name(staffName != null ? staffName : "Staff")
+            .content(closeMessage)
             .type("reply")
             .created(now)
             .staff(true)
@@ -207,18 +260,11 @@ public class MinecraftTicketService {
         ticket.ensureReplies().add(reply);
         ticket.applyLifecycleStatus(TicketStatus.CLOSED);
         ticket.setUpdatedAt(now);
-
-        if (request.reason() != null && !request.reason().isBlank()) {
-            ensureTicketData(ticket).put("dismissReason", request.reason());
-        }
-        if (request.dismissedBy() != null) {
-            Map<String, Object> data = ensureTicketData(ticket);
-            data.put("dismissedBy", request.dismissedBy());
-            data.put("dismissedAt", now);
-        }
+        applyMetadata.accept(ticket, now);
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
         notificationService.notifyTicketReply(server, saved, reply);
+        notificationService.notifyTicketClosed(server, saved);
         return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
     }
 
@@ -239,41 +285,21 @@ public class MinecraftTicketService {
     }
 
     public ReportOperationResult resolveMinecraftReport(Server server, String ticketId, ResolveReportRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
-        if (ticket == null) {
-            return new ReportOperationResult(ReportOperationStatus.NOT_FOUND, null);
-        }
-        Date now = new Date();
-        String staffName = request.resolvedBy() != null ? request.resolvedBy() : "Staff";
-        TicketReply reply = TicketReply.builder()
-            .id(UUID.randomUUID().toString())
-            .name(staffName)
-            .content("Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.")
-            .type("reply")
-            .created(now)
-            .staff(true)
-            .action("close")
-            .build();
-
-        ticket.ensureReplies().add(reply);
-        ticket.applyLifecycleStatus(TicketStatus.CLOSED);
-        ticket.setUpdatedAt(now);
-
-        if (request.resolution() != null && !request.resolution().isBlank()) {
-            ensureTicketData(ticket).put("resolution", request.resolution());
-        }
-        if (request.resolvedBy() != null) {
-            Map<String, Object> data = ensureTicketData(ticket);
-            data.put("resolvedBy", request.resolvedBy());
-            data.put("resolvedAt", now);
-        }
-        if (request.punishmentId() != null) {
-            ensureTicketData(ticket).put("linkedPunishmentId", request.punishmentId());
-        }
-
-        Ticket saved = ticketRepository.saveEntity(server, ticket);
-        notificationService.notifyTicketReply(server, saved, reply);
-        return new ReportOperationResult(ReportOperationStatus.SUCCESS, saved);
+        return closeReport(server, ticketId, request.resolvedBy(),
+            "Thank you for creating this report. After careful review, we have accepted this and the reported player has received a punishment.",
+            (ticket, now) -> {
+                if (request.resolution() != null && !request.resolution().isBlank()) {
+                    ensureTicketData(ticket).put("resolution", request.resolution());
+                }
+                if (request.resolvedBy() != null) {
+                    Map<String, Object> data = ensureTicketData(ticket);
+                    data.put("resolvedBy", request.resolvedBy());
+                    data.put("resolvedAt", now);
+                }
+                if (request.punishmentId() != null) {
+                    ensureTicketData(ticket).put("linkedPunishmentId", request.punishmentId());
+                }
+            });
     }
 
     public ReportOperationResult resolveMinecraftReport(

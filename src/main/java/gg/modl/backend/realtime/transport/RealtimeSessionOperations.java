@@ -18,31 +18,55 @@ public class RealtimeSessionOperations {
     private final RealtimeConnectionCleanup connectionCleanup;
     private final RealtimeMetrics metrics;
 
-    public boolean send(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) throws IOException {
+    private enum SendOutcome { SENT, CLOSED, FAILED }
+
+    private SendOutcome attemptSend(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) {
         WebSocketSession outboundSession = connectionRegistry.getSession(session).orElse(session);
         synchronized (state.getSendLock()) {
             if (state.isClosing() || connectionRegistry.isTerminal(session) || connectionRegistry.isTerminal(outboundSession)) {
-                return false;
+                return SendOutcome.CLOSED;
             }
             if (!outboundSession.isOpen()) {
                 connectionCleanup.unregister(outboundSession, CloseStatus.NO_CLOSE_FRAME);
-                return false;
+                return SendOutcome.CLOSED;
             }
             try {
                 outboundSession.sendMessage(message);
                 metrics.recordTransportSendSuccess(state);
-                return true;
+                return SendOutcome.SENT;
             } catch (IOException | RuntimeException exception) {
                 metrics.recordTransportSendFailure(state, exception);
-                requestClose(session, state, CloseStatus.SERVER_ERROR, "send_failed");
-                throw exception;
+                return SendOutcome.FAILED;
             }
         }
+    }
+
+    /**
+     * Best-effort dispatch (fan-out): drops a stuck client by closing it on failure. Never throws.
+     */
+    public boolean deliver(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) {
+        SendOutcome outcome = attemptSend(session, state, message);
+        if (outcome == SendOutcome.SENT) {
+            return true;
+        }
+        if (outcome == SendOutcome.FAILED) {
+            requestClose(session, state, CloseStatus.SERVER_ERROR, "send_failed");
+        }
+        return false;
+    }
+
+    /**
+     * Control-path send: never closes the session and never throws. The caller keeps ownership of
+     * the close and its intended status.
+     */
+    public boolean trySend(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) {
+        return attemptSend(session, state, message) == SendOutcome.SENT;
     }
 
     public boolean requestClose(WebSocketSession session, RealtimeConnectionState state, CloseStatus status, String metricReason) {
         WebSocketSession outboundSession = connectionRegistry.getSession(session).orElse(session);
         state.markClosing();
+        state.markTerminal();
         connectionRegistry.markTerminal(session);
         connectionRegistry.markTerminal(outboundSession);
         synchronized (state.getSendLock()) {

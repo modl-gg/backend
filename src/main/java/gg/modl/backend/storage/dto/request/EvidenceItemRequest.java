@@ -14,6 +14,7 @@ public record EvidenceItemRequest(
     @Size(max = RequestValidationLimits.FILE_NAME_MAX_LENGTH)
     String fileName,
 
+    @NotBlank
     @Size(max = RequestValidationLimits.CONTENT_TYPE_MAX_LENGTH)
     String fileType,
 

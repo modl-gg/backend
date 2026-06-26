@@ -377,6 +377,10 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         return saveEntity(server, appeal);
     }
 
+    public Ticket insertTicket(Server server, Ticket ticket) {
+        return insert(serverTemplate(server), ticket);
+    }
+
     public void pushReply(Server server, String ticketId, TicketReply reply) {
         Query query = Query.query(Criteria.where(TicketFields.ID).is(ticketId));
         Update update = new Update()

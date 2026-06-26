@@ -7,6 +7,7 @@ import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.CreateCategoryRequest;
 import gg.modl.proto.modl.v1.UpdateCategoryRequest;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +33,10 @@ public class KnowledgebaseCategoryService {
 
     public Optional<KnowledgebaseCategory> getCategoryById(Server server, String id) {
         return categoryRepository.findByCategoryId(server, id);
+    }
+
+    public List<KnowledgebaseCategory> getCategoriesByIds(Server server, Collection<String> ids) {
+        return categoryRepository.findByIds(server, ids);
     }
 
     public KnowledgebaseCategory createCategory(Server server, CreateCategoryRequest request) {

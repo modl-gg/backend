@@ -6,6 +6,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.MinecraftRoleDetailResponse;
 import gg.modl.proto.modl.v1.MinecraftRoleListResponse;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftRolesV3Controller {
     private final RoleService roleService;
+    private final StaffService staffService;
 
     @GetMapping(produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE)
     public ResponseEntity<MinecraftRoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -70,8 +72,13 @@ public class MinecraftRolesV3Controller {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<String> permissions = request != null ? request.getPermissionsList() : List.of();
+        String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
+        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
+        boolean hasIdentity = actingStaffId != null;
 
-        if (!roleService.updateRolePermissions(server, id, permissions)) {
+        if (!roleService.updateRolePermissions(
+                server, id, permissions,
+                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
             return mutationResponse(HttpStatus.NOT_FOUND, false, "Role not found");
         }
 

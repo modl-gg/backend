@@ -28,13 +28,16 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     private static final List<PermissionMapping> FIXED_PERMISSIONS = List.of(
         new PermissionMapping(RESTMappingV1.PANEL_STAFF, "admin.staff.manage.members"),
         new PermissionMapping(RESTMappingV1.PANEL_ROLES, "admin.staff.manage.roles"),
-        new PermissionMapping(RESTMappingV1.PANEL_PLAYERS, "punishment.modify"),
         new PermissionMapping(RESTMappingV1.PANEL_DASHBOARD, "admin.audit.view.dashboard"),
         new PermissionMapping(RESTMappingV1.PANEL_ANALYTICS, "admin.audit.view.analytics"),
         new PermissionMapping(RESTMappingV1.PANEL_AUDIT, "admin.audit.view.logs"),
         new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs"),
-        new PermissionMapping(RESTMappingV1.PANEL_TICKETS + "/bulk", "ticket.close.all")
+        new PermissionMapping(RESTMappingV1.PANEL_REPLAYS, "punishment.modify")
     );
+    // Sentinels used by resolveRequiredPermission for path-scoped player authorization.
+    // Chosen so they can never equal a real permission id.
+    private static final String PERMIT = "__PERMIT__";
+    private static final String PLAYER_READ = "__PLAYER_READ__";
     private static final List<PermissionMapping> RW_PERMISSIONS = List.of(
         new PermissionMapping(RESTMappingV1.PANEL_BILLING, "admin.settings.view.billing", "admin.settings.modify.billing"),
         new PermissionMapping(RESTMappingV1.PANEL_HOMEPAGE_CARDS, "admin.settings.view.content", "admin.settings.modify.content"),
@@ -90,15 +93,36 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Punishment creation self-checks the per-type punishment.apply.<type> permission inside
+        // the controller, so the filter must let it through to that check.
+        if (PERMIT.equals(requiredPermission)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         String roleId = staffOpt.map(Staff::getRoleId).orElse(null);
-        boolean authorized = roleId != null && hasRequiredPermission(server, roleId, requiredPermission, request.getRequestURI(), request.getMethod());
+
+        boolean authorized;
+        if (PLAYER_READ.equals(requiredPermission)) {
+            authorized = hasPlayerReadAccess(server, roleId);
+        } else {
+            authorized = roleId != null
+                && hasRequiredPermission(server, roleId, requiredPermission, request.getRequestURI(), request.getMethod());
+        }
         if (!authorized) {
             deny(response);
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean hasPlayerReadAccess(Server server, String roleId) {
+        return roleId != null
+            && (permissionService.hasPermission(server, roleId, "punishment.view")
+                || permissionService.hasPermission(server, roleId, "punishment.modify")
+                || permissionService.hasAnyPermissionWithPrefix(server, roleId, "punishment.apply."));
     }
 
     private boolean hasRequiredPermission(Server server, String role, String requiredPermission, String path, String method) {
@@ -124,7 +148,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     private void deny(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json");
-        response.getWriter().write("{\"success\":false,\"message\":\"Insufficient permissions\"}");
+        response.getWriter().write("{\"success\":false,\"status\":403,\"error\":\"Insufficient permissions\",\"message\":\"Insufficient permissions\"}");
     }
 
     private String resolveRequiredPermission(String path, String method) {
@@ -132,6 +156,14 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             if (startsWithEndpoint(path, mapping.endpoint())) {
                 return mapping.readPermission();
             }
+        }
+
+        if (startsWithEndpoint(path, RESTMappingV1.PANEL_PLAYERS)) {
+            return resolvePlayersPermission(path, method);
+        }
+
+        if (startsWithEndpoint(path, RESTMappingV1.PANEL_TICKETS + "/bulk")) {
+            return isReadOnly(method) ? "ticket.view.all" : "ticket.close.all";
         }
 
         if (startsWithEndpoint(path, RESTMappingV1.PANEL_SETTINGS)) {
@@ -145,6 +177,28 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         }
 
         return null;
+    }
+
+    private String resolvePlayersPermission(String path, String method) {
+        if (isReadOnly(method)) {
+            return PLAYER_READ;
+        }
+        if ("POST".equalsIgnoreCase(method) && isCreatePunishmentPath(path)) {
+            return PERMIT;
+        }
+        return "punishment.modify";
+    }
+
+    private boolean isCreatePunishmentPath(String path) {
+        String prefix = RESTMappingV1.PANEL_PLAYERS + "/";
+        if (!path.startsWith(prefix)) {
+            return false;
+        }
+        String[] segments = path.substring(prefix.length()).split("/");
+        // Match exactly /{uuid}/punishments (NOT /{uuid}/punishments/{id}/...).
+        return segments.length == 2
+            && !segments[0].isEmpty()
+            && "punishments".equals(segments[1]);
     }
 
     private String resolveSettingsPermission(String path, String method) {

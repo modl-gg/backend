@@ -30,8 +30,7 @@ final class PanelStaffProtoMapper {
 
     static UpdateStaffRequest toUpdateStaffRequest(gg.modl.proto.modl.v1.UpdateStaffRequest request) {
         return new UpdateStaffRequest(
-            request.hasEmail() ? request.getEmail() : null,
-            request.hasRole() ? request.getRole() : null
+            request.hasEmail() ? request.getEmail() : null
         );
     }
 

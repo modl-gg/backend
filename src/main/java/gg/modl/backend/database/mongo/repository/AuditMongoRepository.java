@@ -241,12 +241,6 @@ public class AuditMongoRepository {
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
     }
 
-    public void appendRollbackModification(Server server, String playerId, String punishmentId, Map<String, Object> rollbackModification) {
-        Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, rollbackModification);
-        Query query = Query.query(Criteria.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
-        tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
-    }
-
     public List<Document> findPlayersForBulkAction(Server server, List<Integer> typeOrdinals) {
         Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where(PunishmentFields.TYPE_ORDINAL).in(typeOrdinals)

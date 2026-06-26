@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.data;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.AllArgsConstructor;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class WebhookSettings {
     private String discordWebhookUrl;
     private String discordAdminRoleId;
@@ -24,6 +26,7 @@ public class WebhookSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class NotificationSettings {
         private boolean newTickets;
         private boolean newPunishments;
@@ -34,6 +37,7 @@ public class WebhookSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class EmbedTemplates {
         private EmbedTemplate newTickets;
         private EmbedTemplate newPunishments;
@@ -44,6 +48,7 @@ public class WebhookSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class EmbedTemplate {
         private String title;
         private String description;
@@ -56,6 +61,7 @@ public class WebhookSettings {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class EmbedField {
         private String name;
         private String value;

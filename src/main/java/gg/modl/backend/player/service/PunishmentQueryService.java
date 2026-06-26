@@ -1,5 +1,7 @@
 package gg.modl.backend.player.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
@@ -11,6 +13,7 @@ import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
 import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
@@ -51,6 +54,9 @@ public class PunishmentQueryService {
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final TicketMongoRepository ticketRepository;
+    // Inline instance (not a constructor-injected bean) so the @RequiredArgsConstructor signature
+    // stays stable for direct test constructors; a default ObjectMapper is sufficient for POJO->Map.
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -118,7 +124,12 @@ public class PunishmentQueryService {
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
         String status = PunishmentData.getStatus(data);
-        if (status != null) {
+        // data.status carries a lifecycle constant (Unstarted/Pardoned) for stacked/pardoned
+        // punishments; that is NOT an offender status and must not leak onto the wire. Fall through
+        // to the dedicated offenseLevel in that case.
+        if (status != null
+            && !PunishmentStatus.UNSTARTED.equals(status)
+            && !PunishmentStatus.PARDONED.equals(status)) {
             return status;
         }
         // Backward compat: map legacy offenseLevel to display status
@@ -492,7 +503,14 @@ public class PunishmentQueryService {
         }
 
         Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
-        response.put("appealForm", punishmentType.map(pt -> pt.getAppealForm()).orElse(null));
+        // Convert the AppealForm POJO to a deep Map so the proto mapper's `instanceof Map` guard
+        // passes and the custom form reaches the public appeal page. A null or empty-fields form is
+        // emitted as null so the panel keeps its default reason-field fallback (no regression).
+        response.put("appealForm", punishmentType
+            .map(PunishmentType::getAppealForm)
+            .filter(form -> form.getFields() != null && !form.getFields().isEmpty())
+            .map(form -> OBJECT_MAPPER.convertValue(form, new TypeReference<Map<String, Object>>() {}))
+            .orElse(null));
 
         return Optional.of(response);
     }

@@ -20,6 +20,7 @@ import org.springframework.data.mongodb.core.index.Index;
 import org.springframework.data.mongodb.core.index.IndexField;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
+import org.springframework.data.mongodb.core.index.PartialIndexFilter;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -101,7 +102,7 @@ public class MongoIndexBootstrapService {
         ));
 
         ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
-            IndexSpec.standard("idx_metric_snapshots_date", doc("date", -1), false, false)
+            IndexSpec.standard("uidx_metric_snapshots_date", doc("date", 1), true, false)
         ));
 
         ensureIndexes(template, CollectionName.REPLAY_LITE_REPLAYS, List.of(
@@ -141,6 +142,14 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_system_alerts_createdAt", doc("createdAt", -1), false, false),
             IndexSpec.standard("idx_system_alerts_audience_expiresAt", doc("audience", 1).append("expiresAt", 1), false, false)
         ));
+
+        ensureIndexes(template, CollectionName.SERVER_INSTANCE_SNAPSHOTS, List.of(
+            IndexSpec.standard("uidx_server_instance_snapshots_date", doc("date", 1), true, false)
+        ));
+
+        ensureIndexes(template, CollectionName.EVIDENCE_UPLOAD_TOKENS, List.of(
+            IndexSpec.ttl("idx_evidence_upload_tokens_expiresAt_ttl", doc("expiresAt", 1), 0)
+        ));
     }
 
     public void createTenantIndexes(MongoTemplate template) {
@@ -149,7 +158,8 @@ public class MongoIndexBootstrapService {
         ));
 
         ensureIndexes(template, CollectionName.PLAYERS, List.of(
-            IndexSpec.standard("uidx_players_minecraftUuid", doc("minecraftUuid", 1), true, true),
+            IndexSpec.partialUnique("uidx_players_minecraftUuid", doc("minecraftUuid", 1),
+                new Document("minecraftUuid", new Document("$exists", true))),
             IndexSpec.standard("idx_players_punishments_issued_desc", doc("punishments.issued", -1), false, false),
             IndexSpec.standard(
                 "idx_players_punishments_issuerName_issued_desc",
@@ -285,7 +295,25 @@ public class MongoIndexBootstrapService {
             if (hasEquivalentIndex(existingIndexes, spec)) {
                 continue;
             }
-            createIndex(indexOps, spec);
+            try {
+                boolean nameCollision = existingIndexes.stream()
+                    .anyMatch(i -> spec.name().equals(i.getName()));
+                if (nameCollision) {
+                    log.warn("Index spec drift on collection={} index={}: existing definition differs"
+                        + " from source spec; dropping and recreating", collectionName, spec.name());
+                    try {
+                        indexOps.dropIndex(spec.name());
+                    } catch (Exception e) {
+                        log.error("Failed to drop conflicting index name={} on collection={};"
+                            + " new spec NOT applied", spec.name(), collectionName, e);
+                        continue;
+                    }
+                }
+                createIndex(indexOps, spec);
+            } catch (Exception e) {
+                log.error("Failed to create index name={} on collection={}; continuing",
+                    spec.name(), collectionName, e);
+            }
         }
     }
 
@@ -305,6 +333,9 @@ public class MongoIndexBootstrapService {
         }
         if (spec.ttlSeconds() != null) {
             index.expire(Duration.ofSeconds(spec.ttlSeconds()));
+        }
+        if (spec.partialFilter() != null) {
+            index.partial(PartialIndexFilter.of(spec.partialFilter()));
         }
 
         indexOps.createIndex(index);
@@ -336,6 +367,18 @@ public class MongoIndexBootstrapService {
                 continue;
             }
 
+            String existingPartialJson = existingIndex.getPartialFilterExpression();
+            Document specPartial = spec.partialFilter();
+            if (existingPartialJson == null && specPartial == null) {
+                return true;
+            }
+            if (existingPartialJson == null || specPartial == null) {
+                continue;
+            }
+            if (!Document.parse(existingPartialJson).equals(specPartial)) {
+                continue;
+            }
+
             return true;
         }
         return false;
@@ -358,14 +401,19 @@ public class MongoIndexBootstrapService {
         Document keys,
         boolean unique,
         boolean sparse,
-        Long ttlSeconds
+        Long ttlSeconds,
+        Document partialFilter
     ) {
         static IndexSpec standard(String name, Document keys, boolean unique, boolean sparse) {
-            return new IndexSpec(name, keys, unique, sparse, null);
+            return new IndexSpec(name, keys, unique, sparse, null, null);
         }
 
         static IndexSpec ttl(String name, Document keys, long ttlSeconds) {
-            return new IndexSpec(name, keys, false, false, ttlSeconds);
+            return new IndexSpec(name, keys, false, false, ttlSeconds, null);
+        }
+
+        static IndexSpec partialUnique(String name, Document keys, Document partialFilter) {
+            return new IndexSpec(name, keys, true, false, null, partialFilter);
         }
     }
 }

@@ -34,9 +34,12 @@ public class DashboardController {
     private final DashboardService dashboardService;
 
     @GetMapping("/metrics")
-    public ResponseEntity<gg.modl.proto.modl.v1.DashboardMetricsResponse> getMetrics(HttpServletRequest request) {
+    public ResponseEntity<gg.modl.proto.modl.v1.DashboardMetricsResponse> getMetrics(
+        @RequestParam(name = "period", defaultValue = "7d") String period,
+        HttpServletRequest request
+    ) {
         Server server = RequestUtil.getRequestServer(request);
-        DashboardMetricsResponse metrics = dashboardService.getMetrics(server);
+        DashboardMetricsResponse metrics = dashboardService.getMetrics(server, period);
         return ResponseEntity.ok(DashboardProtoMapper.toMetrics(metrics));
     }
 
@@ -63,7 +66,7 @@ public class DashboardController {
     @GetMapping("/activity/recent")
     public ResponseEntity<DashboardActivityResponse> getRecentActivity(
         @RequestParam(defaultValue = "20") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
-        @RequestParam(defaultValue = "7") @Min(1) @Max(365) int days,
+        @RequestParam(defaultValue = "7") @Min(1) @Max(90) int days, // must match DashboardService.MAX_DAYS
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

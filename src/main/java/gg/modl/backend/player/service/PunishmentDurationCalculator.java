@@ -21,7 +21,12 @@ public class PunishmentDurationCalculator {
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final PlayerStatusCalculator statusCalculator;
 
-    public record DurationResult(@Nullable Long duration, @Nullable String status) {}
+    /**
+     * @param status       the display status (low/medium/habitual) shown on UIs
+     * @param offenseLevel the internal offense level (first/medium/habitual) used by
+     *                     {@link PlayerStatusCalculator#getEffectiveCategory} via DurationDetail
+     */
+    public record DurationResult(@Nullable Long duration, @Nullable String status, @Nullable String offenseLevel) {}
 
     public DurationResult calculate(Server server, List<Punishment> existingPunishments, int typeOrdinal, String severity) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
@@ -31,7 +36,7 @@ public class PunishmentDurationCalculator {
             .orElse(null);
 
         if (punishmentType == null) {
-            return new DurationResult(null, null);
+            return new DurationResult(null, null, null);
         }
 
         OffenderThresholdSettings thresholds = thresholdSettingsService.getThresholdSettings(server);
@@ -74,6 +79,6 @@ public class PunishmentDurationCalculator {
             }
         }
 
-        return new DurationResult(calculatedDuration, displayStatus);
+        return new DurationResult(calculatedDuration, displayStatus, offenseLevel);
     }
 }

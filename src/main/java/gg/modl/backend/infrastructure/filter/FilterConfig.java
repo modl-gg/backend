@@ -30,7 +30,10 @@ public class FilterConfig {
             corsProperties.getSystemOrigins()
         ));
         registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
-        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        // Filter ordering: RateLimitFilter (HIGHEST_PRECEDENCE) runs first so IP rate limiting
+        // precedes tenant DB lookup, then ServerHeaderFilter (HIGHEST_PRECEDENCE + 2), then the
+        // Spring Security FilterChainProxy (DEFAULT_FILTER_ORDER).
+        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
 
         return registrationBean;
     }

@@ -50,6 +50,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -244,7 +245,7 @@ public class WebAuthnService {
         }
     }
 
-    public String finishAuthentication(Server server, String challengeId, String responseJson) throws Exception {
+    public String finishAuthentication(Server server, String challengeId, String responseJson, Predicate<String> isAuthorized) throws Exception {
         RelyingParty rp = buildRelyingParty(server);
         WebAuthnChallenge challenge = challengeRepository.consumeActiveChallenge(server, challengeId, new Date()).orElse(null);
         if (challenge == null) {
@@ -277,12 +278,6 @@ public class WebAuthnService {
             throw new UnauthorizedException("Authentication failed: possible cloned authenticator");
         }
 
-        String credentialId = result.getCredential().getCredentialId().getBase64Url();
-        boolean updated = credentialRepository.updateUsage(server, credentialId, result.getSignatureCount(), new Date());
-        if (!updated) {
-            throw new UnauthorizedException("Authentication failed: credential not found");
-        }
-
         String email = challenge.getEmail();
         if (email == null || email.isBlank()) {
             ByteArray userHandle = result.getCredential().getUserHandle();
@@ -295,6 +290,17 @@ public class WebAuthnService {
             }
             email = cred.getEmail();
         }
+
+        if (!isAuthorized.test(email)) {
+            throw new ValidationException("Not authorized");
+        }
+
+        String credentialId = result.getCredential().getCredentialId().getBase64Url();
+        boolean updated = credentialRepository.updateUsage(server, credentialId, result.getSignatureCount(), new Date());
+        if (!updated) {
+            throw new UnauthorizedException("Authentication failed: credential not found");
+        }
+
         return email;
     }
 
@@ -311,6 +317,10 @@ public class WebAuthnService {
 
     public boolean deleteCredential(Server server, String email, String credentialMongoId) {
         return credentialRepository.deleteByIdAndEmail(server, credentialMongoId, email);
+    }
+
+    public long deleteCredentialsForEmail(Server server, String email) {
+        return credentialRepository.deleteAllByEmail(server, email);
     }
 
     public record StartRegistrationResult(String challengeId, String optionsJson) {

@@ -2,6 +2,7 @@ package gg.modl.backend.staff.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
@@ -17,6 +18,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
@@ -53,8 +55,27 @@ public class StaffService {
     private final PlayerService playerService;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
+    private final WebAuthnService webAuthnService;
+    private final ServerService serverService;
 
     private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
+
+    // Resolved performer identity for the API-key minecraft path (no authenticated staff session).
+    // A null roleId / isSuperAdmin == false signals "no trustworthy identity" (safe-degrade).
+    public record MinecraftPerformer(String roleId, boolean isSuperAdmin) {}
+
+    public MinecraftPerformer resolveMinecraftPerformer(Server server, String actingStaffId) {
+        if (actingStaffId == null || actingStaffId.isBlank()) {
+            return new MinecraftPerformer(null, false);
+        }
+        Staff staff = staffRepository.findById(server, actingStaffId).orElse(null);
+        if (staff == null) {
+            return new MinecraftPerformer(null, false);
+        }
+        boolean superAdmin = server.getAdminEmail() != null
+            && server.getAdminEmail().equalsIgnoreCase(staff.getEmail());
+        return new MinecraftPerformer(staff.getRoleId(), superAdmin);
+    }
 
     private final Cache<String, Optional<Staff>> staffByEmailCache = Caffeine.newBuilder()
         .maximumSize(1000)
@@ -145,7 +166,14 @@ public class StaffService {
     }
 
     public StaffResponse createStaff(Server server, CreateStaffRequest request, String performerEmail, String performerRole) {
-        if (staffRepository.existsByEmailOrUsername(server, request.email(), request.username())) {
+        // Canonicalize the email so it stores in the same lowercase form every lookup queries
+        // (read paths normalize); otherwise mixed-case storage is unreachable and duplicable.
+        String email = EmailAddressUtil.normalizeIfValid(request.email());
+        if (email == null) {
+            throw new ValidationException("A valid email address is required");
+        }
+
+        if (staffRepository.existsByEmailOrUsername(server, email, request.username())) {
             throw new ConflictException("Staff member with this email or username already exists");
         }
 
@@ -153,7 +181,7 @@ public class StaffService {
         StaffRole grantedRole = validateGrantableRole(server, requestedRole, performerRole);
 
         Staff staff = Staff.builder()
-            .email(request.email())
+            .email(email)
             .username(request.username())
             .roleId(grantedRole.getId())
             .createdAt(new Date())
@@ -162,6 +190,7 @@ public class StaffService {
 
         staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
+        serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         return toStaffResponse(server, staff, "Active");
     }
@@ -174,27 +203,35 @@ public class StaffService {
         }
 
         boolean hasChanges = false;
+        String newEmail = null;
 
-        if (request.email() != null && !request.email().equals(staff.getEmail())) {
+        if (request.email() != null) {
+            newEmail = EmailAddressUtil.normalizeIfValid(request.email());
+            if (newEmail == null) {
+                throw new ValidationException("A valid email address is required");
+            }
+        }
+
+        // Compare against the normalized value so a pure case-only edit is not treated as a change.
+        if (newEmail != null && !newEmail.equals(staff.getEmail())) {
             if (!staff.getEmail().equalsIgnoreCase(currentUserEmail)) {
                 throw new ForbiddenException("You can only change your own email address");
             }
 
-            if (staffRepository.existsByEmailExact(server, request.email())) {
+            if (staffRepository.existsByEmailIgnoreCaseExcluding(server, newEmail, staff.getEmail())) {
                 throw new ConflictException("Email address already in use");
             }
 
-            staff.setEmail(request.email());
+            staff.setEmail(newEmail);
             hasChanges = true;
         }
 
         if (hasChanges) {
             staff.setUpdatedAt(new Date());
             evictStaffByEmailCache(server, currentUserEmail);
-            if (request.email() != null) {
-                evictStaffByEmailCache(server, request.email());
-            }
+            evictStaffByEmailCache(server, newEmail);
             staff = staffRepository.saveEntity(server, staff);
+            serverTimestampService.updateStaffPermissionsTimestamp(server);
         }
 
         return Optional.ofNullable(staff).map(s -> toStaffResponse(server, s, "Active"));
@@ -222,6 +259,8 @@ public class StaffService {
 
         staffRepository.deleteById(server, id);
         evictStaffByEmailCache(server, staffToRemove.getEmail());
+        // Purge the removed staff's passkeys so a de-authorized email keeps no stale WebAuthn credentials.
+        webAuthnService.deleteCredentialsForEmail(server, staffToRemove.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
     }
@@ -282,11 +321,16 @@ public class StaffService {
 
         return allStaff.stream()
             .map(staff -> {
+                // Sum the effective-issuer buckets keyed by this staff's distinct identities (id for
+                // panel-issued punishments; username/assignedUsername for in-game ones). LinkedHashSet
+                // dedups equal keys; the buckets are otherwise disjoint, so summation never double-counts.
                 int punishmentsIssuedCount = 0;
-                if (staff.getAssignedMinecraftUsername() != null && punishmentCounts.containsKey(staff.getAssignedMinecraftUsername())) {
-                    punishmentsIssuedCount = punishmentCounts.get(staff.getAssignedMinecraftUsername());
-                } else if (staff.getUsername() != null && punishmentCounts.containsKey(staff.getUsername())) {
-                    punishmentsIssuedCount = punishmentCounts.get(staff.getUsername());
+                java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+                if (staff.getId() != null) keys.add(staff.getId());
+                if (staff.getAssignedMinecraftUsername() != null) keys.add(staff.getAssignedMinecraftUsername());
+                if (staff.getUsername() != null) keys.add(staff.getUsername());
+                for (String k : keys) {
+                    punishmentsIssuedCount += punishmentCounts.getOrDefault(k, 0);
                 }
 
                 return new MinecraftStaffSummaryResponse(
@@ -347,7 +391,9 @@ public class StaffService {
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {
         try {
-            return punishmentRepository.countPunishmentsByIssuerName(server);
+            // Keyed by effective issuer ($ifNull(issuerId, issuerName)) so panel-issued punishments
+            // (issuerName == null, issuerId set) are counted toward the issuing staff by id.
+            return punishmentRepository.countPunishmentsByEffectiveIssuer(server);
         } catch (Exception e) {
             log.warn("Failed to load punishment counts for server {}", server.getDatabaseName(), e);
             return Map.of();
@@ -391,16 +437,34 @@ public class StaffService {
             .toList();
     }
 
-    public boolean updateMinecraftStaffRole(Server server, String id, String roleName) {
+    public boolean updateMinecraftStaffRole(Server server, String id, String roleName, String actingStaffId,
+                                            String performerRoleId, boolean isSuperAdmin, boolean hasPerformerIdentity) {
         Staff staff = staffRepository.findById(server, id).orElse(null);
         if (staff == null) {
             return false;
         }
 
-        StaffRole role = permissionService.getRoleByName(server, roleName)
-            .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
+        // Always-safe protections that need no performer identity.
+        if (server.getAdminEmail() != null && staff.getEmail() != null
+            && staff.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
+            throw new ForbiddenException("Cannot change the role of the server administrator");
+        }
+        if (hasPerformerIdentity && actingStaffId != null && actingStaffId.equals(id)) {
+            throw new ForbiddenException("You cannot change your own role");
+        }
 
-        staff.setRoleId(role.getId());
+        StaffRole validatedRole;
+        if (hasPerformerIdentity) {
+            // Full panel-equivalent enforcement (hierarchy + grantability + super-admin block).
+            String effectivePerformerRoleId = isSuperAdmin ? SUPER_ADMIN_ROLE_ID : performerRoleId;
+            validatedRole = validateGrantableRole(server, roleName, effectivePerformerRoleId);
+        } else {
+            // Legacy/owner/absent-header degrade: keep the super-admin-grant block (validate as super-admin
+            // performer so the order check is skipped) but resolve role-not-found as a 404 like before.
+            validatedRole = validateGrantableRole(server, roleName, SUPER_ADMIN_ROLE_ID);
+        }
+
+        staff.setRoleId(validatedRole.getId());
         staff.setUpdatedAt(new Date());
         staffRepository.saveEntity(server, staff);
         evictStaffByEmailCache(server, staff.getEmail());
@@ -510,11 +574,16 @@ public class StaffService {
     }
 
     public Optional<Staff> updateEmail(Server server, String currentEmail, String newEmail, boolean isSuperAdmin) {
-        if (staffRepository.existsByEmailIgnoreCaseExcluding(server, newEmail, currentEmail)) {
+        String normalizedNewEmail = EmailAddressUtil.normalizeIfValid(newEmail);
+        if (normalizedNewEmail == null) {
+            throw new ValidationException("A valid email address is required");
+        }
+
+        if (staffRepository.existsByEmailIgnoreCaseExcluding(server, normalizedNewEmail, currentEmail)) {
             throw new ConflictException("Email address already in use");
         }
 
-        if (isSuperAdmin && serverRepository.existsByAdminEmailExcludingId(newEmail, server.getId())) {
+        if (isSuperAdmin && serverRepository.existsByAdminEmailExcludingId(normalizedNewEmail, server.getId())) {
             throw new ConflictException("Email address already in use");
         }
 
@@ -525,7 +594,7 @@ public class StaffService {
                 return Optional.empty();
             }
             staff = Staff.builder()
-                .email(newEmail)
+                .email(normalizedNewEmail)
                 .username("Admin")
                 .roleId(SUPER_ADMIN_ROLE_ID)
                 .createdAt(new Date())
@@ -533,16 +602,18 @@ public class StaffService {
                 .build();
             staff = staffRepository.saveEntity(server, staff);
         } else {
-            staff.setEmail(newEmail);
+            staff.setEmail(normalizedNewEmail);
             staff.setUpdatedAt(new Date());
             staff = staffRepository.saveEntity(server, staff);
         }
 
         evictStaffByEmailCache(server, currentEmail);
-        evictStaffByEmailCache(server, newEmail);
+        evictStaffByEmailCache(server, normalizedNewEmail);
 
         if (isSuperAdmin) {
-            serverRepository.updateAdminEmail(server.getId(), newEmail);
+            serverRepository.updateAdminEmail(server.getId(), normalizedNewEmail);
+            // Invalidate the tenant Server cache so isSuperAdmin recognizes the new admin email immediately.
+            serverService.evictAllServerCaches();
         }
 
         return Optional.of(staff);

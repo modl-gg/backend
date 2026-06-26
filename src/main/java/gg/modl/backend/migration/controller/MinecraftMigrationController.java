@@ -72,11 +72,7 @@ public class MinecraftMigrationController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Map<String, Object> result = migrationService.updateProgress(server, progressRequest);
-
-        if (Boolean.FALSE.equals(result.get("success"))) {
-            return ResponseEntity.badRequest().body(Map.of("error", result.get("error")));
-        }
+        migrationService.updateProgress(server, progressRequest);
 
         return ResponseEntity.ok(Map.of("success", true));
     }

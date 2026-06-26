@@ -63,11 +63,6 @@ final class AnalyticsProtoMapper {
                 .setType(item.type())
                 .setCount(item.count())
                 .build()));
-        analytics.bySeverity().forEach(item -> builder.addBySeverity(
-            gg.modl.proto.modl.v1.PunishmentAnalyticsResponse.SeverityCount.newBuilder()
-                .setSeverity(item.severity())
-                .setCount(item.count())
-                .build()));
         analytics.dailyPunishments().forEach(item -> builder.addDailyPunishments(
             gg.modl.proto.modl.v1.PunishmentAnalyticsResponse.DailyPunishment.newBuilder()
                 .setDate(item.date())

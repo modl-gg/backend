@@ -52,6 +52,7 @@ public class SystemAlertService {
         @Nullable String message,
         @Nullable SystemAlertSeverity severity,
         @Nullable SystemAlertAudience audience,
+        boolean expiresAtPresent,
         @Nullable Date expiresAt,
         String updatedBy
     ) {
@@ -64,6 +65,7 @@ public class SystemAlertService {
             trimmedMessage,
             severity,
             audience,
+            expiresAtPresent,
             expiresAt,
             new Date(),
             updatedBy

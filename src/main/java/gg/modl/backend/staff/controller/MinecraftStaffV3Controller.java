@@ -62,8 +62,13 @@ public class MinecraftStaffV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
+        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
+        boolean hasIdentity = actingStaffId != null;
 
-        if (!staffService.updateMinecraftStaffRole(server, id, request.getRole())) {
+        if (!staffService.updateMinecraftStaffRole(
+                server, id, request.getRole(), actingStaffId,
+                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
             return operationResponse(HttpStatus.NOT_FOUND, false, "Staff member not found");
         }
 

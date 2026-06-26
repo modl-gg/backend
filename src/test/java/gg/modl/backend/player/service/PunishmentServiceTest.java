@@ -209,6 +209,63 @@ class PunishmentServiceTest {
     }
 
     @Test
+    void createPunishmentPersistsInternalOffenseLevelThatSurvivesStatusWipe() {
+        UUID playerUuid = UUID.randomUUID();
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Player player = Player.builder()
+            .minecraftUuid(playerUuid)
+            .usernames(new ArrayList<>(List.of(new UsernameEntry("CurrentName", new Date()))))
+            .punishments(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
+
+        CreatePunishmentRequest request = new CreatePunishmentRequest(
+            "Mod", null, 6, null, null, null,
+            "regular", null, new HashMap<>(), "Reason text", null
+        );
+
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
+        when(issuerNameResolver.resolve(any(), any(), any(Server.class))).thenReturn("Mod");
+        when(durationCalculator.calculate(eq(server), any(), eq(6), eq("regular")))
+            .thenReturn(new PunishmentDurationCalculator.DurationResult(3600_000L, "habitual", "habitual"));
+
+        punishmentLifecycleService.createPunishment(server, playerUuid, request);
+
+        Punishment created = player.getPunishments().get(0);
+        assertEquals("habitual", created.getData().get("offenseLevel"));
+
+        // Simulate a status-wipe lifecycle mutation; the dedicated offenseLevel must survive.
+        created.getData().remove("status");
+        assertEquals("habitual", created.getData().get("offenseLevel"));
+    }
+
+    @Test
+    void createMinecraftPunishmentForcesUnstartedForNonStackingPluginPunishment() {
+        UUID playerUuid = UUID.randomUUID();
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Player player = Player.builder()
+            .minecraftUuid(playerUuid)
+            .usernames(new ArrayList<>(List.of(new UsernameEntry("CurrentName", new Date()))))
+            .punishments(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
+
+        CreatePunishmentRequest request = new CreatePunishmentRequest(
+            "Mod", null, 2, null, null, null, null, null,
+            new HashMap<>(Map.of("pendingAcknowledgement", true)), "Reason text", null
+        );
+
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
+        when(issuerNameResolver.resolve(any(), any(), any(Server.class))).thenReturn("Mod");
+
+        punishmentLifecycleService.createPunishment(server, playerUuid, request);
+
+        Punishment created = player.getPunishments().get(0);
+        assertEquals("Unstarted", created.getData().get("status"));
+        assertNull(created.getStarted());
+    }
+
+    @Test
     void systemPardonPunishmentAddsSystemPardonThroughRepositorySave() {
         UUID playerUuid = UUID.randomUUID();
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
@@ -241,6 +298,7 @@ class PunishmentServiceTest {
         assertEquals("SYSTEM_PARDON", modification.type());
         assertEquals("Auto-pardoned", modification.reason());
         assertEquals("Auto-pardoned", updatedPunishment.getNotes().get(0).text());
+        assertEquals("Pardoned", updatedPunishment.getData().get("status"));
     }
 
     @Test

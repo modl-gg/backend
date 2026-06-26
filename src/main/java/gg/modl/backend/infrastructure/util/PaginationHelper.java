@@ -12,16 +12,18 @@ public class PaginationHelper {
 
     public <T> PageResult<T> paginate(List<T> items, int page, int limit) {
         int totalCount = items.size();
+        int safeLimit = Math.max(0, limit);
         int skip = calculateSkip(page, limit);
-        List<T> paged = skip >= totalCount
-                        ? List.of()
-                        : items.subList(skip, Math.min(skip + limit, totalCount));
-        boolean hasMore = skip + limit < totalCount;
+        int from = Math.min(skip, totalCount);
+        int to = (int) Math.min((long) skip + safeLimit, totalCount);
+        List<T> paged = items.subList(from, to);
+        boolean hasMore = (long) skip + safeLimit < totalCount;
         return new PageResult<>(paged, totalCount, page, hasMore);
     }
 
     public int calculateSkip(int page, int limit) {
-        return (normalizePage(page) - 1) * limit;
+        long skip = (long) (normalizePage(page) - 1) * (long) Math.max(0, limit);
+        return (int) Math.min(skip, Integer.MAX_VALUE);
     }
 
     public int normalizePage(int page) {

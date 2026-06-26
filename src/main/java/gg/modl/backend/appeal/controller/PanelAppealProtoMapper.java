@@ -68,7 +68,7 @@ final class PanelAppealProtoMapper {
 
     static UpdateAppealStatusRequest fromUpdateAppealStatusRequest(gg.modl.proto.modl.v1.UpdateAppealStatusRequest request) {
         return new UpdateAppealStatusRequest(
-            request.getStatus(),
+            request.getStatus().isBlank() ? null : request.getStatus(),
             request.hasLocked() ? request.getLocked() : null,
             request.hasStaffUsername() ? request.getStaffUsername() : null,
             request.hasResolution() ? request.getResolution() : null

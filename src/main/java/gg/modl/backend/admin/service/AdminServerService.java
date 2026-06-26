@@ -178,14 +178,19 @@ public class AdminServerService {
 
         List<Server> servers = serverRepository.findProvisioningCandidatesByIds(serverIds);
         for (Server server : servers) {
+            if (server.getDatabaseName() == null) {
+                continue;
+            }
             try {
-                if (server.getDatabaseName() != null) {
-                    provisioningService.provision(server);
-                }
+                provisioningService.provision(server);
+                serverRepository.markProvisioningCompleted(server.getId());
             } catch (Exception e) {
                 log.warn("Failed to provision server {}", server.getId(), e);
+                serverRepository.markProvisioningFailed(server.getId(), "Admin reprovision failed.");
             }
         }
+
+        serverService.evictAllServerCaches();
 
         return modified;
     }

@@ -10,11 +10,13 @@ import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerTimestampService;
@@ -82,7 +84,9 @@ class StaffServiceUuidNormalizationTest {
             mock(ServerMongoRepository.class),
             mock(PlayerService.class),
             mock(PermissionService.class),
-            mock(ServerTimestampService.class)
+            mock(ServerTimestampService.class),
+            mock(WebAuthnService.class),
+            mock(ServerService.class)
         );
     }
 

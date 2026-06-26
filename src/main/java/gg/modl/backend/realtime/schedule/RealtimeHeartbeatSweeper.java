@@ -18,6 +18,8 @@ import org.springframework.web.socket.WebSocketSession;
 public class RealtimeHeartbeatSweeper {
     private static final CloseStatus HEARTBEAT_TIMEOUT = new CloseStatus(1001, "Realtime heartbeat timed out");
     private static final CloseStatus HANDSHAKE_TIMEOUT = new CloseStatus(1008, "Realtime ClientHello timed out");
+    private static final String HANDSHAKE_TIMEOUT_REASON = "handshake_timeout";
+    private static final String HEARTBEAT_TIMEOUT_REASON = "heartbeat_timeout";
 
     private final RealtimeProperties properties;
     private final RealtimeConnectionRegistry connectionRegistry;
@@ -37,14 +39,23 @@ public class RealtimeHeartbeatSweeper {
         for (RealtimeConnectionRegistry.RealtimeConnectionSnapshot snapshot : connectionRegistry.snapshot()) {
             RealtimeConnectionState state = snapshot.state();
             WebSocketSession session = snapshot.session();
+            Instant terminalSince = state.getTerminalSince();
+            if (terminalSince != null
+                && terminalSince.isBefore(now.minusMillis(properties.getTerminalGraceMs()))) {
+                // Upper bound for a wedged terminal-but-open session whose close() keeps failing:
+                // force-evict regardless of isOpen() so its decorator + rate-limit window are freed.
+                metrics.recordReject(state, "terminal_force_evict");
+                connectionCleanup.unregister(session, CloseStatus.NO_CLOSE_FRAME);
+                continue;
+            }
             if (!session.isOpen()) {
                 connectionCleanup.unregister(session, CloseStatus.NO_CLOSE_FRAME);
                 continue;
             }
             if (!state.isAuthenticated()) {
                 if (state.getConnectedAt().isBefore(handshakeCutoff)) {
-                    metrics.recordReject(state, "handshake_timeout");
-                    close(session, state, HANDSHAKE_TIMEOUT);
+                    metrics.recordReject(state, HANDSHAKE_TIMEOUT_REASON);
+                    close(session, state, HANDSHAKE_TIMEOUT, HANDSHAKE_TIMEOUT_REASON);
                 }
                 continue;
             }
@@ -53,11 +64,11 @@ public class RealtimeHeartbeatSweeper {
             }
 
             metrics.recordTimeoutClose(state);
-            close(session, state, HEARTBEAT_TIMEOUT);
+            close(session, state, HEARTBEAT_TIMEOUT, HEARTBEAT_TIMEOUT_REASON);
         }
     }
 
-    private void close(WebSocketSession session, RealtimeConnectionState state, CloseStatus status) {
-        sessionOperations.requestClose(session, state, status, "heartbeat_timeout");
+    private void close(WebSocketSession session, RealtimeConnectionState state, CloseStatus status, String metricReason) {
+        sessionOperations.requestClose(session, state, status, metricReason);
     }
 }

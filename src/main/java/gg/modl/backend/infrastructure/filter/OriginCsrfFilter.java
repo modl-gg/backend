@@ -71,8 +71,10 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Accept only same-origin; cross-subdomain (same-site) is intentionally rejected so
+        // cross-tenant CSRF isolation does not depend on the coarse registrable-domain signal.
         String fetchSite = request.getHeader("Sec-Fetch-Site");
-        if (fetchSite != null && ("same-origin".equalsIgnoreCase(fetchSite) || "same-site".equalsIgnoreCase(fetchSite))) {
+        if (fetchSite != null && "same-origin".equalsIgnoreCase(fetchSite)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -105,29 +107,26 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
     private void reject(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json");
-        response.getWriter().write("{\"success\":false,\"message\":\"Cross-site request blocked\"}");
+        response.getWriter().write("{\"success\":false,\"status\":403,\"error\":\"Cross-site request blocked\",\"message\":\"Cross-site request blocked\"}");
     }
 
     private boolean isAllowedOrigin(HttpServletRequest request, String origin) {
-        if (parsedSystemOrigins.contains(origin)) {
-            return true;
+        // Panel writes are pinned to the tenant's own origin; the system-origin shortcut is
+        // retained only for non-panel/admin paths, plus a dev-mode localhost allowance for the
+        // panel dev server.
+        if (isPanelPath(request.getRequestURI())) {
+            String originHost = HostExtractionUtil.extractHost(origin);
+            if (originHost == null) {
+                return false;
+            }
+            String serverDomain = resolveRequestServerDomain(request);
+            if (serverDomain != null && originHost.equalsIgnoreCase(serverDomain)) {
+                return true;
+            }
+            return modlProperties.isDevelopmentMode() && parsedSystemOrigins.contains(origin);
         }
 
-        if (!isPanelPath(request.getRequestURI())) {
-            return false;
-        }
-
-        String originHost = HostExtractionUtil.extractHost(origin);
-        if (originHost == null) {
-            return false;
-        }
-
-        String serverDomain = resolveRequestServerDomain(request);
-        if (serverDomain == null) {
-            return false;
-        }
-
-        return originHost.equalsIgnoreCase(serverDomain);
+        return parsedSystemOrigins.contains(origin);
     }
 
     private boolean isAllowedReferer(HttpServletRequest request, String referer) {

@@ -1,6 +1,5 @@
 package gg.modl.backend.database.mongo.repository;
 
-import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.analytics.data.ServerInstanceSnapshot;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
@@ -9,6 +8,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerInstanceSnapshotFields;
 import java.util.Date;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -27,11 +27,11 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
         ServerInstanceSnapshot.ServerEntry entry =
             new ServerInstanceSnapshot.ServerEntry(serverId, serverName, playerCount, platform, version, ipAddress, pluginVersion);
 
-        // Try to update existing server entry in the array
+        // Step 1: try to update the existing array element in place (atomic per matched document).
         Query updateQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
-                .and("servers.serverId").is(serverId)
-                .and("servers.serverName").is(serverName)
+                .and("servers").elemMatch(
+                    Criteria.where("serverId").is(serverId).and("serverName").is(serverName))
         );
         Update updateExisting = new Update()
             .set("servers.$.playerCount", playerCount)
@@ -40,15 +40,28 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
             .set("servers.$.ipAddress", ipAddress)
             .set("servers.$.pluginVersion", pluginVersion);
 
-        UpdateResult result = updateFirst(updateQuery, updateExisting);
+        if (updateFirst(updateQuery, updateExisting).getMatchedCount() > 0) {
+            return;
+        }
 
-        if (result.getMatchedCount() == 0) {
-            // Entry doesn't exist yet — upsert document and push to array
-            Query upsertQuery = Query.query(Criteria.where(ServerInstanceSnapshotFields.DATE).is(date));
-            Update pushNew = new Update()
-                .push(ServerInstanceSnapshotFields.SERVERS, entry)
-                .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
-            upsert(upsertQuery, pushNew);
+        // Step 2: the element is absent — push it, but only into a document that does NOT already
+        // contain it. This query is self-excluding, so a concurrent second push into the same
+        // bucket cannot double-add the entry. The unique index on `date` resolves the residual
+        // create-vs-create race via a swallowed DuplicateKeyException.
+        Query insertQuery = Query.query(
+            Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
+                .and("servers").not().elemMatch(
+                    Criteria.where("serverId").is(serverId).and("serverName").is(serverName))
+        );
+        Update pushNew = new Update()
+            .push(ServerInstanceSnapshotFields.SERVERS, entry)
+            .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
+        try {
+            upsert(insertQuery, pushNew);
+        } catch (DuplicateKeyException e) {
+            // A concurrent writer already inserted the bucket document for this date. The unique
+            // index on `date` rejected our duplicate insert; the entry is (or will be) present
+            // and the next sync cycle reconciles its mutable fields. Safe to ignore.
         }
     }
 

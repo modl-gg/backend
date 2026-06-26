@@ -80,7 +80,7 @@ public class PanelStorageController {
         if (!permissionService.isSuperAdmin(server, RequestUtil.getSessionEmail(request))) {
             throw new ForbiddenException("Only super admins can trigger a storage sync");
         }
-        int synced = storageSyncService.syncServerFiles(server);
+        int synced = storageSyncService.syncServerFiles(server, true);
         return ResponseEntity.ok(StorageProtoMapper.toStorageSyncResponse(synced));
     }
 

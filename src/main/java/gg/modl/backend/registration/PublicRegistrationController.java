@@ -16,11 +16,15 @@ import gg.modl.proto.modl.v1.CliSetupStatusRequest;
 import gg.modl.proto.modl.v1.EmailVerificationTokenRequest;
 import gg.modl.proto.modl.v1.ProvisioningTokenRequest;
 import gg.modl.proto.modl.v1.PublicRegistrationRequest;
+import gg.modl.proto.modl.v1.ServerAvailabilityRequest;
+import gg.modl.proto.modl.v1.ServerAvailabilityResponse;
 import gg.modl.proto.modl.v1.SetupStatusRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Date;
+import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -53,6 +57,9 @@ public class PublicRegistrationController {
         "docs", "secure", "alpha", "cdn",
         "nexus", "replay", "replays"
     );
+    private static final int SUBDOMAIN_MIN_LEN = 3;
+    private static final int SUBDOMAIN_MAX_LEN = 50;
+    private static final Pattern SUBDOMAIN_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$");
 
     @PostMapping
     public ResponseEntity<?> register(
@@ -61,7 +68,7 @@ public class PublicRegistrationController {
 
         String clientIp = RequestUtil.getClientIp(request);
 
-        RegistrationService.RateLimitResult rateLimit = registrationService.checkRateLimit(clientIp);
+        RegistrationService.RateLimitResult rateLimit = registrationService.reserveRateLimit(clientIp);
         if (rateLimit.limited()) {
             return ResponseEntity.status(429).body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
@@ -72,6 +79,7 @@ public class PublicRegistrationController {
 
         if (!turnstileService.validateToken(requestData.getTurnstileToken(), clientIp)) {
             log.warn("Turnstile validation failed for registration attempt");
+            registrationService.releaseRateLimit(clientIp);
             return ResponseEntity.badRequest().body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
                 "Security verification failed. Please try again.",
@@ -79,8 +87,15 @@ public class PublicRegistrationController {
             ));
         }
 
+        ResponseEntity<?> subdomainValidationResponse = validateSubdomain(requestData.getCustomDomain());
+        if (subdomainValidationResponse != null) {
+            registrationService.releaseRateLimit(clientIp);
+            return subdomainValidationResponse;
+        }
+
         ResponseEntity<?> reservedSubdomainResponse = checkReservedSubdomain(requestData.getCustomDomain());
         if (reservedSubdomainResponse != null) {
+            registrationService.releaseRateLimit(clientIp);
             return reservedSubdomainResponse;
         }
 
@@ -92,6 +107,7 @@ public class PublicRegistrationController {
 
         ResponseEntity<?> duplicateResponse = checkDuplicates(existResult);
         if (duplicateResponse != null) {
+            registrationService.releaseRateLimit(clientIp);
             return duplicateResponse;
         }
 
@@ -109,6 +125,7 @@ public class PublicRegistrationController {
             );
         } catch (Exception e) {
             log.error("Failed to create server", e);
+            registrationService.releaseRateLimit(clientIp);
             return ResponseEntity.internalServerError().body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
                 "An internal server error occurred during registration. Please try again later.",
@@ -116,7 +133,6 @@ public class PublicRegistrationController {
             ));
         }
 
-        registrationService.recordRateLimit(clientIp);
         registrationService.sendVerificationEmail(requestData.getEmail(), requestData.getCustomDomain(), emailVerificationToken);
 
         return ResponseEntity.status(201).body(RegistrationProtoMapper.toRegistrationResponse(
@@ -247,7 +263,7 @@ public class PublicRegistrationController {
 
         String clientIp = RequestUtil.getClientIp(request);
 
-        RegistrationService.RateLimitResult rateLimit = registrationService.checkCliRateLimit(clientIp);
+        RegistrationService.RateLimitResult rateLimit = registrationService.reserveCliRateLimit(clientIp);
         if (rateLimit.limited()) {
             return ResponseEntity.status(429).body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
@@ -256,8 +272,15 @@ public class PublicRegistrationController {
             ));
         }
 
+        ResponseEntity<?> subdomainValidationResponse = validateSubdomain(requestData.getCustomDomain());
+        if (subdomainValidationResponse != null) {
+            registrationService.releaseCliRateLimit(clientIp);
+            return subdomainValidationResponse;
+        }
+
         ResponseEntity<?> reservedSubdomainResponse = checkReservedSubdomain(requestData.getCustomDomain());
         if (reservedSubdomainResponse != null) {
+            registrationService.releaseCliRateLimit(clientIp);
             return reservedSubdomainResponse;
         }
 
@@ -269,6 +292,7 @@ public class PublicRegistrationController {
 
         ResponseEntity<?> duplicateResponse = checkDuplicates(existResult);
         if (duplicateResponse != null) {
+            registrationService.releaseCliRateLimit(clientIp);
             return duplicateResponse;
         }
 
@@ -286,12 +310,12 @@ public class PublicRegistrationController {
             );
         } catch (Exception e) {
             log.error("Failed to create server via CLI", e);
+            registrationService.releaseCliRateLimit(clientIp);
             return ResponseEntity.internalServerError().body(RegistrationProtoMapper.toRegistrationResponse(
                 false, "An internal server error occurred during registration. Please try again later.", null
             ));
         }
 
-        registrationService.recordCliRateLimit(clientIp);
 
         String cliSetupToken = registrationService.generateToken();
         serverService.setCliSetupToken(server, cliSetupToken);
@@ -376,8 +400,33 @@ public class PublicRegistrationController {
         return null;
     }
 
+    private ResponseEntity<?> validateSubdomain(String customDomain) {
+        if (customDomain == null
+            || customDomain.length() < SUBDOMAIN_MIN_LEN
+            || customDomain.length() > SUBDOMAIN_MAX_LEN
+            || !SUBDOMAIN_PATTERN.matcher(customDomain).matches()) {
+            return ResponseEntity.badRequest().body(RegistrationProtoMapper.toRegistrationResponse(
+                false,
+                "Subdomain must be 3-50 characters, lowercase letters, digits and hyphens only, and cannot start or end with a hyphen.",
+                null
+            ));
+        }
+        return null;
+    }
+
     private ResponseEntity<?> checkReservedSubdomain(String customDomain) {
-        if (customDomain != null && RESERVED_SUBDOMAINS.contains(customDomain)) {
+        if (customDomain == null) {
+            return null;
+        }
+        String normalized = customDomain.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty() || normalized.startsWith("-") || normalized.endsWith("-")) {
+            return ResponseEntity.status(409).body(RegistrationProtoMapper.toRegistrationResponse(
+                false,
+                "This subdomain is not valid. Use letters, digits, and internal hyphens only.",
+                null
+            ));
+        }
+        if (RESERVED_SUBDOMAINS.contains(normalized)) {
             return ResponseEntity.status(409).body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
                 "This subdomain is reserved and cannot be used.",
@@ -385,5 +434,51 @@ public class PublicRegistrationController {
             ));
         }
         return null;
+    }
+
+    @PostMapping("/check-availability")
+    public ResponseEntity<?> checkAvailability(@RequestBody ServerAvailabilityRequest request) {
+        String email = request.hasEmail() ? request.getEmail() : null;
+        String serverName = request.hasServerName() ? request.getServerName() : null;
+        String customDomain = request.hasCustomDomain() ? request.getCustomDomain() : null;
+
+        boolean emailPresent = email != null && !email.isBlank();
+        boolean namePresent = serverName != null && !serverName.isBlank();
+        boolean domainPresent = customDomain != null && !customDomain.isBlank();
+
+        boolean emailAvailable = true;
+        boolean nameAvailable = true;
+        boolean subdomainAvailable = true;
+
+        if (emailPresent || namePresent || domainPresent) {
+            ServerService.ServerExistResult existResult = serverService.doesServerExist(
+                email != null ? email : "",
+                serverName != null ? serverName : "",
+                customDomain != null ? customDomain : ""
+            );
+            if (emailPresent) {
+                emailAvailable = !existResult.emailMatch();
+            }
+            if (namePresent) {
+                nameAvailable = !existResult.nameMatch();
+            }
+            if (domainPresent) {
+                subdomainAvailable = !existResult.domainMatch();
+            }
+        }
+
+        boolean reserved = domainPresent && RESERVED_SUBDOMAINS.contains(customDomain);
+        if (reserved) {
+            subdomainAvailable = false;
+        }
+
+        ServerAvailabilityResponse.Builder builder = ServerAvailabilityResponse.newBuilder()
+            .setEmailAvailable(emailAvailable)
+            .setNameAvailable(nameAvailable)
+            .setSubdomainAvailable(subdomainAvailable);
+        if (reserved) {
+            builder.setMessage("This subdomain is reserved.");
+        }
+        return ResponseEntity.ok(builder.build());
     }
 }

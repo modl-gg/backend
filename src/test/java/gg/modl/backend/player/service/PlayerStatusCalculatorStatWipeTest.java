@@ -1,6 +1,9 @@
 package gg.modl.backend.player.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -165,6 +168,68 @@ class PlayerStatusCalculatorStatWipeTest {
         Date started = new Date(System.currentTimeMillis() - 7200_000L);
         Punishment p = createPunishment(14, started, 3600_000L, List.of());
         assertTrue(calculator.isPunishmentNaturallyExpired(p));
+    }
+
+    @Test
+    void makePermanentOverridesEarlierFiniteDurationChange() {
+        // Started 10 days ago, base duration 1 day; an earlier finite duration-change (5 days ago)
+        // already expired, then a later make-permanent (effectiveDuration=null) must win.
+        Date started = new Date(System.currentTimeMillis() - 10L * 86400_000L);
+        Date mod1Date = new Date(System.currentTimeMillis() - 5L * 86400_000L);
+        Date mod2Date = new Date(System.currentTimeMillis() - 3600_000L);
+        PunishmentModification finiteChange = new PunishmentModification(
+            "mod-1", "MANUAL_DURATION_CHANGE", mod1Date, "Staff", null, "Shortened",
+            86400_000L, null, null
+        );
+        PunishmentModification makePermanent = new PunishmentModification(
+            "mod-2", "MANUAL_DURATION_CHANGE", mod2Date, "Staff", null, "Made permanent",
+            null, null, null
+        );
+        Punishment p = createPunishment(2, started, 86400_000L, List.of(finiteChange, makePermanent));
+        assertNull(calculator.getEffectiveExpiry(p));
+        assertTrue(calculator.isPunishmentActive(p));
+    }
+
+    @Test
+    void appealDurationChangeRecognizedAsPermanent() {
+        Date started = new Date(System.currentTimeMillis() - 7200_000L);
+        PunishmentModification appealChange = new PunishmentModification(
+            "mod-1", "APPEAL_DURATION_CHANGE", new Date(), "Staff", null, "Appeal made permanent",
+            null, null, null
+        );
+        Punishment p = createPunishment(2, started, 86400_000L, List.of(appealChange));
+        assertNull(calculator.getEffectiveExpiry(p));
+    }
+
+    @Test
+    void makePermanentViaNegativeOnLatest() {
+        Date started = new Date(System.currentTimeMillis() - 10L * 86400_000L);
+        Date mod1Date = new Date(System.currentTimeMillis() - 5L * 86400_000L);
+        Date mod2Date = new Date(System.currentTimeMillis() - 3600_000L);
+        PunishmentModification finiteChange = new PunishmentModification(
+            "mod-1", "MANUAL_DURATION_CHANGE", mod1Date, "Staff", null, "Shortened",
+            86400_000L, null, null
+        );
+        PunishmentModification makePermanent = new PunishmentModification(
+            "mod-2", "MANUAL_DURATION_CHANGE", mod2Date, "Staff", null, "Made permanent",
+            -1L, null, null
+        );
+        Punishment p = createPunishment(2, started, 86400_000L, List.of(finiteChange, makePermanent));
+        assertNull(calculator.getEffectiveExpiry(p));
+    }
+
+    @Test
+    void nonDurationModWithEffectiveDurationIgnored() {
+        // A free-form (non-duration-change) modification carrying a stray effectiveDuration must not
+        // alter the expiry, which still derives from data.duration counted from started.
+        Date started = new Date(System.currentTimeMillis() - 1800_000L);
+        PunishmentModification noteMod = new PunishmentModification(
+            "mod-1", "NOTE", new Date(), "Staff", null, "", 1L, null, null
+        );
+        Punishment p = createPunishment(2, started, 3600_000L, List.of(noteMod));
+        Date expiry = calculator.getEffectiveExpiry(p);
+        assertNotNull(expiry);
+        assertEquals(started.getTime() + 3600_000L, expiry.getTime());
     }
 
     @Test

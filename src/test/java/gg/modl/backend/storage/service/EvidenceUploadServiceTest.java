@@ -14,12 +14,14 @@ import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.StorageMetadataService;
+import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.EvidenceItemRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -84,6 +86,8 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getCdnDomain()).thenReturn("cdn.example.com");
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
+        when(storageMetadataService.findConfirmedFile(server, "db/evidence/PUN-1/file.png"))
+            .thenReturn(Optional.of(new StorageFileDocument("db/evidence/PUN-1/file.png", "file.png", 42L, "image/png", "evidence")));
         when(punishmentEvidenceService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any()))
             .thenReturn(new PunishmentOperationResult(
                 PunishmentOperationStatus.SUCCESS,
@@ -126,7 +130,7 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 42L, "image/png")).thenReturn(false);
+        when(quotaService.confirmAndRecordFile(server, key, 42L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
         when(s3StorageService.deleteFile(key)).thenReturn(true);
 
         EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(
@@ -156,7 +160,7 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(false);
+        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
         when(s3StorageService.deleteFile(key)).thenReturn(false);
         when(storageMetadataService.recordReservedFile(server, key, 99L, "image/png"))
             .thenReturn(StorageMetadataService.RecordFileResult.INSERTED);
@@ -188,7 +192,7 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
         when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(false);
+        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
         when(s3StorageService.deleteFile(key)).thenReturn(false);
         when(storageMetadataService.recordReservedFile(server, key, 99L, "image/png"))
             .thenReturn(StorageMetadataService.RecordFileResult.FAILED);

@@ -71,8 +71,8 @@ public class PlayerStatusCalculator {
             }
         }
 
-        String socialStatus = getStatusFromPoints(socialPoints);
-        String gameplayStatus = getStatusFromPoints(gameplayPoints);
+        String socialStatus = thresholdSettings.getSocialOffenderLevel(socialPoints);
+        String gameplayStatus = thresholdSettings.getGameplayOffenderLevel(gameplayPoints);
 
         return new PlayerStatus(socialStatus, gameplayStatus, socialPoints, gameplayPoints);
     }
@@ -114,27 +114,29 @@ public class PlayerStatusCalculator {
             return null;
         }
 
-        Long duration = null;
-        Date durationBase = null;
+        // Only duration-changing modifications (manual/appeal) are authoritative for expiry. The
+        // most recent one wins (append order == chronological); a stray effectiveDuration carried by
+        // a pardon/note/free-form modification must never reset the expiry base.
+        PunishmentModification latestDurationChange = null;
         for (PunishmentModification mod : punishment.getModifications()) {
-            if (mod.effectiveDuration() != null) {
-                duration = mod.effectiveDuration();
-                durationBase = mod.date();
+            if (PunishmentModificationType.isDurationChange(mod.type())) {
+                latestDurationChange = mod;
             }
         }
 
-        if (duration == null) {
-            duration = PunishmentData.getDuration(data);
+        if (latestDurationChange != null) {
+            Long eff = latestDurationChange.effectiveDuration();
+            // null, 0, or negative (-1L) on the latest duration change means make-permanent (no expiry).
+            if (eff == null || eff <= 0) {
+                return null;
+            }
+            return new Date(latestDurationChange.date().getTime() + eff);
         }
 
+        Long duration = PunishmentData.getDuration(data);
         // null, 0, or negative (-1L) indicates permanent (no expiry)
         if (duration == null || duration <= 0) {
             return null;
-        }
-
-        // If duration came from a modification, count from the modification date
-        if (durationBase != null) {
-            return new Date(durationBase.getTime() + duration);
         }
 
         // Count from started date, or current time if not yet started
@@ -146,18 +148,6 @@ public class PlayerStatusCalculator {
 
     private Optional<PunishmentType> findTypeByOrdinal(Map<Integer, PunishmentType> typesByOrdinal, int ordinal) {
         return Optional.ofNullable(typesByOrdinal.get(ordinal));
-    }
-
-    private String getStatusFromPoints(int points) {
-        if (points == 0) {
-            return "Good";
-        } else if (points <= 2) {
-            return "Warning";
-        } else if (points <= 5) {
-            return "Restricted";
-        } else {
-            return "Banned";
-        }
     }
 
     /**
@@ -203,13 +193,22 @@ public class PlayerStatusCalculator {
             if (rawOffenseLevel != null) {
                 offenseLevel = rawOffenseLevel;
             } else {
-                String statusVal = PunishmentData.getStatus(data) != null ? PunishmentData.getStatus(data).toLowerCase() : "";
-                offenseLevel = switch (statusVal) {
-                    case "low" -> "first";
-                    case "medium" -> "medium";
-                    case "habitual" -> "habitual";
-                    default -> "first";
-                };
+                // Legacy fallback: older docs stored the offense level in data.status. A lifecycle
+                // constant (Unstarted/Pardoned) there is NOT an offense level, so never run the
+                // offense-level switch on it.
+                String status = PunishmentData.getStatus(data);
+                if (status == null
+                    || PunishmentStatus.UNSTARTED.equals(status)
+                    || PunishmentStatus.PARDONED.equals(status)) {
+                    offenseLevel = "first";
+                } else {
+                    offenseLevel = switch (status.toLowerCase()) {
+                        case "low" -> "first";
+                        case "medium" -> "medium";
+                        case "habitual" -> "habitual";
+                        default -> "first";
+                    };
+                }
             }
             DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
             if (detail != null) {

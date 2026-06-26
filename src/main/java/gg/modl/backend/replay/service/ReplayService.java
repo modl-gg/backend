@@ -15,6 +15,9 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
@@ -24,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,23 +42,22 @@ public class ReplayService {
     private final TrainingDataService trainingDataService;
     private final StorageMetadataService storageMetadataService;
     private final TicketMongoRepository ticketRepository;
+    private final Validator validator;
 
     @Value("${modl.replay.max-file-size:10485760}")
     private long maxFileSize;
 
     public ReplayService(ReplayMongoRepository replayRepository, S3StorageService s3StorageService,
                          StorageQuotaService storageQuotaService, TrainingDataService trainingDataService,
-                         StorageMetadataService storageMetadataService, TicketMongoRepository ticketRepository) {
+                         StorageMetadataService storageMetadataService, TicketMongoRepository ticketRepository,
+                         Validator validator) {
         this.replayRepository = replayRepository;
         this.s3StorageService = s3StorageService;
         this.storageQuotaService = storageQuotaService;
         this.trainingDataService = trainingDataService;
         this.storageMetadataService = storageMetadataService;
         this.ticketRepository = ticketRepository;
-    }
-
-    public InitReplayUploadResponse initUpload(Server server, String mcVersion, long fileSize) {
-        return initUpload(server, mcVersion, fileSize, null, null);
+        this.validator = validator;
     }
 
     public InitReplayUploadResponse initUpload(
@@ -113,12 +116,23 @@ public class ReplayService {
         replayRepository.saveEntity(server, doc);
 
         if (exists) {
-            if (!storageQuotaService.confirmAndRecordFile(server, doc.getStorageKey(), doc.getFileSize(), "application/octet-stream")) {
-                doc.setStatus(ReplayDocument.STATUS_FAILED);
-                replayRepository.saveEntity(server, doc);
-                throw new ValidationException("Storage quota exceeded");
+            StorageQuotaService.ConfirmResult confirmResult = storageQuotaService.confirmAndRecordFile(
+                server, doc.getStorageKey(), doc.getFileSize(), "application/octet-stream");
+            switch (confirmResult) {
+                case SUCCESS -> log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
+                case QUOTA_EXCEEDED -> {
+                    // The object was PUT to the bucket but is over quota; replay objects are intentionally
+                    // retained for the storage sync reconciler rather than deleted here.
+                    doc.setStatus(ReplayDocument.STATUS_FAILED);
+                    replayRepository.saveEntity(server, doc);
+                    throw new ValidationException("Storage quota exceeded");
+                }
+                case RECORD_FAILED -> {
+                    doc.setStatus(ReplayDocument.STATUS_FAILED);
+                    replayRepository.saveEntity(server, doc);
+                    throw new ExternalServiceException("Failed to record upload");
+                }
             }
-            log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
         } else {
             log.warn("Replay {} upload not found in storage for server {}", replayId, server.getDatabaseName());
         }
@@ -129,13 +143,26 @@ public class ReplayService {
     public enum SubmitLabelsResult { OK, NOT_FOUND, ALREADY_LABELED }
 
     public SubmitLabelsResult submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
-        Optional<ReplayDocument> claimed = replayRepository.claimLabels(server, replayId, labels);
-        if (claimed.isEmpty()) {
-            return replayRepository.findByReplayId(server, replayId).isPresent()
-                   ? SubmitLabelsResult.ALREADY_LABELED
-                   : SubmitLabelsResult.NOT_FOUND;
+        // Enforce the per-label bean constraints that the proto request path does not apply.
+        for (ReplayLabel label : labels) {
+            Set<ConstraintViolation<ReplayLabel>> violations = validator.validate(label);
+            if (!violations.isEmpty()) {
+                throw new ValidationException(violations.iterator().next().getMessage());
+            }
         }
-        ReplayDocument doc = claimed.get();
+
+        // Only COMPLETE replays may be labeled; a missing or non-complete replay is NOT_FOUND.
+        Optional<ReplayDocument> existing = replayRepository.findByReplayId(server, replayId);
+        if (existing.isEmpty() || !ReplayDocument.STATUS_COMPLETE.equals(existing.get().getStatus())) {
+            return SubmitLabelsResult.NOT_FOUND;
+        }
+
+        // Authenticated staff path: last authoritative write wins (override prior labels).
+        Optional<ReplayDocument> replaced = replayRepository.replaceLabels(server, replayId, labels);
+        if (replaced.isEmpty()) {
+            return SubmitLabelsResult.NOT_FOUND;
+        }
+        ReplayDocument doc = replaced.get();
         log.debug("Saved {} labels for replay {} on server {}", labels.size(), replayId, server.getDatabaseName());
 
         trainingDataService.generateSegmentsAsync(server, doc, labels);
@@ -150,7 +177,7 @@ public class ReplayService {
                 doc.getId(),
                 doc.getMcVersion(),
                 doc.getFileSize(),
-                doc.getCreatedAt().getTime(),
+                doc.getCreatedAt() == null ? 0L : doc.getCreatedAt().getTime(),
                 s3StorageService.getCdnUrl(doc.getStorageKey()),
                 doc.getStatus(),
                 doc.getLabels() != null && !doc.getLabels().isEmpty()

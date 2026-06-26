@@ -20,6 +20,8 @@ import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.ticket.data.Ticket;
+import jakarta.validation.Validation;
+import jakarta.validation.Validator;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -55,16 +57,21 @@ class ReplayServiceTest {
 
     private ReplayService replayService;
     private Server server;
+    private static Validator validator;
 
     @BeforeEach
     void setUp() {
+        if (validator == null) {
+            validator = Validation.buildDefaultValidatorFactory().getValidator();
+        }
         replayService = new ReplayService(
             replayRepository,
             s3StorageService,
             storageQuotaService,
             trainingDataService,
             storageMetadataService,
-            ticketRepository
+            ticketRepository,
+            validator
         );
         ReflectionTestUtils.setField(replayService, "maxFileSize", 10 * 1024 * 1024L);
         server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
@@ -76,7 +83,7 @@ class ReplayServiceTest {
 
         ValidationException exception = assertThrows(
             ValidationException.class,
-            () -> replayService.initUpload(server, "1.21.4", 1024L)
+            () -> replayService.initUpload(server, "1.21.4", 1024L, null, null)
         );
 
         assertEquals("Storage quota exceeded", exception.getMessage());
@@ -87,7 +94,7 @@ class ReplayServiceTest {
     void initUploadRejectsFilesThatExceedConfiguredMaxSizeWithValidationException() {
         ValidationException exception = assertThrows(
             ValidationException.class,
-            () -> replayService.initUpload(server, "1.21.4", (10 * 1024 * 1024L) + 1)
+            () -> replayService.initUpload(server, "1.21.4", (10 * 1024 * 1024L) + 1, null, null)
         );
 
         assertEquals("File size exceeds maximum of 10 MB", exception.getMessage());

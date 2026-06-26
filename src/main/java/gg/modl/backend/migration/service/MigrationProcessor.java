@@ -13,9 +13,12 @@ import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.server.data.Server;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,6 +49,7 @@ public class MigrationProcessor {
     private static final int PROGRESS_UPDATE_INTERVAL = 1000;
     private static final int MAX_JSON_NESTING_DEPTH = 100;
     private static final int MAX_JSON_STRING_LENGTH = 1_000_000;
+    private static final int MAX_FAILURE_MESSAGE_LENGTH = 900;
 
     @Async
     public void processFileAsync(Server server, Path filePath) {
@@ -119,22 +123,36 @@ public class MigrationProcessor {
                             recordsProcessed, recordsSkipped, totalRecords
                         ));
                     }
+
+                    if (!migrationService.isActiveMigrationPresent(server)) {
+                        log.info("Migration cancelled or no longer active; stopping processing after {} records",
+                            recordsProcessed);
+                        return;
+                    }
                 }
             }
 
-            migrationService.updateProgress(server, new UpdateProgressRequest(
-                "completed",
-                "Migration completed successfully",
-                recordsProcessed, recordsSkipped, totalRecords
-            ));
+            try {
+                migrationService.updateProgress(server, new UpdateProgressRequest(
+                    "completed",
+                    "Migration completed successfully",
+                    recordsProcessed, recordsSkipped, totalRecords
+                ));
+            } catch (Exception e) {
+                log.error("Failed to persist terminal migration state (completed)", e);
+            }
 
         } catch (Exception e) {
             log.error("Error processing migration file", e);
-            migrationService.updateProgress(server, new UpdateProgressRequest(
-                "failed",
-                "Migration failed: " + e.getMessage(),
-                recordsProcessed, recordsSkipped, null
-            ));
+            try {
+                migrationService.updateProgress(server, new UpdateProgressRequest(
+                    "failed",
+                    boundFailureMessage("Migration failed: ", e.getMessage()),
+                    recordsProcessed, recordsSkipped, null
+                ));
+            } catch (Exception ex) {
+                log.error("Failed to persist terminal migration state (failed)", ex);
+            }
         } finally {
             try {
                 Files.deleteIfExists(filePath);
@@ -142,6 +160,14 @@ public class MigrationProcessor {
                 log.warn("Failed to delete migration file: {}", filePath, e);
             }
         }
+    }
+
+    private static String boundFailureMessage(String prefix, String detail) {
+        String message = prefix + (detail == null ? "unknown error" : detail);
+        if (message.length() > MAX_FAILURE_MESSAGE_LENGTH) {
+            return message.substring(0, MAX_FAILURE_MESSAGE_LENGTH - 1) + "…";
+        }
+        return message;
     }
 
     private int[] processBatch(Server server, List<Map<?, ?>> batch) {
@@ -218,12 +244,13 @@ public class MigrationProcessor {
 
     private Player buildNewPlayer(String uuid, Map<?, ?> data) {
         try {
+            Object ipObj = data.get("ipAddresses") != null ? data.get("ipAddresses") : data.get("ipList");
             Player player = Player.builder()
                 .id(PlayerDocumentIdGenerator.generate())
                 .minecraftUuid(UUID.fromString(uuid))
                 .usernames(parseUsernames(data.get("usernames")))
                 .notes(parseNotes(data.get("notes")))
-                .ipAddresses(parseIpAddresses(data.get("ipAddresses")))
+                .ipAddresses(parseIpAddresses(ipObj))
                 .punishments(parsePunishments(data.get("punishments")))
                 .data(parseData(data.get("data")))
                 .build();
@@ -304,21 +331,39 @@ public class MigrationProcessor {
         List<UsernameEntry> newUsernames = parseUsernames(newData.get("usernames"));
         if (!newUsernames.isEmpty()) {
             Set<String> existingNames = new HashSet<>();
-            for (UsernameEntry u : existing.getUsernames()) {
-                existingNames.add(u.username());
-            }
-            for (UsernameEntry u : newUsernames) {
-                if (!existingNames.contains(u.username())) {
-                    update.push("usernames", u);
-                    hasChanges = true;
+            if (existing.getUsernames() != null) {
+                for (UsernameEntry u : existing.getUsernames()) {
+                    existingNames.add(u.username());
                 }
+            }
+            List<UsernameEntry> toAddUsernames = new ArrayList<>();
+            for (UsernameEntry u : newUsernames) {
+                if (existingNames.add(u.username())) {
+                    toAddUsernames.add(u);
+                }
+            }
+            if (!toAddUsernames.isEmpty()) {
+                update.push("usernames").each(toAddUsernames.toArray());
+                hasChanges = true;
             }
         }
 
         List<NoteEntry> newNotes = parseNotes(newData.get("notes"));
         if (!newNotes.isEmpty()) {
+            Set<String> existingNoteIds = new HashSet<>();
+            if (existing.getNotes() != null) {
+                for (NoteEntry note : existing.getNotes()) {
+                    existingNoteIds.add(note.getId());
+                }
+            }
+            List<NoteEntry> toAddNotes = new ArrayList<>();
             for (NoteEntry note : newNotes) {
-                update.push("notes", note);
+                if (existingNoteIds.add(note.getId())) {
+                    toAddNotes.add(note);
+                }
+            }
+            if (!toAddNotes.isEmpty()) {
+                update.push("notes").each(toAddNotes.toArray());
                 hasChanges = true;
             }
         }
@@ -326,14 +371,43 @@ public class MigrationProcessor {
         List<Punishment> newPunishments = parsePunishments(newData.get("punishments"));
         if (!newPunishments.isEmpty()) {
             Set<String> existingIds = new HashSet<>();
-            for (Punishment p : existing.getPunishments()) {
-                existingIds.add(p.getId());
-            }
-            for (Punishment p : newPunishments) {
-                if (!existingIds.contains(p.getId())) {
-                    update.push("punishments", p);
-                    hasChanges = true;
+            if (existing.getPunishments() != null) {
+                for (Punishment p : existing.getPunishments()) {
+                    existingIds.add(p.getId());
                 }
+            }
+            List<Punishment> toAddPunishments = new ArrayList<>();
+            for (Punishment p : newPunishments) {
+                if (existingIds.add(p.getId())) {
+                    toAddPunishments.add(p);
+                }
+            }
+            if (!toAddPunishments.isEmpty()) {
+                update.push("punishments").each(toAddPunishments.toArray());
+                hasChanges = true;
+            }
+        }
+
+        Object ipObj = newData.get("ipAddresses") != null ? newData.get("ipAddresses") : newData.get("ipList");
+        List<IPEntry> newIps = parseIpAddresses(ipObj);
+        if (!newIps.isEmpty()) {
+            Set<String> existingIps = new HashSet<>();
+            if (existing.getIpAddresses() != null) {
+                for (IPEntry ip : existing.getIpAddresses()) {
+                    if (ip.getIpAddress() != null) {
+                        existingIps.add(ip.getIpAddress());
+                    }
+                }
+            }
+            List<IPEntry> ipsToAdd = new ArrayList<>();
+            for (IPEntry ip : newIps) {
+                if (ip.getIpAddress() != null && existingIps.add(ip.getIpAddress())) {
+                    ipsToAdd.add(ip);
+                }
+            }
+            if (!ipsToAdd.isEmpty()) {
+                update.push("ipAddresses").each(ipsToAdd.toArray());
+                hasChanges = true;
             }
         }
 
@@ -380,8 +454,14 @@ public class MigrationProcessor {
             String issuerName = validator.sanitizeString((String) map.get("issuerName"), 100);
 
             if (text != null && date != null && issuerName != null) {
+                String sourceId = validator.sanitizeString((String) map.get("id"), 100);
+                String noteId = (sourceId != null && !sourceId.isBlank())
+                    ? sourceId
+                    : UUID.nameUUIDFromBytes(
+                        (text + "|" + date.getTime() + "|" + issuerName).getBytes(StandardCharsets.UTF_8))
+                        .toString();
                 result.add(new NoteEntry(
-                    UUID.randomUUID().toString(),
+                    noteId,
                     text,
                     date,
                     issuerName,
@@ -405,10 +485,8 @@ public class MigrationProcessor {
             }
             Map<?, ?> map = (Map<?, ?>) item;
 
-            String id = (String) map.get("id");
-            if (id == null) {
-                id = UUID.randomUUID().toString();
-            }
+            Object idObj = map.get("id") != null ? map.get("id") : map.get("_id");
+            String id = idObj instanceof String s ? s : null;
 
             Date issued = validator.parseDate(map.get("issued"));
             if (issued == null) {
@@ -449,9 +527,9 @@ public class MigrationProcessor {
                 }
             }
 
-            List<PunishmentEvidence> evidence = new ArrayList<>();
+            List<PunishmentEvidence> evidence = parseEvidence(map.get("evidence"));
 
-            List<PunishmentModification> modifications = new ArrayList<>();
+            List<PunishmentModification> modifications = parseModifications(map.get("modifications"));
 
             List<String> attachedTicketIds = new ArrayList<>();
             Object ticketIdsObj = map.get("attachedTicketIds");
@@ -485,6 +563,45 @@ public class MigrationProcessor {
 
             Date started = validator.parseDate(map.get("started"));
 
+            // V35: derive a deterministic id from stable fields when no source id (or _id) is present,
+            // so id-less sources dedup across re-imports.
+            if (id == null || id.isBlank()) {
+                id = "import-" + UUID.nameUUIDFromBytes(
+                    (typeOrdinal + "|" + issued.getTime() + "|" + issuerName + "|" + (reason != null ? reason : ""))
+                        .getBytes(StandardCharsets.UTF_8)).toString();
+            }
+
+            // G48: source-removed/inactive bans must import as already-pardoned so they are not re-imposed.
+            Object activeObj = punishmentData.get("active");
+            Object pardonedBy = punishmentData.get("pardonedBy");
+            boolean sourceInactive = Boolean.FALSE.equals(activeObj)
+                || (activeObj instanceof String activeStr && "false".equalsIgnoreCase(activeStr))
+                || pardonedBy != null;
+            boolean alreadyPardoned = modifications.stream()
+                .anyMatch(m -> PunishmentModificationType.isPardon(m.type()));
+            if (sourceInactive && !alreadyPardoned) {
+                Date pardonDate = validator.parseDate(punishmentData.get("pardonedDate"));
+                if (pardonDate == null) {
+                    pardonDate = validator.parseDate(punishmentData.get("removedAt"));
+                }
+                if (pardonDate == null) {
+                    pardonDate = issued;
+                }
+                String pardonIssuer = pardonedBy instanceof String pardonStr ? pardonStr : "System";
+                modifications.add(new PunishmentModification(
+                    IdGenerator.generateShortId(),
+                    PunishmentModificationType.SYSTEM_PARDON.name(),
+                    pardonDate,
+                    pardonIssuer,
+                    null,
+                    "Imported as already removed/inactive",
+                    null,
+                    null,
+                    null
+                ));
+                punishmentData.put("status", PunishmentStatus.PARDONED);
+            }
+
             Punishment punishment = new Punishment(
                 id,
                 typeOrdinal,
@@ -500,6 +617,103 @@ public class MigrationProcessor {
             );
 
             result.add(punishment);
+        }
+
+        return result;
+    }
+
+    private List<PunishmentModification> parseModifications(Object data) {
+        List<PunishmentModification> result = new ArrayList<>();
+        if (!(data instanceof List<?>)) {
+            return result;
+        }
+
+        for (Object item : (List<?>) data) {
+            if (!(item instanceof Map<?, ?>)) {
+                continue;
+            }
+            Map<?, ?> m = (Map<?, ?>) item;
+
+            String type = validator.sanitizeString((String) m.get("type"), 100);
+            if (type == null) {
+                continue;
+            }
+            try {
+                PunishmentModificationType.valueOf(type);
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+
+            Date date = validator.parseDate(m.get("date"));
+            if (date == null) {
+                continue;
+            }
+
+            String sourceId = validator.sanitizeString((String) m.get("id"), 100);
+            String id = (sourceId != null && !sourceId.isBlank()) ? sourceId : IdGenerator.generateShortId();
+
+            String issuerName = validator.sanitizeString((String) m.get("issuerName"), 100);
+            String issuerId = validator.sanitizeString((String) m.get("issuerId"), 100);
+
+            String reason = validator.sanitizeString((String) m.get("reason"), 1000);
+            if (reason == null) {
+                reason = "";
+            }
+
+            Long effectiveDuration = (m.get("effectiveDuration") instanceof Number n) ? n.longValue() : null;
+            String appealTicketId = validator.sanitizeString((String) m.get("appealTicketId"), 100);
+
+            Map<String, Object> modData = null;
+            if (m.get("data") instanceof Map<?, ?>) {
+                modData = new HashMap<>();
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) m.get("data")).entrySet()) {
+                    if (entry.getKey() instanceof String) {
+                        modData.put((String) entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+
+            result.add(new PunishmentModification(
+                id, type, date, issuerName, issuerId, reason, effectiveDuration, appealTicketId, modData));
+        }
+
+        return result;
+    }
+
+    private List<PunishmentEvidence> parseEvidence(Object data) {
+        List<PunishmentEvidence> result = new ArrayList<>();
+        if (!(data instanceof List<?>)) {
+            return result;
+        }
+
+        for (Object item : (List<?>) data) {
+            if (item instanceof String) {
+                String text = validator.sanitizeString((String) item, 5000);
+                if (text == null || text.isBlank()) {
+                    continue;
+                }
+                result.add(new PunishmentEvidence(text, null, "text", null, null, new Date(), null, null, null));
+            } else if (item instanceof Map<?, ?>) {
+                Map<?, ?> m = (Map<?, ?>) item;
+                String text = validator.sanitizeString((String) m.get("text"), 5000);
+                String url = validator.sanitizeString((String) m.get("url"), 2000);
+                String type = validator.sanitizeString((String) m.get("type"), 100);
+                if (type == null || type.isBlank()) {
+                    type = "link";
+                }
+                String uploadedBy = validator.sanitizeString((String) m.get("uploadedBy"), 100);
+                String uploadedById = validator.sanitizeString((String) m.get("uploadedById"), 100);
+                Date uploadedAt = validator.parseDate(m.get("uploadedAt"));
+                if (uploadedAt == null) {
+                    uploadedAt = new Date();
+                }
+                String fileName = validator.sanitizeString((String) m.get("fileName"), 500);
+                String fileType = validator.sanitizeString((String) m.get("fileType"), 100);
+                Long fileSize = (m.get("fileSize") instanceof Number n) ? n.longValue() : null;
+
+                result.add(new PunishmentEvidence(
+                    text, url, type, uploadedBy, uploadedById, uploadedAt, fileName, fileType, fileSize));
+            }
         }
 
         return result;

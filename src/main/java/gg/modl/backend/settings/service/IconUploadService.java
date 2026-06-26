@@ -34,9 +34,21 @@ public class IconUploadService {
             S3StorageService.UploadFileResult result = s3StorageService.uploadFile(
                 server, "icons/" + iconType, fileName, file.getContentType(), file.getBytes()
             );
-            if (!storageQuotaService.confirmAndRecordFile(server, result.key(), file.getSize(), file.getContentType())) {
-                s3StorageService.deleteFile(result.key());
-                return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+            StorageQuotaService.ConfirmResult confirmResult = storageQuotaService.confirmAndRecordFile(
+                server, result.key(), file.getSize(), file.getContentType()
+            );
+            switch (confirmResult) {
+                case QUOTA_EXCEEDED -> {
+                    s3StorageService.deleteFile(result.key());
+                    return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+                }
+                case RECORD_FAILED -> {
+                    s3StorageService.deleteFile(result.key());
+                    return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
+                }
+                default -> {
+                    // SUCCESS
+                }
             }
             return ResponseEntity.ok(Map.of("url", result.cdnUrl()));
         } catch (IOException e) {

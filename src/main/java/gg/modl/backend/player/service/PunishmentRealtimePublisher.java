@@ -80,6 +80,28 @@ public class PunishmentRealtimePublisher {
         });
     }
 
+    /**
+     * Pushes modified-punishment deltas for callers that only have the player's uuid/username
+     * (e.g. the audit bulk-pardon loop, which never materializes a {@link Player}). Emits exactly
+     * one {@code pushPunishments(modified)} message (the same shape the single-pardon path already
+     * sends and the plugin already consumes) and coarse-invalidates the panel player/punishment
+     * views so they live-refresh. Best-effort: any conversion failure is swallowed by {@link #guard}.
+     */
+    public void punishmentsModifiedByEntry(Server server, List<EntryPunishment> changes) {
+        if (changes.isEmpty()) {
+            return;
+        }
+        guard(() -> {
+            List<SyncModifiedPunishment> modified = new ArrayList<>(changes.size());
+            for (EntryPunishment change : changes) {
+                modified.add(syncProtoFactory.toModifiedPunishment(toEntry(server, change)));
+            }
+            publisher.pushPunishments(server, List.of(), modified);
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS);
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS);
+        });
+    }
+
     public void invalidatePunishments(Server server, String punishmentId) {
         publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS, punishmentId);
     }
@@ -112,6 +134,18 @@ public class PunishmentRealtimePublisher {
         );
     }
 
+    private Map<String, Object> toEntry(Server server, EntryPunishment change) {
+        List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
+        Map<String, String> resolvedIssuers = resolveIssuers(server, change.punishment());
+        Map<String, Object> simplePunishment =
+            PunishmentMapper.toSimplePunishment(change.punishment(), types, statusCalculator, resolvedIssuers);
+        return Map.of(
+            "minecraftUuid", change.minecraftUuid(),
+            "username", change.username(),
+            "punishment", simplePunishment
+        );
+    }
+
     private Map<String, String> resolveIssuers(Server server, Punishment punishment) {
         Set<String> ids = new HashSet<>(PunishmentQueryService.collectIssuerIds(punishment));
         if (ids.isEmpty()) {
@@ -121,5 +155,14 @@ public class PunishmentRealtimePublisher {
     }
 
     public record PlayerPunishment(Player player, Punishment punishment) {
+    }
+
+    /**
+     * A punishment delta keyed by the player's uuid/username instead of a materialized {@link Player},
+     * for callers (e.g. audit bulk-pardon) that only have those identifiers. {@code minecraftUuid} and
+     * {@code username} must be non-null ({@link Map#of} forbids null values); callers must skip rows
+     * with a null uuid so one bad row cannot abort the whole batch push.
+     */
+    public record EntryPunishment(String minecraftUuid, String username, Punishment punishment) {
     }
 }

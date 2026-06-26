@@ -14,6 +14,7 @@ import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.EvidenceItemRequest;
 import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
+import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.net.URI;
@@ -116,16 +117,20 @@ public class EvidenceUploadService {
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server != null) {
-            if (!quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType())) {
-                if (!s3StorageService.deleteFile(request.key())) {
-                    StorageMetadataService.RecordFileResult recordResult = storageMetadataService.recordReservedFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
-                    if (recordResult == StorageMetadataService.RecordFileResult.FAILED) {
-                        log.error("Orphaned over-quota evidence object: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run (triggered on storage list/aggregate calls) will reconcile, manual cleanup may be needed sooner", request.key(), uploadToken.serverDatabaseName(), uploadDetails.size(), uploadDetails.contentType());
-                    } else {
-                        log.warn("Failed to delete over-quota evidence object key={}, recorded metadata to keep it trackable result={}", request.key(), recordResult);
-                    }
+            StorageQuotaService.ConfirmResult confirmResult =
+                quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
+            switch (confirmResult) {
+                case QUOTA_EXCEEDED -> {
+                    cleanupOrphanedEvidence(server, request.key(), uploadToken.serverDatabaseName(), uploadDetails);
+                    return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
                 }
-                return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
+                case RECORD_FAILED -> {
+                    cleanupOrphanedEvidence(server, request.key(), uploadToken.serverDatabaseName(), uploadDetails);
+                    return ConfirmUploadResult.of(ConfirmUploadStatus.RECORD_FAILED, null);
+                }
+                default -> {
+                    // SUCCESS
+                }
             }
         } else {
             log.warn("Could not record storage metadata: server not found for database {}", uploadToken.serverDatabaseName());
@@ -140,26 +145,35 @@ public class EvidenceUploadService {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_TOKEN, null);
         }
 
-        for (EvidenceItemRequest item : request.evidence()) {
-            if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
-                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
-            }
-        }
-
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server == null) {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
         }
 
-        List<UploadedEvidenceItem> evidenceItems = request.evidence()
-            .stream()
-            .map(item -> new UploadedEvidenceItem(
+        List<UploadedEvidenceItem> evidenceItems = new java.util.ArrayList<>(request.evidence().size());
+        for (EvidenceItemRequest item : request.evidence()) {
+            if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
+                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+            }
+
+            // Bind the submitted URL to a confirmed S3 object: derive its key, look up the authoritative
+            // StorageFileDocument, and use its contentType/size (never the caller-supplied values).
+            String key = extractKeyFromEvidenceUrl(item.url());
+            if (key == null) {
+                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+            }
+            StorageFileDocument doc = storageMetadataService.findConfirmedFile(server, key).orElse(null);
+            if (doc == null) {
+                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+            }
+
+            evidenceItems.add(new UploadedEvidenceItem(
                 item.url(),
                 item.fileName(),
-                item.fileType(),
-                item.fileSize()
-            ))
-            .toList();
+                doc.getContentType(),
+                doc.getSize()
+            ));
+        }
 
         PunishmentOperationResult result = punishmentEvidenceService.addUploadedEvidence(
             server,
@@ -174,6 +188,30 @@ public class EvidenceUploadService {
 
         tokenService.invalidateToken(token);
         return SubmitEvidenceResult.of(SubmitEvidenceStatus.SUCCESS, null);
+    }
+
+    private String extractKeyFromEvidenceUrl(String url) {
+        try {
+            String path = URI.create(url).getPath();
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+            return path.startsWith("/") ? path.substring(1) : path;
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private void cleanupOrphanedEvidence(Server server, String key, String serverDatabaseName, UploadResponse uploadDetails) {
+        if (!s3StorageService.deleteFile(key)) {
+            StorageMetadataService.RecordFileResult recordResult =
+                storageMetadataService.recordReservedFile(server, key, uploadDetails.size(), uploadDetails.contentType());
+            if (recordResult == StorageMetadataService.RecordFileResult.FAILED) {
+                log.error("Orphaned evidence object: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run (triggered on storage list/aggregate calls) will reconcile, manual cleanup may be needed sooner", key, serverDatabaseName, uploadDetails.size(), uploadDetails.contentType());
+            } else {
+                log.warn("Failed to delete orphaned evidence object key={}, recorded metadata to keep it trackable result={}", key, recordResult);
+            }
+        }
     }
 
     private boolean isAllowedEvidenceUrl(String url, EvidenceUploadTokenService.UploadToken uploadToken) {
@@ -215,7 +253,8 @@ public class EvidenceUploadService {
         INVALID_TOKEN,
         INVALID_KEY,
         UPLOAD_NOT_FOUND,
-        QUOTA_EXCEEDED
+        QUOTA_EXCEEDED,
+        RECORD_FAILED
     }
 
     public enum SubmitEvidenceStatus {

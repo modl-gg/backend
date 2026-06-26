@@ -6,9 +6,8 @@ public record PunishmentPoints(
     int severe
 ) {
     public int getForSeverity(String severity) {
-        return switch (severity.toLowerCase()) {
+        return switch (SeverityLevel.normalize(severity)) {
             case "low" -> low;
-            case "regular" -> regular;
             case "severe" -> severe;
             default -> regular;
         };

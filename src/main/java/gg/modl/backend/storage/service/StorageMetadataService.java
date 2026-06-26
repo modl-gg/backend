@@ -7,6 +7,7 @@ import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -23,6 +24,23 @@ public class StorageMetadataService {
 
     public boolean hasFile(Server server, String key) {
         return storageFileRepository.findByKey(server, key).isPresent();
+    }
+
+    public Optional<StorageFileDocument> findConfirmedFile(Server server, String key) {
+        return storageFileRepository.findByKey(server, key);
+    }
+
+    public void cleanupOrphanedUpload(Server server, String key, long size, String contentType) {
+        if (s3StorageService.deleteFile(key)) {
+            return;
+        }
+        RecordFileResult result = recordReservedFile(server, key, size, contentType);
+        if (result == RecordFileResult.FAILED) {
+            log.error("Orphaned upload: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run will reconcile, manual cleanup may be needed sooner",
+                key, server.getDatabaseName(), size, contentType);
+        } else {
+            log.warn("Failed to delete orphaned upload object key={}, recorded metadata to keep it trackable result={}", key, result);
+        }
     }
 
     public RecordFileResult recordFile(Server server, String key, long size, String contentType) {

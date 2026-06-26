@@ -5,6 +5,7 @@ import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
@@ -104,8 +105,6 @@ public class AppealService {
             throw new IllegalStateException("An appeal already exists for this punishment");
         }
 
-        String appealId = ticketIdGenerator.generateAppealId(server);
-
         Map<String, Object> data = new HashMap<>();
         data.put("punishmentId", request.punishmentId());
         data.put("playerUuid", playerUuid);
@@ -133,7 +132,6 @@ public class AppealService {
             .build();
 
         Ticket appeal = Ticket.builder()
-            .id(appealId)
             .type(TicketCategory.APPEAL)
             .status(TicketStatus.OPEN)
             .appealWorkflowStatus(AppealWorkflowStatus.OPEN)
@@ -149,11 +147,11 @@ public class AppealService {
             .updatedAt(new Date())
             .build();
 
-        ticketRepository.saveAppeal(server, appeal);
+        Ticket savedAppeal = ticketIdGenerator.insertWithUniqueId(server, "APPEAL", appeal);
 
-        linkAppealToPunishment(server, playerUuid, request.punishmentId(), appealId);
+        linkAppealToPunishment(server, playerUuid, request.punishmentId(), savedAppeal.getId());
 
-        return toTicketResponse(appeal);
+        return toTicketResponse(savedAppeal);
     }
 
     private Player findPlayerWithPunishment(Server server, String playerUuid, String punishmentId) {
@@ -187,36 +185,11 @@ public class AppealService {
             content.append("Evidence: ").append(request.evidence()).append("\n");
         }
 
-        if (request.additionalData() != null && !request.additionalData().isEmpty()) {
-            content.append("\nAdditional Information:\n");
-            for (Map.Entry<String, Object> entry : request.additionalData().entrySet()) {
-                Object value = entry.getValue();
-                if (value != null) {
-                    String fieldLabel = MongoKeyUtils.resolveFieldLabel(entry.getKey(), request.fieldLabels());
-
-                    if (value instanceof List<?> list) {
-                        if (!list.isEmpty()) {
-                            content.append(fieldLabel).append(":\n");
-                            for (Object item : list) {
-                                content.append("  - ").append(item).append("\n");
-                            }
-                        }
-                    } else if (value instanceof Boolean bool) {
-                        content.append(fieldLabel).append(": ").append(bool ? "Yes" : "No").append("\n");
-                    } else {
-                        content.append(fieldLabel).append(": ").append(value).append("\n");
-                    }
-                }
-            }
+        String body = content.toString().trim();
+        if (body.isEmpty()) {
+            return "Appeal submitted for punishment " + request.punishmentId() + ".";
         }
-
-        content.append("\nContact Email: ").append(request.email());
-
-        if (content.toString().trim().equals("Contact Email: " + request.email())) {
-            return "Appeal submitted for punishment " + request.punishmentId() + ".\n\nContact Email: " + request.email();
-        }
-
-        return content.toString();
+        return body;
     }
 
     public TicketReply addReply(Server server, String appealId, AddAppealReplyRequest request) {
@@ -254,8 +227,17 @@ public class AppealService {
         boolean statusChanged = false;
 
         AppealWorkflowStatus requestedWorkflowStatus = null;
-        if (request.status() != null) {
+        if (request.status() != null && !request.status().isBlank()) {
             requestedWorkflowStatus = AppealWorkflowStatus.fromCanonicalId(request.status());
+        }
+
+        AppealWorkflowStatus previousWorkflowStatus = appeal.getAppealWorkflowStatus();
+        if (requestedWorkflowStatus != null && previousWorkflowStatus != null
+            && previousWorkflowStatus.isTerminal() && requestedWorkflowStatus.isTerminal()
+            && requestedWorkflowStatus != previousWorkflowStatus) {
+            throw new ConflictException("Appeal is already " + previousWorkflowStatus.getDisplayName()
+                + " and cannot be changed directly to " + requestedWorkflowStatus.getDisplayName()
+                + "; reopen the appeal first.");
         }
 
         if (requestedWorkflowStatus != null && requestedWorkflowStatus != appeal.getAppealWorkflowStatus()) {
@@ -286,10 +268,8 @@ public class AppealService {
             }
         }
 
-        if (!statusChanged && request.locked() != null && request.locked() != appeal.isLocked()) {
-            TicketStatus lifecycleStatus = request.locked() ? TicketStatus.CLOSED : TicketStatus.OPEN;
+        if (request.locked() != null && request.locked() != appeal.isLocked()) {
             appeal.setLocked(request.locked());
-            appeal.setStatus(lifecycleStatus);
 
             systemReplies.add(createSystemReply(
                 request.staffUsername(),
@@ -312,17 +292,15 @@ public class AppealService {
             systemReplies.isEmpty() ? null : systemReplies
         );
 
-        if (shouldPardonPunishment(appeal.getAppealWorkflowStatus())) {
-            pardonPunishment(server, appeal, request.staffUsername());
-        } else if (shouldRejectPunishment(appeal.getAppealWorkflowStatus())) {
-            addAppealRejectedNote(server, appeal, request.staffUsername());
+        if (statusChanged && requestedWorkflowStatus != null && requestedWorkflowStatus.isTerminal()) {
+            if (requestedWorkflowStatus == AppealWorkflowStatus.APPROVED) {
+                pardonPunishment(server, appeal, request.staffUsername());
+            } else if (requestedWorkflowStatus == AppealWorkflowStatus.REJECTED) {
+                addAppealRejectedNote(server, appeal, request.staffUsername());
+            }
         }
 
         return toTicketResponse(appeal);
-    }
-
-    private boolean shouldRejectPunishment(AppealWorkflowStatus workflowStatus) {
-        return workflowStatus == AppealWorkflowStatus.REJECTED;
     }
 
     private void addAppealRejectedNote(Server server, Ticket appeal, String staffUsername) {
@@ -355,10 +333,6 @@ public class AppealService {
         );
 
         punishmentMutationService.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
-    }
-
-    private boolean shouldPardonPunishment(AppealWorkflowStatus workflowStatus) {
-        return workflowStatus == AppealWorkflowStatus.APPROVED;
     }
 
     private void pardonPunishment(Server server, Ticket appeal, String staffUsername) {

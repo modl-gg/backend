@@ -1,7 +1,10 @@
 package gg.modl.backend.storage.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -15,22 +18,25 @@ import org.junit.jupiter.api.Test;
 class StorageQuotaServiceTest {
 
     @Test
-    void canUploadUsesLiveS3UsageAndCustomPremiumLimit() {
+    void canUploadUsesTrackedCounterAndCustomPremiumLimit() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
         S3StorageService s3StorageService = mock(S3StorageService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
+        StorageSyncService storageSyncService = mock(StorageSyncService.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
             s3StorageService,
             usageTrackingService,
-            mock(ServerMongoRepository.class)
+            mock(ServerMongoRepository.class),
+            storageSyncService
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setMaxStorageLimitBytes(10_000L);
-        when(s3StorageService.calculateStorageUsed(server)).thenReturn(9_000L);
+        server.setStorageUsedBytes(9_000L);
 
         assertTrue(service.canUpload(server, 1_000L));
         assertFalse(service.canUpload(server, 1_001L));
+        verify(s3StorageService, never()).calculateStorageUsed(any());
     }
 
     @Test
@@ -39,9 +45,11 @@ class StorageQuotaServiceTest {
             mock(StorageMetadataService.class),
             mock(S3StorageService.class),
             mock(UsageTrackingService.class),
-            mock(ServerMongoRepository.class)
+            mock(ServerMongoRepository.class),
+            mock(StorageSyncService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
+        server.setStorageUsedBytes(0L);
 
         assertTrue(service.canUpload(server, 200L * 1024 * 1024 * 1024));
     }
@@ -56,7 +64,8 @@ class StorageQuotaServiceTest {
             metadataService,
             s3StorageService,
             usageTrackingService,
-            serverRepository
+            serverRepository,
+            mock(StorageSyncService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
@@ -66,8 +75,10 @@ class StorageQuotaServiceTest {
         when(metadataService.recordReservedFile(server, "db/evidence/file.png", 1_000L, "image/png"))
             .thenReturn(StorageMetadataService.RecordFileResult.INSERTED);
 
-        assertTrue(service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
+        assertEquals(StorageQuotaService.ConfirmResult.SUCCESS,
+            service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
         verify(metadataService).recordReservedFile(server, "db/evidence/file.png", 1_000L, "image/png");
+        verify(s3StorageService, never()).calculateStorageUsed(any());
     }
 
     @Test
@@ -80,7 +91,8 @@ class StorageQuotaServiceTest {
             metadataService,
             s3StorageService,
             usageTrackingService,
-            serverRepository
+            serverRepository,
+            mock(StorageSyncService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
@@ -88,7 +100,8 @@ class StorageQuotaServiceTest {
         server.setStorageUsedBytes(9_500L);
         when(serverRepository.tryIncrementStorageUsedWithinLimit("server-id", 1_000L, 10_000L)).thenReturn(false);
 
-        assertFalse(service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
+        assertEquals(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED,
+            service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
     }
 
     @Test
@@ -101,7 +114,8 @@ class StorageQuotaServiceTest {
             metadataService,
             s3StorageService,
             usageTrackingService,
-            serverRepository
+            serverRepository,
+            mock(StorageSyncService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
@@ -111,7 +125,8 @@ class StorageQuotaServiceTest {
         when(metadataService.recordReservedFile(server, "db/evidence/file.png", 1_000L, "image/png"))
             .thenReturn(StorageMetadataService.RecordFileResult.ALREADY_EXISTS);
 
-        assertTrue(service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
+        assertEquals(StorageQuotaService.ConfirmResult.SUCCESS,
+            service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
         verify(serverRepository).decrementStorageUsed("server-id", 1_000L);
     }
 }

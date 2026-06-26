@@ -17,6 +17,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import java.net.URI;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -64,9 +65,7 @@ public class MinecraftSyncService {
 
         applyPresence(server, onlinePlayers, serverName, now);
 
-        Instant lastSync = lastSyncTimestamp != null
-                           ? Instant.parse(lastSyncTimestamp)
-                           : now.minusSeconds(30);
+        Instant lastSync = parseLastSync(lastSyncTimestamp, now);
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> pendingPunishments = new ArrayList<>();
@@ -167,7 +166,13 @@ public class MinecraftSyncService {
                         categoriesWithActiveStarted.add(category);
                     } else if (category != null && punishment.getStarted() == null) {
                         Punishment existing = oldestUnstartedPerCategory.get(category);
-                        if (existing == null || punishment.getIssued().before(existing.getIssued())) {
+                        // Null-safe oldest-wins: a non-null-issued candidate replaces a null-issued
+                        // incumbent; the earlier of two non-null dates wins; a null-issued candidate
+                        // never displaces a non-null incumbent and never NPEs.
+                        if (existing == null
+                            || (punishment.getIssued() != null
+                                && (existing.getIssued() == null
+                                    || punishment.getIssued().before(existing.getIssued())))) {
                             oldestUnstartedPerCategory.put(category, punishment);
                         }
                     }
@@ -203,7 +208,8 @@ public class MinecraftSyncService {
                     }
                 }
 
-                Object rawPending = player.getData().get("pendingNotifications");
+                Map<String, Object> playerData = player.getData();
+                Object rawPending = playerData != null ? playerData.get("pendingNotifications") : null;
                 if (rawPending instanceof List<?> pendingList) {
                     for (Object item : pendingList) {
                         if (!(item instanceof Map<?, ?> notification)) {
@@ -350,6 +356,24 @@ public class MinecraftSyncService {
             );
         } catch (Exception e) {
             log.warn("Failed to upsert server instance snapshot during sync", e);
+        }
+    }
+
+    /**
+     * Tolerantly parses the client-supplied last-sync timestamp. The proto field is an unconstrained
+     * proto3 string (empty, not null, when unset), so null/blank/malformed values must not 500 the
+     * whole reconciliation pass; they fall back to a default 30s window. The client dedups deltas by
+     * deterministic eventId, so a slightly wider window is benign.
+     */
+    private Instant parseLastSync(String lastSyncTimestamp, Instant now) {
+        if (lastSyncTimestamp == null || lastSyncTimestamp.isBlank()) {
+            return now.minusSeconds(30);
+        }
+        try {
+            return Instant.parse(lastSyncTimestamp);
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid lastSyncTimestamp '{}' during sync; falling back to default window", lastSyncTimestamp);
+            return now.minusSeconds(30);
         }
     }
 

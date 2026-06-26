@@ -28,7 +28,14 @@ public class SystemAlertMongoRepository extends AbstractGlobalMongoRepository<Sy
     }
 
     public List<SystemAlert> findVisible(Date now) {
-        Query query = Query.query(Criteria.where(SystemAlertFields.EXPIRES_AT).gt(now))
+        // Permanent (null/missing expiresAt) alerts never expire and must remain visible.
+        // $gt does not match null/missing fields, so OR them in explicitly.
+        Criteria notExpired = new Criteria().orOperator(
+            Criteria.where(SystemAlertFields.EXPIRES_AT).is(null),
+            Criteria.where(SystemAlertFields.EXPIRES_AT).exists(false),
+            Criteria.where(SystemAlertFields.EXPIRES_AT).gt(now)
+        );
+        Query query = Query.query(notExpired)
             .with(Sort.by(Sort.Direction.DESC, SystemAlertFields.CREATED_AT));
         return find(query);
     }
@@ -42,6 +49,7 @@ public class SystemAlertMongoRepository extends AbstractGlobalMongoRepository<Sy
         String message,
         SystemAlertSeverity severity,
         SystemAlertAudience audience,
+        boolean expiresAtPresent,
         Date expiresAt,
         Date updatedAt,
         String updatedBy
@@ -58,8 +66,13 @@ public class SystemAlertMongoRepository extends AbstractGlobalMongoRepository<Sy
         if (audience != null) {
             update.set(SystemAlertFields.AUDIENCE, audience);
         }
-        if (expiresAt != null) {
-            update.set(SystemAlertFields.EXPIRES_AT, expiresAt);
+        if (expiresAtPresent) {
+            // Present-and-null means "clear the expiry / make permanent"; $unset the field.
+            if (expiresAt != null) {
+                update.set(SystemAlertFields.EXPIRES_AT, expiresAt);
+            } else {
+                update.unset(SystemAlertFields.EXPIRES_AT);
+            }
         }
 
         SystemAlert updated = findAndModify(

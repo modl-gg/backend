@@ -5,7 +5,6 @@ import gg.modl.backend.realtime.state.RealtimeConnectionRegistry;
 import gg.modl.backend.realtime.state.RealtimeConnectionState;
 import gg.modl.backend.realtime.transport.RealtimeCodec;
 import gg.modl.backend.realtime.transport.RealtimeSessionOperations;
-import java.io.IOException;
 import java.util.Arrays;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -43,19 +42,13 @@ public class InProcessRealtimeEventDispatcher implements RealtimeEventDispatcher
             matched++;
             state.recordDeliveryAttempt();
             metrics.recordSendAttempt(state, event);
-            try {
-                if (sessionOperations.send(session, state, new BinaryMessage(Arrays.copyOf(payload, payload.length)))) {
-                    delivered++;
-                    metrics.recordSendSuccess(state, event);
-                } else {
-                    failed++;
-                    state.recordDeliveryFailure();
-                    metrics.recordSendFailure(state, event, new IllegalStateException("Realtime session closed before send"));
-                }
-            } catch (RuntimeException | IOException exception) {
+            if (sessionOperations.deliver(session, state, new BinaryMessage(Arrays.copyOf(payload, payload.length)))) {
+                delivered++;
+                metrics.recordSendSuccess(state, event);
+            } else {
                 failed++;
                 state.recordDeliveryFailure();
-                metrics.recordSendFailure(state, event, exception);
+                metrics.recordSendFailure(state, event, new IllegalStateException("Realtime delivery failed"));
             }
         }
 

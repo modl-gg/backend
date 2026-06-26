@@ -2,6 +2,8 @@ package gg.modl.backend.migration.service;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -38,11 +40,20 @@ public class MigrationService {
         "idle", "building_json", "uploading_json", "processing_data", "completed", "failed"
     );
     private static final long COOLDOWN_MS = 60 * 60 * 1000;
+    private static final long STALE_MIGRATION_MS = 30 * 60 * 1000;
     private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
     private static final int MAX_MESSAGE_LENGTH = 1000;
 
     public Optional<MigrationStatus> getLatestMigration(Server server) {
+        Date now = new Date();
+        Date staleBefore = new Date(now.getTime() - STALE_MIGRATION_MS);
+        migrationRepository.failStaleMigrations(server, staleBefore, now,
+            "Migration timed out and was automatically cancelled.");
         return migrationRepository.findLatest(server);
+    }
+
+    public boolean isActiveMigrationPresent(Server server) {
+        return migrationRepository.existsActiveMigration(server);
     }
 
     public CooldownState checkCooldown(Server server) {
@@ -66,7 +77,12 @@ public class MigrationService {
             return Map.of("success", false, "error", "Invalid migration type");
         }
 
-        if (migrationRepository.existsActiveMigration(server)) {
+        Date now = new Date();
+        Date staleBefore = new Date(now.getTime() - STALE_MIGRATION_MS);
+        migrationRepository.failStaleMigrations(server, staleBefore, now,
+            "Migration timed out and was automatically cancelled.");
+
+        if (migrationRepository.existsActiveMigration(server, staleBefore)) {
             return Map.of("success", false, "error", "A migration is already in progress");
         }
 
@@ -77,7 +93,6 @@ public class MigrationService {
 
         String taskId = UUID.randomUUID().toString();
         String type = migrationType.toLowerCase();
-        Date now = new Date();
 
         MigrationStatus status = MigrationStatus.builder()
             .taskId(taskId)
@@ -112,8 +127,10 @@ public class MigrationService {
             return Map.of("success", false, "error", "No active migration to cancel");
         }
 
+        boolean cooldownExempt = "building_json".equals(activeMigration.getStatus());
+
         migrationRepository.cancelMigration(server, activeMigration.getId(),
-            "Cancelled by administrator", new Date(), "Migration cancelled by administrator");
+            "Cancelled by administrator", new Date(), "Migration cancelled by administrator", cooldownExempt);
 
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
@@ -139,38 +156,46 @@ public class MigrationService {
         );
     }
 
-    public Map<String, Object> updateProgress(Server server, UpdateProgressRequest request) {
+    public void updateProgress(Server server, UpdateProgressRequest request) {
         if (request.status() == null || !VALID_STATUSES.contains(request.status())) {
-            return Map.of("success", false, "error", "Invalid status value");
+            throw new ValidationException("Invalid status value");
         }
 
-        if (request.message() == null || request.message().length() > MAX_MESSAGE_LENGTH) {
-            return Map.of("success", false, "error", "Invalid or too long message");
+        if (request.message() == null) {
+            throw new ValidationException("Message is required");
         }
 
         if (request.recordsProcessed() != null && request.recordsProcessed() < 0) {
-            return Map.of("success", false, "error", "Invalid recordsProcessed value");
+            throw new ValidationException("Invalid recordsProcessed value");
         }
 
         if (request.totalRecords() != null && request.totalRecords() < 0) {
-            return Map.of("success", false, "error", "Invalid totalRecords value");
+            throw new ValidationException("Invalid totalRecords value");
         }
+
+        // Clamp (never reject) over-length messages so terminal state transitions always persist.
+        String message = clampMessage(request.message());
 
         MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);
 
         if (activeMigration == null) {
-            return Map.of("success", false, "error", "No active migration found");
+            throw new ResourceNotFoundException("No active migration found");
         }
 
         Date completedAt = ("completed".equals(request.status()) || "failed".equals(request.status()))
             ? new Date() : null;
 
         migrationRepository.updateProgress(server, activeMigration.getId(),
-            request.status(), request.message(),
+            request.status(), message,
             request.recordsProcessed(), request.recordsSkipped(),
             request.totalRecords(), completedAt);
+    }
 
-        return Map.of("success", true);
+    private static String clampMessage(String message) {
+        if (message == null || message.length() <= MAX_MESSAGE_LENGTH) {
+            return message;
+        }
+        return message.substring(0, MAX_MESSAGE_LENGTH - 1) + "…";
     }
 
     public long getFileSizeLimit(Server server) {

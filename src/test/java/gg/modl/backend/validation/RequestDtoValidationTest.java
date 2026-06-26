@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.player.dto.request.AddIpRequest;
 import gg.modl.backend.replay.dto.InitReplayUploadRequest;
 import gg.modl.backend.replaylite.data.ReplayLiteLabel;
 import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
@@ -199,5 +200,24 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(new ReplayLiteLabelRequest(List.of(label))), "labels[0].verdict");
+    }
+
+    @Test
+    void addIpRequestRejectsStructurallyInvalidAddresses() {
+        for (String invalid : List.of("....", "::::", "ffffff", "1.2.3.4.5.6", "999.1.1.1", "256.1.1.1", "01.02.03.04")) {
+            assertHasViolation(validator.validate(new AddIpRequest(invalid)), "ipAddress");
+        }
+    }
+
+    @Test
+    void addIpRequestAcceptsValidAddresses() {
+        for (String valid : List.of("192.168.1.1", "2001:db8::1", "::1", "::ffff:192.168.1.1")) {
+            Set<ConstraintViolation<AddIpRequest>> violations = validator.validate(new AddIpRequest(valid));
+            assertTrue(
+                violations.stream().noneMatch(v -> "ipAddress".equals(v.getPropertyPath().toString())),
+                () -> "Expected no ipAddress violation for '" + valid + "' but got " +
+                      violations.stream().map(v -> v.getPropertyPath() + ": " + v.getMessage()).toList()
+            );
+        }
     }
 }

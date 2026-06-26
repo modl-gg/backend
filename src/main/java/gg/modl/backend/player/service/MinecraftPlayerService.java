@@ -266,7 +266,8 @@ public class MinecraftPlayerService {
         List<Map<String, Object>> players = playerRepository.findOnlinePlayers(server, 500)
             .stream()
             .map(player -> {
-                Date joinedAt = player.getData() != null ? (Date) player.getData().get("lastLogin") : null;
+                Object lastLoginObj = player.getData() != null ? player.getData().get("lastLogin") : null;
+                Date joinedAt = lastLoginObj instanceof Date date ? date : null;
                 Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
                 long totalPlaytimeMs = playtimeObj instanceof Number number ? number.longValue() * 1000 : 0L;
 

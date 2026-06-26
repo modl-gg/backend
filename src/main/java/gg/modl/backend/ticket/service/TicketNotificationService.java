@@ -127,23 +127,12 @@ public class TicketNotificationService {
     }
 
     private void appendNotification(Server server, Player player, Map<String, Object> notification) {
-        Map<String, Object> data = player.getData();
-        if (data == null) {
-            data = new LinkedHashMap<>();
-            player.setData(data);
-        }
-
         if (player.getMinecraftUuid() != null) {
-            notification.putIfAbsent("targetPlayerUuid", player.getMinecraftUuid().toString());
+            String playerUuid = player.getMinecraftUuid().toString();
+            notification.putIfAbsent("targetPlayerUuid", playerUuid);
+            // Atomic field-scoped $push so concurrent appends both land and other Player fields are never clobbered.
+            playerRepository.pushPendingNotification(server, normalizeUuid(playerUuid), notification);
         }
-
-        Object rawPendingNotifications = data.get("pendingNotifications");
-        List<Object> pendingNotifications = rawPendingNotifications instanceof List<?> existing
-                                            ? new ArrayList<>(existing)
-                                            : new ArrayList<>();
-        pendingNotifications.add(notification);
-        data.put("pendingNotifications", pendingNotifications);
-        playerRepository.saveEntity(server, player);
 
         pushPlayerNotification(server, notification);
     }

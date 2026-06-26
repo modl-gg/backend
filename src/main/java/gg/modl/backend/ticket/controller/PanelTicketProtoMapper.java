@@ -9,6 +9,8 @@ import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap;
 
 import gg.modl.backend.ai.data.AIAnalysisResult;
+import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -237,15 +239,41 @@ public final class PanelTicketProtoMapper {
     }
 
     static UpdateTicketRequest fromUpdateTicketRequest(gg.modl.proto.modl.v1.UpdateTicketRequest request) {
+        List<String> tags = request.getTagsList().isEmpty() ? null : List.copyOf(request.getTagsList());
+        if (tags != null) {
+            if (tags.size() > RequestValidationLimits.TICKET_TAGS_MAX_ENTRIES) {
+                throw new ValidationException("tags exceeds maximum of " + RequestValidationLimits.TICKET_TAGS_MAX_ENTRIES + " entries");
+            }
+            for (String tag : tags) {
+                if (tag != null && tag.length() > RequestValidationLimits.TICKET_TAG_MAX_LENGTH) {
+                    throw new ValidationException("tag exceeds maximum length of " + RequestValidationLimits.TICKET_TAG_MAX_LENGTH);
+                }
+            }
+        }
+
+        Map<String, Object> data = request.hasData() ? structToMap(request.getData()) : null;
+        if (data != null && data.size() > RequestValidationLimits.TICKET_DATA_MAX_ENTRIES) {
+            throw new ValidationException("data exceeds maximum of " + RequestValidationLimits.TICKET_DATA_MAX_ENTRIES + " entries");
+        }
+
+        List<String> assignedTo = request.getAssignedToList().isEmpty() ? null : List.copyOf(request.getAssignedToList());
+        if (assignedTo != null) {
+            for (String assignee : assignedTo) {
+                if (assignee != null && assignee.length() > RequestValidationLimits.TICKET_ASSIGNEE_MAX_LENGTH) {
+                    throw new ValidationException("assignee exceeds maximum length of " + RequestValidationLimits.TICKET_ASSIGNEE_MAX_LENGTH);
+                }
+            }
+        }
+
         return new UpdateTicketRequest(
             request.hasStatus() ? request.getStatus() : null,
             request.hasLocked() ? request.getLocked() : null,
             request.hasNewReply() ? fromAddReplyRequest(request.getNewReply()) : null,
             request.hasNewNote() ? fromAddNoteRequest(request.getNewNote()) : null,
-            request.getTagsList().isEmpty() ? null : List.copyOf(request.getTagsList()),
-            request.hasData() ? structToMap(request.getData()) : null,
+            tags,
+            data,
             request.hasHidden() ? request.getHidden() : null,
-            request.getAssignedToList().isEmpty() ? null : List.copyOf(request.getAssignedToList())
+            assignedTo
         );
     }
 

@@ -163,13 +163,18 @@ public class MinecraftTicketsController {
                 "success", false,
                 "message", "Ticket is already linked to a Minecraft account"
             ));
-            case SUCCESS -> ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Ticket successfully linked to your account",
-                "ticketId", id,
-                "subject", result.ticket() != null ? result.ticket().getSubject() : null
-            ));
+            case SUCCESS -> {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("status", 200);
+                body.put("success", true);
+                body.put("message", "Ticket successfully linked to your account");
+                body.put("ticketId", id);
+                String subject = result.ticket().getSubject();
+                if (subject != null) {
+                    body.put("subject", subject);
+                }
+                yield ResponseEntity.ok(body);
+            }
         };
     }
 

@@ -6,6 +6,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.ValidIpAddress;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -109,7 +110,7 @@ public class MinecraftSyncController {
     public record OnlinePlayer(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
-        @Pattern(regexp = RegExpConstants.IP) String ipAddress
+        @ValidIpAddress String ipAddress
     ) {
     }
 

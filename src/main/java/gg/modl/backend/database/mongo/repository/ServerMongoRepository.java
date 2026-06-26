@@ -128,7 +128,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         Update update = new Update()
             .set(ServerFields.EMAIL_VERIFIED, true)
             .unset(ServerFields.EMAIL_VERIFICATION_TOKEN)
-            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.IN_PROGRESS)
             .set(ServerFields.UPDATED_AT, new Date());
 
         return Optional.ofNullable(findAndModify(
@@ -583,12 +583,20 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         if (bytes < 0 || maxCurrentBytes < 0) {
             return false;
         }
+        // Treat a missing/null storageUsedBytes as 0 ($lte does not match missing/null fields).
+        // $inc on a missing/null field initializes it to bytes, giving a race-safe null->size seed.
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where(ServerFields.ID).is(serverId),
-            Criteria.where(ServerFields.STORAGE_USED_BYTES).lte(maxCurrentBytes)
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).lte(maxCurrentBytes),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).exists(false),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).is(null)
+            )
         ));
         UpdateResult result = updateFirst(query, new Update().inc(ServerFields.STORAGE_USED_BYTES, bytes));
-        return result.getModifiedCount() == 1;
+        // Decide on matchedCount so a zero-byte file (which leaves the value unchanged, so
+        // modifiedCount==0) within quota is correctly accepted.
+        return result.getMatchedCount() == 1;
     }
 
     public void decrementStorageUsed(String serverId, long bytes) {
@@ -603,6 +611,22 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().set(ServerFields.STORAGE_USED_BYTES, bytes)
         );
+    }
+
+    /**
+     * Atomically raises the storage counter to {@code bytes} only when the stored value is below
+     * it or absent, so a background reconcile cannot clobber an in-flight confirm-time reservation.
+     */
+    public boolean setStorageUsedIfBelow(String serverId, long bytes) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).lt(bytes),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).exists(false)
+            )
+        ));
+        UpdateResult result = updateFirst(query, new Update().set(ServerFields.STORAGE_USED_BYTES, bytes));
+        return result.getModifiedCount() == 1;
     }
 
     public Optional<AIUsageSnapshot> findAIUsageSnapshotById(String serverId) {
@@ -691,11 +715,11 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
                     hasChanges = true;
                 }
                 case ServerFields.LAST_ACTIVITY_AT -> {
-                    update.set(ServerFields.LAST_ACTIVITY_AT, value);
+                    update.set(ServerFields.LAST_ACTIVITY_AT, normalizeDate(value));
                     hasChanges = true;
                 }
                 case ServerFields.UPDATED_AT -> {
-                    update.set(ServerFields.UPDATED_AT, value);
+                    update.set(ServerFields.UPDATED_AT, normalizeDate(value));
                     hasChanges = true;
                 }
                 default -> {
@@ -736,6 +760,23 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return SubscriptionStatus.valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
     }
 
+    private Date normalizeDate(Object value) {
+        if (value instanceof Date d) {
+            return d;
+        }
+        if (value instanceof Instant i) {
+            return Date.from(i);
+        }
+        if (value instanceof Number n) {
+            return new Date(n.longValue());
+        }
+        if (value instanceof String s) {
+            return Date.from(Instant.parse(s.trim()));
+        }
+        throw new IllegalArgumentException("Unsupported value type for date field: "
+            + (value == null ? "null" : value.getClass()));
+    }
+
     public boolean deleteByServerId(String serverId) {
         return remove(Query.query(Criteria.where(ServerFields.ID).is(serverId))).getDeletedCount() > 0;
     }
@@ -752,11 +793,45 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public long bulkActivate(List<String> serverIds, Date updatedAt) {
+        // Do NOT pre-set COMPLETED here; provision() owns the terminal state and flips each row to
+        // COMPLETED on success or FAILED on error.
         Update update = new Update()
-            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.IN_PROGRESS)
             .set(ServerFields.EMAIL_VERIFIED, true)
             .set(ServerFields.UPDATED_AT, updatedAt);
         return updateMulti(Query.query(Criteria.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+    }
+
+    public boolean markProvisioningCompleted(String serverId) {
+        Query query = Query.query(Criteria.where(ServerFields.ID).is(serverId)
+            .and(ServerFields.PROVISIONING_STATUS).in(
+                ProvisioningStatus.IN_PROGRESS, ProvisioningStatus.PENDING, ProvisioningStatus.FAILED));
+        Update update = new Update()
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
+            .unset(ServerFields.PROVISIONING_NOTES)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return updateFirst(query, update).getModifiedCount() > 0;
+    }
+
+    public boolean markProvisioningFailed(String serverId, String notes) {
+        String safeNotes = notes != null && notes.length() > 500 ? notes.substring(0, 500) : notes;
+        Update update = new Update()
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.FAILED)
+            .set(ServerFields.PROVISIONING_NOTES, safeNotes)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return updateFirst(Query.query(Criteria.where(ServerFields.ID).is(serverId)), update)
+            .getModifiedCount() > 0;
+    }
+
+    public Optional<Server> applyFieldUpdate(String serverId, Update update) {
+        if (update.getUpdateObject().isEmpty()) {
+            return findById(serverId);
+        }
+        return Optional.ofNullable(findAndModify(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
     }
 
     public long bulkUpdatePlan(List<String> serverIds, ServerPlan plan, Date updatedAt) {
@@ -800,11 +875,13 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public void updateStaffPermissionsTimestamp(String serverId, Date timestamp) {
+        // Decouple the generic updatedAt marker from the authoritative sync cursor so a stale
+        // full-document save() of a cached snapshot cannot revert the cursor via updatedAt aliasing.
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.STAFF_PERMISSIONS_UPDATED_AT, timestamp)
-                .set(ServerFields.UPDATED_AT, timestamp)
+                .set(ServerFields.UPDATED_AT, new Date())
         );
     }
 
@@ -813,7 +890,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.PUNISHMENT_TYPES_UPDATED_AT, timestamp)
-                .set(ServerFields.UPDATED_AT, timestamp)
+                .set(ServerFields.UPDATED_AT, new Date())
         );
     }
 

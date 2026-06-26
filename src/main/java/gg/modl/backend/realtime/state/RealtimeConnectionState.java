@@ -22,6 +22,7 @@ public class RealtimeConnectionState {
     private volatile int protocolVersion;
     private volatile String lastAcknowledgedEventId;
     private volatile boolean closing;
+    private volatile Instant terminalSince;
 
     public String getConnectionId() {
         return connectionId;
@@ -46,6 +47,17 @@ public class RealtimeConnectionState {
 
     public void markClosing() {
         closing = true;
+    }
+
+    public void markTerminal() {
+        if (terminalSince == null) {
+            terminalSince = Instant.now();
+        }
+    }
+
+    @Nullable
+    public Instant getTerminalSince() {
+        return terminalSince;
     }
 
     public RealtimePrincipal getPrincipal() {

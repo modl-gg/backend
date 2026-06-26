@@ -126,8 +126,20 @@ public class PanelMediaController {
                 "message", "The file was not uploaded or the presigned URL expired"
             ));
         }
-        if (!quotaService.confirmAndRecordFile(server, key, uploadDetails.size(), uploadDetails.contentType())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+        StorageQuotaService.ConfirmResult confirmResult =
+            quotaService.confirmAndRecordFile(server, key, uploadDetails.size(), uploadDetails.contentType());
+        switch (confirmResult) {
+            case QUOTA_EXCEEDED -> {
+                storageMetadataService.cleanupOrphanedUpload(server, key, uploadDetails.size(), uploadDetails.contentType());
+                return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+            }
+            case RECORD_FAILED -> {
+                storageMetadataService.cleanupOrphanedUpload(server, key, uploadDetails.size(), uploadDetails.contentType());
+                return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
+            }
+            default -> {
+                // SUCCESS
+            }
         }
 
         return ResponseEntity.ok(StorageProtoMapper.toUploadResponse(uploadDetails));

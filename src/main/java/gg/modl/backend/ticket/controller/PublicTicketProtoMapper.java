@@ -151,7 +151,7 @@ final class PublicTicketProtoMapper {
         );
     }
 
-    private static gg.modl.proto.modl.v1.PublicTicketReply toPublicReply(TicketReply reply) {
+    static gg.modl.proto.modl.v1.PublicTicketReply toPublicReply(TicketReply reply) {
         gg.modl.proto.modl.v1.PublicTicketReply.Builder builder = gg.modl.proto.modl.v1.PublicTicketReply.newBuilder()
             .setId(stringValue(reply.getId()))
             .setName(stringValue(reply.getName()))

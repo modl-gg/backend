@@ -63,17 +63,17 @@ class PlayerLookupServiceTest {
             .minecraftUuid(UUID.randomUUID())
             .usernames(List.of(new UsernameEntry("Byteful", new Date(1_000L))))
             .notes(List.of(
-                note("note-1"),
-                note("note-2"),
-                note("note-3"),
-                note("note-4")
+                note("note-1", 1_000L),
+                note("note-2", 2_000L),
+                note("note-3", 3_000L),
+                note("note-4", 4_000L)
             ))
             .punishments(List.of(
-                punishment("punishment-1"),
-                punishment("punishment-2"),
-                punishment("punishment-3"),
-                punishment("punishment-4"),
-                punishment("punishment-5")
+                punishment("punishment-1", 1_000L),
+                punishment("punishment-2", 2_000L),
+                punishment("punishment-3", 3_000L),
+                punishment("punishment-4", 4_000L),
+                punishment("punishment-5", 5_000L)
             ))
             .data(new HashMap<>())
             .build();
@@ -86,28 +86,30 @@ class PlayerLookupServiceTest {
         assertEquals(2, notes.size());
         assertEquals(5, profile.get("punishmentCount"));
         assertEquals(4, profile.get("noteCount"));
-        assertEquals("punishment-1", ((Map<?, ?>) punishments.get(0)).get("id"));
+        // Most-recent N, newest first.
+        assertEquals("punishment-5", ((Map<?, ?>) punishments.get(0)).get("id"));
+        assertEquals("punishment-4", ((Map<?, ?>) punishments.get(1)).get("id"));
         assertEquals("punishment-3", ((Map<?, ?>) punishments.get(2)).get("id"));
-        assertEquals("note-1", ((Map<?, ?>) notes.get(0)).get("id"));
-        assertEquals("note-2", ((Map<?, ?>) notes.get(1)).get("id"));
+        assertEquals("note-4", ((Map<?, ?>) notes.get(0)).get("id"));
+        assertEquals("note-3", ((Map<?, ?>) notes.get(1)).get("id"));
     }
 
-    private NoteEntry note(String id) {
+    private NoteEntry note(String id, long dateMillis) {
         return NoteEntry.builder()
             .id(id)
             .text(id + " text")
-            .date(new Date(2_000L))
+            .date(new Date(dateMillis))
             .issuerName("Mod")
             .build();
     }
 
-    private Punishment punishment(String id) {
+    private Punishment punishment(String id, long issuedMillis) {
         return new Punishment(
             id,
             1,
             "Mod",
             null,
-            new Date(3_000L),
+            new Date(issuedMillis),
             null,
             new ArrayList<>(),
             new ArrayList<>(),

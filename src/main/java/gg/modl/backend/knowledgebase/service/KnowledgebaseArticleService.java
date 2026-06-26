@@ -6,6 +6,7 @@ import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.CreateArticleRequest;
 import gg.modl.proto.modl.v1.UpdateArticleRequest;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +36,12 @@ public class KnowledgebaseArticleService {
 
     public List<KnowledgebaseArticle> getVisibleArticlesByCategory(Server server, String categoryId) {
         return articleRepository.findVisibleByCategoryOrdered(server, categoryId);
+    }
+
+    public Map<String, List<KnowledgebaseArticle>> getVisibleArticlesGroupedByCategoryIds(Server server, Collection<String> categoryIds) {
+        return articleRepository.findVisibleByCategoryIdsOrdered(server, categoryIds)
+            .stream()
+            .collect(Collectors.groupingBy(KnowledgebaseArticle::getCategoryId));
     }
 
     public Optional<KnowledgebaseArticle> getArticleById(Server server, String id) {

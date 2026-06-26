@@ -139,6 +139,11 @@ public class PunishmentLifecycleService {
             if (result.status() != null && (!data.containsKey("status") || PunishmentData.getStatus(data) == null)) {
                 data.put("status", result.status());
             }
+            // Persist the internal offense level into its dedicated key so it survives any later
+            // data.status lifecycle mutation (stacking -> UNSTARTED, acknowledge/promote -> removed).
+            if (result.offenseLevel() != null && !data.containsKey("offenseLevel")) {
+                data.put("offenseLevel", result.offenseLevel());
+            }
         }
 
         if (calculatedDuration == null) {
@@ -251,7 +256,13 @@ public class PunishmentLifecycleService {
 
         String punishmentId = IdGenerator.generateShortId();
 
-        Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
+        // Plugin-originated punishments are pre-enforced in-game; the plugin anchors `started` via
+        // acknowledgePunishment, so they are created unstarted AND must be marked UNSTARTED so they
+        // are consistently inactive (not an active record with a moving expiry that never counts down).
+        boolean pendingAcknowledgement = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
+        if (pendingAcknowledgement) {
+            data.put("status", PunishmentStatus.UNSTARTED);
+        }
         Date startedDate = null;
 
         Punishment punishment = new Punishment(
@@ -496,6 +507,9 @@ public class PunishmentLifecycleService {
             "System",
             null
         ));
+        if (punishment.getData() != null) {
+            punishment.getData().put("status", PunishmentStatus.PARDONED);
+        }
     }
 
     private boolean isPardoned(Punishment punishment) {
@@ -540,7 +554,11 @@ public class PunishmentLifecycleService {
             }
 
             Date now = new Date();
-                punishment.getData().put("duration", newDuration);
+            // Normalize make-permanent intent (null) to -1L so data.duration stays coherent for the
+            // many readers of data.duration (audit reconstruct, plugin display); the read side treats
+            // null/0/negative identically as permanent.
+            Long effective = (newDuration == null) ? -1L : newDuration;
+            punishment.getData().put("duration", effective);
             punishment.getModifications().add(new PunishmentModification(
                 IdGenerator.generateShortId(),
                 PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
@@ -548,7 +566,7 @@ public class PunishmentLifecycleService {
                 "System",
                 null,
                 "Cascaded from parent ban duration change",
-                newDuration,
+                effective,
                 null,
                 null
             ));

@@ -5,6 +5,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class MigrationMongoRepository extends AbstractServerMongoRepository<MigrationStatus> {
     private static final String COLLECTION_NAME = "migrations";
+    private static final List<String> ACTIVE_STATUSES =
+        List.of("building_json", "uploading_json", "processing_data");
 
     public MigrationMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(MigrationStatus.class, COLLECTION_NAME, tenantMongoAccess);
@@ -26,27 +29,58 @@ public class MigrationMongoRepository extends AbstractServerMongoRepository<Migr
     }
 
     public Optional<MigrationStatus> findLatestCompletedOrFailed(Server server) {
-        Query query = Query.query(Criteria.where("status").in("completed", "failed"))
+        Query query = Query.query(Criteria.where("status").in("completed", "failed").and("cooldownExempt").ne(true))
             .with(Sort.by(Sort.Direction.DESC, "completedAt")).limit(1);
         return findOne(server, query);
     }
 
     public Optional<MigrationStatus> findActiveMigration(Server server) {
-        Query query = Query.query(Criteria.where("status").in("building_json", "uploading_json", "processing_data"));
+        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES))
+            .with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(1);
+        return findOne(server, query);
+    }
+
+    public Optional<MigrationStatus> findActiveMigration(Server server, Date staleBefore) {
+        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES).and("startedAt").gte(staleBefore))
+            .with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(1);
         return findOne(server, query);
     }
 
     public boolean existsActiveMigration(Server server) {
-        Query query = Query.query(Criteria.where("status").in("building_json", "uploading_json", "processing_data"));
+        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES));
         return exists(server, query);
     }
 
-    public void cancelMigration(Server server, String id, String error, Date completedAt, String progressMessage) {
+    public boolean existsActiveMigration(Server server, Date staleBefore) {
+        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES).and("startedAt").gte(staleBefore));
+        return exists(server, query);
+    }
+
+    public long failStaleMigrations(Server server, Date staleBefore, Date now, String message) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where("status").in(ACTIVE_STATUSES),
+            new Criteria().orOperator(
+                Criteria.where("startedAt").lt(staleBefore),
+                Criteria.where("startedAt").exists(false)
+            )
+        ));
+        Update update = new Update()
+            .set("status", "failed")
+            .set("completedAt", now)
+            .set("error", message)
+            .set("progress.message", message)
+            .set("cooldownExempt", true);
+        return updateMulti(server, query, update).getModifiedCount();
+    }
+
+    public void cancelMigration(Server server, String id, String error, Date completedAt,
+                                String progressMessage, boolean cooldownExempt) {
         Update update = new Update()
             .set("status", "failed")
             .set("error", error)
             .set("completedAt", completedAt)
-            .set("progress.message", progressMessage);
+            .set("progress.message", progressMessage)
+            .set("cooldownExempt", cooldownExempt);
         updateFirst(server, Query.query(Criteria.where("_id").is(id)), update);
     }
 

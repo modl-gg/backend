@@ -7,6 +7,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.ValidIpAddress;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -233,30 +234,20 @@ public class MinecraftPlayerController {
         return ResponseEntity.ok(response);
     }
 
-    //public record LoginRequest(
-    //    @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
-    //    @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
-    //    @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
-    //    Map<String, Object> ipInfo,
-    //    @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String skinHash,
-    //    @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName
-    //) {
-    //}
-
     public record LoginRequest(
-        @NotBlank String minecraftUUID,
-        @NotBlank String username,
-        @NotBlank String ip,
+        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
+        @NotBlank @Pattern(regexp = RegExpConstants.MINECRAFT_USERNAME) String username,
+        @NotBlank @ValidIpAddress String ip,
         Map<String, Object> ipInfo,
-        String skinHash,
-        String serverName,
+        @Size(max = RequestValidationLimits.ID_MAX_LENGTH) String skinHash,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
         String serverInstanceId
     ) {
     }
 
     public record SubmitIpInfoRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUUID,
-        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip,
+        @NotBlank @ValidIpAddress String ip,
         @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String country,
         @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String region,
         @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String asn,

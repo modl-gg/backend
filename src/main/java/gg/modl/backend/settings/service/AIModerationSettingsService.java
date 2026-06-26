@@ -19,8 +19,27 @@ public class AIModerationSettingsService {
     private static final String SETTINGS_TYPE_AI_MODERATION = "aiModerationSettings";
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
+        AIModerationSettings existing = getAIModerationSettings(server);
+
+        Map<String, AIModerationSettings.AIPunishmentConfig> incoming = newSettings.getAiPunishmentConfigs();
+        Map<String, AIModerationSettings.AIPunishmentConfig> mergedConfigs;
+        if (incoming == null || incoming.isEmpty()) {
+            mergedConfigs = existing.getAiPunishmentConfigs();
+        } else {
+            mergedConfigs = new HashMap<>(existing.getAiPunishmentConfigs() != null
+                ? existing.getAiPunishmentConfigs()
+                : new HashMap<>());
+            mergedConfigs.putAll(incoming);
+        }
+
+        AIModerationSettings toPersist = AIModerationSettings.builder()
+            .enableAIReview(newSettings.isEnableAIReview())
+            .enableAutomatedActions(newSettings.isEnableAutomatedActions())
+            .aiPunishmentConfigs(mergedConfigs)
+            .build();
+
         @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
+        Map<String, Object> data = objectMapper.convertValue(toPersist, Map.class);
         settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_AI_MODERATION, data);
         return getAIModerationSettings(server);
     }
@@ -29,15 +48,7 @@ public class AIModerationSettingsService {
         Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_AI_MODERATION).orElse(null);
 
         if (settings == null || settings.getData() == null) {
-            AIModerationSettings defaults = createDefaultSettings();
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
-                settingsRepositoryAccess.saveEntity(server, new Settings(null, SETTINGS_TYPE_AI_MODERATION, data));
-            } catch (Exception e) {
-                log.warn("Failed to create default AI moderation settings for server {}", server.getDatabaseName(), e);
-            }
-            return defaults;
+            return createDefaultSettings();
         }
 
         try {

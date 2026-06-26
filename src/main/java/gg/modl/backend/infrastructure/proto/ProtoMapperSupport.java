@@ -9,17 +9,25 @@ import com.google.protobuf.Value;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
+import org.bson.types.Binary;
+import org.bson.types.ObjectId;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Shared value-coercion toolkit for panel/admin/public proto mappers. Mirrors the conversions used by the
@@ -34,6 +42,9 @@ public final class ProtoMapperSupport {
     // 2^53 is the largest integer a double represents exactly; integral values beyond it must travel as
     // strings inside free-form Structs to survive the double-backed google.protobuf.Value.
     private static final BigInteger MAX_SAFE_DOUBLE_INTEGER = BigInteger.valueOf(2).pow(53);
+
+    private static final Logger log = LoggerFactory.getLogger(ProtoMapperSupport.class);
+    private static final Set<Class<?>> WARNED_UNEXPECTED_TYPES = ConcurrentHashMap.newKeySet();
 
     private ProtoMapperSupport() {
     }
@@ -220,7 +231,31 @@ public final class ProtoMapperSupport {
         if (object instanceof Date date) {
             return integralValue(builder, BigInteger.valueOf(date.getTime()));
         }
-        return builder.setStringValue(Objects.toString(object)).build();
+        if (object instanceof ObjectId objectId) {
+            return builder.setStringValue(objectId.toHexString()).build();
+        }
+        if (object instanceof UUID uuid) {
+            return builder.setStringValue(uuid.toString()).build();
+        }
+        if (object instanceof Binary binary) {
+            return builder.setStringValue(Base64.getEncoder().encodeToString(binary.getData())).build();
+        }
+        return builder.setStringValue(coerceUnexpectedToString(object)).build();
+    }
+
+    /**
+     * Coerces a free-form Struct value of an unexpected type to its {@code toString()} form, logging
+     * a warning once per offending class so a POJO-into-Struct mistake is observable rather than
+     * silently producing an opaque string on the wire. Never throws (toStruct is on hot read paths).
+     */
+    public static String coerceUnexpectedToString(Object object) {
+        Class<?> type = object.getClass();
+        if (WARNED_UNEXPECTED_TYPES.add(type)) {
+            log.warn("ProtoMapperSupport: free-form Struct value of unexpected type {} coerced via "
+                + "toString(); value will reach clients as an opaque string. Callers must pass "
+                + "structured Maps, not raw beans.", type.getName());
+        }
+        return Objects.toString(object);
     }
 
     // google.protobuf.Value carries numbers as a double, so an integral 64-bit value (epoch millis,

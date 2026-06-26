@@ -20,6 +20,7 @@ import java.util.Optional;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -144,6 +145,56 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
             String issuerName = document.getString("_id");
             if (issuerName != null) {
                 punishmentCounts.put(issuerName, document.getInteger("count", 0));
+            }
+        }
+        return punishmentCounts;
+    }
+
+    public long countAllPunishments(Server server) {
+        Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
+            Aggregation.unwind(PlayerFields.PUNISHMENTS),
+            Aggregation.count().as("count")
+        );
+        Document first = aggregate(server, aggregation, Document.class).getUniqueMappedResult();
+        return first == null ? 0L : first.getInteger("count", 0);
+    }
+
+    public Map<String, Integer> countPunishmentsByIssuerId(Server server) {
+        Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
+            Aggregation.unwind(PlayerFields.PUNISHMENTS),
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENT_ISSUER_ID).ne(null)),
+            Aggregation.group(PlayerFields.PUNISHMENT_ISSUER_ID).count().as("count")
+        );
+        AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
+        Map<String, Integer> punishmentCounts = new LinkedHashMap<>();
+        for (Document document : results.getMappedResults()) {
+            String issuerId = document.getString("_id");
+            if (issuerId != null) {
+                punishmentCounts.put(issuerId, document.getInteger("count", 0));
+            }
+        }
+        return punishmentCounts;
+    }
+
+    public Map<String, Integer> countPunishmentsByEffectiveIssuer(Server server) {
+        AggregationOperation effectiveIssuer = context -> new Document("$addFields",
+            new Document("effectiveIssuer", new Document("$ifNull", List.of(
+                "$" + PlayerFields.PUNISHMENT_ISSUER_ID,
+                "$" + PlayerFields.PUNISHMENT_ISSUER_NAME))));
+        Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(Criteria.where(PlayerFields.PUNISHMENTS).exists(true).ne(List.of())),
+            Aggregation.unwind(PlayerFields.PUNISHMENTS),
+            effectiveIssuer,
+            Aggregation.group("effectiveIssuer").count().as("count")
+        );
+        AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
+        Map<String, Integer> punishmentCounts = new LinkedHashMap<>();
+        for (Document document : results.getMappedResults()) {
+            String issuer = document.getString("_id");
+            if (issuer != null) {
+                punishmentCounts.put(issuer, document.getInteger("count", 0));
             }
         }
         return punishmentCounts;

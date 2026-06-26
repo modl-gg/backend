@@ -69,13 +69,20 @@ log "Stopping and removing existing rollback container if exists..."
 docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$ROLLBACK_CONTAINER" 2>/dev/null || true
 docker rm "$ROLLBACK_CONTAINER" 2>/dev/null || true
 
+ENV_FILE="$(pwd)/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    log "ERROR: Config file not found at $ENV_FILE (expected a regular file)."
+    log "Create the .env file (see backend/.env.example) before rolling back; a missing .env would be bind-mounted as an empty directory and crash the container."
+    exit 1
+fi
+
 log "Starting rollback container: $ROLLBACK_CONTAINER"
 docker run -d \
     --name "$ROLLBACK_CONTAINER" \
     --network modl \
     --restart unless-stopped \
     -p ${ROLLBACK_PORT}:8080 \
-    -v "$(pwd)/.env:/app/.env:ro" \
+    -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
     ${APP_NAME}:${ROLLBACK_COLOR}

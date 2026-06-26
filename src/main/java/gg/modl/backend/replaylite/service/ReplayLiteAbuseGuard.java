@@ -15,6 +15,7 @@ public class ReplayLiteAbuseGuard {
     private static final int MAX_INIT_ATTEMPTS_PER_HOUR = 40;
     private static final int MAX_CONFIRMS_PER_HOUR = 80;
     private static final int MAX_LABELS_PER_HOUR = 80;
+    private static final int MAX_DOWNLOADS_PER_REPLAY_PER_HOUR = 120;
     private static final int MAX_REQUESTS_PER_IP_PER_MINUTE = 120;
     private static final int MAX_ACTIVE_PENDING_PER_SERVER = 25;
 
@@ -44,6 +45,10 @@ public class ReplayLiteAbuseGuard {
 
     public void checkLabel(String replayId) {
         consume("label:" + replayId, MAX_LABELS_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite label submissions");
+    }
+
+    public void checkDownload(String replayId) {
+        consume("download:" + replayId, MAX_DOWNLOADS_PER_REPLAY_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite download requests");
     }
 
     public void checkIp(String clientIp) {

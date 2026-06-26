@@ -1,51 +1,79 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.data.EvidenceUploadTokenDocument;
+import gg.modl.backend.storage.repository.EvidenceUploadTokenMongoRepository;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class EvidenceUploadTokenService {
 
-    private final ConcurrentHashMap<String, UploadToken> tokens = new ConcurrentHashMap<>();
+    private static final long TTL_SECONDS = 30 * 60;
+
+    private final EvidenceUploadTokenMongoRepository tokenRepository;
 
     public String createToken(Server server, String punishmentId, String playerUuid, String issuerName) {
         String token = UUID.randomUUID().toString();
-        tokens.put(token, new UploadToken(
-            token,
+        Instant now = Instant.now();
+        tokenRepository.saveEntity(new EvidenceUploadTokenDocument(
+            sha256Hex(token),
             server.getDatabaseName(),
             punishmentId,
             playerUuid,
             issuerName,
-            Instant.now()
+            now,
+            now.plusSeconds(TTL_SECONDS)
         ));
         return token;
     }
 
     public UploadToken validateToken(String token) {
-        UploadToken uploadToken = tokens.get(token);
-        if (uploadToken == null) {
+        String hash = sha256Hex(token);
+        EvidenceUploadTokenDocument doc = tokenRepository.findByTokenHash(hash).orElse(null);
+        if (doc == null) {
             return null;
         }
-        if (uploadToken.isExpired()) {
-            tokens.remove(token);
+        // Defensive read-time expiry check in case the TTL sweep lags.
+        if (doc.getExpiresAt() != null && doc.getExpiresAt().isBefore(Instant.now())) {
+            tokenRepository.deleteByTokenHash(hash);
             return null;
         }
-        return uploadToken;
+        return new UploadToken(
+            token,
+            doc.getServerDatabaseName(),
+            doc.getPunishmentId(),
+            doc.getPlayerUuid(),
+            doc.getIssuerName(),
+            doc.getCreatedAt()
+        );
     }
 
     public void invalidateToken(String token) {
-        tokens.remove(token);
+        tokenRepository.deleteByTokenHash(sha256Hex(token));
     }
 
-    @Scheduled(fixedRate = 300000) // Every 5 minutes
-    public void cleanupExpiredTokens() {
-        tokens.entrySet().removeIf(stringUploadTokenEntry -> stringUploadTokenEntry.getValue().isExpired());
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                builder.append(Character.forDigit((b >> 4) & 0xF, 16));
+                builder.append(Character.forDigit(b & 0xF, 16));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 algorithm not available", exception);
+        }
     }
 
     public record UploadToken(

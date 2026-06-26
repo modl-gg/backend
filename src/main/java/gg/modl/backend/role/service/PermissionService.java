@@ -4,6 +4,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
@@ -60,6 +61,7 @@ public class PermissionService {
         new Permission("admin.audit.view.logs", "View Logs", "View audit trail of staff actions", "admin", "admin.audit.view"),
 
         // Punishment permissions
+        new Permission("punishment.view", "View Punishments", "View player profiles, punishments, and linked accounts", "punishment"),
         new Permission("punishment.modify", "Modify Punishments", "Full control over existing punishments (includes all sub-permissions)", "punishment"),
         new Permission("punishment.modify.pardon", "Pardon Punishments", "Pardon punishments and clear associated points", "punishment", "punishment.modify"),
         new Permission("punishment.modify.duration", "Modify Duration", "Change punishment duration", "punishment", "punishment.modify"),
@@ -166,6 +168,30 @@ public class PermissionService {
         return false;
     }
 
+    public boolean hasAnyPermissionWithPrefix(Server server, String roleId, String prefix) {
+        if (roleId == null || roleId.isBlank()) {
+            return false;
+        }
+
+        String trimmedRole = roleId.trim();
+        String cacheKey = server.getId() + ":" + trimmedRole + ":prefix:" + prefix;
+        return permissionCache.get(cacheKey, key -> computeHasPermissionWithPrefix(server, trimmedRole, prefix));
+    }
+
+    private boolean computeHasPermissionWithPrefix(Server server, String roleId, String prefix) {
+        StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
+
+        if (role == null) {
+            return false;
+        }
+
+        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
+            return true;
+        }
+
+        return role.getPermissions().stream().anyMatch(p -> p.startsWith(prefix));
+    }
+
     public void evictPermissionCache() {
         permissionCache.invalidateAll();
     }
@@ -175,7 +201,16 @@ public class PermissionService {
             return Optional.empty();
         }
 
-        return staffRoleRepository.findByName(server, roleName.trim());
+        // The wire field carries the role NAME, a non-unique/mutable key. Fail loudly on ambiguity
+        // instead of silently binding to an arbitrary role's order in the hierarchy check.
+        List<StaffRole> matches = staffRoleRepository.findAllByName(server, roleName.trim());
+        if (matches.isEmpty()) {
+            return Optional.empty();
+        }
+        if (matches.size() > 1) {
+            throw new ValidationException("Ambiguous role name '" + roleName.trim() + "' - rename roles to be unique");
+        }
+        return Optional.of(matches.get(0));
     }
 
     public Optional<StaffRole> getRoleById(Server server, String roleId) {

@@ -1,7 +1,6 @@
 package gg.modl.backend.minecraft;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
@@ -20,13 +19,10 @@ import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.player.controller.MinecraftSyncV3Controller;
-import gg.modl.backend.player.service.MinecraftStartupService;
 import gg.modl.backend.player.service.MinecraftSyncService;
 import gg.modl.backend.player.service.SyncProtoFactory;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.proto.modl.v1.StartupRequest;
-import gg.modl.proto.modl.v1.StartupResponse;
 import gg.modl.proto.modl.v1.SyncOnlinePlayer;
 import gg.modl.proto.modl.v1.SyncRequest;
 import gg.modl.proto.modl.v1.SyncResponse;
@@ -41,69 +37,21 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MinecraftSyncV3ControllerTest {
     private MinecraftSyncService minecraftSyncService;
-    private MinecraftStartupService minecraftStartupService;
     private MockMvc mockMvc;
     private Server server;
 
     @BeforeEach
     void setUp() {
         minecraftSyncService = mock(MinecraftSyncService.class);
-        minecraftStartupService = mock(MinecraftStartupService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftSyncV3Controller(minecraftSyncService, minecraftStartupService, new SyncProtoFactory()))
+        mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftSyncV3Controller(minecraftSyncService, new SyncProtoFactory()))
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/")
                 .requestAttr(RequestAttribute.SERVER, server)
                 .header("X-Forwarded-For", "203.0.113.20"))
             .build();
-    }
-
-    @Test
-    void v3StartupReturnsBinaryResponseWithRealtimeBootstrap() throws Exception {
-        when(minecraftStartupService.handleStartup(
-            same(server),
-            eq("1.21.8"),
-            eq("paper"),
-            eq("2.0.0"),
-            eq(200),
-            eq("hub"),
-            eq("127.0.0.1")
-        )).thenReturn(Map.of(
-            "panelUrl", "https://demo.modl.gg",
-            "timestamp", "2026-05-12T00:00:00Z",
-            "serverInstanceId", "instance-1",
-            "realtimeEnabled", true,
-            "realtimeUrl", "wss://api.modl.gg/v3/realtime",
-            "realtimeProtocolVersion", 1,
-            "realtimeTopics", List.of("TOPIC_MINECRAFT_PERMISSIONS", "TOPIC_MINECRAFT_PUNISHMENT_TYPES")
-        ));
-
-        StartupRequest request = StartupRequest.newBuilder()
-            .setServerVersion("1.21.8")
-            .setPlatformType("paper")
-            .setPluginVersion("2.0.0")
-            .setMaxPlayers(200)
-            .setServerName("hub")
-            .build();
-
-        MvcResult result = mockMvc.perform(post(RESTMappingV3.PREFIX_MINECRAFT + "/startup")
-                .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-                .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-                .content(request.toByteArray()))
-            .andExpect(status().isOk())
-            .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
-            .andReturn();
-
-        StartupResponse response = StartupResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals("https://demo.modl.gg", response.getPanelUrl());
-        assertEquals("2026-05-12T00:00:00Z", response.getTimestamp());
-        assertEquals("instance-1", response.getServerInstanceId());
-        assertIfMethodPresent(response, "getRealtimeEnabled", true);
-        assertIfMethodPresent(response, "getRealtimeUrl", "wss://api.modl.gg/v3/realtime");
-        assertIfMethodPresent(response, "getRealtimeProtocolVersion", 1);
-        assertIfMethodPresent(response, "getRealtimeTopicsList", List.of("TOPIC_MINECRAFT_PERMISSIONS", "TOPIC_MINECRAFT_PUNISHMENT_TYPES"));
     }
 
     @Test
@@ -185,13 +133,5 @@ class MinecraftSyncV3ControllerTest {
             any(),
             eq("127.0.0.1")
         );
-    }
-
-    private static void assertIfMethodPresent(Object target, String methodName, Object expected) throws Exception {
-        try {
-            assertEquals(expected, target.getClass().getMethod(methodName).invoke(target));
-        } catch (NoSuchMethodException ignored) {
-            // Published proto artifacts can lag additive local schema fields during rollout.
-        }
     }
 }

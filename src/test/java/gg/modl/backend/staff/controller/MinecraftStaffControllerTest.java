@@ -1,5 +1,8 @@
 package gg.modl.backend.staff.controller;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,6 +30,8 @@ class MinecraftStaffControllerTest {
     void setUp() {
         staffService = mock(StaffService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
+        when(staffService.resolveMinecraftPerformer(any(), any()))
+            .thenReturn(new StaffService.MinecraftPerformer(null, false));
 
         mockMvc = MockMvcBuilders
             .standaloneSetup(new MinecraftStaffController(staffService))
@@ -36,7 +41,9 @@ class MinecraftStaffControllerTest {
 
     @Test
     void updateStaffRoleUsesMinecraftSyncService() throws Exception {
-        when(staffService.updateMinecraftStaffRole(server, "staff-1", "Moderator")).thenReturn(true);
+        when(staffService.updateMinecraftStaffRole(
+                eq(server), eq("staff-1"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean()))
+            .thenReturn(true);
 
         mockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/staff-1/role")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -45,12 +52,15 @@ class MinecraftStaffControllerTest {
             .andExpect(jsonPath("$.status").value(200))
             .andExpect(jsonPath("$.success").value(true));
 
-        verify(staffService).updateMinecraftStaffRole(server, "staff-1", "Moderator");
+        verify(staffService).updateMinecraftStaffRole(
+            eq(server), eq("staff-1"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean());
     }
 
     @Test
     void updateStaffRoleReturnsNotFoundForMissingStaff() throws Exception {
-        when(staffService.updateMinecraftStaffRole(server, "missing", "Moderator")).thenReturn(false);
+        when(staffService.updateMinecraftStaffRole(
+                eq(server), eq("missing"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean()))
+            .thenReturn(false);
 
         mockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/missing/role")
                 .contentType(MediaType.APPLICATION_JSON)

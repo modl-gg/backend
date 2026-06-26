@@ -2,7 +2,9 @@ package gg.modl.backend.homepage.service;
 
 import gg.modl.backend.database.mongo.repository.HomepageCardMongoRepository;
 import gg.modl.backend.homepage.data.HomepageCard;
+import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
+import gg.modl.backend.knowledgebase.service.KnowledgebaseArticleService;
 import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.CreateCardRequest;
@@ -23,9 +25,47 @@ import org.springframework.stereotype.Service;
 public class HomepageCardService {
     private final HomepageCardMongoRepository homepageCardRepository;
     private final KnowledgebaseCategoryService categoryService;
+    private final KnowledgebaseArticleService articleService;
 
     public List<HomepageCard> getVisibleCards(Server server) {
         return homepageCardRepository.findVisibleOrdered(server);
+    }
+
+    /**
+     * Returns the visible cards enriched with their category and (for category_dropdown cards) the
+     * category's visible articles, using exactly two $in batch queries regardless of card count
+     * (one for categories, one for visible articles).
+     */
+    public List<EnrichedCardWithArticles> getVisibleCardsEnrichedWithArticles(Server server) {
+        List<HomepageCard> cards = getVisibleCards(server);
+
+        List<String> categoryIds = cards.stream()
+            .filter(card -> "category_dropdown".equals(card.getActionType()))
+            .map(HomepageCard::getCategoryId)
+            .filter(id -> id != null && !id.isEmpty())
+            .distinct()
+            .toList();
+
+        Map<String, KnowledgebaseCategory> categoriesById = categoryService.getCategoriesByIds(server, categoryIds)
+            .stream()
+            .collect(Collectors.toMap(KnowledgebaseCategory::getId, Function.identity()));
+
+        Map<String, List<KnowledgebaseArticle>> articlesByCategoryId =
+            articleService.getVisibleArticlesGroupedByCategoryIds(server, categoryIds);
+
+        return cards.stream()
+            .map(card -> {
+                KnowledgebaseCategory category = null;
+                if ("category_dropdown".equals(card.getActionType())
+                    && card.getCategoryId() != null && !card.getCategoryId().isEmpty()) {
+                    category = categoriesById.get(card.getCategoryId());
+                }
+                List<KnowledgebaseArticle> articles = category != null
+                    ? articlesByCategoryId.getOrDefault(category.getId(), List.of())
+                    : List.of();
+                return new EnrichedCardWithArticles(card, category, articles);
+            })
+            .toList();
     }
 
     public Optional<HomepageCard> getCardById(Server server, String id) {
@@ -115,5 +155,11 @@ public class HomepageCardService {
     public record EnrichedCard(
         HomepageCard card,
         EmbeddedCategory category
+    ) {}
+
+    public record EnrichedCardWithArticles(
+        HomepageCard card,
+        KnowledgebaseCategory category,
+        List<KnowledgebaseArticle> articles
     ) {}
 }

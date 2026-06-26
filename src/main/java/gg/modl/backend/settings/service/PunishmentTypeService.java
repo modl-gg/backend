@@ -65,9 +65,12 @@ public class PunishmentTypeService {
     }
 
     public List<PunishmentType> savePunishmentTypes(@NotNull Server server, @NotNull List<PunishmentType> types) {
-        settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
-        serverTimestampService.updatePunishmentTypesTimestamp(server);
-        typesCache.invalidate(server.getId());
+        try {
+            settingsRepositoryAccess.upsertListSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES, types);
+            serverTimestampService.updatePunishmentTypesTimestamp(server);
+        } finally {
+            typesCache.invalidate(server.getId());
+        }
         return types;
     }
 
@@ -76,11 +79,11 @@ public class PunishmentTypeService {
             throw new IllegalArgumentException("Kick and Blacklist punishment types cannot be configured");
         }
 
-        List<PunishmentType> types = getPunishmentTypes(server);
+        List<PunishmentType> types = new ArrayList<>(getPunishmentTypes(server));
 
         for (int i = 0; i < types.size(); i++) {
             PunishmentType existing = types.get(i);
-            if (existing.getOrdinal() == ordinal) {
+            if (Objects.equals(existing.getOrdinal(), ordinal)) {
                 if (existing.isCustomizable()) {
                     updatedType.setId(existing.getId());
                     updatedType.setOrdinal(ordinal);
@@ -88,20 +91,23 @@ public class PunishmentTypeService {
                     updatedType.setName(existing.getName());
                     types.set(i, updatedType);
                 } else {
-                    existing.setStaffDescription(updatedType.getStaffDescription());
-                    existing.setPlayerDescription(updatedType.getPlayerDescription());
-                    existing.setAppealable(updatedType.getAppealable());
-                    existing.setAppealForm(updatedType.getAppealForm());
-                    existing.setDurations(updatedType.getDurations());
-                    existing.setPoints(updatedType.getPoints());
-                    existing.setSingleSeverityPunishment(updatedType.getSingleSeverityPunishment());
-                    existing.setSingleSeverityDurations(updatedType.getSingleSeverityDurations());
-                    existing.setSingleSeverityPoints(updatedType.getSingleSeverityPoints());
-                    existing.setCanBeAltBlocking(updatedType.getCanBeAltBlocking());
-                    existing.setCanBeStatWiping(updatedType.getCanBeStatWiping());
-                    existing.setPermanentUntilSkinChange(updatedType.getPermanentUntilSkinChange());
-                    existing.setPermanentUntilUsernameChange(updatedType.getPermanentUntilUsernameChange());
-                    updatedType = existing;
+                    PunishmentType merged = existing.toBuilder()
+                        .staffDescription(updatedType.getStaffDescription())
+                        .playerDescription(updatedType.getPlayerDescription())
+                        .appealable(updatedType.getAppealable())
+                        .appealForm(updatedType.getAppealForm())
+                        .durations(updatedType.getDurations())
+                        .points(updatedType.getPoints())
+                        .singleSeverityPunishment(updatedType.getSingleSeverityPunishment())
+                        .singleSeverityDurations(updatedType.getSingleSeverityDurations())
+                        .singleSeverityPoints(updatedType.getSingleSeverityPoints())
+                        .canBeAltBlocking(updatedType.getCanBeAltBlocking())
+                        .canBeStatWiping(updatedType.getCanBeStatWiping())
+                        .permanentUntilSkinChange(updatedType.getPermanentUntilSkinChange())
+                        .permanentUntilUsernameChange(updatedType.getPermanentUntilUsernameChange())
+                        .build();
+                    types.set(i, merged);
+                    updatedType = merged;
                 }
                 break;
             }
@@ -118,7 +124,7 @@ public class PunishmentTypeService {
 
         List<PunishmentType> types = getPunishmentTypes(server);
         List<PunishmentType> filtered = types.stream()
-            .filter(pt -> pt.getOrdinal() != ordinal)
+            .filter(pt -> !Objects.equals(pt.getOrdinal(), ordinal))
             .toList();
 
         if (filtered.size() == types.size()) {

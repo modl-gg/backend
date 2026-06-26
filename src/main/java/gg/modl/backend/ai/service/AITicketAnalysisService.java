@@ -1,6 +1,5 @@
 package gg.modl.backend.ai.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.admin.data.SystemPrompt;
@@ -85,7 +84,6 @@ public class AITicketAnalysisService {
         final String rawResponse;
         try {
             rawResponse = llmService.generate(fullPrompt);
-            usageTrackingService.incrementAiRequests(server.getId(), 1);
         } catch (Exception e) {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return;
@@ -93,12 +91,17 @@ public class AITicketAnalysisService {
 
         final AIAnalysisResult result = parseResponse(rawResponse);
         if (result == null) {
-            return; // failed but we can just ignore
+            return; // failed but we can just ignore (do not meter a request that produced no usable analysis)
         }
 
         ticket.setAiAnalysis(result);
+        if (result.getSuggestedAction() != null && settings.isEnableAutomatedActions()) {
+            executeAutomatedAction(server, ticket, result, settings);
+        }
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
+
+        usageTrackingService.incrementAiRequests(server.getId(), 1);
     }
 
     private boolean shouldAnalyze(@NotNull Server server) {
@@ -140,8 +143,16 @@ public class AITicketAnalysisService {
             return;
         }
 
-        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
-            log.warn("Cannot execute automated action: no reported player UUID for ticket {}", ticket.getId());
+        if (!settings.isEnableAutomatedActions()) {
+            return;
+        }
+
+        final AIAnalysisResult existing = ticket.getAiAnalysis();
+        if (existing != null && (existing.isWasAppliedAutomatically() || existing.isDismissed())) {
+            return;
+        }
+
+        if (ticket.getStatus() == TicketStatus.CLOSED || ticket.isLocked()) {
             return;
         }
 
@@ -158,16 +169,33 @@ public class AITicketAnalysisService {
             return;
         }
 
+        final UUID playerUuid = parsePlayerUuid(ticket.getReportedPlayerUuid());
+        if (playerUuid == null) {
+            log.warn("Cannot execute automated action: no valid reported player UUID for ticket {}", ticket.getId());
+            return;
+        }
+
         try {
-            applyPunishmentAndCloseTicket(server, ticket, result, AI_MODERATOR);
+            applyPunishmentAndCloseTicket(server, ticket, result, playerUuid, AI_MODERATOR);
             result.setWasAppliedAutomatically(true);
         } catch (Exception e) {
             log.error("Failed to apply automated punishment for ticket {}", ticket.getId(), e);
         }
     }
 
-    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, String staffName) {
-        UUID playerUuid = UUID.fromString(ticket.getReportedPlayerUuid());
+    @Nullable
+    private UUID parsePlayerUuid(@Nullable String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void applyPunishmentAndCloseTicket(Server server, Ticket ticket, AIAnalysisResult aiAnalysis, UUID playerUuid, String staffName) {
         AIAnalysisResult.SuggestedAction suggestion = aiAnalysis.getSuggestedAction();
         String reason = aiAnalysis.getAnalysis();
 
@@ -205,7 +233,6 @@ public class AITicketAnalysisService {
             .date(now)
             .build();
 
-        aiAnalysis.setWasAppliedAutomatically(true);
         if (ticket.getReplies() == null) {
             ticket.setReplies(new ArrayList<>());
         }
@@ -277,7 +304,8 @@ public class AITicketAnalysisService {
             if (json.has("suggestedAction") && !json.get("suggestedAction").isNull()) {
                 JsonNode actionNode = json.get("suggestedAction");
                 final Integer punishmentTypeId = parseIntField(actionNode, "punishmentTypeId");
-                final String severity = actionNode.get("severity").asText();
+                final JsonNode sevNode = actionNode.path("severity");
+                final String severity = (sevNode.isMissingNode() || sevNode.isNull()) ? null : sevNode.asText();
 
                 if (punishmentTypeId != null && severity != null) {
                     suggestedAction = new AIAnalysisResult.SuggestedAction(punishmentTypeId, severity);
@@ -285,7 +313,7 @@ public class AITicketAnalysisService {
             }
 
             return new AIAnalysisResult(analysis, suggestedAction, new Date(), rawResponse);
-        } catch (JsonProcessingException e) {
+        } catch (Exception e) {
             log.error("Failed to parse AI response: {}", rawResponse, e);
             return null;
         }
@@ -344,11 +372,16 @@ public class AITicketAnalysisService {
             return new AISuggestionResult(false, "AI suggestion already handled");
         }
 
-        if (ticket.getReportedPlayerUuid() == null || ticket.getReportedPlayerUuid().isBlank()) {
-            return new AISuggestionResult(false, "No reported player UUID");
+        if (ticket.getStatus() == TicketStatus.CLOSED || ticket.isLocked()) {
+            return new AISuggestionResult(false, "Ticket already closed");
         }
 
-        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, staffName);
+        final UUID playerUuid = parsePlayerUuid(ticket.getReportedPlayerUuid());
+        if (playerUuid == null) {
+            return new AISuggestionResult(false, "No valid reported player UUID");
+        }
+
+        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, playerUuid, staffName);
         ticketRepository.saveEntity(server, ticket);
 
         return new AISuggestionResult(true, null);

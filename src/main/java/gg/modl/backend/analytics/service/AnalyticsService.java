@@ -18,8 +18,8 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -83,7 +83,7 @@ public class AnalyticsService {
             .toList();
 
         final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
-        final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate)
+        final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate, ANALYTICS_TIME_ZONE)
             .stream()
             .map(result -> new TicketAnalyticsResponse.DailyTicket(
                 formatDateLabel(result.id(), dateFormatter),
@@ -128,7 +128,7 @@ public class AnalyticsService {
         Date startDate = DateRangeUtil.getStartDate(period);
         Document facetResults = analyticsRepository.aggregatePunishmentAnalytics(server, startDate, ANALYTICS_TIME_ZONE);
         if (facetResults == null) {
-            return new PunishmentAnalyticsResponse(List.of(), List.of(), List.of(), List.of());
+            return new PunishmentAnalyticsResponse(List.of(), List.of(), List.of());
         }
         Map<Integer, String> punishmentTypeNames = resolvePunishmentTypeNames(server);
 
@@ -183,7 +183,7 @@ public class AnalyticsService {
             .map(entry -> new PunishmentAnalyticsResponse.DailyPunishment(entry.getKey(), entry.getValue()))
             .toList();
 
-        return new PunishmentAnalyticsResponse(byType, List.of(), dailyPunishments, byStaff);
+        return new PunishmentAnalyticsResponse(byType, dailyPunishments, byStaff);
     }
 
     private Map<Integer, String> resolvePunishmentTypeNames(Server server) {
@@ -238,25 +238,25 @@ public class AnalyticsService {
 
         List<Document> hourlyResults = analyticsRepository.aggregateHourlyAuditLogCounts(server, since, ANALYTICS_TIME_ZONE);
 
+        // Key by the FULL Mongo bucket id ('yyyy-MM-ddTHH') so two partial same-hour-of-day
+        // buckets in the sliding 24h window are not collapsed/double-counted.
         Map<String, Integer> hourlyMap = new LinkedHashMap<>();
         for (Document doc : hourlyResults) {
             String bucketKey = doc.getString("_id");
-            int count = toInt(doc.get("count"));
-            try {
-                LocalDateTime ldt = LocalDateTime.parse(bucketKey, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH"));
-                String hourLabel = String.format("%02d:00", ldt.getHour());
-                hourlyMap.merge(hourLabel, count, Integer::sum);
-            } catch (Exception ignored) {
+            if (bucketKey == null) {
+                continue;
             }
+            hourlyMap.merge(bucketKey, toInt(doc.get("count")), Integer::sum);
         }
 
         ZoneId zone = ZoneId.of(ANALYTICS_TIME_ZONE);
+        DateTimeFormatter bucketFmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH").withZone(zone);
         List<AuditLogsAnalyticsResponse.HourlyCount> hourlyTrend = new ArrayList<>();
         for (int i = 23; i >= 0; i--) {
-            Instant hourEnd = Instant.ofEpochMilli(now - (long) i * 60 * 60 * 1000);
-            int hour = hourEnd.atZone(zone).getHour();
-            String hourLabel = String.format("%02d:00", hour);
-            int count = hourlyMap.getOrDefault(hourLabel, 0);
+            ZonedDateTime zdt = Instant.ofEpochMilli(now - (long) i * 60 * 60 * 1000).atZone(zone);
+            String bucketKey = bucketFmt.format(zdt);
+            String hourLabel = String.format("%02d:00", zdt.getHour());
+            int count = hourlyMap.getOrDefault(bucketKey, 0);
             hourlyTrend.add(new AuditLogsAnalyticsResponse.HourlyCount(hourLabel, count));
         }
 

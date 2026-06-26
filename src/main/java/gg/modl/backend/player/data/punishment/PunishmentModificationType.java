@@ -18,4 +18,9 @@ public enum PunishmentModificationType {
             || APPEAL_ACCEPT.name().equals(type)
             || SYSTEM_PARDON.name().equals(type);
     }
+
+    public static boolean isDurationChange(String type) {
+        return MANUAL_DURATION_CHANGE.name().equals(type)
+            || "APPEAL_DURATION_CHANGE".equals(type);
+    }
 }

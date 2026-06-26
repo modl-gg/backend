@@ -254,7 +254,7 @@ class PublicTicketControllerTest {
             null,
             null,
             null
-        ))).thenReturn(new TicketResponse(
+        ), false)).thenReturn(new TicketResponse(
             "TICKET-1",
             "support",
             "Support",

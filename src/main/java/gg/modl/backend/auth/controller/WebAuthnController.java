@@ -6,7 +6,6 @@ import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.exception.UnauthorizedException;
-import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
@@ -162,11 +161,8 @@ public class WebAuthnController {
         @RequestBody @Valid LoginVerifyRequest body) throws Exception {
         Server server = RequestUtil.getRequestServer(request);
 
-        String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response());
-
-        if (!permissionService.isAuthorizedEmail(server, email)) {
-            throw new ValidationException("Not authorized");
-        }
+        String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response(),
+            candidateEmail -> permissionService.isAuthorizedEmail(server, candidateEmail));
 
         AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
         response.addCookie(cookieUtil.createSessionCookie(session.getId()));

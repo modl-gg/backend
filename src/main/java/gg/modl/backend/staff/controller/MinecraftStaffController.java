@@ -62,8 +62,13 @@ public class MinecraftStaffController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
+        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
+        boolean hasIdentity = actingStaffId != null;
 
-        if (!staffService.updateMinecraftStaffRole(server, id, request.role())) {
+        if (!staffService.updateMinecraftStaffRole(
+                server, id, request.role(), actingStaffId,
+                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Staff member not found"

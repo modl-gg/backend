@@ -32,6 +32,8 @@ public class MigrationStatus {
     private Date completedAt;
     @Field("error")
     private String error;
+    @Field("cooldownExempt")
+    private Boolean cooldownExempt;
 
     @Data
     @NoArgsConstructor

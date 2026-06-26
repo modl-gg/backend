@@ -210,7 +210,7 @@ final class PanelSettingsProtoMapper {
         gg.modl.proto.modl.v1.TicketForm.Builder builder = gg.modl.proto.modl.v1.TicketForm.newBuilder()
             .setRequireEmail(form.isRequireEmail())
             .setRequireEmailAuth(form.isRequireEmailAuth())
-            .setAllowEmailNotifications(form.isAllowEmailNotifications());
+            .setAllowEmailNotifications(form.getAllowEmailNotifications() == null || form.getAllowEmailNotifications());
         if (form.getFields() != null) {
             form.getFields().stream().map(PanelSettingsProtoMapper::toFormField).forEach(builder::addFields);
         }

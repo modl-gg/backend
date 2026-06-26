@@ -4,6 +4,7 @@ import com.google.protobuf.ListValue;
 import com.google.protobuf.NullValue;
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.proto.modl.v1.Account;
 import gg.modl.proto.modl.v1.IPEntry;
 import gg.modl.proto.modl.v1.LinkedAccountsResponse;
@@ -29,14 +30,18 @@ import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.SimpleResponse;
 import gg.modl.proto.modl.v1.SimplePunishment;
 import gg.modl.proto.modl.v1.UsernameEntry;
+import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
+import org.bson.types.Binary;
+import org.bson.types.ObjectId;
 
 public final class MinecraftPlayerProtoMapper {
     private MinecraftPlayerProtoMapper() {
@@ -221,7 +226,7 @@ public final class MinecraftPlayerProtoMapper {
         OnlinePlayersResponse.OnlinePlayer.Builder builder = OnlinePlayersResponse.OnlinePlayer.newBuilder()
             .setUuid(stringValue(player.get("uuid")))
             .setUsername(stringValue(player.get("username")))
-            .setJoinedAt(stringValue(player.get("joinedAt")));
+            .setJoinedAt(dateAwareString(player.get("joinedAt")));
 
         setOptionalLong(builder::setTotalPlaytimeMs, player.get("totalPlaytimeMs"));
         return builder.build();
@@ -263,14 +268,14 @@ public final class MinecraftPlayerProtoMapper {
     private static UsernameEntry toUsernameEntry(Map<String, Object> username) {
         return UsernameEntry.newBuilder()
             .setUsername(stringValue(username.get("username")))
-            .setDate(stringValue(username.get("date")))
+            .setDate(dateAwareString(username.get("date")))
             .build();
     }
 
     private static NoteEntry toNoteEntry(Map<String, Object> note) {
         NoteEntry.Builder builder = NoteEntry.newBuilder()
             .setText(stringValue(note.get("text")))
-            .setDate(stringValue(note.get("date")))
+            .setDate(dateAwareString(note.get("date")))
             .setIssuerName(stringValue(note.get("issuerName")))
             .setIssuerId(stringValue(note.get("issuerId")));
         setStringIfPresent(builder, "setId", note.get("id"));
@@ -281,7 +286,7 @@ public final class MinecraftPlayerProtoMapper {
         IPEntry.Builder builder = IPEntry.newBuilder()
             .setProxy(booleanValue(ip.get("proxy")))
             .setHosting(booleanValue(ip.get("hosting")))
-            .setFirstLogin(stringValue(ip.get("firstLogin")));
+            .setFirstLogin(dateAwareString(ip.get("firstLogin")));
 
         setOptionalString(builder::setIpAddress, ip.get("ipAddress"));
         setOptionalString(builder::setCountry, ip.get("country"));
@@ -289,7 +294,7 @@ public final class MinecraftPlayerProtoMapper {
         setOptionalString(builder::setAsn, ip.get("asn"));
 
         list(ip.get("logins")).stream()
-            .map(Objects::toString)
+            .map(MinecraftPlayerProtoMapper::dateAwareString)
             .forEach(builder::addLogins);
 
         return builder.build();
@@ -433,8 +438,8 @@ public final class MinecraftPlayerProtoMapper {
         PlayerLookupResponse.PlayerLookupData.Builder builder = PlayerLookupResponse.PlayerLookupData.newBuilder()
             .setMinecraftUuid(stringValue(data.get("minecraftUuid")))
             .setCurrentUsername(stringValue(data.get("currentUsername")))
-            .setFirstSeen(stringValue(data.get("firstSeen")))
-            .setLastSeen(stringValue(data.get("lastSeen")))
+            .setFirstSeen(dateAwareString(data.get("firstSeen")))
+            .setLastSeen(dateAwareString(data.get("lastSeen")))
             .setCurrentServer(stringValue(data.get("currentServer")))
             .setIpAddress(stringValue(data.get("ipAddress")))
             .setCountry(stringValue(data.get("country")))
@@ -477,8 +482,8 @@ public final class MinecraftPlayerProtoMapper {
             .setId(stringValue(punishment.get("id")))
             .setType(stringValue(punishment.get("type")))
             .setIssuer(stringValue(punishment.get("issuer")))
-            .setIssuedAt(stringValue(punishment.get("issuedAt")))
-            .setExpiresAt(stringValue(punishment.get("expiresAt")))
+            .setIssuedAt(dateAwareString(punishment.get("issuedAt")))
+            .setExpiresAt(dateAwareString(punishment.get("expiresAt")))
             .setIsActive(booleanValue(punishment.get("isActive")))
             .build();
     }
@@ -489,8 +494,8 @@ public final class MinecraftPlayerProtoMapper {
             .setTitle(stringValue(ticket.get("title")))
             .setCategory(stringValue(ticket.get("category")))
             .setStatus(stringValue(ticket.get("status")))
-            .setCreatedAt(stringValue(ticket.get("createdAt")))
-            .setLastUpdated(stringValue(ticket.get("lastUpdated")))
+            .setCreatedAt(dateAwareString(ticket.get("createdAt")))
+            .setLastUpdated(dateAwareString(ticket.get("lastUpdated")))
             .build();
     }
 
@@ -537,7 +542,19 @@ public final class MinecraftPlayerProtoMapper {
             iterable.forEach(item -> list.addValues(objectToValue(item)));
             return builder.setListValue(list).build();
         }
-        return builder.setStringValue(Objects.toString(object)).build();
+        if (object instanceof Date date) {
+            return builder.setStringValue(date.toInstant().toString()).build();
+        }
+        if (object instanceof ObjectId objectId) {
+            return builder.setStringValue(objectId.toHexString()).build();
+        }
+        if (object instanceof UUID uuid) {
+            return builder.setStringValue(uuid.toString()).build();
+        }
+        if (object instanceof Binary binary) {
+            return builder.setStringValue(Base64.getEncoder().encodeToString(binary.getData())).build();
+        }
+        return builder.setStringValue(ProtoMapperSupport.coerceUnexpectedToString(object)).build();
     }
 
     private static List<?> list(Object object) {
@@ -576,6 +593,13 @@ public final class MinecraftPlayerProtoMapper {
     }
 
     private static String stringValue(Object value) {
+        return value == null ? "" : Objects.toString(value);
+    }
+
+    private static String dateAwareString(Object value) {
+        if (value instanceof Date date) {
+            return date.toInstant().toString();
+        }
         return value == null ? "" : Objects.toString(value);
     }
 

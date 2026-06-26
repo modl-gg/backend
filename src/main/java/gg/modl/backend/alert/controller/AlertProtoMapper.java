@@ -66,6 +66,20 @@ final class AlertProtoMapper {
         }
     }
 
+    static SystemAlertSeverity parseSeverityStrict(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            throw new ValidationException("Alert severity cannot be blank");
+        }
+        return parseSeverity(value);
+    }
+
+    static SystemAlertAudience parseAudienceStrict(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            throw new ValidationException("Alert audience cannot be blank");
+        }
+        return parseAudience(value);
+    }
+
     @Nullable
     static Date toExpiresAt(long millis) {
         return millis > 0 ? new Date(millis) : null;

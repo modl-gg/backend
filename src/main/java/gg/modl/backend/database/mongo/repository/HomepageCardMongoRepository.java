@@ -9,7 +9,6 @@ import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
-import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -118,7 +117,7 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
         MongoTemplate template = serverTemplate(server);
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (int index = 0; index < ids.size(); index++) {
-            Query query = Query.query(Criteria.where("_id").is(new ObjectId(ids.get(index))));
+            Query query = Query.query(Criteria.where(HomepageCardFields.ID).is(ids.get(index)));
             Update update = new Update().set(HomepageCardFields.ORDINAL, index);
             bulk.updateOne(query, update);
         }

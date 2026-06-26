@@ -13,6 +13,7 @@ import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.ErrorResponse;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 @Slf4j
@@ -47,6 +49,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ex.getStatus()).body(Map.of(
             "status", ex.getStatus().value(),
             "error", ex.getMessage(),
+            "message", ex.getMessage(),
             "currentVersion", ex.getCurrentVersion()
         ));
     }
@@ -159,9 +162,25 @@ public class GlobalExceptionHandler {
             .body(new ErrorResponseDTO(405, message));
     }
 
+    // Inactive under the default static-resource mapping (Spring MVC raises
+    // NoResourceFoundException, handled below). Kept because it remains the correct handler if
+    // spring.mvc.throw-exception-if-no-handler-found=true is ever enabled.
     @ExceptionHandler(NoHandlerFoundException.class)
     public ResponseEntity<?> handleNoHandlerFound(NoHandlerFoundException ex, HttpServletRequest request) {
         String message = "No endpoint found for " + ex.getHttpMethod() + " " + ex.getRequestURL();
+        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+            return protobufError(HttpStatus.NOT_FOUND, "NOT_FOUND", message);
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            .body(new ErrorResponseDTO(404, message));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<?> handleNoResourceFound(NoResourceFoundException ex, HttpServletRequest request) {
+        if (log.isDebugEnabled()) {
+            log.debug("No resource found for {} {}", request.getMethod(), ex.getResourcePath());
+        }
+        String message = "No endpoint found for " + request.getMethod() + " " + request.getRequestURI();
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
             return protobufError(HttpStatus.NOT_FOUND, "NOT_FOUND", message);
         }
@@ -189,6 +208,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<?> handleGenericException(Exception ex, HttpServletRequest request) {
+        if (ex instanceof ErrorResponse errorResponse) {
+            HttpStatus status = HttpStatus.resolve(errorResponse.getStatusCode().value());
+            if (status == null) {
+                status = HttpStatus.INTERNAL_SERVER_ERROR;
+            }
+            if (status.is4xxClientError()) {
+                log.debug("Client error {} for {} {}", status.value(), request.getMethod(), request.getRequestURI());
+            } else {
+                log.error("Server error from framework exception", ex);
+            }
+            String code = machineCodeForStatus(status);
+            String message = status.is4xxClientError() ? status.getReasonPhrase() : "An internal error occurred";
+            if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+                return protobufError(status, code, message);
+            }
+            return ResponseEntity.status(status).body(new ErrorResponseDTO(status.value(), message));
+        }
+
         log.error("Unhandled exception", ex);
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
             return protobufError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", "An internal error occurred");

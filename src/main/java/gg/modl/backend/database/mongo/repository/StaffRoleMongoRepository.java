@@ -87,6 +87,10 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         return findOne(server, Query.query(Criteria.where(StaffRoleFields.NAME).is(roleName)));
     }
 
+    public List<StaffRole> findAllByName(Server server, String roleName) {
+        return find(server, Query.query(Criteria.where(StaffRoleFields.NAME).is(roleName)));
+    }
+
     public List<StaffRole> findByIds(Server server, Collection<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return List.of();
@@ -101,6 +105,23 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
             Query query = Query.query(Criteria.where("_id").is(entry.getKey()));
+            Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
+            bulk.updateOne(query, update);
+        }
+        bulk.execute();
+    }
+
+    public void bulkRepairOrderFromZero(Server server, Map<String, Integer> orderById) {
+        if (orderById.isEmpty()) return;
+
+        MongoTemplate template = serverTemplate(server);
+        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
+        for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
+            // Compare-and-set: only flip a custom role still stuck at order 0. Once the first
+            // concurrent repair writes a non-zero order, the second writer matches no document.
+            Query query = Query.query(Criteria.where("_id").is(entry.getKey())
+                .and(StaffRoleFields.ORDER).is(0)
+                .and(StaffRoleFields.IS_DEFAULT).is(false));
             Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
             bulk.updateOne(query, update);
         }

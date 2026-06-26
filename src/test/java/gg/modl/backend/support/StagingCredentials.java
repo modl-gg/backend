@@ -65,12 +65,8 @@ public final class StagingCredentials {
 
     private static Map<String, String> loadProperties() {
         Map<String, String> map = new HashMap<>();
-        Path envFile = Path.of("").toAbsolutePath().resolve(".env.test");
-        if (!Files.exists(envFile)) {
-            // Try one level up (in case tests run from backend/)
-            envFile = envFile.getParent().resolve(".env.test");
-        }
-        if (Files.exists(envFile)) {
+        Path envFile = locateEnvFile();
+        if (envFile != null) {
             try {
                 for (String line : Files.readAllLines(envFile)) {
                     line = line.trim();
@@ -87,6 +83,22 @@ public final class StagingCredentials {
             }
         }
         return map;
+    }
+
+    /**
+     * Walks the current working directory and a few ancestor directories looking for a {@code .env.test}
+     * file, so the loader works whether tests are launched from the repo root, {@code backend/}, or an
+     * IDE/Gradle working directory. Returns the first existing candidate, or {@code null} if none found.
+     */
+    private static Path locateEnvFile() {
+        Path dir = Path.of("").toAbsolutePath();
+        for (int i = 0; i < 4 && dir != null; i++, dir = dir.getParent()) {
+            Path candidate = dir.resolve(".env.test");
+            if (Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static ProbeResult publicApiProbe() {

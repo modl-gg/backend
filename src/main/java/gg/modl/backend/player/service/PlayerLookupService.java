@@ -9,6 +9,7 @@ import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -16,6 +17,7 @@ import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -193,7 +195,9 @@ public class PlayerLookupService {
             .toList();
 
         List<NoteEntry> allNotes = safeNotes(player);
-        List<Map<String, Object>> notes = limitList(allNotes, noteLimit).stream()
+        List<NoteEntry> limitedNotes = limitNewestFirst(allNotes, noteLimit,
+            Comparator.comparing(NoteEntry::getDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<Map<String, Object>> notes = limitedNotes.stream()
             .map(note -> {
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("id", note.getId());
@@ -221,7 +225,9 @@ public class PlayerLookupService {
 
         List<Punishment> allPunishments = safePunishments(player);
         Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, allPunishments);
-        List<Map<String, Object>> punishments = limitList(allPunishments, punishmentLimit).stream()
+        List<Punishment> limitedPunishments = limitNewestFirst(allPunishments, punishmentLimit,
+            Comparator.comparing(Punishment::getIssued, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<Map<String, Object>> punishments = limitedPunishments.stream()
             .map(punishment -> PunishmentMapper.toPunishmentMap(punishment, punishmentTypes, resolvedIssuers))
             .toList();
 
@@ -270,12 +276,16 @@ public class PlayerLookupService {
         int warnings = 0;
         for (Punishment punishment : player.getPunishments()) {
             PunishmentType type = typesByOrdinal.get(punishment.getTypeOrdinal());
-            if (type != null && type.isBan()) {
-                bans++;
-            } else if (type != null && type.isMute()) {
-                mutes++;
-            } else if (type != null && type.isKick()) {
+            // Kicks first: getEffectiveCategory returns null for kicks (would otherwise be a warning).
+            if (type != null && type.isKick()) {
                 kicks++;
+                continue;
+            }
+            String category = statusCalculator.getEffectiveCategory(punishment, typesByOrdinal);
+            if (EnforcementCategory.BAN.name().equals(category)) {
+                bans++;
+            } else if (EnforcementCategory.MUTE.name().equals(category)) {
+                mutes++;
             } else {
                 warnings++;
             }
@@ -283,7 +293,7 @@ public class PlayerLookupService {
 
         List<Map<String, Object>> recentPunishments = player.getPunishments()
             .stream()
-            .sorted((left, right) -> right.getIssued().compareTo(left.getIssued()))
+            .sorted(Comparator.comparing(Punishment::getIssued, Comparator.nullsLast(Comparator.reverseOrder())))
             .limit(5)
             .map(punishment -> {
                 PunishmentType matchedType = typesByOrdinal.get(punishment.getTypeOrdinal());
@@ -374,11 +384,12 @@ public class PlayerLookupService {
         return player.getIpAddresses() != null ? player.getIpAddresses() : List.of();
     }
 
-    private <T> List<T> limitList(List<T> values, Integer limit) {
+    private <T> List<T> limitNewestFirst(List<T> values, Integer limit, Comparator<? super T> newestFirst) {
         if (limit == null) {
             return values;
         }
         return values.stream()
+            .sorted(newestFirst)
             .limit(Math.max(0, limit))
             .toList();
     }

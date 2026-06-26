@@ -23,35 +23,38 @@ public class CustomErrorController implements ErrorController {
     public ResponseEntity<?> handleError(HttpServletRequest request) {
         Object status = request.getAttribute(RequestDispatcher.ERROR_STATUS_CODE);
 
-        int statusCode = status != null ? Integer.parseInt(status.toString()) : 500;
-
-        String errorMessage;
-        String error;
-
-        if (statusCode == HttpStatus.NOT_FOUND.value()) {
-            error = "Not Found";
-            errorMessage = "The requested resource was not found.";
-        } else if (statusCode == HttpStatus.FORBIDDEN.value()) {
-            error = "Forbidden";
-            errorMessage = "You do not have permission to access this resource.";
-        } else if (statusCode == HttpStatus.UNAUTHORIZED.value()) {
-            error = "Unauthorized";
-            errorMessage = "Authentication is required to access this resource.";
-        } else if (statusCode == HttpStatus.INTERNAL_SERVER_ERROR.value()) {
-            error = "Internal Server Error";
-            errorMessage = "An internal server error occurred.";
-        } else {
-            error = "Error";
-            errorMessage = "Your request could not be processed.";
+        int statusCode = 500;
+        if (status != null) {
+            try {
+                statusCode = Integer.parseInt(status.toString().trim());
+            } catch (NumberFormatException ignored) {
+                statusCode = 500;
+            }
         }
 
-        HttpStatus httpStatus = HttpStatus.valueOf(statusCode);
+        HttpStatus resolved = HttpStatus.resolve(statusCode);
+        String error;
+        String errorMessage;
+        if (resolved != null) {
+            error = resolved.getReasonPhrase();
+            errorMessage = messageForStatus(resolved);
+        } else {
+            error = "Error";
+            errorMessage = statusCode >= 500
+                ? "An internal server error occurred."
+                : "Your request could not be processed.";
+        }
+
+        String machineCode = resolved != null
+            ? machineCodeForStatus(resolved)
+            : (statusCode >= 500 ? "INTERNAL" : "UNKNOWN");
+
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return ResponseEntity.status(httpStatus)
+            return ResponseEntity.status(statusCode)
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .body(ApiError.newBuilder()
                     .setStatusCode(statusCode)
-                    .setCode(machineCodeForStatus(httpStatus))
+                    .setCode(machineCode)
                     .setMessage(errorMessage)
                     .build());
         }
@@ -61,7 +64,17 @@ public class CustomErrorController implements ErrorController {
             error,
             errorMessage);
 
-        return new ResponseEntity<>(errorResponse, httpStatus);
+        return ResponseEntity.status(statusCode).body(errorResponse);
+    }
+
+    private String messageForStatus(HttpStatus status) {
+        return switch (status) {
+            case NOT_FOUND -> "The requested resource was not found.";
+            case FORBIDDEN -> "You do not have permission to access this resource.";
+            case UNAUTHORIZED -> "Authentication is required to access this resource.";
+            case INTERNAL_SERVER_ERROR -> "An internal server error occurred.";
+            default -> status.getReasonPhrase();
+        };
     }
 
     private String machineCodeForStatus(HttpStatus status) {

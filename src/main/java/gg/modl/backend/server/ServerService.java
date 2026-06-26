@@ -2,6 +2,7 @@ package gg.modl.backend.server;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
@@ -60,7 +61,12 @@ public class ServerService {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
-        Server server = new Server(serverName, customDomain, databaseName, adminEmail, false, plan);
+        String normalizedEmail = EmailAddressUtil.normalize(adminEmail);
+        if (normalizedEmail == null) {
+            normalizedEmail = adminEmail;
+        }
+
+        Server server = new Server(serverName, customDomain, databaseName, normalizedEmail, false, plan);
         server.setProvisioningStatus(ProvisioningStatus.PENDING);
         server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
         server.setCreatedAt(now);
@@ -133,14 +139,19 @@ public class ServerService {
     }
 
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
-        Server found = serverRepository.findMatchingIdentity(email, serverName, subdomain).orElse(null);
+        String normalizedEmail = EmailAddressUtil.normalize(email);
+        if (normalizedEmail == null) {
+            normalizedEmail = email;
+        }
+
+        Server found = serverRepository.findMatchingIdentity(normalizedEmail, serverName, subdomain).orElse(null);
         if (found == null) {
             return new ServerExistResult(false, false, false);
         }
 
         boolean emailMatch = false, nameMatch = false, domainMatch = false;
 
-        if (found.getAdminEmail().equals(email)) {
+        if (found.getAdminEmail().equalsIgnoreCase(normalizedEmail)) {
             emailMatch = true;
         }
 
@@ -178,9 +189,23 @@ public class ServerService {
             return null;
         }
 
-        evictAllServerCaches();
+        boolean provisioned;
+        try {
+            provisioningService.provision(server);
+            provisioned = true;
+        } catch (Exception e) {
+            provisioned = false;
+        }
 
-        provisioningService.provision(server);
+        if (provisioned) {
+            serverRepository.markProvisioningCompleted(server.getId());
+            server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
+        } else {
+            serverRepository.markProvisioningFailed(server.getId(), "Provisioning failed; awaiting retry.");
+            server.setProvisioningStatus(ProvisioningStatus.FAILED);
+        }
+
+        evictAllServerCaches();
 
         return server;
     }

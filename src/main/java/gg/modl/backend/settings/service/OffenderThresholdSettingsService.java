@@ -44,7 +44,7 @@ public class OffenderThresholdSettingsService {
         long expectedVersion,
         OffenderThresholdSettings patch
     ) {
-        OffenderThresholdSettings current = getThresholdSettings(server);
+        OffenderThresholdSettings current = getThresholdSettingsState(server).data();
         if (patch != null) {
             if (patch.getSocial() != null) {
                 current.setSocial(sanitizeCategoryThresholds(patch.getSocial()));
@@ -58,13 +58,17 @@ public class OffenderThresholdSettingsService {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> data = objectMapper.convertValue(current, Map.class);
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-            server,
-            SETTINGS_TYPE_STATUS_THRESHOLDS,
-            expectedVersion,
-            new LinkedHashMap<>(data)
-        );
-        thresholdCache.invalidate(server.getId());
+        SettingsDocumentService.RawSettingsState updated;
+        try {
+            updated = settingsDocumentService.saveRawState(
+                server,
+                SETTINGS_TYPE_STATUS_THRESHOLDS,
+                expectedVersion,
+                new LinkedHashMap<>(data)
+            );
+        } finally {
+            thresholdCache.invalidate(server.getId());
+        }
         return new VersionedSettings<>(mapToThresholdSettings(updated.data()), updated.version(), updated.updatedAt());
     }
 

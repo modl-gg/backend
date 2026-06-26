@@ -66,7 +66,7 @@ public class InvitationService {
         }
         StaffRole grantedRole = validateGrantableRole(server, request.role(), inviterRole);
 
-        int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+        int staffLimit = staffLimitFor(server);
         long currentStaffCount = staffRepository.countAll(server);
         long pendingInvitationsCount = invitationRepository.countActive(server, new Date());
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
@@ -116,6 +116,16 @@ public class InvitationService {
         return new InviteResultResponse(message, success, failed);
     }
 
+    private int staffLimitFor(Server server) {
+        return server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+    }
+
+    private int availableSeats(Server server) {
+        int staffLimit = staffLimitFor(server);
+        long current = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date());
+        return (int) (staffLimit - current);
+    }
+
     private void processInvitation(Server server, String email, StaffRole role,
                                    List<InviteResultResponse.FailedInvite> failed) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
@@ -132,6 +142,14 @@ public class InvitationService {
 
         if (invitationRepository.existsByEmailActive(server, normalizedEmail, new Date())) {
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail, "An invitation for this email is already pending."));
+            return;
+        }
+
+        // Re-check the cap per insert to shrink the batch-level TOCTOU window. The invitation does not
+        // yet exist, so <= 0 is the correct boundary (no -1 exclusion).
+        if (availableSeats(server) <= 0) {
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail,
+                "Staff member limit reached. Please remove a staff member or upgrade your plan."));
             return;
         }
 
@@ -173,6 +191,11 @@ public class InvitationService {
             return false;
         }
 
+        // Capture the prior token/expiry so we can restore it if the send fails (otherwise the rotated,
+        // undelivered token leaves the previously delivered link dead and the new link undelivered).
+        String previousToken = invitation.getToken();
+        Date previousExpiry = invitation.getExpiresAt();
+
         String newToken = idGenerator.generateToken();
         Date newExpiry = new Date(System.currentTimeMillis() + INVITATION_EXPIRY_MS);
 
@@ -181,12 +204,19 @@ public class InvitationService {
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
             server.getCustomDomain(), modlProperties.getDomain(), newToken);
 
-        emailService.sendStaffInviteEmail(
-            invitation.getEmail(),
-            server.getServerName(),
-            permissionService.resolveRoleName(server, invitation.getRoleId()),
-            invitationLink
-        );
+        try {
+            emailService.sendStaffInviteEmail(
+                invitation.getEmail(),
+                server.getServerName(),
+                permissionService.resolveRoleName(server, invitation.getRoleId()),
+                invitationLink
+            );
+        } catch (Exception e) {
+            log.error("Failed to resend invitation email to {}, restoring previous token", invitation.getEmail(), e);
+            invitationRepository.refreshToken(server, invitationId, previousToken, previousExpiry, new Date());
+            // Re-throw so the controller surfaces the external-service error; returning false maps to 404.
+            throw e;
+        }
 
         return true;
     }
@@ -205,7 +235,16 @@ public class InvitationService {
         if (staffRepository.existsByEmailExact(server, invitation.getEmail())) {
             throw new ConflictException("A staff member with this email already exists.");
         }
-        StaffRole invitationRole = validateLegacyInvitationRole(server, invitation.getRoleId());
+        StaffRole invitationRole = resolveInvitationRole(server, invitation.getRoleId());
+
+        // Re-check the seat cap before minting the seat (a stale invite can over-provision after a
+        // plan downgrade or other staff being added). This invitation is itself still counted in
+        // countActive at this moment, so exclude it (-1).
+        int staffLimit = staffLimitFor(server);
+        long occupied = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date()) - 1;
+        if (occupied >= staffLimit) {
+            throw new ConflictException("Staff member limit reached for this server. Please contact an administrator.");
+        }
 
         String username = generateUsernameFromEmail(invitation.getEmail());
         String uniqueUsername = ensureUniqueUsername(server, username);
@@ -273,10 +312,14 @@ public class InvitationService {
         return targetRole;
     }
 
-    private StaffRole validateLegacyInvitationRole(Server server, String roleId) {
+    // The accept path is unauthenticated; the stored roleId already snapshots the grantability decision
+    // validated at invite time, so no order/authority comparison is meaningful here. Only resolve the
+    // role (deleted/legacy-name-keyed roles fail to resolve -> 400) and reject super-admin as defense-in-depth.
+    private StaffRole resolveInvitationRole(Server server, String roleId) {
         StaffRole role = permissionService.getRoleById(server, roleId)
-            .orElseThrow(() -> new ValidationException("Unknown staff role"));
-        if (SUPER_ADMIN_ROLE_ID.equals(role.getId()) || role.getOrder() < 3) {
+            .orElseThrow(() -> new ValidationException(
+                "This invitation references a role that no longer exists. Please request a new invitation."));
+        if (SUPER_ADMIN_ROLE_ID.equals(role.getId())) {
             throw new ForbiddenException("This invitation role must be reissued by an administrator");
         }
         return role;

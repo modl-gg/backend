@@ -8,6 +8,7 @@ import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentData;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
@@ -347,7 +348,11 @@ public class PlayerService {
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
         String status = PunishmentData.getStatus(data);
-        if (status != null) {
+        // A lifecycle constant (Unstarted/Pardoned) in data.status is not an offender status and must
+        // not leak onto the wire; fall through to the dedicated offenseLevel in that case.
+        if (status != null
+            && !PunishmentStatus.UNSTARTED.equals(status)
+            && !PunishmentStatus.PARDONED.equals(status)) {
             return status;
         }
         String offenseLevel = PunishmentData.getOffenseLevel(data);

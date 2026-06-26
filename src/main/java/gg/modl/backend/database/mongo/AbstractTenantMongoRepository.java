@@ -29,6 +29,10 @@ public abstract class AbstractTenantMongoRepository<T> {
         return template.save(entity, collectionName);
     }
 
+    protected T insert(MongoTemplate template, T entity) {
+        return template.insert(entity, collectionName);
+    }
+
     protected Optional<T> findOne(MongoTemplate template, Query query) {
         return Optional.ofNullable(template.findOne(query, entityType, collectionName));
     }

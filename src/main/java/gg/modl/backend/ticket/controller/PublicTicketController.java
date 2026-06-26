@@ -57,8 +57,7 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        TicketResponse ticket = ticketService.createTicket(server, PanelTicketProtoMapper.fromCreateTicketRequest(createRequest));
-        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, ticket.id());
+        TicketResponse ticket = ticketService.createUnfinishedTicket(server, PanelTicketProtoMapper.fromCreateTicketRequest(createRequest));
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(PublicTicketProtoMapper.toCreateTicketResponse(ticket, "Ticket created successfully (Unfinished)"));
     }
@@ -146,7 +145,7 @@ public class PublicTicketController {
             .body(AddTicketReplyResponse.newBuilder()
                 .setSuccess(true)
                 .setMessage("Reply added successfully")
-                .setReply(PanelTicketProtoMapper.toPublicTicketReply(reply))
+                .setReply(PublicTicketProtoMapper.toPublicReply(reply))
                 .build());
     }
 
@@ -165,13 +164,18 @@ public class PublicTicketController {
         }
 
         Ticket ticket = rawTicket.get();
-        if (ticket.isEmailAuthEnabled() && ticketService.getEmailHint(ticket) != null
-            && (ticketToken == null || !verificationService.validateToken(server, id, ticketToken))) {
+        if (ticket.isLocked() || (ticket.getStatus() != null && ticket.getStatus().isTerminal())) {
+            throw new ForbiddenException("Ticket is closed and cannot be resubmitted");
+        }
+
+        boolean tokenValid = ticketToken != null && verificationService.validateToken(server, id, ticketToken);
+        if (ticket.isEmailAuthEnabled() && ticketService.getEmailHint(ticket) != null && !tokenValid) {
             throw new ForbiddenException("Email verification required");
         }
 
+        boolean emailVerified = !ticket.isEmailAuthEnabled() || tokenValid;
         TicketResponse ticketResp = ticketService.submitTicketForm(
-            server, id, PublicTicketProtoMapper.fromSubmitTicketFormRequest(submitRequest));
+            server, id, PublicTicketProtoMapper.fromSubmitTicketFormRequest(submitRequest), emailVerified);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
         return ResponseEntity.ok(PublicTicketProtoMapper.toSubmitResponse(ticketResp));
     }

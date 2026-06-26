@@ -11,7 +11,6 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -167,10 +166,14 @@ public class AccountLinkingService {
                 linkedUuids.add(linked.getMinecraftUuid().toString());
             }
 
-            updateLinkedAccounts(server, player, linkedUuids);
+            // Atomic server-side $addToSet merge keyed by stable minecraftUuid avoids the
+            // read-modify-write lost-update window when two alts link concurrently.
+            Date now = new Date();
+            playerRepository.addLinkedAccounts(server, player.getMinecraftUuid().toString(), linkedUuids, now);
 
             for (Player linkedPlayer : linkedPlayers) {
-                updateLinkedAccounts(server, linkedPlayer, Set.of(playerUuid.toString()));
+                playerRepository.addLinkedAccounts(
+                    server, linkedPlayer.getMinecraftUuid().toString(), Set.of(playerUuid.toString()), now);
             }
         }
 
@@ -213,27 +216,6 @@ public class AccountLinkingService {
             }
         }
         return false;
-    }
-
-    private void updateLinkedAccounts(Server server, Player player, Set<String> newLinks) {
-        Map<String, Object> data = player.getData();
-        if (data == null) {
-            data = new LinkedHashMap<>();
-            player.setData(data);
-        }
-
-        @SuppressWarnings("unchecked")
-        List<String> existingLinks = (List<String>) data.get("linkedAccounts");
-
-        Set<String> allLinks = new HashSet<>();
-        if (existingLinks != null) {
-            allLinks.addAll(existingLinks);
-        }
-        allLinks.addAll(newLinks);
-
-        data.put("linkedAccounts", new ArrayList<>(allLinks));
-        data.put("lastLinkedUpdate", new Date());
-        playerRepository.replaceLinkedAccounts(server, player);
     }
 
     public record LinkingResult(boolean success, String message, int linkedAccountsFound) {

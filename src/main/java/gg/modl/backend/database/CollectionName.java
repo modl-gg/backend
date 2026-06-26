@@ -53,4 +53,5 @@ public final class CollectionName {
 
     // Storage
     public static final String STORAGE_FILES = "storage_files";
+    public static final String EVIDENCE_UPLOAD_TOKENS = "evidence_upload_tokens";
 }

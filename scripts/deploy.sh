@@ -108,13 +108,20 @@ log "Stopping and removing existing $NEXT_COLOR container if exists..."
 docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$NEW_CONTAINER" 2>/dev/null || true
 docker rm "$NEW_CONTAINER" 2>/dev/null || true
 
+ENV_FILE="$(pwd)/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    log "ERROR: Config file not found at $ENV_FILE (expected a regular file)."
+    log "Create the .env file (see backend/.env.example) before deploying, or the bind-mount will auto-create it as an empty directory and the container will crash on startup."
+    exit 1
+fi
+
 log "Starting new container: $NEW_CONTAINER on port $NEW_PORT"
 docker run -d \
     --name "$NEW_CONTAINER" \
     --network modl \
     --restart unless-stopped \
     -p ${NEW_PORT}:8080 \
-    -v "$(pwd)/.env:/app/.env:ro" \
+    -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
     ${DEPLOY_IMAGE}

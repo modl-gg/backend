@@ -2,7 +2,6 @@ package gg.modl.backend.audit.controller;
 
 import gg.modl.backend.audit.service.AuditService;
 import gg.modl.backend.audit.service.StaffPerformanceService;
-import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -31,7 +30,6 @@ import jakarta.validation.constraints.Min;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -52,23 +50,6 @@ public class AuditController {
     private final StaffPerformanceService staffPerformanceService;
     private final PermissionService permissionService;
     private final RealtimeEventPublisher realtimeEventPublisher;
-
-    private static final Set<String> ALLOWED_TABLES = Set.of(
-        CollectionName.MODL_SERVERS,
-        CollectionName.PLAYERS,
-        CollectionName.SESSIONS,
-        CollectionName.AUTH_CODES,
-        CollectionName.SETTINGS,
-        CollectionName.STAFF,
-        CollectionName.STAFF_ROLES,
-        CollectionName.INVITATIONS,
-        CollectionName.TICKETS,
-        CollectionName.TICKET_VERIFICATIONS,
-        CollectionName.LOGS,
-        CollectionName.KNOWLEDGEBASE_CATEGORIES,
-        CollectionName.KNOWLEDGEBASE_ARTICLES,
-        CollectionName.HOMEPAGE_CARDS
-    );
 
     @GetMapping("/staff-performance")
     public ResponseEntity<StaffPerformanceListResponse> getStaffPerformance(
@@ -119,6 +100,7 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         String reason = rollbackRequest != null && rollbackRequest.hasReason()
@@ -140,6 +122,7 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         String reason = rollbackRequest != null && rollbackRequest.hasReason()
@@ -158,6 +141,7 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         Date startDate = AuditProtoMapper.toDate(rollbackRequest.getStartDate());
@@ -239,8 +223,11 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        // Raw multi-collection DB viewer is a super-admin-grade capability; gate it as such so a role
+        // with only admin.audit.view.logs cannot exfiltrate the settings collection (plaintext API keys).
+        requireSuperAdmin(server, request);
 
-        if (!ALLOWED_TABLES.contains(table)) {
+        if (!AuditService.ALLOWED_TABLES.contains(table)) {
             throw new ValidationException("Invalid table name");
         }
 

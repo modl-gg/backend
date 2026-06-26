@@ -32,7 +32,7 @@ public interface EmailHTMLTemplate {
             """.formatted(serverName, code)
     );
 
-    CodeTemplate ADMIN_CODE = (code, __) -> new HTMLEmail(
+    CodeTemplate ADMIN_CODE = (serverName, code) -> new HTMLEmail(
         BRAND_NAME + " | Admin Login Code",
         """
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px;">

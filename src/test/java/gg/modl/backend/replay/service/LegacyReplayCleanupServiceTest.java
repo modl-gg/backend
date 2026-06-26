@@ -157,12 +157,104 @@ class LegacyReplayCleanupServiceTest {
         );
     }
 
+    @Test
+    void cleanupPagesPastPersistentlyFailingHeadObject() {
+        LegacyReplayCleanupService pagingService = pagingService(2);
+        Date cutoff = Date.from(NOW.minus(Duration.ofDays(7)));
+
+        // First (full) page: two poison rows whose storage delete always fails.
+        ReplayDocument poison1 = replay("poison-1", "db/replays/poison-1.modlreplay", 30);
+        ReplayDocument poison2 = replay("poison-2", "db/replays/poison-2.modlreplay", 20);
+        // The cursor advances to the page's MAX createdAt; poison2 (20 days ago) is newer than
+        // poison1 (30 days ago), so it carries the larger createdAt.
+        Date page1Max = poison2.getCreatedAt();
+        // Second page: newer deletable rows reached only via the cursor.
+        ReplayDocument fresh = replay("fresh-1", "db/replays/fresh-1.modlreplay", 10);
+
+        when(serverRepository.findAll()).thenReturn(List.of(server));
+        when(replayRetentionSettingsService.getReplayRetentionSettings(server))
+            .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(0L);
+        when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 2))
+            .thenReturn(List.of(poison1, poison2));
+        when(replayRepository.findExpiredCompletedOrFailedAfter(eq(server), eq(cutoff), eq(page1Max), eq(2)))
+            .thenReturn(List.of(fresh));
+        when(s3StorageService.deleteFile("db/replays/poison-1.modlreplay")).thenReturn(false);
+        when(s3StorageService.deleteFile("db/replays/poison-2.modlreplay")).thenReturn(false);
+        when(s3StorageService.deleteFile("db/replays/fresh-1.modlreplay")).thenReturn(true);
+        when(storageMetadataService.removeFile(server, "db/replays/fresh-1.modlreplay")).thenReturn(true);
+        when(replayRepository.deleteByReplayId(server, "fresh-1")).thenReturn(true);
+
+        pagingService.runCleanupOnce();
+
+        verify(replayRepository).deleteByReplayId(server, "fresh-1");
+        verify(replayRepository, never()).deleteByReplayId(server, "poison-1");
+        verify(replayRepository, never()).deleteByReplayId(server, "poison-2");
+    }
+
+    @Test
+    void cleanupDrainsBacklogLargerThanBatchSize() {
+        LegacyReplayCleanupService pagingService = pagingService(2);
+        Date cutoff = Date.from(NOW.minus(Duration.ofDays(7)));
+
+        ReplayDocument a = replay("a", "db/replays/a.modlreplay", 30);
+        ReplayDocument b = replay("b", "db/replays/b.modlreplay", 25);
+        // Cursor advances to the page's MAX createdAt: b (25 days ago) is newer than a (30 days ago).
+        Date page1Max = b.getCreatedAt();
+        ReplayDocument c = replay("c", "db/replays/c.modlreplay", 20);
+        ReplayDocument d = replay("d", "db/replays/d.modlreplay", 15);
+        // d (15 days ago) is newer than c (20 days ago), so it carries the page's max createdAt.
+        Date page2Max = d.getCreatedAt();
+
+        when(serverRepository.findAll()).thenReturn(List.of(server));
+        when(replayRetentionSettingsService.getReplayRetentionSettings(server))
+            .thenReturn(new ReplayRetentionSettings(true, 7));
+        when(replayRepository.countExpiredWithMissingStorageKey(server, cutoff)).thenReturn(0L);
+        when(replayRepository.findExpiredCompletedOrFailed(server, cutoff, 2))
+            .thenReturn(List.of(a, b));
+        when(replayRepository.findExpiredCompletedOrFailedAfter(eq(server), eq(cutoff), eq(page1Max), eq(2)))
+            .thenReturn(List.of(c, d));
+        when(replayRepository.findExpiredCompletedOrFailedAfter(eq(server), eq(cutoff), eq(page2Max), eq(2)))
+            .thenReturn(List.of());
+        when(s3StorageService.deleteFile(any())).thenReturn(true);
+        when(storageMetadataService.removeFile(eq(server), any())).thenReturn(true);
+        when(replayRepository.deleteByReplayId(eq(server), any())).thenReturn(true);
+
+        pagingService.runCleanupOnce();
+
+        verify(replayRepository).deleteByReplayId(server, "a");
+        verify(replayRepository).deleteByReplayId(server, "b");
+        verify(replayRepository).deleteByReplayId(server, "c");
+        verify(replayRepository).deleteByReplayId(server, "d");
+        verify(replayRepository).findExpiredCompletedOrFailedAfter(server, cutoff, page1Max, 2);
+        verify(replayRepository).findExpiredCompletedOrFailedAfter(server, cutoff, page2Max, 2);
+    }
+
+    private LegacyReplayCleanupService pagingService(int batchSize) {
+        LegacyReplayCleanupProperties properties = new LegacyReplayCleanupProperties();
+        properties.setEnabled(true);
+        properties.setBatchSize(batchSize);
+        return new LegacyReplayCleanupService(
+            properties,
+            serverRepository,
+            replayRepository,
+            replayRetentionSettingsService,
+            s3StorageService,
+            storageMetadataService,
+            Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+    }
+
     private ReplayDocument replay(String id, String storageKey) {
+        return replay(id, storageKey, 8);
+    }
+
+    private ReplayDocument replay(String id, String storageKey, int daysAgo) {
         ReplayDocument replay = new ReplayDocument();
         replay.setId(id);
         replay.setStorageKey(storageKey);
         replay.setStatus(ReplayDocument.STATUS_COMPLETE);
-        replay.setCreatedAt(Date.from(NOW.minus(Duration.ofDays(8))));
+        replay.setCreatedAt(Date.from(NOW.minus(Duration.ofDays(daysAgo))));
         return replay;
     }
 }

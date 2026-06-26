@@ -3,13 +3,10 @@ package gg.modl.backend.player.controller;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.player.service.MinecraftStartupService;
 import gg.modl.backend.player.service.MinecraftSyncService;
 import gg.modl.backend.player.service.SyncProtoFactory;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.SimpleResponse;
-import gg.modl.proto.modl.v1.StartupRequest;
-import gg.modl.proto.modl.v1.StartupResponse;
 import gg.modl.proto.modl.v1.SyncRequest;
 import gg.modl.proto.modl.v1.SyncResponse;
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,32 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftSyncV3Controller {
     private final MinecraftSyncService minecraftSyncService;
-    private final MinecraftStartupService minecraftStartupService;
     private final SyncProtoFactory syncProtoFactory;
-
-    @PostMapping(
-        value = "/startup",
-        consumes = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE,
-        produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE
-    )
-    public ResponseEntity<StartupResponse> startup(
-        @RequestBody @Valid StartupRequest request,
-        HttpServletRequest httpRequest
-    ) {
-        Server server = RequestUtil.getRequestServer(httpRequest);
-        String clientIp = RequestUtil.getClientIp(httpRequest);
-        Map<String, Object> response = minecraftStartupService.handleStartup(
-            server,
-            request.getServerVersion(),
-            request.getPlatformType(),
-            request.getPluginVersion(),
-            request.getMaxPlayers(),
-            request.hasServerName() ? request.getServerName() : null,
-            clientIp
-        );
-
-        return ResponseEntity.ok(MinecraftSyncProtoMapper.toStartupResponse(response));
-    }
 
     @PostMapping(
         value = "/players/sync",

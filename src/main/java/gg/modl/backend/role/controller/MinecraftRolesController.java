@@ -5,6 +5,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftRolesController {
     private final RoleService roleService;
+    private final StaffService staffService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllRoles(HttpServletRequest httpRequest) {
@@ -85,8 +87,13 @@ public class MinecraftRolesController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
+        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
+        boolean hasIdentity = actingStaffId != null;
 
-        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
+        if (!roleService.updateRolePermissions(
+                server, id, request.permissions(),
+                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Role not found"

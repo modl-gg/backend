@@ -49,8 +49,8 @@ public class PublicReplayLiteController {
     }
 
     @GetMapping("/{replayId}/download")
-    public ResponseEntity<?> downloadReplay(@PathVariable UUID replayId) {
-        return replayLiteService.getPublicReplayDownload(replayId.toString())
+    public ResponseEntity<?> downloadReplay(@PathVariable UUID replayId, HttpServletRequest httpRequest) {
+        return replayLiteService.getPublicReplayDownload(replayId.toString(), RequestUtil.getClientIp(httpRequest))
             .<ResponseEntity<?>>map(download -> ResponseEntity.ok()
                 .headers(downloadHeaders(replayId, download))
                 .body(download.bytes()))

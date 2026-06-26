@@ -30,15 +30,18 @@ public class RateLimitConfig {
     private static final List<PathRule> PREFIX_RULES = List.of(
         new PathRule("/v1/webhooks/", RateLimitTier.WEBHOOK),
         new PathRule("/v1/replay-lite/", RateLimitTier.REPLAY_LITE_UPLOAD),
-        new PathRule("/v1/minecraft/login", RateLimitTier.MINECRAFT_LOGIN),
-        new PathRule("/v1/minecraft/player/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
         new PathRule("/v2/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
-        new PathRule("/v3/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN),
         new PathRule("/v3/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
         new PathRule("/v1/admin/auth/session", RateLimitTier.ADMIN_SESSION),
         new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
         new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
+    );
+    // Login is matched by EXACT path (not prefix) so the high-capacity login tier can never leak
+    // to other /players/* routes or future nested paths.
+    private static final Map<String, RateLimitTier> EXACT_PATH_RULES = Map.of(
+        "/v1/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN,
+        "/v3/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN
     );
 
     public Bucket resolveBucket(String clientKey, RateLimitTier tier) {
@@ -66,6 +69,11 @@ public class RateLimitConfig {
     public RateLimitTier getTierForPath(String path, String method) {
         if (path == null) {
             return RateLimitTier.PANEL_STANDARD;
+        }
+
+        RateLimitTier exact = EXACT_PATH_RULES.get(path);
+        if (exact != null) {
+            return exact;
         }
 
         for (PathRule rule : PREFIX_RULES) {
@@ -116,7 +124,10 @@ public class RateLimitConfig {
             if (path.contains("/verify") || path.contains("/request-verification")) {
                 return RateLimitTier.PUBLIC_TICKET_VERIFY;
             }
-            return RateLimitTier.PUBLIC_TICKET_CREATE;
+            if (path.equals("/v1/public/tickets") || path.equals("/v1/public/tickets/unfinished")) {
+                return RateLimitTier.PUBLIC_TICKET_CREATE;
+            }
+            return RateLimitTier.PUBLIC_TICKET_INTERACT;
         }
         if (isHeavyOperation(path, method, HEAVY_PUBLIC_POST_PATTERNS, Set.of())) {
             return RateLimitTier.PUBLIC_HEAVY;
@@ -157,6 +168,7 @@ public class RateLimitConfig {
         PUBLIC_HEAVY(10, Duration.ofMinutes(1)),
         PUBLIC_MEDIA_UPLOAD(30, Duration.ofMinutes(1)),
         PUBLIC_TICKET_CREATE(2, Duration.ofMinutes(1)),
+        PUBLIC_TICKET_INTERACT(10, Duration.ofMinutes(1)),
         PUBLIC_TICKET_VERIFY(10, Duration.ofMinutes(1)),
         AUTH(20, Duration.ofMinutes(1)),
         AUTH_SEND_CODE(2, Duration.ofMinutes(1)),

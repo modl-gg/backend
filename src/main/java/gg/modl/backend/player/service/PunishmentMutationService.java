@@ -93,6 +93,11 @@ public class PunishmentMutationService {
         Punishment punishment = context.punishment();
         Date now = new Date();
 
+        // Normalize make-permanent intent (null) to -1L so the modification's effectiveDuration and
+        // data.duration agree, keeping data.duration coherent for all other readers (audit reconstruct,
+        // plugin display). The read side treats null/0/negative identically as permanent.
+        Long effective = (newDuration == null) ? -1L : newDuration;
+
         punishment.getModifications().add(new PunishmentModification(
             IdGenerator.generateShortId(),
             PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
@@ -100,7 +105,7 @@ public class PunishmentMutationService {
             resolvedIssuerName,
             issuerId,
             "Duration changed",
-            newDuration,
+            effective,
             null,
             null
         ));
@@ -115,7 +120,7 @@ public class PunishmentMutationService {
             resolvedIssuerName,
             issuerId
         ));
-        punishment.getData().put("duration", newDuration);
+        punishment.getData().put("duration", effective);
         if (punishment.getStarted() == null) {
             punishment.setStarted(now);
         }

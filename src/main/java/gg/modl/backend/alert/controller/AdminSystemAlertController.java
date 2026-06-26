@@ -52,8 +52,9 @@ public class AdminSystemAlertController {
         SystemAlert alert = alertService.updateAlert(
             id,
             request.hasMessage() ? request.getMessage() : null,
-            request.hasSeverity() ? AlertProtoMapper.parseSeverity(request.getSeverity()) : null,
-            request.hasAudience() ? AlertProtoMapper.parseAudience(request.getAudience()) : null,
+            request.hasSeverity() ? AlertProtoMapper.parseSeverityStrict(request.getSeverity()) : null,
+            request.hasAudience() ? AlertProtoMapper.parseAudienceStrict(request.getAudience()) : null,
+            request.hasExpiresAt(),
             request.hasExpiresAt() ? AlertProtoMapper.toExpiresAt(request.getExpiresAt()) : null,
             getAdminEmail()
         ).orElseThrow(() -> new ResourceNotFoundException("Alert not found"));

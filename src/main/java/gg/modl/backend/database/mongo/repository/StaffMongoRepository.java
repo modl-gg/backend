@@ -57,6 +57,14 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
         return exists(server, Query.query(Criteria.where(StaffFields.EMAIL).is(email)));
     }
 
+    public boolean existsByEmailIgnoreCaseOrUsername(Server server, String normalizedEmail, String username) {
+        Query query = new Query(new Criteria().orOperator(
+            Criteria.where(StaffFields.EMAIL).is(normalizedEmail),
+            Criteria.where(StaffFields.USERNAME).is(username)
+        ));
+        return exists(server, query);
+    }
+
     public boolean existsByEmailIgnoreCaseExcluding(Server server, String email, String currentEmail) {
         Staff existing = findByEmailIgnoreCase(server, email).orElse(null);
         return existing != null && !existing.getEmail().equalsIgnoreCase(currentEmail);

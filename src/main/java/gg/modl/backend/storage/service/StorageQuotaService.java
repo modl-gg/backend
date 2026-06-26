@@ -19,48 +19,73 @@ public class StorageQuotaService {
     private final S3StorageService s3StorageService;
     private final UsageTrackingService usageTrackingService;
     private final ServerMongoRepository serverRepository;
-    public static final long MAX_PREMIUM_BYTES = 2200L * 1024L * 1024 * 1024; // 2200 GB (200 base + 2000 max overage)
-    private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
-    private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
+    private final StorageSyncService storageSyncService;
+
+    private static final long BYTES_PER_GB = 1024L * 1024 * 1024;
+    public static final long PREMIUM_BASE_BYTES = 200L * BYTES_PER_GB; // 200 GB base premium allowance
+    public static final long MAX_STORAGE_OVERAGE_BYTES = 2000L * BYTES_PER_GB; // 2000 GB max purchasable overage
+    public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES; // 2200 GB cap
+    public static final long MAX_AI_OVERAGE_REQUESTS = 5000L;
+    private static final long FREE_TIER_BYTES = BYTES_PER_GB; // 1 GB
+    private static final long DEFAULT_PREMIUM_BYTES = PREMIUM_BASE_BYTES; // 200 GB
     private static final double AI_OVERAGE_RATE = 0.02;
 
+    public enum ConfirmResult {
+        SUCCESS,
+        QUOTA_EXCEEDED,
+        RECORD_FAILED
+    }
+
     public boolean canUpload(Server server, long fileSize) {
-        long used = s3StorageService.calculateStorageUsed(server);
+        if (fileSize < 0) {
+            return false;
+        }
+        long used = currentTrackedUsage(server);
         long max = getMaxBytesForServer(server);
         return used + fileSize <= max;
     }
 
     public boolean isWithinQuota(Server server) {
-        long used = s3StorageService.calculateStorageUsed(server);
+        long used = currentTrackedUsage(server);
         long max = getMaxBytesForServer(server);
         return used <= max;
     }
 
-    public boolean confirmAndRecordFile(Server server, String key, long size, String contentType) {
+    private long currentTrackedUsage(Server server) {
+        Long tracked = server.getStorageUsedBytes();
+        if (tracked != null) {
+            return tracked;
+        }
+        // Never synced: kick off an async sync so the counter self-heals, and fall back to a
+        // one-time live read for this presign decision. The confirm-time atomic increment is the
+        // true enforcement gate, so this best-effort number is acceptable.
+        storageSyncService.triggerAsyncSync(server);
+        return s3StorageService.calculateStorageUsed(server);
+    }
+
+    public ConfirmResult confirmAndRecordFile(Server server, String key, long size, String contentType) {
         if (size < 0) {
-            return false;
+            return ConfirmResult.RECORD_FAILED;
         }
         if (storageMetadataService.hasFile(server, key)) {
-            return true;
+            return ConfirmResult.SUCCESS;
         }
 
         long maxBytes = getMaxBytesForServer(server);
-        reconcileTrackedStorageUsage(server);
         if (!serverRepository.tryIncrementStorageUsedWithinLimit(server.getId(), size, maxBytes)) {
-            return false;
+            return ConfirmResult.QUOTA_EXCEEDED;
         }
 
         StorageMetadataService.RecordFileResult recordResult =
             storageMetadataService.recordReservedFile(server, key, size, contentType);
         if (recordResult == StorageMetadataService.RecordFileResult.INSERTED) {
-            if (server.getStorageUsedBytes() != null) {
-                server.setStorageUsedBytes(server.getStorageUsedBytes() + size);
-            }
-            return true;
+            return ConfirmResult.SUCCESS;
         }
 
         serverRepository.decrementStorageUsed(server.getId(), size);
-        return recordResult == StorageMetadataService.RecordFileResult.ALREADY_EXISTS;
+        return recordResult == StorageMetadataService.RecordFileResult.ALREADY_EXISTS
+               ? ConfirmResult.SUCCESS
+               : ConfirmResult.RECORD_FAILED;
     }
 
     public StorageQuotaResponse getQuota(Server server) {
@@ -92,7 +117,7 @@ public class StorageQuotaService {
         long includedLimit = usageTrackingService.getAiBaseLimitRequests();
         long requestLimit = usageTrackingService.getAiRequestLimit(server);
         boolean usageBillingEnabled = Boolean.TRUE.equals(server.getUsageBillingEnabled());
-        long overageUsed = usageBillingEnabled ? Math.max(0, totalUsed - includedLimit) : 0L;
+        long overageUsed = Math.max(0, totalUsed - includedLimit);
         double overageCost = usageBillingEnabled ? overageUsed * AI_OVERAGE_RATE : 0.0;
         double usagePercentage = requestLimit > 0 ? (double) totalUsed / requestLimit * 100 : 0;
 
@@ -115,15 +140,6 @@ public class StorageQuotaService {
             return DEFAULT_PREMIUM_BYTES;
         }
         return FREE_TIER_BYTES;
-    }
-
-    private void reconcileTrackedStorageUsage(Server server) {
-        long liveUsed = s3StorageService.calculateStorageUsed(server);
-        if (server.getStorageUsedBytes() != null && server.getStorageUsedBytes() >= liveUsed) {
-            return;
-        }
-        serverRepository.setStorageUsed(server.getId(), liveUsed);
-        server.setStorageUsedBytes(liveUsed);
     }
 
 }

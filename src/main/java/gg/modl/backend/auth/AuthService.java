@@ -84,7 +84,7 @@ public class AuthService {
             return;
         }
 
-        emailService.send(email, EmailHTMLTemplate.ADMIN_CODE.build(code, null));
+        emailService.send(email, EmailHTMLTemplate.ADMIN_CODE.build(null, code));
     }
 
     public boolean verifyCode(Server server, String email, String code) {

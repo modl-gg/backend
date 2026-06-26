@@ -7,10 +7,10 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.KnowledgebaseCategoryFields;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
-import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -42,6 +42,13 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
 
     public Optional<KnowledgebaseCategory> findByCategoryId(Server server, String id) {
         return findById(server, id);
+    }
+
+    public List<KnowledgebaseCategory> findByIds(Server server, Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return find(server, Query.query(Criteria.where(KnowledgebaseCategoryFields.ID).in(ids)));
     }
 
     public int findMaxOrdinal(Server server) {
@@ -95,7 +102,7 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
         MongoTemplate template = serverTemplate(server);
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (int index = 0; index < ids.size(); index++) {
-            Query query = Query.query(Criteria.where("_id").is(new ObjectId(ids.get(index))));
+            Query query = Query.query(Criteria.where(KnowledgebaseCategoryFields.ID).is(ids.get(index)));
             Update update = new Update().set(KnowledgebaseCategoryFields.ORDINAL, index);
             bulk.updateOne(query, update);
         }

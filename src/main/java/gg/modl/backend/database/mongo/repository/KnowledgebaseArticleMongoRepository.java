@@ -6,11 +6,11 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.KnowledgebaseArticleFields;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -35,6 +35,17 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     public List<KnowledgebaseArticle> findVisibleByCategoryOrdered(Server server, String categoryId) {
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId),
+            Criteria.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true)
+        )).with(Sort.by(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
+        return find(server, query);
+    }
+
+    public List<KnowledgebaseArticle> findVisibleByCategoryIdsOrdered(Server server, Collection<String> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return List.of();
+        }
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).in(categoryIds),
             Criteria.where(KnowledgebaseArticleFields.IS_VISIBLE).is(true)
         )).with(Sort.by(Sort.Direction.ASC, KnowledgebaseArticleFields.ORDINAL));
         return find(server, query);
@@ -127,7 +138,7 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (int index = 0; index < ids.size(); index++) {
             Query query = Query.query(new Criteria().andOperator(
-                Criteria.where("_id").is(new ObjectId(ids.get(index))),
+                Criteria.where(KnowledgebaseArticleFields.ID).is(ids.get(index)),
                 Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId)
             ));
             Update update = new Update().set(KnowledgebaseArticleFields.ORDINAL, index);

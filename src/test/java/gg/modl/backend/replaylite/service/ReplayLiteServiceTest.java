@@ -236,7 +236,7 @@ class ReplayLiteServiceTest {
         when(storageService.downloadObject(document.getObjectKey(), MAX_SIZE))
             .thenReturn(Optional.of(new ReplayLiteStorageService.DownloadedObject(replayBytes, "application/octet-stream")));
 
-        Optional<ReplayLiteService.ReplayLiteDownload> download = service.getPublicReplayDownload(document.getId());
+        Optional<ReplayLiteService.ReplayLiteDownload> download = service.getPublicReplayDownload(document.getId(), "203.0.113.10");
 
         assertTrue(download.isPresent());
         assertArrayEquals(replayBytes, download.get().bytes());
@@ -255,8 +255,8 @@ class ReplayLiteServiceTest {
         expired.setExpiresAt(NOW.minusSeconds(60));
         when(repository.findByReplayId("expired")).thenReturn(Optional.of(expired));
 
-        assertTrue(service.getPublicReplayDownload("pending").isEmpty());
-        assertTrue(service.getPublicReplayDownload("expired").isEmpty());
+        assertTrue(service.getPublicReplayDownload("pending", "203.0.113.10").isEmpty());
+        assertTrue(service.getPublicReplayDownload("expired", "203.0.113.10").isEmpty());
         verify(storageService, never()).downloadObject(any(), eq(MAX_SIZE));
     }
 

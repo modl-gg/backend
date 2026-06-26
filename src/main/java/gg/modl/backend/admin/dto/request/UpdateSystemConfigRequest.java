@@ -22,22 +22,22 @@ public record UpdateSystemConfigRequest(
 ) {
     public void applyTo(SystemConfig target) {
         if (general != null) {
-            target.setGeneral(general.toConfig());
+            general.applyOnto(target.getGeneral());
         }
         if (logging != null) {
-            target.setLogging(logging.toConfig());
+            logging.applyOnto(target.getLogging());
         }
         if (security != null) {
-            target.setSecurity(security.toConfig());
+            security.applyOnto(target.getSecurity());
         }
         if (notifications != null) {
-            target.setNotifications(notifications.toConfig());
+            notifications.applyOnto(target.getNotifications());
         }
         if (performance != null) {
-            target.setPerformance(performance.toConfig());
+            performance.applyOnto(target.getPerformance());
         }
         if (features != null) {
-            target.setFeatures(features.toConfig());
+            features.applyOnto(target.getFeatures());
         }
     }
 
@@ -71,8 +71,7 @@ public record UpdateSystemConfigRequest(
         @Size(max = RequestValidationLimits.MAINTENANCE_MESSAGE_MAX_LENGTH)
         String maintenanceMessage
     ) {
-        public SystemConfig.GeneralConfig toConfig() {
-            SystemConfig.GeneralConfig config = new SystemConfig.GeneralConfig();
+        public void applyOnto(SystemConfig.GeneralConfig config) {
             if (systemName != null) {
                 config.setSystemName(systemName);
             }
@@ -91,7 +90,6 @@ public record UpdateSystemConfigRequest(
             if (maintenanceMessage != null) {
                 config.setMaintenanceMessage(maintenanceMessage);
             }
-            return config;
         }
     }
 
@@ -104,8 +102,7 @@ public record UpdateSystemConfigRequest(
         @Max(RequestValidationLimits.MAX_LOG_SIZE_PER_DAY_MAX)
         Integer maxLogSizePerDay
     ) {
-        public SystemConfig.LoggingConfig toConfig() {
-            SystemConfig.LoggingConfig config = new SystemConfig.LoggingConfig();
+        public void applyOnto(SystemConfig.LoggingConfig config) {
             if (pm2LoggingEnabled != null) {
                 config.setPm2LoggingEnabled(pm2LoggingEnabled);
             }
@@ -115,7 +112,6 @@ public record UpdateSystemConfigRequest(
             if (maxLogSizePerDay != null) {
                 config.setMaxLogSizePerDay(maxLogSizePerDay);
             }
-            return config;
         }
     }
 
@@ -145,8 +141,7 @@ public record UpdateSystemConfigRequest(
                 String
             > corsOrigins
     ) {
-        public SystemConfig.SecurityConfig toConfig() {
-            SystemConfig.SecurityConfig config = new SystemConfig.SecurityConfig();
+        public void applyOnto(SystemConfig.SecurityConfig config) {
             if (sessionTimeout != null) {
                 config.setSessionTimeout(sessionTimeout);
             }
@@ -171,7 +166,6 @@ public record UpdateSystemConfigRequest(
             if (corsOrigins != null) {
                 config.setCorsOrigins(new ArrayList<>(corsOrigins));
             }
-            return config;
         }
     }
 
@@ -185,8 +179,7 @@ public record UpdateSystemConfigRequest(
         @Size(max = RequestValidationLimits.WEBHOOK_URL_MAX_LENGTH)
         String discordWebhook
     ) {
-        public SystemConfig.NotificationsConfig toConfig() {
-            SystemConfig.NotificationsConfig config = new SystemConfig.NotificationsConfig();
+        public void applyOnto(SystemConfig.NotificationsConfig config) {
             if (emailNotifications != null) {
                 config.setEmailNotifications(emailNotifications);
             }
@@ -205,7 +198,6 @@ public record UpdateSystemConfigRequest(
             if (discordWebhook != null) {
                 config.setDiscordWebhook(discordWebhook);
             }
-            return config;
         }
     }
 
@@ -225,8 +217,7 @@ public record UpdateSystemConfigRequest(
         Boolean enableCompression,
         Boolean enableCaching
     ) {
-        public SystemConfig.PerformanceConfig toConfig() {
-            SystemConfig.PerformanceConfig config = new SystemConfig.PerformanceConfig();
+        public void applyOnto(SystemConfig.PerformanceConfig config) {
             if (cacheTtl != null) {
                 config.setCacheTtl(cacheTtl);
             }
@@ -245,7 +236,6 @@ public record UpdateSystemConfigRequest(
             if (enableCaching != null) {
                 config.setEnableCaching(enableCaching);
             }
-            return config;
         }
     }
 
@@ -257,8 +247,7 @@ public record UpdateSystemConfigRequest(
         Boolean advancedFiltering,
         Boolean realTimeUpdates
     ) {
-        public SystemConfig.FeaturesConfig toConfig() {
-            SystemConfig.FeaturesConfig config = new SystemConfig.FeaturesConfig();
+        public void applyOnto(SystemConfig.FeaturesConfig config) {
             if (analyticsEnabled != null) {
                 config.setAnalyticsEnabled(analyticsEnabled);
             }
@@ -277,7 +266,6 @@ public record UpdateSystemConfigRequest(
             if (realTimeUpdates != null) {
                 config.setRealTimeUpdates(realTimeUpdates);
             }
-            return config;
         }
     }
 }

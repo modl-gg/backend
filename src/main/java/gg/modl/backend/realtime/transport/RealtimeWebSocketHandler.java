@@ -15,7 +15,6 @@ import gg.modl.proto.modl.v1.ClientHello;
 import gg.modl.proto.modl.v1.ErrorCode;
 import gg.modl.proto.modl.v1.RealtimeEnvelope;
 import gg.modl.proto.modl.v1.Topic;
-import java.io.IOException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -96,21 +95,17 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        RealtimeConnectionState state = stateForIncomingFrame(session);
+        RealtimeConnectionState state = existingState(session);
         if (state == null) {
             return;
         }
         metrics.recordReject(state, "text_frame");
-        try {
-            closeWithError(session, state, ErrorCode.ERROR_CODE_INVALID_MESSAGE, "Realtime WebSocket accepts binary protobuf frames only", UNSUPPORTED_DATA);
-        } catch (IOException exception) {
-            connectionCleanup.unregisterAfterTransportError(session, CloseStatus.SERVER_ERROR, exception);
-        }
+        closeWithError(session, state, ErrorCode.ERROR_CODE_INVALID_MESSAGE, "Realtime WebSocket accepts binary protobuf frames only", UNSUPPORTED_DATA);
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) throws Exception {
-        RealtimeConnectionState state = stateForIncomingFrame(session);
+        RealtimeConnectionState state = existingState(session);
         if (state == null) {
             return;
         }
@@ -125,7 +120,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         connectionCleanup.unregister(session, status);
     }
 
-    private void handleHandshake(WebSocketSession session, RealtimeConnectionState state, RealtimeEnvelope envelope) throws IOException {
+    private void handleHandshake(WebSocketSession session, RealtimeConnectionState state, RealtimeEnvelope envelope) {
         if (envelope.getPayloadCase() != RealtimeEnvelope.PayloadCase.CLIENT_HELLO) {
             metrics.recordReject(state, "missing_client_hello");
             closeWithError(session, state, ErrorCode.ERROR_CODE_UNAUTHORIZED, "ClientHello is required before other realtime messages", POLICY_VIOLATION);
@@ -160,7 +155,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
             }
         }
 
-        send(session, state, codec.serverHello(state.getConnectionId(), state.getSubscriptions()));
+        sessionOperations.trySend(session, state, codec.serverHello(state.getConnectionId(), state.getSubscriptions()));
     }
 
     private RealtimeConnectionState stateForIncomingFrame(WebSocketSession session) {
@@ -172,7 +167,11 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         });
     }
 
-    private void handleAuthenticatedMessage(WebSocketSession session, RealtimeConnectionState state, RealtimeEnvelope envelope) throws IOException {
+    private RealtimeConnectionState existingState(WebSocketSession session) {
+        return connectionRegistry.get(session).orElse(null);
+    }
+
+    private void handleAuthenticatedMessage(WebSocketSession session, RealtimeConnectionState state, RealtimeEnvelope envelope) {
         if (envelope.getProtocolVersion() != 0 && envelope.getProtocolVersion() != properties.getProtocolVersion()) {
             metrics.recordReject(state, "unsupported_protocol");
             closeWithError(session, state, ErrorCode.ERROR_CODE_UNSUPPORTED_PROTOCOL, "Unsupported realtime protocol version", POLICY_VIOLATION);
@@ -187,7 +186,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
                 state.setLastAcknowledgedEventId(envelope.getAck().getEventId());
                 metrics.recordAck(state, envelope.getAck().getEventId());
             }
-            case SUBSCRIBE -> subscribe(session, state, envelope.getSubscribe().getTopicsList());
+            case SUBSCRIBE -> subscribe(state, envelope.getSubscribe().getTopicsList());
             case UNSUBSCRIBE -> unsubscribe(state, envelope.getUnsubscribe().getTopicsList());
             case CLIENT_HELLO -> {
                 metrics.recordReject(state, "duplicate_client_hello");
@@ -200,29 +199,33 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         }
     }
 
-    private void subscribe(WebSocketSession session, RealtimeConnectionState state, List<Topic> topics) throws IOException {
+    private void subscribe(RealtimeConnectionState state, List<Topic> topics) {
         for (Topic topic : topics) {
-            if (!topicAuthorizer.canSubscribe(state.getPrincipal(), topic)) {
+            if (topic == Topic.TOPIC_UNSPECIFIED || topic == Topic.UNRECOGNIZED) {
                 metrics.recordTopicAuthorizationFailure(state, topic, "subscribe");
-                closeWithError(session, state, ErrorCode.ERROR_CODE_FORBIDDEN, "Topic is not authorized", POLICY_VIOLATION);
-                return;
+                continue;
+            }
+            if (topicAuthorizer.canSubscribe(state.getPrincipal(), topic)) {
+                state.subscribe(topic);
+            } else {
+                metrics.recordTopicAuthorizationFailure(state, topic, "subscribe");
             }
         }
-        topics.forEach(state::subscribe);
     }
 
     private void unsubscribe(RealtimeConnectionState state, List<Topic> topics) {
-        topics.forEach(state::unsubscribe);
-    }
-
-    private void closeWithError(WebSocketSession session, RealtimeConnectionState state, ErrorCode code, String message, CloseStatus status) throws IOException {
-        if (session.isOpen()) {
-            send(session, state, codec.error(code, message));
-            sessionOperations.requestClose(session, state, status.withReason(message), "error");
+        for (Topic topic : topics) {
+            if (topic == Topic.TOPIC_UNSPECIFIED || topic == Topic.UNRECOGNIZED) {
+                continue;
+            }
+            state.unsubscribe(topic);
         }
     }
 
-    private void send(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) throws IOException {
-        sessionOperations.send(session, state, message);
+    private void closeWithError(WebSocketSession session, RealtimeConnectionState state, ErrorCode code, String message, CloseStatus status) {
+        if (session.isOpen()) {
+            sessionOperations.trySend(session, state, codec.error(code, message));
+        }
+        sessionOperations.requestClose(session, state, status.withReason(message), "error");
     }
 }

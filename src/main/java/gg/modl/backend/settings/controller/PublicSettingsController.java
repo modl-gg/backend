@@ -13,6 +13,7 @@ import gg.modl.proto.modl.v1.PublicSettingsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,7 +39,7 @@ public class PublicSettingsController {
         SystemConfig.GeneralConfig globalConfig = getGlobalMaintenanceConfig();
         return PanelSettingsProtoMapper.toPublicSettingsResponse(new gg.modl.backend.settings.dto.response.PublicSettingsResponse(
             true,
-            generalSettings.getServerDisplayName() != null ? generalSettings.getServerDisplayName() : "modl",
+            StringUtils.hasText(generalSettings.getServerDisplayName()) ? generalSettings.getServerDisplayName() : "modl",
             generalSettings.getPanelIconUrl(),
             generalSettings.getHomepageIconUrl(),
             ticketFormSettingsService.buildTicketFormsResponse(ticketForms),

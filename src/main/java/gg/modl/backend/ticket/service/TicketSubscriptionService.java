@@ -27,6 +27,8 @@ public class TicketSubscriptionService {
     private final TicketMongoRepository ticketRepository;
     private static final int MAX_UPDATES_LIMIT = 25;
     private static final int MAX_TICKETS_TO_SCAN = 250;
+    // For assigned tickets with no read cursor yet, surface only recent activity instead of the entire reply history (mirrors getUpdates' subscribedAt floor).
+    private static final long ASSIGNED_NO_CURSOR_WINDOW_MS = 7L * 24 * 60 * 60 * 1000; // 7 days
 
     public List<TicketSubscriptionResponse> getSubscriptions(Server server, String staffEmail) {
         Staff staff = staffRepository.findByEmailExact(server, staffEmail).orElse(null);
@@ -205,6 +207,9 @@ public class TicketSubscriptionService {
             }
 
             Date lastSeen = lastSeenMap.get(ticket.getId());
+            Date unreadFloor = lastSeen != null
+                ? lastSeen
+                : new Date(System.currentTimeMillis() - ASSIGNED_NO_CURSOR_WINDOW_MS);
             List<TicketReply> unreadReplies = ticket.getReplies()
                 .stream()
                 .filter(reply -> reply.getCreated() != null)
@@ -215,7 +220,7 @@ public class TicketSubscriptionService {
                     String replyName = TicketAssigneeUtil.normalizeSingle(reply.getName());
                     return !staffIdentifier.equals(replyName);
                 })
-                .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
+                .filter(reply -> reply.getCreated().after(unreadFloor))
                 .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
                 .toList();
 

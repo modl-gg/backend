@@ -40,10 +40,11 @@ import java.util.Objects;
  * proto boundary lives entirely here so a single shape change never leaks into the
  * domain model.
  *
- * <p>Timestamps follow the workstream convention: every {@link Date} maps to epoch
- * milliseconds. Proto {@code int64} fields carry the number directly (proto-JSON emits
- * it as a string); proto {@code string} date fields carry the same epoch millis encoded
- * as a string so the panel decodes one representation everywhere.
+ * <p>Timestamps use two representations by proto field type. Proto {@code int64} date
+ * fields carry epoch milliseconds directly (proto-JSON emits the number as a string; the
+ * panel converts via {@code epochToIso} in players.ts). Proto {@code string} date fields
+ * carry an ISO-8601 instant (e.g. {@code 2024-06-10T...Z}); the panel passes these straight
+ * to {@code new Date()}, which parses ISO but not raw epoch millis.
  */
 final class PanelPlayerProtoMapper {
 
@@ -398,7 +399,7 @@ final class PanelPlayerProtoMapper {
     }
 
     private static String epochString(Date date) {
-        return Long.toString(date.getTime());
+        return java.time.Instant.ofEpochMilli(date.getTime()).toString();
     }
 
     private static String string(Object value) {

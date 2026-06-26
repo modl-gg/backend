@@ -138,6 +138,23 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         updateById(server, player.getId(), new Update().set(PlayerFields.DATA_PENDING_NOTIFICATIONS, notifications));
     }
 
+    public boolean pushPendingNotification(Server server, String minecraftUuid, Map<String, Object> notification) {
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
+        Update update = new Update().push(PlayerFields.DATA_PENDING_NOTIFICATIONS, notification);
+        return updateFirst(server, query, update).getMatchedCount() > 0;
+    }
+
+    public void addLinkedAccounts(Server server, String minecraftUuid, Collection<String> linkedUuids, Date when) {
+        if (linkedUuids == null || linkedUuids.isEmpty()) {
+            return;
+        }
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
+        Update update = new Update()
+            .addToSet(PlayerFields.DATA_LINKED_ACCOUNTS).each(linkedUuids.toArray())
+            .set(PlayerFields.DATA_LAST_LINKED_UPDATE, when);
+        updateFirst(server, query, update);
+    }
+
     public void replaceData(Server server, Player player) {
         updateById(server, player.getId(), new Update().set(PlayerFields.DATA, player.getData()));
     }
@@ -229,6 +246,14 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public long countAll(Server server) {
         return count(server, new Query());
+    }
+
+    public long countFirstJoinedAfter(Server server, Date after) {
+        return count(server, Query.query(Criteria.where(PlayerFields.DATA_FIRST_JOIN).gte(after)));
+    }
+
+    public long countFirstJoinedBetween(Server server, Date from, Date to) {
+        return count(server, Query.query(Criteria.where(PlayerFields.DATA_FIRST_JOIN).gte(from).lt(to)));
     }
 
     public long countOnlineByUuids(Server server, Collection<String> uuids) {

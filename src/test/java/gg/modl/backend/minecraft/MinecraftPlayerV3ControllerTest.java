@@ -437,7 +437,11 @@ class MinecraftPlayerV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid argument", error.error());
+        // minecraftUUID now carries @Pattern(UUID) (consistent with the other minecraft request
+        // records), so a malformed UUID is rejected by bean validation -> generic invalid-data message,
+        // rather than propagating to UUID.fromString. The point of this test is the JSON (non-protobuf)
+        // error envelope on the v1 path, which is unchanged.
+        assertEquals("Invalid data provided.", error.error());
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
     }
 
@@ -870,7 +874,7 @@ class MinecraftPlayerV3ControllerTest {
 
         PlayerNoteCreateResponse response = PlayerNoteCreateResponse.parseFrom(result.getResponse().getContentAsByteArray());
         assertEquals(201, response.getStatus());
-        assertIfMethodPresent(response, "getSuccess", true);
+        assertTrue(response.getSuccess());
         assertEquals("Note created", response.getMessage());
         verify(minecraftPlayerService).createNote(server, PLAYER_UUID.toString(), "Helpful note", "Mod", "staff-1");
     }
@@ -958,7 +962,7 @@ class MinecraftPlayerV3ControllerTest {
         assertEquals(6, response.getTotalCount());
         assertEquals(2, response.getPage());
         assertTrue(response.getHasMore());
-        assertIfMethodPresent(response.getNotes(0), "getId", "note-id");
+        assertEquals("note-id", response.getNotes(0).getId());
         assertEquals("Helpful note", response.getNotes(0).getText());
         verify(minecraftPlayerService).getPlayerNotes(server, PLAYER_UUID.toString(), 2, 4);
     }
@@ -1152,7 +1156,7 @@ class MinecraftPlayerV3ControllerTest {
         assertEquals("player-id", account.getId());
         assertEquals(PLAYER_UUID.toString(), account.getMinecraftUuid());
         assertEquals("Byteful", account.getUsernames(0).getUsername());
-        assertIfMethodPresent(account.getNotes(0), "getId", "note-id");
+        assertEquals("note-id", account.getNotes(0).getId());
         assertEquals("Helpful note", account.getNotes(0).getText());
         assertEquals("203.0.113.10", account.getIpAddresses(0).getIpAddress());
         assertEquals("punishment-1", account.getPunishments(0).getId());
@@ -1160,11 +1164,4 @@ class MinecraftPlayerV3ControllerTest {
         assertTrue(account.getData().getFieldsOrThrow("isOnline").getBoolValue());
     }
 
-    private static void assertIfMethodPresent(Object target, String methodName, Object expected) throws Exception {
-        try {
-            assertEquals(expected, target.getClass().getMethod(methodName).invoke(target));
-        } catch (NoSuchMethodException ignored) {
-            // Published proto artifacts can lag additive local schema fields during rollout.
-        }
-    }
 }
