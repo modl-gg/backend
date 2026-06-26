@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
@@ -67,7 +68,8 @@ class EvidenceUploadServiceTest {
             quotaService,
             validationService,
             punishmentEvidenceService,
-            storageMetadataService
+            storageMetadataService,
+            new DefaultServerLimitPolicy()
         );
     }
 

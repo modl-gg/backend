@@ -150,6 +150,10 @@ public class MongoIndexBootstrapService {
         ensureIndexes(template, CollectionName.EVIDENCE_UPLOAD_TOKENS, List.of(
             IndexSpec.ttl("idx_evidence_upload_tokens_expiresAt_ttl", doc("expiresAt", 1), 0)
         ));
+
+        ensureIndexes(template, CollectionName.BETA_AUDIT, List.of(
+            IndexSpec.standard("idx_beta_audit_serverId_timestamp", doc("serverId", 1).append("timestamp", -1), false, false)
+        ));
     }
 
     public void createTenantIndexes(MongoTemplate template) {

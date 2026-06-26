@@ -6,6 +6,7 @@ public final class CollectionName {
     public static final String METRIC_SNAPSHOTS = "metric_snapshots";
     public static final String SERVER_INSTANCE_SNAPSHOTS = "server_instance_snapshots";
     public static final String STRIPE_WEBHOOK_EVENTS = "stripe_webhook_events";
+    public static final String BETA_AUDIT = "beta_audit";
 
     // Core
     public static final String PLAYERS = "players";

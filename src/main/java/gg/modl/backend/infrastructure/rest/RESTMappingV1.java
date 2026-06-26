@@ -98,6 +98,8 @@ public final class RESTMappingV1 {
     public static final String PUBLIC_EVIDENCE_UPLOAD = PREFIX_PUBLIC + EVIDENCE_UPLOAD;
     private static final String SERVERS = "/servers";
     public static final String ADMIN_SERVERS = PREFIX_ADMIN + SERVERS;
+    private static final String BETA_TESTERS = "/beta-testers";
+    public static final String ADMIN_BETA_TESTERS = PREFIX_ADMIN + BETA_TESTERS;
     private static final String MONITORING = "/monitoring";
     public static final String ADMIN_MONITORING = PREFIX_ADMIN + MONITORING;
 

@@ -63,6 +63,10 @@ public class AuthSessionMongoRepository {
         deleteByEmailInternal(tenantMongoAccess.global(), email);
     }
 
+    public void deleteAllForServer(Server server) {
+        tenantMongoAccess.forServer(server).remove(new Query(), AuthSessionData.class, CollectionName.SESSIONS);
+    }
+
     public Optional<AuthSessionData> findActiveById(Server server, String sessionId, Date now) {
         return findActiveById(tenantMongoAccess.forServer(server), sessionId, now);
     }

@@ -67,6 +67,10 @@ public class AuthCodeMongoRepository {
         tenantMongoAccess.global().remove(emailQuery(normalizedEmail), AuthCode.class, CollectionName.AUTH_CODES);
     }
 
+    public void deleteAllForServer(Server server) {
+        tenantMongoAccess.forServer(server).remove(new Query(), AuthCode.class, CollectionName.AUTH_CODES);
+    }
+
     public boolean incrementFailedAttemptsForServer(Server server, String normalizedEmail, Date now) {
         return incrementFailedAttempts(tenantMongoAccess.forServer(server), normalizedEmail, now);
     }

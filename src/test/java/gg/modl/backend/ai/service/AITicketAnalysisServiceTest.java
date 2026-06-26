@@ -20,6 +20,7 @@ import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -81,6 +82,7 @@ class AITicketAnalysisServiceTest {
             punishmentLifecycleService,
             punishmentTypeService,
             usageTrackingService,
+            new DefaultServerLimitPolicy(),
             new ObjectMapper(),
             systemPromptRepository
         );

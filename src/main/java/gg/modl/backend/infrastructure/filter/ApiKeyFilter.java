@@ -1,5 +1,6 @@
 package gg.modl.backend.infrastructure.filter;
 
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV2;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
@@ -28,6 +29,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class ApiKeyFilter extends OncePerRequestFilter {
     private final ApiKeySettingsService apiKeyService;
     private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
+    private final StagingEnvironment stagingEnvironment;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -54,6 +56,11 @@ public class ApiKeyFilter extends OncePerRequestFilter {
 
         final Server server = apiKeyService.findServerByApiKey(apiKey);
         if (server == null) {
+            writeUnauthorized(request, response);
+            return;
+        }
+
+        if (stagingEnvironment.isStaging() && !Boolean.TRUE.equals(server.getBetaTester())) {
             writeUnauthorized(request, response);
             return;
         }

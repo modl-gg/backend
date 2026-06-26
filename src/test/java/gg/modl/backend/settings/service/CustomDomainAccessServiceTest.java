@@ -3,13 +3,14 @@ package gg.modl.backend.settings.service;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import org.junit.jupiter.api.Test;
 
 class CustomDomainAccessServiceTest {
 
-    private final CustomDomainAccessService service = new CustomDomainAccessService();
+    private final CustomDomainAccessService service = new CustomDomainAccessService(new DefaultServerLimitPolicy());
 
     @Test
     void freeServerWithoutGrandfatherFlagCannotManageCustomDomain() {

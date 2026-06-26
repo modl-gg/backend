@@ -35,6 +35,7 @@ public class RateLimitConfig {
         new PathRule("/v3/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
         new PathRule("/v1/admin/auth/session", RateLimitTier.ADMIN_SESSION),
         new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
+        new PathRule("/v1/admin/beta-testers", RateLimitTier.ADMIN_BETA),
         new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
     );
     // Login is matched by EXACT path (not prefix) so the high-capacity login tier can never leak
@@ -175,6 +176,7 @@ public class RateLimitConfig {
         ADMIN_AUTH(10, Duration.ofMinutes(1)),
         ADMIN_SESSION(30, Duration.ofMinutes(1)),
         ADMIN_STANDARD(50, Duration.ofMinutes(1)),
+        ADMIN_BETA(15, Duration.ofMinutes(1)),
         WEBHOOK(50, Duration.ofMinutes(1)),
         REPLAY_LITE_UPLOAD(20, Duration.ofMinutes(1)),
         REPLAY_LITE_LABEL(20, Duration.ofMinutes(1)),

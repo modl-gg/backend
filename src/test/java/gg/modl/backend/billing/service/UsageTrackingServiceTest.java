@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerMutationHelper;
@@ -30,7 +31,7 @@ class UsageTrackingServiceTest {
 
     @BeforeEach
     void setUp() {
-        usageTrackingService = new UsageTrackingService(serverRepository, serverMutationHelper);
+        usageTrackingService = new UsageTrackingService(serverRepository, serverMutationHelper, new DefaultServerLimitPolicy());
     }
 
     @Test

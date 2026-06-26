@@ -655,6 +655,64 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public void resetUsageAndStatsCounters(String serverId) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update()
+                .set(ServerFields.STORAGE_USED_BYTES, 0L)
+                .set(ServerFields.USER_COUNT, 0L)
+                .set(ServerFields.TICKET_COUNT, 0L)
+                .set(ServerFields.ONLINE_PLAYER_COUNT, 0L)
+                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD, 0.0)
+                .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
+                .set(ServerFields.UPDATED_AT, new Date())
+        );
+    }
+
+    public List<Server> findBetaTesters(String search, int skip, int limit) {
+        Query query = buildBetaTesterQuery(search);
+        query.with(Sort.by(Sort.Direction.DESC, ServerFields.BETA_TESTER_CREATED_AT));
+        query.skip(skip).limit(limit);
+        return find(query);
+    }
+
+    public long countBetaTesters(String search) {
+        return count(buildBetaTesterQuery(search));
+    }
+
+    public List<Server> findAllBetaTesters() {
+        return find(Query.query(Criteria.where(ServerFields.BETA_TESTER).is(true)));
+    }
+
+    private Query buildBetaTesterQuery(String search) {
+        Criteria betaCriteria = Criteria.where(ServerFields.BETA_TESTER_CREATED_AT).exists(true);
+        if (search == null || search.trim().isEmpty()) {
+            return new Query(betaCriteria);
+        }
+        String escapedSearch = Pattern.quote(search.trim());
+        return new Query(new Criteria().andOperator(
+            betaCriteria,
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.SERVER_NAME).regex(escapedSearch, "i"),
+                Criteria.where(ServerFields.CUSTOM_DOMAIN).regex(escapedSearch, "i"),
+                Criteria.where(ServerFields.ADMIN_EMAIL).regex(escapedSearch, "i")
+            )
+        ));
+    }
+
+    public Optional<Server> updateBetaState(String serverId, ServerPlan plan, SubscriptionStatus subscriptionStatus, boolean betaTester) {
+        Update update = new Update()
+            .set(ServerFields.PLAN, plan)
+            .set(ServerFields.SUBSCRIPTION_STATUS, subscriptionStatus)
+            .set(ServerFields.BETA_TESTER, betaTester)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return Optional.ofNullable(findAndModify(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
+    }
+
     public void updateAdminEmail(String serverId, String adminEmail) {
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),

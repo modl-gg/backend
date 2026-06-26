@@ -2,6 +2,7 @@ package gg.modl.backend.registration;
 
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.beta.SubdomainValidator;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
@@ -22,11 +23,9 @@ import gg.modl.proto.modl.v1.SetupStatusRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Date;
-import java.util.Locale;
-import java.util.Set;
-import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,27 +38,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.PUBLIC_REGISTRATION)
 @RequiredArgsConstructor
 @Slf4j
+@Profile("!staging")
 public class PublicRegistrationController {
     private final ServerService serverService;
     private final TurnstileService turnstileService;
     private final SessionService sessionService;
     private final RegistrationService registrationService;
     private final CookieUtil cookieUtil;
-    private static final Set<String> RESERVED_SUBDOMAINS = Set.of(
-        "payments", "payment", "api", "app",
-        "status", "mail", "www", "discord",
-        "admin", "twitter", "demo", "panel",
-        "ftp", "sftp", "www2", "www3",
-        "billing", "stripe", "test", "staging",
-        "root", "internal", "administrator", "mod",
-        "beta", "dev", "portal", "dashboard",
-        "modl", "support", "help", "email",
-        "docs", "secure", "alpha", "cdn",
-        "nexus", "replay", "replays"
-    );
-    private static final int SUBDOMAIN_MIN_LEN = 3;
-    private static final int SUBDOMAIN_MAX_LEN = 50;
-    private static final Pattern SUBDOMAIN_PATTERN = Pattern.compile("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$");
+    private final SubdomainValidator subdomainValidator;
 
     @PostMapping
     public ResponseEntity<?> register(
@@ -401,13 +387,10 @@ public class PublicRegistrationController {
     }
 
     private ResponseEntity<?> validateSubdomain(String customDomain) {
-        if (customDomain == null
-            || customDomain.length() < SUBDOMAIN_MIN_LEN
-            || customDomain.length() > SUBDOMAIN_MAX_LEN
-            || !SUBDOMAIN_PATTERN.matcher(customDomain).matches()) {
+        if (!subdomainValidator.matchesFormat(customDomain)) {
             return ResponseEntity.badRequest().body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
-                "Subdomain must be 3-50 characters, lowercase letters, digits and hyphens only, and cannot start or end with a hyphen.",
+                subdomainValidator.formatMessage(),
                 null
             ));
         }
@@ -418,7 +401,7 @@ public class PublicRegistrationController {
         if (customDomain == null) {
             return null;
         }
-        String normalized = customDomain.trim().toLowerCase(Locale.ROOT);
+        String normalized = subdomainValidator.normalize(customDomain);
         if (normalized.isEmpty() || normalized.startsWith("-") || normalized.endsWith("-")) {
             return ResponseEntity.status(409).body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
@@ -426,10 +409,10 @@ public class PublicRegistrationController {
                 null
             ));
         }
-        if (RESERVED_SUBDOMAINS.contains(normalized)) {
+        if (subdomainValidator.isReserved(normalized)) {
             return ResponseEntity.status(409).body(RegistrationProtoMapper.toRegistrationResponse(
                 false,
-                "This subdomain is reserved and cannot be used.",
+                subdomainValidator.reservedMessage(),
                 null
             ));
         }
@@ -467,7 +450,7 @@ public class PublicRegistrationController {
             }
         }
 
-        boolean reserved = domainPresent && RESERVED_SUBDOMAINS.contains(customDomain);
+        boolean reserved = domainPresent && subdomainValidator.isReserved(customDomain);
         if (reserved) {
             subdomainAvailable = false;
         }

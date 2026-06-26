@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import gg.modl.backend.dashboard.controller.MinecraftDashboardV3Controller;
 import gg.modl.backend.dashboard.dto.response.MinecraftDashboardStatsResponse;
 import gg.modl.backend.dashboard.service.DashboardService;
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.filter.ApiKeyFilter;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
@@ -48,7 +49,7 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
         dashboardService = mock(DashboardService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter());
+        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftDashboardV3Controller(dashboardService))
             .addFilters(apiKeyFilter)
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.beta.SubdomainValidator;
 import gg.modl.backend.infrastructure.turnstile.TurnstileService;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.server.ServerService;
@@ -31,7 +32,8 @@ class PublicRegistrationControllerTest {
             mock(TurnstileService.class),
             mock(SessionService.class),
             registrationService,
-            mock(CookieUtil.class)
+            mock(CookieUtil.class),
+            new SubdomainValidator()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         Date expiresAt = new Date(System.currentTimeMillis() + 60_000L);
@@ -56,7 +58,8 @@ class PublicRegistrationControllerTest {
             mock(TurnstileService.class),
             mock(SessionService.class),
             registrationService,
-            mock(CookieUtil.class)
+            mock(CookieUtil.class),
+            new SubdomainValidator()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         when(serverService.getServerByAutoLoginToken("auto-login-token")).thenReturn(server);

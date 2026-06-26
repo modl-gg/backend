@@ -4,6 +4,7 @@ import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
 import gg.modl.backend.billing.dto.response.UsageResponse;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.StorageQuotaService;
@@ -19,9 +20,8 @@ import org.springframework.stereotype.Service;
 public class UsageTrackingService {
     private final ServerMongoRepository serverRepository;
     private final ServerMutationHelper serverMutationHelper;
-    private static final double FREE_CDN_LIMIT_GB = 1.0;
-    private static final double DEFAULT_PREMIUM_CDN_LIMIT_GB = StorageQuotaService.PREMIUM_BASE_BYTES / (1024.0 * 1024 * 1024);
-    private static final long AI_BASE_LIMIT_REQUESTS = 1000L;
+    private final ServerLimitPolicy serverLimitPolicy;
+    public static final long AI_BASE_LIMIT_REQUESTS = 1000L;
     private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.02;
 
@@ -78,25 +78,16 @@ public class UsageTrackingService {
     }
 
     public double getCdnLimitGB(Server server) {
-        if (server.getPlan() == ServerPlan.PREMIUM) {
-            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                return server.getMaxStorageLimitBytes() / (1024.0 * 1024 * 1024);
-            }
-            return DEFAULT_PREMIUM_CDN_LIMIT_GB;
-        }
-        return FREE_CDN_LIMIT_GB;
+        return serverLimitPolicy.resolve(server).getCdnLimitGb();
     }
 
     // CDN overage accrues above the BASE allowance (mirroring AI overage), not above base+overage cap.
     private double getCdnOverageThresholdGB(Server server) {
-        return server.getPlan() == ServerPlan.PREMIUM ? DEFAULT_PREMIUM_CDN_LIMIT_GB : FREE_CDN_LIMIT_GB;
+        return serverLimitPolicy.resolve(server).getCdnOverageThresholdGb();
     }
 
     public long getAiRequestLimit(Server server) {
-        long overageCap = server.getMaxAiOverageRequests() != null
-                          ? Math.max(0, server.getMaxAiOverageRequests())
-                          : 0L;
-        return AI_BASE_LIMIT_REQUESTS + overageCap;
+        return serverLimitPolicy.resolve(server).getAiRequestLimit();
     }
 
     public long getAiBaseLimitRequests() {

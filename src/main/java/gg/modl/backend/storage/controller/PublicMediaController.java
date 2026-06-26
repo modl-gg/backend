@@ -4,6 +4,9 @@ import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.util.ByteFormatUtil;
+import gg.modl.backend.limits.ServerLimitPolicy;
+import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
@@ -37,6 +40,7 @@ public class PublicMediaController {
     private final StorageQuotaService quotaService;
     private final MediaAccessService mediaAccessService;
     private final StorageMetadataService storageMetadataService;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     private static final Set<String> PUBLIC_ALLOWED_UPLOAD_TYPES = Set.of("ticket", "tickets", "appeal");
 
@@ -97,6 +101,12 @@ public class PublicMediaController {
 
         if (!validation.valid()) {
             return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
+        }
+
+        ServerLimits limits = serverLimitPolicy.resolve(server);
+        if (limits.exceedsUploadLimit(presignRequest.getFileSize())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "File exceeds maximum size of " + ByteFormatUtil.formatCompact(limits.getMaxUploadBytes())));
         }
 
         if (!quotaService.canUpload(server, presignRequest.getFileSize())) {

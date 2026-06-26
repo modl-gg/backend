@@ -8,6 +8,7 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
@@ -35,13 +36,11 @@ public class InvitationService {
     private final IdGenerator idGenerator;
     private final ModlProperties modlProperties;
     private final PermissionService permissionService;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
-
-    private static final int FREE_TIER_STAFF_LIMIT = 5;
-    private static final int PREMIUM_TIER_STAFF_LIMIT = 100_000;
 
     public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail, String inviterRole) {
         List<String> emailsToInvite = new ArrayList<>();
@@ -66,7 +65,7 @@ public class InvitationService {
         }
         StaffRole grantedRole = validateGrantableRole(server, request.role(), inviterRole);
 
-        int staffLimit = staffLimitFor(server);
+        long staffLimit = staffLimitFor(server);
         long currentStaffCount = staffRepository.countAll(server);
         long pendingInvitationsCount = invitationRepository.countActive(server, new Date());
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
@@ -116,12 +115,12 @@ public class InvitationService {
         return new InviteResultResponse(message, success, failed);
     }
 
-    private int staffLimitFor(Server server) {
-        return server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+    private long staffLimitFor(Server server) {
+        return serverLimitPolicy.resolve(server).getMaxStaffSeats();
     }
 
     private int availableSeats(Server server) {
-        int staffLimit = staffLimitFor(server);
+        long staffLimit = staffLimitFor(server);
         long current = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date());
         return (int) (staffLimit - current);
     }
@@ -240,7 +239,7 @@ public class InvitationService {
         // Re-check the seat cap before minting the seat (a stale invite can over-provision after a
         // plan downgrade or other staff being added). This invitation is itself still counted in
         // countActive at this moment, so exclude it (-1).
-        int staffLimit = staffLimitFor(server);
+        long staffLimit = staffLimitFor(server);
         long occupied = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date()) - 1;
         if (occupied >= staffLimit) {
             throw new ConflictException("Staff member limit reached for this server. Please contact an administrator.");

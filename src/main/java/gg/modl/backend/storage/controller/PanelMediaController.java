@@ -3,6 +3,9 @@ package gg.modl.backend.storage.controller;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.util.ByteFormatUtil;
+import gg.modl.backend.limits.ServerLimitPolicy;
+import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
@@ -34,6 +37,7 @@ public class PanelMediaController {
     private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
     private final StorageMetadataService storageMetadataService;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     @GetMapping("/config")
     public ResponseEntity<MediaConfigResponse> getMediaConfig(HttpServletRequest request) {
@@ -89,6 +93,12 @@ public class PanelMediaController {
 
         if (!validation.valid()) {
             return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
+        }
+
+        ServerLimits limits = serverLimitPolicy.resolve(server);
+        if (limits.exceedsUploadLimit(presignRequest.getFileSize())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", "File exceeds maximum size of " + ByteFormatUtil.formatCompact(limits.getMaxUploadBytes())));
         }
 
         if (!quotaService.canUpload(server, presignRequest.getFileSize())) {

@@ -152,6 +152,18 @@ public class Server {
     private Boolean customDomainGrandfathered;
 
     @Nullable
+    @Field(name = "betaTester", targetType = FieldType.BOOLEAN)
+    private Boolean betaTester;
+
+    @Nullable
+    @Field(name = "betaTesterCreatedAt", targetType = FieldType.DATE_TIME)
+    private Date betaTesterCreatedAt;
+
+    @Nullable
+    @Field(name = "betaTesterCreatedBy", targetType = FieldType.STRING)
+    private String betaTesterCreatedBy;
+
+    @Nullable
     @Field(name = "cliSetupToken", targetType = FieldType.STRING)
     private String cliSetupToken;
 

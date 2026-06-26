@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.beta.SubdomainValidator;
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.turnstile.TurnstileService;
@@ -118,7 +119,8 @@ class ProtoMessageConverterConfigTest {
         when(turnstileService.validateToken(any(), any())).thenReturn(false);
 
         PublicRegistrationController controller = new PublicRegistrationController(
-            serverService, turnstileService, mock(SessionService.class), registrationService, mock(CookieUtil.class));
+            serverService, turnstileService, mock(SessionService.class), registrationService, mock(CookieUtil.class),
+            new SubdomainValidator());
 
         return MockMvcBuilders.standaloneSetup(controller)
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())

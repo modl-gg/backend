@@ -5,6 +5,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.config.ModlDevProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.infrastructure.util.HostExtractionUtil;
 import gg.modl.backend.server.ServerService;
@@ -30,6 +31,7 @@ public class RealtimeAuthenticator {
     private final ModlProperties modlProperties;
     private final ModlDevProperties devProperties;
     private final RealtimeOriginValidator originValidator;
+    private final StagingEnvironment stagingEnvironment;
 
     public RealtimePrincipal authenticate(HttpHeaders headers, ClientHello hello) throws RealtimeAuthenticationException {
         if (hello.getClientKind() == ClientKind.CLIENT_KIND_PANEL) {
@@ -55,6 +57,8 @@ public class RealtimeAuthenticator {
         if (server == null) {
             throw new RealtimeAuthenticationException(ErrorCode.ERROR_CODE_FORBIDDEN, "Invalid tenant host");
         }
+
+        requireBetaAccess(server, ErrorCode.ERROR_CODE_FORBIDDEN, "Invalid tenant host");
 
         validateHelloScope(server, hello);
 
@@ -91,8 +95,16 @@ public class RealtimeAuthenticator {
             throw new RealtimeAuthenticationException(ErrorCode.ERROR_CODE_UNAUTHORIZED, "Invalid API key");
         }
 
+        requireBetaAccess(server, ErrorCode.ERROR_CODE_UNAUTHORIZED, "Invalid API key");
+
         validateHelloScope(server, hello);
         return RealtimePrincipal.minecraft(server, optionalString(hello.hasServerInstanceId(), hello.getServerInstanceId()));
+    }
+
+    private void requireBetaAccess(Server server, ErrorCode errorCode, String message) throws RealtimeAuthenticationException {
+        if (stagingEnvironment.isStaging() && !Boolean.TRUE.equals(server.getBetaTester())) {
+            throw new RealtimeAuthenticationException(errorCode, message);
+        }
     }
 
     private void validateHelloScope(Server server, ClientHello hello) throws RealtimeAuthenticationException {

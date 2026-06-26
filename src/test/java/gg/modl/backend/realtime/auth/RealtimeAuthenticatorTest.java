@@ -11,6 +11,7 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.config.ModlDevProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
@@ -37,7 +38,8 @@ class RealtimeAuthenticatorTest {
             mock(AuthConfiguration.class),
             new ModlProperties(),
             new ModlDevProperties(),
-            mock(RealtimeOriginValidator.class)
+            mock(RealtimeOriginValidator.class),
+            mock(StagingEnvironment.class)
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -71,7 +73,8 @@ class RealtimeAuthenticatorTest {
             authConfiguration,
             new ModlProperties(),
             new ModlDevProperties(),
-            originValidator
+            originValidator,
+            mock(StagingEnvironment.class)
         );
 
         HttpHeaders headers = new HttpHeaders();
@@ -98,7 +101,8 @@ class RealtimeAuthenticatorTest {
             new AuthConfiguration(),
             new ModlProperties(),
             new ModlDevProperties(),
-            mock(RealtimeOriginValidator.class)
+            mock(RealtimeOriginValidator.class),
+            mock(StagingEnvironment.class)
         );
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.HOST, "tenant.modl.gg");

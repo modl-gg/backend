@@ -10,10 +10,11 @@ import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.limits.ServerLimitPolicy;
+import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
@@ -47,6 +48,7 @@ public class AITicketAnalysisService {
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentTypeService punishmentTypeService;
     private final UsageTrackingService usageTrackingService;
+    private final ServerLimitPolicy serverLimitPolicy;
     private final ObjectMapper objectMapper;
     private final SystemPromptMongoRepository systemPromptRepository;
     public static final String AI_MODERATOR = "AI Moderator";
@@ -110,7 +112,8 @@ public class AITicketAnalysisService {
             return false;
         }
 
-        if (server.getPlan() != ServerPlan.PREMIUM) {
+        final ServerLimits limits = serverLimitPolicy.resolve(server);
+        if (!limits.isAiModerationEnabled()) {
             return false;
         }
 
@@ -123,7 +126,7 @@ public class AITicketAnalysisService {
         final ServerMongoRepository.AIUsageSnapshot usageSnapshot = serverRepository.findAIUsageSnapshotById(server.getId()).orElse(null);
         if (usageSnapshot != null) {
             long currentUsage = usageSnapshot.aiRequestsCurrentPeriod();
-            long limit = usageTrackingService.getAiBaseLimitRequests() + Math.max(0L, usageSnapshot.maxAiOverageRequests());
+            long limit = limits.getAiRequestLimit();
             if (currentUsage >= limit) {
                 log.debug("Server {} has reached AI request limit ({}/{})", server.getServerName(), currentUsage, limit);
                 return false;

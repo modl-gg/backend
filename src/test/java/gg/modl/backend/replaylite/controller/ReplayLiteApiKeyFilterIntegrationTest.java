@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.filter.ApiKeyFilter;
 import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -43,7 +44,7 @@ class ReplayLiteApiKeyFilterIntegrationTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
         server.setId("507f1f77bcf86cd799439011");
 
-        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter());
+        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
         mockMvc = MockMvcBuilders.standaloneSetup(new ReplayLiteController(replayLiteService))
             .addFilters(apiKeyFilter)
             .build();

@@ -1,6 +1,9 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
+import gg.modl.backend.infrastructure.util.ByteFormatUtil;
+import gg.modl.backend.limits.ServerLimitPolicy;
+import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
@@ -36,6 +39,7 @@ public class EvidenceUploadService {
     private final MediaValidationService validationService;
     private final PunishmentEvidenceService punishmentEvidenceService;
     private final StorageMetadataService storageMetadataService;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     public TokenValidationResult validateToken(String token) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
@@ -79,6 +83,12 @@ public class EvidenceUploadService {
         );
         if (!validation.valid()) {
             return PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED, validation.error(), null);
+        }
+
+        ServerLimits limits = serverLimitPolicy.resolve(server);
+        if (limits.exceedsUploadLimit(request.fileSize())) {
+            return PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED,
+                "File exceeds maximum size of " + ByteFormatUtil.formatCompact(limits.getMaxUploadBytes()), null);
         }
 
         if (!quotaService.canUpload(server, request.fileSize())) {

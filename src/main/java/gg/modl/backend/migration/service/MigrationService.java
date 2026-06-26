@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -32,6 +33,7 @@ public class MigrationService {
     private final MigrationMongoRepository migrationRepository;
     private final MigrationConfiguration migrationConfiguration;
     private final RealtimeEventPublisher publisher;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     public record CooldownState(boolean onCooldown, @Nullable Long remainingTime) {}
 
@@ -41,7 +43,6 @@ public class MigrationService {
     );
     private static final long COOLDOWN_MS = 60 * 60 * 1000;
     private static final long STALE_MIGRATION_MS = 30 * 60 * 1000;
-    private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
     private static final int MAX_MESSAGE_LENGTH = 1000;
 
     public Optional<MigrationStatus> getLatestMigration(Server server) {
@@ -199,10 +200,7 @@ public class MigrationService {
     }
 
     public long getFileSizeLimit(Server server) {
-        if (server.getMigrationFileSizeLimit() != null) {
-            return server.getMigrationFileSizeLimit();
-        }
-        return DEFAULT_FILE_SIZE_LIMIT;
+        return serverLimitPolicy.resolve(server).getMigrationFileSizeLimit();
     }
 
     public Path saveUploadedFile(MultipartFile file) {

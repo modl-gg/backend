@@ -2,6 +2,7 @@ package gg.modl.backend.storage.service;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
@@ -20,14 +21,13 @@ public class StorageQuotaService {
     private final UsageTrackingService usageTrackingService;
     private final ServerMongoRepository serverRepository;
     private final StorageSyncService storageSyncService;
+    private final ServerLimitPolicy serverLimitPolicy;
 
     private static final long BYTES_PER_GB = 1024L * 1024 * 1024;
     public static final long PREMIUM_BASE_BYTES = 200L * BYTES_PER_GB; // 200 GB base premium allowance
     public static final long MAX_STORAGE_OVERAGE_BYTES = 2000L * BYTES_PER_GB; // 2000 GB max purchasable overage
     public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES; // 2200 GB cap
     public static final long MAX_AI_OVERAGE_REQUESTS = 5000L;
-    private static final long FREE_TIER_BYTES = BYTES_PER_GB; // 1 GB
-    private static final long DEFAULT_PREMIUM_BYTES = PREMIUM_BASE_BYTES; // 200 GB
     private static final double AI_OVERAGE_RATE = 0.02;
 
     public enum ConfirmResult {
@@ -133,13 +133,7 @@ public class StorageQuotaService {
     }
 
     private long getMaxBytesForServer(Server server) {
-        if (server.getPlan() == ServerPlan.PREMIUM) {
-            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                return server.getMaxStorageLimitBytes();
-            }
-            return DEFAULT_PREMIUM_BYTES;
-        }
-        return FREE_TIER_BYTES;
+        return serverLimitPolicy.resolve(server).getMaxStorageBytes();
     }
 
 }

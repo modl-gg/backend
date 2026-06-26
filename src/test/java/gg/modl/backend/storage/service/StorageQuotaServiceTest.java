@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,8 @@ class StorageQuotaServiceTest {
             s3StorageService,
             usageTrackingService,
             mock(ServerMongoRepository.class),
-            storageSyncService
+            storageSyncService,
+            new DefaultServerLimitPolicy()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setMaxStorageLimitBytes(10_000L);
@@ -46,7 +48,8 @@ class StorageQuotaServiceTest {
             mock(S3StorageService.class),
             mock(UsageTrackingService.class),
             mock(ServerMongoRepository.class),
-            mock(StorageSyncService.class)
+            mock(StorageSyncService.class),
+            new DefaultServerLimitPolicy()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setStorageUsedBytes(0L);
@@ -65,7 +68,8 @@ class StorageQuotaServiceTest {
             s3StorageService,
             usageTrackingService,
             serverRepository,
-            mock(StorageSyncService.class)
+            mock(StorageSyncService.class),
+            new DefaultServerLimitPolicy()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
@@ -92,7 +96,8 @@ class StorageQuotaServiceTest {
             s3StorageService,
             usageTrackingService,
             serverRepository,
-            mock(StorageSyncService.class)
+            mock(StorageSyncService.class),
+            new DefaultServerLimitPolicy()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
@@ -115,7 +120,8 @@ class StorageQuotaServiceTest {
             s3StorageService,
             usageTrackingService,
             serverRepository,
-            mock(StorageSyncService.class)
+            mock(StorageSyncService.class),
+            new DefaultServerLimitPolicy()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
         server.setId("server-id");
