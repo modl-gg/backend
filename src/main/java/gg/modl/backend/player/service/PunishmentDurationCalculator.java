@@ -2,10 +2,11 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentDurationResolver;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.data.SeverityLevel;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.List;
@@ -46,25 +47,9 @@ public class PunishmentDurationCalculator {
         int relevantPoints = isSocial ? currentStatus.socialPoints() : currentStatus.gameplayPoints();
         String offenseLevel = thresholds.getOffenseLevelInternal(relevantPoints, isSocial);
 
-        String internalSeverity = switch (severity.toLowerCase()) {
-            case "low", "lenient" -> "low";
-            case "regular" -> "regular";
-            case "aggravated", "severe" -> "severe";
-            default -> "regular";
-        };
+        String internalSeverity = SeverityLevel.normalize(severity);
 
-        DurationDetail durationDetail = punishmentType.getDurationDetail(internalSeverity, offenseLevel);
-
-        if (durationDetail == null) {
-            PunishmentType defaultType = DefaultPunishmentTypes.getAll()
-                .stream()
-                .filter(t -> t.getOrdinal() == typeOrdinal)
-                .findFirst()
-                .orElse(null);
-            if (defaultType != null) {
-                durationDetail = defaultType.getDurationDetail(internalSeverity, offenseLevel);
-            }
-        }
+        DurationDetail durationDetail = PunishmentDurationResolver.resolveDetail(punishmentType, internalSeverity, offenseLevel);
 
         String displayStatus = switch (offenseLevel) {
             case "first" -> "low";

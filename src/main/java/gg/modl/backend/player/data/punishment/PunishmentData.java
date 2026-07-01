@@ -35,6 +35,11 @@ public final class PunishmentData {
         return data != null && data.get("offenseLevel") instanceof String s ? s : null;
     }
 
+    @Nullable
+    public static String getEnforcementCategory(@Nullable Map<String, Object> data) {
+        return data != null && data.get("enforcementCategory") instanceof String s ? s : null;
+    }
+
     public static boolean isAltBlocking(@Nullable Map<String, Object> data) {
         return Boolean.TRUE.equals(data != null ? data.get("altBlocking") : null);
     }

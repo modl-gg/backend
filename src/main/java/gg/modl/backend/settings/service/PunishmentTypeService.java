@@ -93,7 +93,9 @@ public class PunishmentTypeService {
                     updatedType.setId(existing.getId());
                     updatedType.setOrdinal(ordinal);
                     updatedType.setCustomizable(true);
-                    updatedType.setName(existing.getName());
+                    if (updatedType.getName() == null || updatedType.getName().isBlank()) {
+                        updatedType.setName(existing.getName());
+                    }
                     types.set(i, updatedType);
                 } else {
                     PunishmentType merged = existing.toBuilder()

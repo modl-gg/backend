@@ -75,7 +75,7 @@ public class PunishmentLifecycleService {
         PunishmentType type = punishmentTypeService.getPunishmentTypeByOrdinal(server, typeOrdinal)
             .orElseThrow(() -> new ValidationException("Invalid punishment type"));
 
-        String applyPermission = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
+        String applyPermission = PermissionService.punishmentApplyPermissionId(type.getName());
         String roleId = staffRepository.findByEmailIgnoreCase(server, email)
             .map(Staff::getRoleId)
             .orElse(null);
@@ -124,6 +124,7 @@ public class PunishmentLifecycleService {
         }
         Date now = new Date();
         Map<String, Object> data = request.data() != null ? MongoKeyUtils.sanitizeKeys(new HashMap<>(request.data())) : new HashMap<>();
+        data.remove("enforcementCategory");
 
         if (request.severity() != null) {
             data.put("severity", request.severity());
@@ -181,6 +182,7 @@ public class PunishmentLifecycleService {
 
         String newCategory = statusCalculator.getEffectiveCategory(newPunishmentType, data);
         if (newCategory != null) {
+            data.put("enforcementCategory", newCategory);
             boolean hasExistingInCategory = player.getPunishments()
                 .stream().anyMatch(existing -> {
                     String existingCategory = statusCalculator.getEffectiveCategory(existing, types);

@@ -2,6 +2,7 @@ package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.dto.response.LinkedAccountResponse;
+import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.player.service.AccountLinkingService;
@@ -180,6 +181,17 @@ public class PanelPlayerController {
         );
 
         return ResponseEntity.ok(PanelPlayerProtoMapper.toActivePunishments(punishments));
+    }
+
+    @GetMapping("/{uuid}/punishments/preview")
+    public ResponseEntity<gg.modl.proto.modl.v1.PunishmentPreviewResponse> previewPunishment(
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
+        @RequestParam int typeOrdinal,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        PunishmentPreviewView preview = punishmentQueryService.previewPunishment(server, uuid, typeOrdinal);
+        return ResponseEntity.ok(PunishmentPreviewProtoMapper.toProto(preview));
     }
 
     @GetMapping("/punishments/{punishmentId}")

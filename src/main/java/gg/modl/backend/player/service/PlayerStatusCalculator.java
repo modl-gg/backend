@@ -9,6 +9,7 @@ import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentDurationResolver;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -175,6 +176,10 @@ public class PlayerStatusCalculator {
         if (pt == null) {
             return null;
         }
+        String storedCategory = PunishmentData.getEnforcementCategory(data);
+        if (storedCategory != null) {
+            return storedCategory;
+        }
         if (pt.isKick()) {
             return null;
         }
@@ -210,7 +215,7 @@ public class PlayerStatusCalculator {
                     };
                 }
             }
-            DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
+            DurationDetail detail = PunishmentDurationResolver.resolveDetail(pt, severity, offenseLevel);
             if (detail != null) {
                 if (detail.isBan()) {
                     return EnforcementCategory.BAN.name();

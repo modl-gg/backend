@@ -22,6 +22,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentDurationResolver;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -416,17 +417,13 @@ public class PunishmentQueryService {
         OffenderThresholdSettings thresholds
     ) {
         int points = type.getPointsForSeverity(severity);
-        DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
+        DurationDetail durationDetail = PunishmentDurationResolver.resolveDetail(type, severity, offenseLevel);
 
-        PunishmentType defaultType = null;
-        if (durationDetail == null || points == 0) {
-            defaultType = PunishmentTypeIndex.byOrdinal(DefaultPunishmentTypes.getAll()).get(type.getOrdinal());
-        }
-        if (durationDetail == null && defaultType != null) {
-            durationDetail = defaultType.getDurationDetail(severity, offenseLevel);
-        }
-        if (points == 0 && defaultType != null) {
-            points = defaultType.getPointsForSeverity(severity);
+        if (points == 0) {
+            PunishmentType defaultType = PunishmentTypeIndex.byOrdinal(DefaultPunishmentTypes.getAll()).get(type.getOrdinal());
+            if (defaultType != null) {
+                points = defaultType.getPointsForSeverity(severity);
+            }
         }
 
         long durationMs = durationDetail != null ? durationDetail.toMilliseconds() : 0L;

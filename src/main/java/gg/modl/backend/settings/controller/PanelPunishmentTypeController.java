@@ -4,6 +4,7 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelPunishmentTypeController {
     private final PunishmentTypeService punishmentTypeService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PermissionService permissionService;
 
     @GetMapping
     public PanelPunishmentTypesResponse getPunishmentTypes(HttpServletRequest request) {
@@ -59,7 +61,16 @@ public class PanelPunishmentTypeController {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType updatedType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
 
+        String previousName = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
+            .map(PunishmentType::getName)
+            .orElse(null);
+
         PunishmentType result = punishmentTypeService.updatePunishmentType(server, ordinal, updatedType);
+
+        if (previousName != null && !previousName.equals(result.getName())) {
+            permissionService.renamePunishmentApplyPermission(server, previousName, result.getName());
+        }
+
         invalidatePunishmentTypes(server, ordinal);
         return PanelSettingsProtoMapper.toPunishmentType(result);
     }

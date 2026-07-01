@@ -124,7 +124,7 @@ public class PermissionService {
         List<Permission> permissions = new ArrayList<>();
 
         punishmentTypes.forEach(type -> {
-            String permId = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
+            String permId = punishmentApplyPermissionId(type.getName());
             permissions.add(new Permission(
                 permId,
                 "Apply " + type.getName(),
@@ -134,6 +134,43 @@ public class PermissionService {
         });
 
         return permissions;
+    }
+
+    public static String punishmentApplyPermissionId(String typeName) {
+        return "punishment.apply." + typeName.toLowerCase().replace(" ", "-");
+    }
+
+    public void renamePunishmentApplyPermission(Server server, String oldName, String newName) {
+        if (oldName == null || newName == null) {
+            return;
+        }
+        String oldId = punishmentApplyPermissionId(oldName);
+        String newId = punishmentApplyPermissionId(newName);
+        if (oldId.equals(newId)) {
+            return;
+        }
+
+        boolean changed = false;
+        for (StaffRole role : staffRoleRepository.findAllOrdered(server)) {
+            List<String> permissions = role.getPermissions();
+            if (permissions == null || !permissions.contains(oldId)) {
+                continue;
+            }
+            List<String> migrated = new ArrayList<>();
+            for (String permission : permissions) {
+                String replacement = permission.equals(oldId) ? newId : permission;
+                if (!migrated.contains(replacement)) {
+                    migrated.add(replacement);
+                }
+            }
+            role.setPermissions(migrated);
+            staffRoleRepository.upsertRole(server, role);
+            changed = true;
+        }
+
+        if (changed) {
+            permissionCache.invalidateAll();
+        }
     }
 
     public boolean hasPermission(Server server, String roleId, String permission) {
