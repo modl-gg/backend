@@ -64,19 +64,29 @@ public class PunishmentQueryService {
             return new ArrayList<>();
         }
 
-        return player.getPunishments()
+        List<Punishment> activePunishments = player.getPunishments()
             .stream()
             .filter(statusCalculator::isPunishmentActive)
-            .map(p -> toPunishmentResponse(server, p))
+            .toList();
+        return toPunishmentResponses(server, activePunishments);
+    }
+
+    public List<PunishmentResponse> getPlayerPunishmentResponses(Server server, Player player) {
+        return toPunishmentResponses(server, player.getPunishments());
+    }
+
+    private List<PunishmentResponse> toPunishmentResponses(Server server, List<Punishment> punishments) {
+        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, punishments);
+        return punishments.stream()
+            .map(punishment -> buildPunishmentResponse(server, punishment, null, resolvedIssuers))
             .toList();
     }
 
-    private PunishmentResponse toPunishmentResponse(Server server, Punishment punishment) {
-        return toPunishmentResponseWithPlayer(server, punishment, null);
+    private PunishmentResponse toPunishmentResponseWithPlayer(Server server, Punishment punishment, Player player) {
+        return buildPunishmentResponse(server, punishment, player, resolveIssuersForPunishment(server, punishment));
     }
 
-    private PunishmentResponse toPunishmentResponseWithPlayer(Server server, Punishment punishment, Player player) {
-        Map<String, String> resolvedIssuers = resolveIssuersForPunishment(server, punishment);
+    private PunishmentResponse buildPunishmentResponse(Server server, Punishment punishment, Player player, Map<String, String> resolvedIssuers) {
         Map<String, Object> data = punishment.getData();
         boolean active = statusCalculator.isPunishmentActive(punishment);
         Date expires = statusCalculator.getEffectiveExpiry(punishment);

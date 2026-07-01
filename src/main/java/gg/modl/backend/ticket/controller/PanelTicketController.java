@@ -3,6 +3,7 @@ package gg.modl.backend.ticket.controller;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.log.service.PanelActionAuditor;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -56,6 +57,7 @@ public class PanelTicketController {
     private final TicketReplyService ticketReplyService;
     private final TicketSubscriptionService subscriptionService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PanelActionAuditor panelActionAuditor;
 
     @GetMapping
     public ResponseEntity<gg.modl.proto.modl.v1.PaginatedTicketsResponse> searchTickets(
@@ -105,6 +107,7 @@ public class PanelTicketController {
 
         int updatedCount = ticketService.bulkUpdateTickets(server, command, staffEmail);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS);
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Bulk updated " + updatedCount + " ticket(s)");
         return ResponseEntity.ok(PanelTicketProtoMapper.toBulkTicketUpdateResponse(
             updatedCount, "Successfully updated " + updatedCount + " tickets"));
     }
@@ -147,6 +150,7 @@ public class PanelTicketController {
         UpdateTicketRequest command = PanelTicketProtoMapper.fromUpdateTicketRequest(updateRequest);
         TicketResponse ticket = ticketService.updateTicket(server, id, command, staffEmail);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, ticket.id());
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Updated ticket " + id);
         return ResponseEntity.ok(PanelTicketProtoMapper.toTicketResponse(ticket));
     }
 
@@ -182,6 +186,7 @@ public class PanelTicketController {
         }
 
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Replied to ticket " + id);
         return ResponseEntity.status(HttpStatus.CREATED).body(PanelTicketProtoMapper.toAddReplyResponse(reply));
     }
 

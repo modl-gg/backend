@@ -17,7 +17,9 @@ public class LogService {
     private final ServerLogMongoRepository serverLogRepository;
 
     private static final int MAX_LIMIT = 500;
-    private static final int DEFAULT_LIMIT = 100;
+    private static final String LEVEL_MODERATION = "moderation";
+    private static final String LEVEL_INFO = "info";
+    private static final String SOURCE_SYSTEM = "system";
 
     public List<SystemLogResponse> getLogs(Server server, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
@@ -34,14 +36,25 @@ public class LogService {
             .toList();
     }
 
-    public SystemLog createLog(Server server, String description, String level, String source) {
-        SystemLog logEntry = SystemLog.builder()
+    public void recordModerationAction(Server server, String source, String description) {
+        write(server, description, LEVEL_MODERATION, source);
+    }
+
+    public void recordStaffAction(Server server, String source, String description) {
+        write(server, description, LEVEL_INFO, source);
+    }
+
+    private void write(Server server, String description, String level, String source) {
+        SystemLog entry = SystemLog.builder()
             .description(description)
-            .level(level != null ? level : "info")
-            .source(source != null ? source : "system")
+            .level(level)
+            .source(source != null && !source.isBlank() ? source : SOURCE_SYSTEM)
             .created(new Date())
             .build();
-
-        return serverLogRepository.saveEntity(server, logEntry);
+        try {
+            serverLogRepository.saveEntity(server, entry);
+        } catch (RuntimeException e) {
+            log.error("Failed to record audit log entry [{}] for server {}", description, server.getDatabaseName(), e);
+        }
     }
 }

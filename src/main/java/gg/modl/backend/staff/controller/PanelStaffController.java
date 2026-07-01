@@ -2,6 +2,7 @@ package gg.modl.backend.staff.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.log.service.PanelActionAuditor;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
@@ -37,6 +38,7 @@ public class PanelStaffController {
     private final StaffService staffService;
     private final InvitationService invitationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PanelActionAuditor panelActionAuditor;
 
     @GetMapping
     public ResponseEntity<PanelStaffListResponse> getAllStaff(HttpServletRequest request) {
@@ -153,6 +155,7 @@ public class PanelStaffController {
         }
 
         invalidateStaff(server);
+        panelActionAuditor.recordStaffAction(server, inviterEmail, "Invited staff: " + String.join(", ", result.success()));
         if (result.failed().isEmpty()) {
             return ResponseEntity.status(HttpStatus.CREATED)
                 .body(gg.modl.proto.modl.v1.InviteResultResponse.newBuilder()

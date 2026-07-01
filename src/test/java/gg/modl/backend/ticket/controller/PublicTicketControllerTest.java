@@ -161,7 +161,7 @@ class PublicTicketControllerTest {
                 "contact_email", "legacy@example.com",
                 "playerUuid", "uuid-appeal"
             ),
-            List.of(new ChatMessage("message", created)),
+            List.of(ChatMessage.builder().content("message").timestamp(created).build()),
             null,
             true,
             false,
@@ -223,7 +223,7 @@ class PublicTicketControllerTest {
             List.of(),
             Map.of(),
             Map.of(),
-            List.of(new ChatMessage("private chat line", created)),
+            List.of(ChatMessage.builder().content("private chat line").timestamp(created).build()),
             null,
             false,
             false,

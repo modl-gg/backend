@@ -225,7 +225,7 @@ class MinecraftReportsV3ControllerTest {
         report.put("priority", "normal");
         report.put("createdAt", 1_700_000_000_000L);
         report.put("assignedTo", List.of("Mod"));
-        report.put("chatMessages", List.of(new Ticket.ChatMessage("hello", new Date(1_700_000_000_001L))));
+        report.put("chatMessages", List.of(Ticket.ChatMessage.builder().content("hello").timestamp(new Date(1_700_000_000_001L)).build()));
         report.put("replayUrl", "https://cdn.example/replay.modlreplay");
         return report;
     }

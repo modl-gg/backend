@@ -119,11 +119,16 @@ public class Ticket {
     }
 
     @Data
+    @Builder
+    @NoArgsConstructor
     @AllArgsConstructor
     public static class ChatMessage {
         @NotNull
         private String content;
 
         private Date timestamp;
+
+        @Nullable
+        private String sender;
     }
 }

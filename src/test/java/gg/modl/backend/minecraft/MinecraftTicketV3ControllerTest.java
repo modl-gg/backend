@@ -381,7 +381,7 @@ class MinecraftTicketV3ControllerTest {
     void v3TicketDetailMapsRepliesChatMessagesAndReplayUrl() throws Exception {
         Ticket ticket = ticket("TICKET-2");
         ticket.setReplies(List.of(staffReply("reply-2", "Handled", 1_700_000_020_000L)));
-        ticket.setChatMessages(List.of(new Ticket.ChatMessage("hello chat", new Date(1_700_000_030_000L))));
+        ticket.setChatMessages(List.of(Ticket.ChatMessage.builder().content("hello chat").timestamp(new Date(1_700_000_030_000L)).build()));
         ticket.setReplayUrl("https://cdn.example/replay.modl");
         when(ticketService.getMinecraftTicket(server, "TICKET-2")).thenReturn(Optional.of(ticket));
         when(ticketService.toTicketDetail(ticket)).thenReturn(ticketDetail(ticket));

@@ -7,12 +7,11 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentData;
-import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -41,6 +40,7 @@ public class PlayerService {
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
     private final RealtimeEventPublisher realtimePublisher;
+    private final PunishmentQueryService punishmentQueryService;
     private static final int SEARCH_RESULT_LIMIT = 20;
     private static final int SEARCH_CANDIDATE_LIMIT = 100;
     private static final int RANK_EXACT_CURRENT_USERNAME = 0;
@@ -266,9 +266,7 @@ public class PlayerService {
         List<Punishment> punishments = player.getPunishments();
         PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, punishments);
 
-        List<PunishmentResponse> punishmentResponses = punishments.stream()
-            .map(p -> toPunishmentResponse(server, p))
-            .toList();
+        List<PunishmentResponse> punishmentResponses = punishmentQueryService.getPlayerPunishmentResponses(server, player);
 
         List<IPEntry> sanitizedIps = (player.getIpAddresses() != null ? player.getIpAddresses() : List.<IPEntry>of()).stream()
             .map(ip -> IPEntry.builder()
@@ -312,58 +310,6 @@ public class PlayerService {
         );
     }
 
-    private PunishmentResponse toPunishmentResponse(Server server, Punishment punishment) {
-        Map<String, Object> data = punishment.getData();
-        boolean active = statusCalculator.isPunishmentActive(punishment);
-        Date expires = statusCalculator.getEffectiveExpiry(punishment);
-        int ordinal = punishment.getTypeOrdinal();
-
-        PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal).orElse(null);
-        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
-
-        return new PunishmentResponse(
-            punishment.getId(),
-            punishmentTypeService.getPunishmentTypeName(server, ordinal),
-            ordinal,
-            punishment.getIssuerName(),
-            punishment.getIssued(),
-            punishment.getStarted(),
-            punishmentTypeService.isAppealable(server, ordinal),
-            PunishmentData.getReason(data),
-            PunishmentData.getSeverity(data),
-            data != null ? resolveOffenderStatus(data) : null,
-            active,
-            expires,
-            null,
-            null,
-            data != null ? PunishmentData.isAltBlocking(data) : null,
-            data != null ? PunishmentData.isWipeAfterExpiry(data) : null,
-            effectiveCategory,
-            punishment.getModifications(),
-            punishment.getNotes(),
-            punishment.getEvidence(),
-            punishment.getAttachedTicketIds()
-        );
-    }
-
-    private static String resolveOffenderStatus(Map<String, Object> data) {
-        String status = PunishmentData.getStatus(data);
-        // A lifecycle constant (Unstarted/Pardoned) in data.status is not an offender status and must
-        // not leak onto the wire; fall through to the dedicated offenseLevel in that case.
-        if (status != null
-            && !PunishmentStatus.UNSTARTED.equals(status)
-            && !PunishmentStatus.PARDONED.equals(status)) {
-            return status;
-        }
-        String offenseLevel = PunishmentData.getOffenseLevel(data);
-        if (offenseLevel != null) {
-            return switch (offenseLevel.toLowerCase()) {
-                case "first" -> "low";
-                default -> offenseLevel; // "medium" and "habitual" stay as-is
-            };
-        }
-        return null;
-    }
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
         Player player = playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));

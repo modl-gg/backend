@@ -95,6 +95,7 @@ final class PublicTicketProtoMapper {
                 PublicTicketResponse.PublicTicketChatMessage.newBuilder()
                     .setContent(stringValue(message.getContent()))
                     .setTimestamp(toTimestamp(message.getTimestamp()))
+                    .setSender(stringValue(message.getSender()))
                     .build()));
         }
         return builder.build();

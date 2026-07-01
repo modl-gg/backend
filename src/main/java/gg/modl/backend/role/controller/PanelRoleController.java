@@ -2,6 +2,7 @@ package gg.modl.backend.role.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.log.service.PanelActionAuditor;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
@@ -40,6 +41,7 @@ public class PanelRoleController {
     private final PermissionService permissionService;
     private final StaffService staffService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PanelActionAuditor panelActionAuditor;
 
     @GetMapping
     public ResponseEntity<PanelRoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -82,6 +84,7 @@ public class PanelRoleController {
         RoleRequest mappedRequest = PanelRoleProtoMapper.toRoleRequest(createRequest);
         RoleResponse role = roleService.createRole(server, mappedRequest, performerRoleId, isSuperAdmin);
         invalidateRoles(server, role.id());
+        panelActionAuditor.recordStaffAction(server, performerEmail, "Created staff role: " + role.name());
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(PanelRoleProtoMapper.toRoleMutationResponse("Role created successfully", role));
     }

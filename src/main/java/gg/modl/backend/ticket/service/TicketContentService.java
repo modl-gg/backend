@@ -233,7 +233,13 @@ public class TicketContentService {
                 if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
                     content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
                 }
-                return new Ticket.ChatMessage(content, parseTimestamp(x.get("timestamp")));
+                Object rawSender = x.get("sender");
+                String sender = rawSender instanceof String s ? s : null;
+                return Ticket.ChatMessage.builder()
+                    .content(content)
+                    .timestamp(parseTimestamp(x.get("timestamp")))
+                    .sender(sender)
+                    .build();
             })
             .toList();
     }

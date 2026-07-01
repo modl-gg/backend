@@ -120,7 +120,7 @@ public class TicketMongoEnumConfiguration {
     static class ChatMessageReadConverter implements Converter<String, Ticket.ChatMessage> {
         @Override
         public Ticket.ChatMessage convert(String source) {
-            return new Ticket.ChatMessage(source, null);
+            return Ticket.ChatMessage.builder().content(source).build();
         }
     }
 }

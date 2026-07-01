@@ -38,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
+import gg.modl.backend.log.service.LogService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.infrastructure.util.IdGenerator;
@@ -61,6 +62,7 @@ public class PunishmentLifecycleService {
     private final PermissionService permissionService;
     private final WebhookSettingsService webhookSettingsService;
     private final PunishmentRealtimePublisher realtimePublisher;
+    private final LogService logService;
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
         if (email == null) {
@@ -309,6 +311,8 @@ public class PunishmentLifecycleService {
         }
 
         realtimePublisher.punishmentIssued(server, player, punishment);
+
+        logService.recordModerationAction(server, issuerDisplay, typeName + " issued for " + playerName);
 
         return punishmentId;
     }

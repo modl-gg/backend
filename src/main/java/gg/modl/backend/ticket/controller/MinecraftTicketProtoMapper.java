@@ -219,6 +219,9 @@ final class MinecraftTicketProtoMapper {
             Map<String, Object> message = new LinkedHashMap<>();
             message.put("content", chatMessage.getContent());
             message.put("timestamp", chatMessage.getTimestamp());
+            if (chatMessage.getSender() != null) {
+                message.put("sender", chatMessage.getSender());
+            }
             return toStruct(message);
         }
         return toStruct(map(value));

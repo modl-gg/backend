@@ -191,16 +191,16 @@ final class PanelPlayerProtoMapper {
         List<CreateNoteRequest> notes = request.getNotesList().stream()
             .map(note -> new CreateNoteRequest(
                 note.getText(),
-                note.hasIssuerName() ? note.getIssuerName() : null,
-                note.hasIssuerId() ? note.getIssuerId() : null,
+                emptyToNull(note.getIssuerName()),
+                emptyToNull(note.getIssuerId()),
                 note.hasDate() ? note.getDate() : null
             ))
             .toList();
         List<CreateEvidenceRequest> evidence = request.getEvidenceList().stream()
             .map(item -> new CreateEvidenceRequest(
                 item.getText(),
-                item.hasIssuerName() ? item.getIssuerName() : null,
-                item.hasIssuerId() ? item.getIssuerId() : null,
+                emptyToNull(item.getIssuerName()),
+                emptyToNull(item.getIssuerId()),
                 item.hasDate() ? item.getDate() : null,
                 item.hasType() ? item.getType() : null,
                 item.hasFileUrl() ? item.getFileUrl() : null,
@@ -210,8 +210,8 @@ final class PanelPlayerProtoMapper {
             ))
             .toList();
         return new CreatePunishmentRequest(
-            request.hasIssuerName() ? request.getIssuerName() : null,
-            request.hasIssuerId() ? request.getIssuerId() : null,
+            emptyToNull(request.getIssuerName()),
+            emptyToNull(request.getIssuerId()),
             request.getTypeOrdinal(),
             notes.isEmpty() ? null : notes,
             evidence.isEmpty() ? null : evidence,
@@ -227,8 +227,8 @@ final class PanelPlayerProtoMapper {
     static AddModificationRequest fromAddModification(PanelAddModificationRequest request) {
         return new AddModificationRequest(
             request.getType(),
-            request.hasIssuerName() ? request.getIssuerName() : null,
-            request.hasIssuerId() ? request.getIssuerId() : null,
+            emptyToNull(request.getIssuerName()),
+            emptyToNull(request.getIssuerId()),
             request.hasEffectiveDuration() ? request.getEffectiveDuration() : null,
             request.hasReason() ? request.getReason() : null,
             request.hasAppealTicketId() ? request.getAppealTicketId() : null
@@ -239,8 +239,8 @@ final class PanelPlayerProtoMapper {
         return new AddEvidenceRequest(
             request.hasText() ? request.getText() : null,
             request.getType(),
-            request.hasIssuerName() ? request.getIssuerName() : null,
-            request.hasIssuerId() ? request.getIssuerId() : null,
+            emptyToNull(request.getIssuerName()),
+            emptyToNull(request.getIssuerId()),
             request.hasUrl() ? request.getUrl() : null,
             request.hasFileName() ? request.getFileName() : null,
             request.hasFileType() ? request.getFileType() : null,
@@ -410,7 +410,7 @@ final class PanelPlayerProtoMapper {
         return value == null ? "" : value;
     }
 
-    private static String emptyToNull(String value) {
+    static String emptyToNull(String value) {
         return value == null || value.isEmpty() ? null : value;
     }
 }

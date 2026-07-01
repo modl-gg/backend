@@ -2,20 +2,14 @@ package gg.modl.backend.email;
 
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
 import java.io.UnsupportedEncodingException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class EmailService {
-    private final JavaMailSender mailSender;
-    private final EmailConfiguration config;
+    private final EmailSender emailSender;
 
     public void sendStaffInviteEmail(String toEmail, String serverName, String role, String invitationLink) {
         try {
@@ -31,14 +25,6 @@ public class EmailService {
     }
 
     public void send(String toEmail, String subject, String htmlBody) throws MessagingException, UnsupportedEncodingException {
-        MimeMessage mimeMessage = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "UTF-8");
-
-        helper.setFrom(config.getFromEmailAddress(), config.getFromName());
-        helper.setTo(toEmail);
-        helper.setSubject(subject);
-        helper.setText(htmlBody, true);
-
-        mailSender.send(mimeMessage);
+        emailSender.send(toEmail, subject, htmlBody);
     }
 }

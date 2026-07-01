@@ -109,7 +109,7 @@ class AITicketAnalysisServiceTest {
             .type(TicketCategory.CHAT)
             .reportedPlayer("Player")
             .reportedPlayerUuid(playerUuid)
-            .chatMessages(List.of(new Ticket.ChatMessage("bad chat", new Date())))
+            .chatMessages(List.of(Ticket.ChatMessage.builder().content("bad chat").timestamp(new Date()).build()))
             .replies(new ArrayList<>())
             .notes(new ArrayList<>())
             .build();

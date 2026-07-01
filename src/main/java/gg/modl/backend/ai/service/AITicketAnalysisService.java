@@ -80,7 +80,7 @@ public class AITicketAnalysisService {
         final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
         final String promptTemplate = getSystemPrompt();
         final String chatLog = ticket.getChatMessages()
-            .stream().map(Ticket.ChatMessage::getContent).collect(Collectors.joining("\n"));
+            .stream().map(AITicketAnalysisService::formatChatLine).collect(Collectors.joining("\n"));
         final String fullPrompt = buildPrompt(promptTemplate, chatLog, ticket.getReportedPlayer(), settings);
 
         final String rawResponse;
@@ -138,6 +138,12 @@ public class AITicketAnalysisService {
 
     private boolean isChatReport(Ticket ticket) {
         return ticket.getType() == TicketCategory.CHAT;
+    }
+
+    private static String formatChatLine(Ticket.ChatMessage message) {
+        return message.getSender() != null && !message.getSender().isBlank()
+            ? message.getSender() + ": " + message.getContent()
+            : message.getContent();
     }
 
     private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {

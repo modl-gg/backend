@@ -26,6 +26,7 @@ import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.settings.service.WebhookSettingsService;
+import gg.modl.backend.log.service.LogService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -81,6 +82,9 @@ class PunishmentServiceTest {
     @Mock
     private PunishmentRealtimePublisher realtimePublisher;
 
+    @Mock
+    private LogService logService;
+
     private PunishmentLifecycleService punishmentLifecycleService;
 
     private PunishmentMutationService punishmentMutationService;
@@ -100,7 +104,8 @@ class PunishmentServiceTest {
             punishmentQueryService,
             permissionService,
             webhookSettingsService,
-            realtimePublisher
+            realtimePublisher,
+            logService
         );
         punishmentMutationService = new PunishmentMutationService(
             playerRepository,

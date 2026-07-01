@@ -14,6 +14,11 @@ import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -22,12 +27,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 public class MinecraftTicketService {
+    private static final Pattern CHAT_LINE_PATTERN =
+        Pattern.compile("^(?:(\\d{1,2}:\\d{2}:\\d{2})\\s+)?([^:]{1,48}):\\s(.*)$", Pattern.DOTALL);
+    private static final DateTimeFormatter CHAT_TIME_FORMAT = DateTimeFormatter.ofPattern("H:mm:ss");
+
     private final TicketMongoRepository ticketRepository;
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
@@ -46,10 +57,7 @@ public class MinecraftTicketService {
                 if (message == null || message.isBlank()) {
                     continue;
                 }
-                chatMessages.add(new Ticket.ChatMessage(
-                    message.substring(0, Math.min(message.length(), TicketContentService.MAX_CHAT_MESSAGE_LENGTH)),
-                    now
-                ));
+                chatMessages.add(parseChatMessage(message, now));
             }
         }
 
@@ -423,5 +431,38 @@ public class MinecraftTicketService {
 
     private static String normalizeUuid(String value) {
         return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static Ticket.ChatMessage parseChatMessage(String rawMessage, Date reportTime) {
+        String truncated = rawMessage.substring(0, Math.min(rawMessage.length(), TicketContentService.MAX_CHAT_MESSAGE_LENGTH));
+        Matcher matcher = CHAT_LINE_PATTERN.matcher(truncated);
+        if (matcher.matches()) {
+            return Ticket.ChatMessage.builder()
+                .content(matcher.group(3))
+                .timestamp(reconstructTimestamp(matcher.group(1), reportTime))
+                .sender(matcher.group(2).trim())
+                .build();
+        }
+        return Ticket.ChatMessage.builder()
+            .content(truncated)
+            .timestamp(reportTime)
+            .build();
+    }
+
+    private static Date reconstructTimestamp(String timeOfDay, Date reportTime) {
+        if (timeOfDay == null) {
+            return reportTime;
+        }
+        try {
+            LocalTime messageTime = LocalTime.parse(timeOfDay, CHAT_TIME_FORMAT);
+            ZonedDateTime report = reportTime.toInstant().atZone(ZoneId.systemDefault());
+            ZonedDateTime messageMoment = report.with(messageTime);
+            if (messageMoment.isAfter(report)) {
+                messageMoment = messageMoment.minusDays(1);
+            }
+            return Date.from(messageMoment.toInstant());
+        } catch (DateTimeParseException e) {
+            return reportTime;
+        }
     }
 }

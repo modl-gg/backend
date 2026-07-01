@@ -116,8 +116,8 @@ public class PanelPlayerController {
             server,
             UUID.fromString(uuid),
             addRequest.getText(),
-            addRequest.hasIssuerName() ? addRequest.getIssuerName() : null,
-            addRequest.hasIssuerId() ? addRequest.getIssuerId() : null
+            PanelPlayerProtoMapper.emptyToNull(addRequest.getIssuerName()),
+            PanelPlayerProtoMapper.emptyToNull(addRequest.getIssuerId())
         );
         return ResponseEntity.ok(SUCCESS);
     }
@@ -218,8 +218,8 @@ public class PanelPlayerController {
             UUID.fromString(uuid),
             punishmentId,
             noteRequest.getText(),
-            noteRequest.hasIssuerName() ? noteRequest.getIssuerName() : null,
-            noteRequest.hasIssuerId() ? noteRequest.getIssuerId() : null
+            PanelPlayerProtoMapper.emptyToNull(noteRequest.getIssuerName()),
+            PanelPlayerProtoMapper.emptyToNull(noteRequest.getIssuerId())
         );
         return ResponseEntity.ok(SUCCESS);
     }

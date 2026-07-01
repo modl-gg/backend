@@ -390,6 +390,7 @@ public final class PanelTicketProtoMapper {
         return gg.modl.proto.modl.v1.TicketChatMessage.newBuilder()
             .setContent(stringValue(message.getContent()))
             .setTimestamp(longValue(message.getTimestamp()))
+            .setSender(stringValue(message.getSender()))
             .build();
     }
 

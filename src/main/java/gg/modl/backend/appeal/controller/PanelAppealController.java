@@ -3,6 +3,8 @@ package gg.modl.backend.appeal.controller;
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
+import gg.modl.backend.log.service.PanelActionAuditor;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelAppealController {
     private final AppealService appealService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PanelActionAuditor panelActionAuditor;
 
     @GetMapping("/punishment/{punishmentId}")
     public ResponseEntity<AppealTicketsResponse> getAppealsByPunishment(
@@ -73,9 +76,22 @@ public class PanelAppealController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        TicketResponse appeal = appealService.updateStatus(server, id, PanelAppealProtoMapper.fromUpdateAppealStatusRequest(statusRequest));
+        UpdateAppealStatusRequest command = PanelAppealProtoMapper.fromUpdateAppealStatusRequest(statusRequest);
+        TicketResponse appeal = appealService.updateStatus(server, id, command);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_APPEALS, id);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS);
+        String actorEmail = RequestUtil.getSessionEmail(request);
+        if (command.status() != null) {
+            panelActionAuditor.recordModerationAction(server, actorEmail, describeAppealDecision(id, appeal, command));
+        } else {
+            panelActionAuditor.recordStaffAction(server, actorEmail, "Updated appeal " + id);
+        }
         return ResponseEntity.ok(PanelAppealProtoMapper.toTicketResponse(appeal));
+    }
+
+    private static String describeAppealDecision(String appealId, TicketResponse appeal, UpdateAppealStatusRequest command) {
+        String resolution = command.resolution();
+        String resolutionSuffix = resolution != null && !resolution.isBlank() ? " (" + resolution + ")" : "";
+        return "Appeal " + appealId + " " + appeal.status() + resolutionSuffix;
     }
 }

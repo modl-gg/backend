@@ -13,6 +13,7 @@ import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -46,13 +47,16 @@ class PlayerServicePersistenceTest {
     private RealtimeEventPublisher realtimePublisher;
 
     @Mock
+    private PunishmentQueryService punishmentQueryService;
+
+    @Mock
     private Server server;
 
     private PlayerService playerService;
 
     @BeforeEach
     void setUp() {
-        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService, realtimePublisher);
+        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService, realtimePublisher, punishmentQueryService);
     }
 
     @Test
