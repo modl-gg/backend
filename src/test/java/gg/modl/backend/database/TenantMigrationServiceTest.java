@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -102,6 +103,27 @@ class TenantMigrationServiceTest {
         assertThat(filters).anyMatch(json -> json.contains("\"role\": \"Admin\""));
         assertThat(updates).anyMatch(json -> json.contains("\"role\": \"admin\""));
         verify(roleCollections.invitations(), times(2)).updateMany(any(Bson.class), any(Bson.class));
+    }
+
+    @Test
+    void backfillRewritesRoleNamesToHexIdsWhenIdStoredAsObjectId() {
+        MongoTemplate template = mock(MongoTemplate.class);
+        mockMigrationsCollection(template, null);
+        mockTicketsCollection(template, 0L, 0L);
+        ObjectId helperId = new ObjectId("507f1f77bcf86cd799439011");
+        RoleCollections roleCollections = mockRoleCollections(template, List.of(
+            new Document("_id", helperId).append("name", "Helper")
+        ));
+
+        TenantMigrationService service = new TenantMigrationService(
+            mock(TenantMongoAccess.class), mock(ServerMongoRepository.class));
+        service.applyMigrationsForTenant(template);
+
+        ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(roleCollections.staff()).updateMany(filterCaptor.capture(), updateCaptor.capture());
+        assertThat(toJson(filterCaptor.getValue())).contains("\"role\": \"Helper\"");
+        assertThat(toJson(updateCaptor.getValue())).contains("\"role\": \"" + helperId.toHexString() + "\"");
     }
 
     @Test

@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
-import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,10 +13,18 @@ public final class RequestUtil {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RequestUtil.class);
     private static volatile boolean warnedAboutProxy = false;
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final boolean TRUST_PROXY_HEADERS = Boolean.parseBoolean(
-        Optional.ofNullable(System.getProperty("modl.trust-proxy-headers"))
-            .orElseGet(() -> Optional.ofNullable(System.getenv("MODL_TRUST_PROXY_HEADERS")).orElse("false"))
-    );
+    private static final boolean TRUST_PROXY_HEADERS = resolveTrustProxyHeaders();
+
+    private static boolean resolveTrustProxyHeaders() {
+        String value = System.getProperty("modl.trust-proxy-headers");
+        if (value == null) {
+            value = System.getProperty("MODL_TRUST_PROXY_HEADERS");
+        }
+        if (value == null) {
+            value = System.getenv("MODL_TRUST_PROXY_HEADERS");
+        }
+        return Boolean.parseBoolean(value);
+    }
 
     @NotNull
     public static Server getRequestServer(HttpServletRequest request) {

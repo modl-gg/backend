@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -128,7 +129,7 @@ public class TenantMigrationService {
 
         Set<String> roleIds = new HashSet<>();
         for (Document role : roles) {
-            String id = role.getString(ID_FIELD);
+            String id = stringifyId(role.get(ID_FIELD));
             if (id != null) {
                 roleIds.add(id);
             }
@@ -140,7 +141,7 @@ public class TenantMigrationService {
         long staffUpdated = 0;
         long invitationsUpdated = 0;
         for (Document role : roles) {
-            String id = role.getString(ID_FIELD);
+            String id = stringifyId(role.get(ID_FIELD));
             String name = role.getString(StaffRoleFields.NAME);
             if (id == null || name == null || name.equals(id)) {
                 continue;
@@ -162,6 +163,16 @@ public class TenantMigrationService {
         }
         log.info("Backfilled staff role ids in database={} staffUpdated={} invitationsUpdated={}",
             template.getDb().getName(), staffUpdated, invitationsUpdated);
+    }
+
+    private static String stringifyId(Object rawId) {
+        if (rawId == null) {
+            return null;
+        }
+        if (rawId instanceof ObjectId objectId) {
+            return objectId.toHexString();
+        }
+        return rawId.toString();
     }
 
     private static Document conditionalLowercase(String field) {
