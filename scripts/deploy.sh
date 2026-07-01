@@ -138,8 +138,6 @@ log "Switching nginx to new container..."
 update_nginx $NEW_PORT
 
 if [[ "$CURRENT_COLOR" != "none" ]]; then
-    log "Draining old container for ${MODL_DEPLOY_DRAIN_GRACE_SECONDS}s: $CURRENT_CONTAINER"
-    sleep "$MODL_DEPLOY_DRAIN_GRACE_SECONDS"
     log "Stopping old container with ${MODL_DEPLOY_STOP_TIMEOUT_SECONDS}s timeout: $CURRENT_CONTAINER"
     docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$CURRENT_CONTAINER" 2>/dev/null || true
     docker rm "$CURRENT_CONTAINER" 2>/dev/null || true
