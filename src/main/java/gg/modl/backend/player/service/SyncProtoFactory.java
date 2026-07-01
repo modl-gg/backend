@@ -18,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.LongConsumer;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
 /**
@@ -201,13 +200,9 @@ public class SyncProtoFactory {
     }
 
     private static Map<String, Object> stringObjectMap(Map<?, ?> rawMap) {
-        return rawMap.entrySet().stream()
-            .collect(Collectors.toMap(
-                entry -> Objects.toString(entry.getKey()),
-                Map.Entry::getValue,
-                (first, second) -> second,
-                LinkedHashMap::new
-            ));
+        Map<String, Object> result = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> result.put(Objects.toString(key), value));
+        return result;
     }
 
     private static String stringValue(Object value) {
