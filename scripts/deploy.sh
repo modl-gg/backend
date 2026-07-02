@@ -11,9 +11,23 @@ HEALTH_RETRY_INTERVAL=2
 MODL_DEPLOY_DRAIN_GRACE_SECONDS=${MODL_DEPLOY_DRAIN_GRACE_SECONDS:-90}
 MODL_DEPLOY_STOP_TIMEOUT_SECONDS=${MODL_DEPLOY_STOP_TIMEOUT_SECONDS:-120}
 NGINX_UPSTREAM_CONF="/etc/nginx/conf.d/modl-backend-upstream.conf"
+MODL_DEPLOY_LOCK_FILE=${MODL_DEPLOY_LOCK_FILE:-/home/modl/.modl-deploy.lock}
+MODL_DEPLOY_LOCK_WAIT_SECONDS=${MODL_DEPLOY_LOCK_WAIT_SECONDS:-600}
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+acquire_deploy_lock() {
+    exec {MODL_DEPLOY_LOCK_FD}>"$MODL_DEPLOY_LOCK_FILE"
+    if flock --nonblock "$MODL_DEPLOY_LOCK_FD"; then
+        return 0
+    fi
+    log "Waiting for in-progress deployment to release $MODL_DEPLOY_LOCK_FILE..."
+    if ! flock --wait "$MODL_DEPLOY_LOCK_WAIT_SECONDS" "$MODL_DEPLOY_LOCK_FD"; then
+        log "ERROR: gave up waiting for the deploy lock after ${MODL_DEPLOY_LOCK_WAIT_SECONDS}s; another deployment is still running."
+        exit 1
+    fi
 }
 
 get_current_container() {
@@ -81,6 +95,8 @@ update_nginx() {
     sudo systemctl reload nginx
     log "Nginx updated and reloaded"
 }
+
+acquire_deploy_lock
 
 log "Starting zero-downtime deployment for $ENVIRONMENT environment"
 

@@ -7,10 +7,14 @@ on:
     branches:
       - dev
 
+env:
+  SSH_OPTS: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4
+  DEPLOY_LOCK_FILE: /home/modl/.modl-deploy.lock
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment: staging
 
     steps:
@@ -21,23 +25,53 @@ jobs:
 
       - name: Add server to known hosts
         run: |
-          ssh-keyscan -H ${{ secrets.STAGING_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -T 10 -H ${{ secrets.STAGING_IP }} >> ~/.ssh/known_hosts
 
-      - name: Deploy via SSH
+      - name: Start deployment
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
+          ssh $SSH_OPTS ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
           set -e
+          flock -w 600 '"$DEPLOY_LOCK_FILE"' -c "
+          cd /home/modl/backend &&
+          git fetch --no-tags origin ${{ github.sha }} &&
+          git reset --hard ${{ github.sha }} &&
+          chmod +x scripts/deploy.sh scripts/rollback.sh scripts/ci-deploy.sh
+          "
           cd /home/modl/backend
-          git fetch --no-tags origin ${{ github.sha }}
-          git reset --hard ${{ github.sha }}
-          chmod +x scripts/deploy.sh scripts/rollback.sh
-          ./scripts/deploy.sh staging
+          ./scripts/ci-deploy.sh start staging ${{ github.run_id }}-${{ github.run_attempt }}
           '
+
+      - name: Follow deployment
+        run: |
+          set +e
+          offset=0
+          user="${{ secrets.SERVER_USER }}"
+          host="${{ secrets.STAGING_IP }}"
+          run_id="${{ github.run_id }}-${{ github.run_attempt }}"
+          while true; do
+            resp=$(ssh $SSH_OPTS "$user@$host" "cd /home/modl/backend && ./scripts/ci-deploy.sh status $run_id $offset")
+            if [ $? -ne 0 ]; then
+              echo "::warning::deploy status poll failed to connect; retrying in 5s"
+              sleep 5
+              continue
+            fi
+            printf '%s\n' "$resp" | grep -av '^__MODL_'
+            new_offset=$(printf '%s\n' "$resp" | sed -n 's/^__MODL_OFFSET__://p' | tail -1)
+            [ -n "$new_offset" ] && offset="$new_offset"
+            last=$(printf '%s\n' "$resp" | tail -1)
+            case "$last" in
+              __MODL_EXIT__:*)
+                code="${last#__MODL_EXIT__:}"
+                echo "Deployment finished with exit code $code"
+                exit "$code"
+                ;;
+            esac
+            sleep 5
+          done
 
       - name: Verify deployment
         run: |
-          sleep 5
-          ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
+          ssh $SSH_OPTS ${{ secrets.SERVER_USER }}@${{ secrets.STAGING_IP }} '
           if docker ps --filter "name=modl-backend-blue" --format "{{.Names}}" | grep -q blue; then
             curl -sf --head http://localhost:8080/v1/health || exit 1
           else
