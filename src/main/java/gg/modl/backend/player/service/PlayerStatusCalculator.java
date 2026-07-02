@@ -41,7 +41,7 @@ public class PlayerStatusCalculator {
         int gameplayPoints = 0;
 
         for (Punishment punishment : punishments) {
-            if (!isPunishmentActive(punishment)) {
+            if (!isPunishmentEligible(punishment)) {
                 continue;
             }
 
@@ -54,12 +54,11 @@ public class PlayerStatusCalculator {
                 continue;
             }
 
-            // Check if this punishment's points have expired
             Date effectiveExpiry = getEffectiveExpiry(punishment);
             if (effectiveExpiry != null) {
                 long expiryMs = type.isSocial() ? socialExpiryMs : gameplayExpiryMs;
                 if (effectiveExpiry.getTime() + expiryMs < now) {
-                    continue; // Points have expired past the configured window
+                    continue;
                 }
             }
 
@@ -79,9 +78,15 @@ public class PlayerStatusCalculator {
     }
 
     public boolean isPunishmentActive(Punishment punishment) {
-        String pId = punishment.getId();
+        if (!isPunishmentEligible(punishment)) {
+            return false;
+        }
 
-        // Kicks (ordinal 0) are instant and never considered "active"
+        Date effectiveExpiry = getEffectiveExpiry(punishment);
+        return effectiveExpiry == null || !effectiveExpiry.before(new Date());
+    }
+
+    private boolean isPunishmentEligible(Punishment punishment) {
         if (punishment.getTypeOrdinal() == 0) {
             return false;
         }
@@ -91,22 +96,20 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        String status = PunishmentData.getStatus(data);
-        if (PunishmentStatus.UNSTARTED.equals(status)) {
+        if (PunishmentStatus.UNSTARTED.equals(PunishmentData.getStatus(data))) {
             return false;
         }
 
+        return !isPardoned(punishment);
+    }
+
+    private boolean isPardoned(Punishment punishment) {
         for (PunishmentModification mod : punishment.getModifications()) {
-            String type = mod.type();
-            if (PunishmentModificationType.isPardon(type)) {
-                return false;
+            if (PunishmentModificationType.isPardon(mod.type())) {
+                return true;
             }
         }
-
-        // Check duration-based expiry
-        Date effectiveExpiry = getEffectiveExpiry(punishment);
-
-        return effectiveExpiry == null || !effectiveExpiry.before(new Date());
+        return false;
     }
 
     public Date getEffectiveExpiry(Punishment punishment) {
@@ -243,12 +246,8 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        // Must not have been pardoned
-        for (PunishmentModification mod : punishment.getModifications()) {
-            String type = mod.type();
-            if (PunishmentModificationType.isPardon(type)) {
-                return false;
-            }
+        if (isPardoned(punishment)) {
+            return false;
         }
 
         // Must have a finite expiry (not permanent)
