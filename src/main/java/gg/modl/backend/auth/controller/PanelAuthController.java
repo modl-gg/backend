@@ -3,6 +3,7 @@ package gg.modl.backend.auth.controller;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.AuthResponseMessage;
 import gg.modl.backend.auth.AuthService;
+import gg.modl.backend.auth.EmailChangeService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -52,6 +53,7 @@ public class PanelAuthController {
     private final StaffService staffService;
     private final PermissionService permissionService;
     private final CookieUtil cookieUtil;
+    private final EmailChangeService emailChangeService;
 
     @PostMapping("/send-email-code")
     public ResponseEntity<PanelAuthResponse> sendEmailCode(
@@ -174,23 +176,8 @@ public class PanelAuthController {
             return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
-        String newEmail = requestData.getNewEmail().trim();
-        if (currentEmail.equalsIgnoreCase(newEmail)) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "New email must be different from your current email."));
-        }
-
         Server server = RequestUtil.getRequestServer(request);
-        boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
-
-        if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "This email is not authorized for this panel."));
-        }
-
-        try {
-            authService.sendUserLoginCode(server, newEmail);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(PanelAuthProtoMapper.toAuthResponse(false, "Failed to send verification code."));
-        }
+        emailChangeService.sendChangeCode(server, currentEmail, requestData.getNewEmail());
 
         return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, "Verification code sent to new email."));
     }
@@ -206,29 +193,10 @@ public class PanelAuthController {
             return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
         }
 
-        String newEmail = requestData.getNewEmail().trim();
-        if (currentEmail.equalsIgnoreCase(newEmail)) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "New email must be different from your current email."));
-        }
-
         Server server = RequestUtil.getRequestServer(request);
-        boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
-
-        if (!isSuperAdmin && !permissionService.isAuthorizedEmail(server, newEmail)) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "This email is not authorized for this panel."));
-        }
-
-        if (!authService.verifyCode(server, newEmail, requestData.getCode())) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, "Invalid or expired verification code."));
-        }
-
-        Optional<Staff> result = staffService.updateEmail(server, currentEmail, newEmail, isSuperAdmin);
-        if (result.isEmpty()) {
-            return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
-        }
-
-        sessionService.invalidateAllSessionsForEmail(server, currentEmail);
-        AuthSessionData newSession = sessionService.createSession(server, newEmail, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
+        AuthSessionData newSession = emailChangeService.changeEmail(
+            server, currentEmail, requestData.getNewEmail(), requestData.getCode(),
+            RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
         response.addCookie(cookieUtil.createSessionCookie(newSession.getId()));
 
         return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, "Email updated successfully."));

@@ -16,6 +16,7 @@ import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.proto.modl.v1.PanelResource;
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -312,7 +314,12 @@ public class PlayerService {
 
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
-        Player player = playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        Player player;
+        try {
+            player = playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        } catch (DuplicateKeyException alreadyExists) {
+            throw new ConflictException("A player with this Minecraft UUID already exists", alreadyExists);
+        }
         realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
@@ -345,18 +352,26 @@ public class PlayerService {
 
     public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
-
         if (existingPlayer.isPresent()) {
-            Player player = existingPlayer.get();
-            boolean isNewIp = updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
-            playerRepository.updateLoginState(server, player);
-            return new LoginResult(player, isNewIp);
+            return applyLoginToExistingPlayer(server, existingPlayer.get(), username, ip, ipInfo, skinHash, serverName);
         }
 
         Player player = newPlayer(minecraftUuid, username);
         boolean isNewIp = addIpToPlayer(player, ip, ipInfo);
         updatePlayerDataOnLogin(player, skinHash, serverName);
-        return new LoginResult(playerRepository.saveEntity(server, player), isNewIp);
+        try {
+            return new LoginResult(playerRepository.saveEntity(server, player), isNewIp);
+        } catch (DuplicateKeyException raced) {
+            Player winner = findByMinecraftUuid(server, minecraftUuid).orElseThrow(() -> raced);
+            return applyLoginToExistingPlayer(server, winner, username, ip, ipInfo, skinHash, serverName);
+        }
+    }
+
+    private LoginResult applyLoginToExistingPlayer(Server server, Player player, String username, String ip,
+                                                   Map<String, Object> ipInfo, String skinHash, String serverName) {
+        boolean isNewIp = updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
+        playerRepository.updateLoginState(server, player);
+        return new LoginResult(player, isNewIp);
     }
 
     public Player addUsername(Server server, UUID minecraftUuid, String username) {

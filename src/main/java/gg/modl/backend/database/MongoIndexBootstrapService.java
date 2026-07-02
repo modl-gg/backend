@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 public class MongoIndexBootstrapService {
     private final TenantMongoAccess tenantMongoAccess;
     private final ServerMongoRepository serverRepository;
+    private final TenantMigrationService tenantMigrationService;
 
     @PostConstruct
     public void initGlobalIndexes() {
@@ -40,12 +41,12 @@ public class MongoIndexBootstrapService {
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    public void ensureIndexesForExistingTenants() {
+    public void bootstrapExistingTenants() {
         List<Server> servers;
         try {
             servers = serverRepository.findAll();
         } catch (Exception e) {
-            log.error("Failed to list servers for tenant index bootstrap", e);
+            log.error("Failed to list servers for tenant bootstrap", e);
             return;
         }
 
@@ -55,22 +56,24 @@ public class MongoIndexBootstrapService {
                 && !server.getDatabaseName().isBlank())
             .toList();
 
-        log.info("Ensuring tenant indexes for {} existing tenants", targets.size());
+        log.info("Bootstrapping schema for {} existing tenants", targets.size());
         int succeeded = 0;
         int failed = 0;
         for (Server server : targets) {
             try {
-                log.debug("Ensuring tenant indexes for server id={} database={}",
+                log.debug("Bootstrapping schema for server id={} database={}",
                     server.getId(), server.getDatabaseName());
-                createTenantIndexes(tenantMongoAccess.forServer(server));
+                MongoTemplate template = tenantMongoAccess.forServer(server);
+                tenantMigrationService.applyMigrationsForTenant(template);
+                createTenantIndexes(template);
                 succeeded++;
             } catch (Exception e) {
                 failed++;
-                log.warn("Failed to ensure tenant indexes for server id={} database={}",
+                log.warn("Failed to bootstrap schema for server id={} database={}",
                     server.getId(), server.getDatabaseName(), e);
             }
         }
-        log.info("Tenant index bootstrap complete succeeded={} failed={}", succeeded, failed);
+        log.info("Tenant schema bootstrap complete succeeded={} failed={}", succeeded, failed);
     }
 
     private void createGlobalIndexes(MongoTemplate template) {
@@ -163,7 +166,7 @@ public class MongoIndexBootstrapService {
 
         ensureIndexes(template, CollectionName.PLAYERS, List.of(
             IndexSpec.partialUnique("uidx_players_minecraftUuid", doc("minecraftUuid", 1),
-                new Document("minecraftUuid", new Document("$exists", true))),
+                new Document("minecraftUuid", new Document("$type", "string"))),
             IndexSpec.standard("idx_players_punishments_issued_desc", doc("punishments.issued", -1), false, false),
             IndexSpec.standard(
                 "idx_players_punishments_issuerName_issued_desc",

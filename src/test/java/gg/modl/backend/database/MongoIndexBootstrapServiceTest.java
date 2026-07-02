@@ -52,7 +52,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("unique", true)
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
@@ -99,7 +99,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("key", new Document("email", 1))
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
         service.initGlobalIndexes();
 
         verify(adminUsers).createIndex(any());
@@ -118,7 +118,7 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
         when(replays.getIndexInfo()).thenReturn(List.of());
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
         service.createTenantIndexes(template);
 
         ArgumentCaptor<IndexDefinition> replayIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
@@ -134,7 +134,7 @@ class MongoIndexBootstrapServiceTest {
     }
 
     @Test
-    void ensureIndexesForExistingTenantsAppliesIndexesToEachConfiguredServer() {
+    void bootstrapExistingTenantsAppliesIndexesToEachConfiguredServer() {
         TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
         MongoTemplate firstTemplate = mock(MongoTemplate.class);
@@ -155,8 +155,8 @@ class MongoIndexBootstrapServiceTest {
         when(tenantMongoAccess.forServer(configured)).thenReturn(firstTemplate);
         when(tenantMongoAccess.forServer(alsoConfigured)).thenReturn(secondTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository);
-        service.ensureIndexesForExistingTenants();
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository, mock(TenantMigrationService.class));
+        service.bootstrapExistingTenants();
 
         verify(firstReplays, atLeastOnce()).createIndex(any());
         verify(secondReplays, atLeastOnce()).createIndex(any());
@@ -164,7 +164,7 @@ class MongoIndexBootstrapServiceTest {
     }
 
     @Test
-    void ensureIndexesForExistingTenantsContinuesWhenIndividualTenantFails() {
+    void bootstrapExistingTenantsContinuesWhenIndividualTenantFails() {
         TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
         MongoTemplate goodTemplate = mock(MongoTemplate.class);
@@ -179,8 +179,8 @@ class MongoIndexBootstrapServiceTest {
         when(tenantMongoAccess.forServer(broken)).thenThrow(new IllegalStateException("boom"));
         when(tenantMongoAccess.forServer(healthy)).thenReturn(goodTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository);
-        service.ensureIndexesForExistingTenants();
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository, mock(TenantMigrationService.class));
+        service.bootstrapExistingTenants();
 
         verify(goodReplays, atLeastOnce()).createIndex(any());
     }

@@ -5,15 +5,19 @@ import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
-import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.PlayerFields;
+import gg.modl.backend.database.mongo.fields.SettingsFields;
 import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.server.data.Server;
+import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.service.DuplicatePlayerMerger;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -21,9 +25,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,50 +36,25 @@ import org.springframework.stereotype.Service;
 public class TenantMigrationService {
     static final String LOWERCASE_TICKET_UUIDS_MIGRATION_ID = "lowercase-ticket-uuids";
     static final String BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID = "backfill-staff-role-ids";
+    static final String DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID = "dedupe-settings-by-type";
+    static final String DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID = "dedupe-players-by-minecraft-uuid";
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
     private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
 
-    private final TenantMongoAccess tenantMongoAccess;
-    private final ServerMongoRepository serverRepository;
+    private static final Comparator<Document> SETTINGS_RECENCY = Comparator
+        .comparing(TenantMigrationService::settingsVersion, Comparator.nullsFirst(Comparator.naturalOrder()))
+        .thenComparing(TenantMigrationService::settingsUpdatedAt, Comparator.nullsFirst(Comparator.naturalOrder()))
+        .thenComparing(TenantMigrationService::settingsId, Comparator.nullsFirst(Comparator.naturalOrder()))
+        .reversed();
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void runTenantMigrations() {
-        List<Server> servers;
-        try {
-            servers = serverRepository.findAll();
-        } catch (Exception e) {
-            log.error("Failed to list servers for tenant migrations", e);
-            return;
-        }
-
-        List<Server> targets = servers.stream()
-            .filter(server -> server != null
-                && server.getDatabaseName() != null
-                && !server.getDatabaseName().isBlank())
-            .toList();
-
-        log.info("Running tenant migrations for {} existing tenants", targets.size());
-        int succeeded = 0;
-        int failed = 0;
-        for (Server server : targets) {
-            try {
-                log.debug("Running tenant migrations for server id={} database={}",
-                    server.getId(), server.getDatabaseName());
-                applyMigrationsForTenant(tenantMongoAccess.forServer(server));
-                succeeded++;
-            } catch (Exception e) {
-                failed++;
-                log.warn("Failed to run tenant migrations for server id={} database={}",
-                    server.getId(), server.getDatabaseName(), e);
-            }
-        }
-        log.info("Tenant migration run complete succeeded={} failed={}", succeeded, failed);
-    }
+    private final DuplicatePlayerMerger duplicatePlayerMerger;
 
     void applyMigrationsForTenant(MongoTemplate template) {
         runMigrationOnce(template, LOWERCASE_TICKET_UUIDS_MIGRATION_ID, this::lowercaseTicketUuids);
         runMigrationOnce(template, BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID, this::backfillStaffRoleIds);
+        runMigrationOnce(template, DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID, this::dedupeSettingsByType);
+        runMigrationOnce(template, DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID, this::dedupePlayersByMinecraftUuid);
     }
 
     private void runMigrationOnce(MongoTemplate template, String migrationId, MigrationStep step) {
@@ -163,6 +142,106 @@ public class TenantMigrationService {
         }
         log.info("Backfilled staff role ids in database={} staffUpdated={} invitationsUpdated={}",
             template.getDb().getName(), staffUpdated, invitationsUpdated);
+    }
+
+    private void dedupeSettingsByType(MongoTemplate template) {
+        MongoCollection<Document> settings = template.getCollection(CollectionName.SETTINGS);
+        long removedUntyped = settings.deleteMany(Filters.eq(SettingsFields.TYPE, null)).getDeletedCount();
+
+        Map<String, List<Document>> byType = new LinkedHashMap<>();
+        List<Document> typedSettings = settings.find(Filters.ne(SettingsFields.TYPE, null)).into(new ArrayList<>());
+        for (Document document : typedSettings) {
+            byType.computeIfAbsent(document.getString(SettingsFields.TYPE), key -> new ArrayList<>()).add(document);
+        }
+
+        List<Object> removableIds = new ArrayList<>();
+        for (List<Document> group : byType.values()) {
+            if (group.size() < 2) {
+                continue;
+            }
+            group.sort(SETTINGS_RECENCY);
+            for (Document stale : group.subList(1, group.size())) {
+                removableIds.add(stale.get(ID_FIELD));
+            }
+        }
+
+        long removedDuplicates = removeByIds(template, CollectionName.SETTINGS, removableIds);
+        log.info("Deduped settings by type in database={} removedUntyped={} removedDuplicates={}",
+            template.getDb().getName(), removedUntyped, removedDuplicates);
+    }
+
+    private void dedupePlayersByMinecraftUuid(MongoTemplate template) {
+        List<String> duplicateUuids = findDuplicateMinecraftUuids(template);
+        if (duplicateUuids.isEmpty()) {
+            return;
+        }
+
+        long mergedGroups = 0;
+        List<Object> removableIds = new ArrayList<>();
+        for (String minecraftUuid : duplicateUuids) {
+            List<Player> group = template.find(
+                Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)),
+                Player.class,
+                CollectionName.PLAYERS
+            );
+            if (group.size() < 2) {
+                continue;
+            }
+            Player primary = duplicatePlayerMerger.merge(group);
+            template.save(primary, CollectionName.PLAYERS);
+            for (Player player : group) {
+                if (!primary.getId().equals(player.getId())) {
+                    removableIds.add(player.getId());
+                }
+            }
+            mergedGroups++;
+        }
+
+        long removedDocuments = removeByIds(template, CollectionName.PLAYERS, removableIds);
+        log.info("Deduped players by minecraftUuid in database={} mergedGroups={} removedDocuments={}",
+            template.getDb().getName(), mergedGroups, removedDocuments);
+    }
+
+    private List<String> findDuplicateMinecraftUuids(MongoTemplate template) {
+        List<Bson> pipeline = List.of(
+            new Document("$match", new Document(PlayerFields.MINECRAFT_UUID, new Document("$type", "string"))),
+            new Document("$group", new Document(ID_FIELD, "$" + PlayerFields.MINECRAFT_UUID)
+                .append("count", new Document("$sum", 1))),
+            new Document("$match", new Document("count", new Document("$gt", 1)))
+        );
+
+        List<Document> groups = template.getCollection(CollectionName.PLAYERS)
+            .aggregate(pipeline)
+            .allowDiskUse(true)
+            .into(new ArrayList<>());
+        List<String> minecraftUuids = new ArrayList<>();
+        for (Document group : groups) {
+            Object minecraftUuid = group.get(ID_FIELD);
+            if (minecraftUuid != null) {
+                minecraftUuids.add(minecraftUuid.toString());
+            }
+        }
+        return minecraftUuids;
+    }
+
+    private long removeByIds(MongoTemplate template, String collectionName, List<Object> ids) {
+        if (ids.isEmpty()) {
+            return 0;
+        }
+        return template.getCollection(collectionName).deleteMany(Filters.in(ID_FIELD, ids)).getDeletedCount();
+    }
+
+    private static Long settingsVersion(Document document) {
+        return document.get(SettingsFields.VERSION) instanceof Number number ? number.longValue() : null;
+    }
+
+    private static Date settingsUpdatedAt(Document document) {
+        return document.get(SettingsFields.UPDATED_AT) instanceof Date date ? date : null;
+    }
+
+    private static String settingsId(Document document) {
+        Object rawId = document.get(ID_FIELD);
+        return rawId == null ? null : rawId.toString();
     }
 
     private static String stringifyId(Object rawId) {

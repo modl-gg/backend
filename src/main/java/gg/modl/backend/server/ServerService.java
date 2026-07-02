@@ -106,6 +106,15 @@ public class ServerService {
         serverCache.invalidateAll();
     }
 
+    public boolean isAdminEmailInUse(String adminEmail, String excludingServerId) {
+        return serverRepository.existsByAdminEmailExcludingId(EmailAddressUtil.normalize(adminEmail), excludingServerId);
+    }
+
+    public void changeAdminEmail(Server server, String newAdminEmail) {
+        serverRepository.updateAdminEmail(server.getId(), EmailAddressUtil.normalize(newAdminEmail));
+        evictAllServerCaches();
+    }
+
     @Nullable
     private String extractSubdomain(@NotNull String domain) {
         for (String appDomain : appDomains) {

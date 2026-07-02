@@ -11,14 +11,12 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
-import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
@@ -51,12 +49,10 @@ public class StaffService {
     private final StaffMongoRepository staffRepository;
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
-    private final ServerMongoRepository serverRepository;
     private final PlayerService playerService;
     private final PermissionService permissionService;
     private final ServerTimestampService serverTimestampService;
     private final WebAuthnService webAuthnService;
-    private final ServerService serverService;
 
     private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
 
@@ -195,46 +191,24 @@ public class StaffService {
         return toStaffResponse(server, staff, "Active");
     }
 
-    public Optional<StaffResponse> updateStaff(Server server, String username, UpdateStaffRequest request, String currentUserEmail) {
+    public Optional<StaffResponse> updateStaff(Server server, String username, UpdateStaffRequest request) {
         Staff staff = staffRepository.findByUsername(server, username).orElse(null);
 
         if (staff == null) {
             return Optional.empty();
         }
 
-        boolean hasChanges = false;
-        String newEmail = null;
-
         if (request.email() != null) {
-            newEmail = EmailAddressUtil.normalizeIfValid(request.email());
-            if (newEmail == null) {
+            String requestedEmail = EmailAddressUtil.normalizeIfValid(request.email());
+            if (requestedEmail == null) {
                 throw new ValidationException("A valid email address is required");
             }
-        }
-
-        // Compare against the normalized value so a pure case-only edit is not treated as a change.
-        if (newEmail != null && !newEmail.equals(staff.getEmail())) {
-            if (!staff.getEmail().equalsIgnoreCase(currentUserEmail)) {
-                throw new ForbiddenException("You can only change your own email address");
+            if (!requestedEmail.equals(staff.getEmail())) {
+                throw new ForbiddenException("Email changes must be confirmed through email verification in Account Settings");
             }
-
-            if (staffRepository.existsByEmailIgnoreCaseExcluding(server, newEmail, staff.getEmail())) {
-                throw new ConflictException("Email address already in use");
-            }
-
-            staff.setEmail(newEmail);
-            hasChanges = true;
         }
 
-        if (hasChanges) {
-            staff.setUpdatedAt(new Date());
-            evictStaffByEmailCache(server, currentUserEmail);
-            evictStaffByEmailCache(server, newEmail);
-            staff = staffRepository.saveEntity(server, staff);
-            serverTimestampService.updateStaffPermissionsTimestamp(server);
-        }
-
-        return Optional.ofNullable(staff).map(s -> toStaffResponse(server, s, "Active"));
+        return Optional.of(toStaffResponse(server, staff, "Active"));
     }
 
     public boolean deleteStaff(Server server, String id, String removerEmail) {
@@ -573,49 +547,22 @@ public class StaffService {
         return Optional.of(staff);
     }
 
-    public Optional<Staff> updateEmail(Server server, String currentEmail, String newEmail, boolean isSuperAdmin) {
-        String normalizedNewEmail = EmailAddressUtil.normalizeIfValid(newEmail);
-        if (normalizedNewEmail == null) {
-            throw new ValidationException("A valid email address is required");
-        }
+    public boolean isStaffEmailInUse(Server server, String newEmail, String excludingCurrentEmail) {
+        return staffRepository.existsByEmailIgnoreCaseExcluding(server, EmailAddressUtil.normalize(newEmail), excludingCurrentEmail);
+    }
 
-        if (staffRepository.existsByEmailIgnoreCaseExcluding(server, normalizedNewEmail, currentEmail)) {
-            throw new ConflictException("Email address already in use");
-        }
-
-        if (isSuperAdmin && serverRepository.existsByAdminEmailExcludingId(normalizedNewEmail, server.getId())) {
-            throw new ConflictException("Email address already in use");
-        }
-
+    public Optional<Staff> applyStaffEmailChange(Server server, String currentEmail, String newEmail) {
         Staff staff = staffRepository.findByEmailIgnoreCase(server, currentEmail).orElse(null);
-
         if (staff == null) {
-            if (!isSuperAdmin) {
-                return Optional.empty();
-            }
-            staff = Staff.builder()
-                .email(normalizedNewEmail)
-                .username("Admin")
-                .roleId(SUPER_ADMIN_ROLE_ID)
-                .createdAt(new Date())
-                .updatedAt(new Date())
-                .build();
-            staff = staffRepository.saveEntity(server, staff);
-        } else {
-            staff.setEmail(normalizedNewEmail);
-            staff.setUpdatedAt(new Date());
-            staff = staffRepository.saveEntity(server, staff);
+            return Optional.empty();
         }
+
+        staff.setEmail(EmailAddressUtil.normalize(newEmail));
+        staff.setUpdatedAt(new Date());
+        staff = staffRepository.saveEntity(server, staff);
 
         evictStaffByEmailCache(server, currentEmail);
-        evictStaffByEmailCache(server, normalizedNewEmail);
-
-        if (isSuperAdmin) {
-            serverRepository.updateAdminEmail(server.getId(), normalizedNewEmail);
-            // Invalidate the tenant Server cache so isSuperAdmin recognizes the new admin email immediately.
-            serverService.evictAllServerCaches();
-        }
-
+        evictStaffByEmailCache(server, staff.getEmail());
         return Optional.of(staff);
     }
 

@@ -43,6 +43,19 @@ public class BillingService {
         }
     }
 
+    public void syncCustomerEmail(Server server, String newEmail) {
+        String customerId = server.getStripeCustomerId();
+        if (!stripeService.isConfigured() || customerId == null || customerId.isBlank()) {
+            return;
+        }
+
+        try {
+            stripeService.updateCustomerEmail(customerId, newEmail);
+        } catch (StripeException e) {
+            log.warn("Failed to sync Stripe customer email for server {}; billing email may be stale", server.getId(), e);
+        }
+    }
+
     public CheckoutSessionResponse createCheckoutSession(Server server) {
         try {
             String customerId = server.getStripeCustomerId();

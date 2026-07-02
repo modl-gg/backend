@@ -11,6 +11,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.ErrorResponse;
@@ -61,6 +62,16 @@ public class GlobalExceptionHandler {
         }
         return ResponseEntity.status(ex.getStatus())
             .body(new ErrorResponseDTO(ex.getStatus().value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<?> handleDuplicateKey(DuplicateKeyException ex, HttpServletRequest request) {
+        log.debug("Duplicate key violation for {} {}", request.getMethod(), request.getRequestURI());
+        String message = "The request conflicts with an existing record.";
+        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+            return protobufError(HttpStatus.CONFLICT, "CONFLICT", message);
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponseDTO(409, message));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

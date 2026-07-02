@@ -91,10 +91,9 @@ public class PanelStaffController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String currentUserEmail = RequestUtil.getSessionEmail(request);
 
         UpdateStaffRequest mappedRequest = PanelStaffProtoMapper.toUpdateStaffRequest(updateRequest);
-        return staffService.updateStaff(server, username, mappedRequest, currentUserEmail)
+        return staffService.updateStaff(server, username, mappedRequest)
             .map(staff -> {
                 invalidateStaff(server);
                 return ResponseEntity.ok(PanelStaffProtoMapper.toStaffResponse(staff));

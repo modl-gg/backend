@@ -6,6 +6,7 @@ import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
 import com.stripe.model.billingportal.Session;
 import com.stripe.param.CustomerCreateParams;
+import com.stripe.param.CustomerUpdateParams;
 import com.stripe.param.SubscriptionCreateParams;
 import com.stripe.param.SubscriptionUpdateParams;
 import com.stripe.param.billingportal.SessionCreateParams;
@@ -38,6 +39,11 @@ public class StripeService {
 
         Customer customer = Customer.create(params);
         return customer.getId();
+    }
+
+    public void updateCustomerEmail(String customerId, String newEmail) throws StripeException {
+        Customer customer = Customer.retrieve(customerId);
+        customer.update(CustomerUpdateParams.builder().setEmail(newEmail).build());
     }
 
     public com.stripe.model.checkout.Session createCheckoutSession(String customerId, String subdomain) throws StripeException {

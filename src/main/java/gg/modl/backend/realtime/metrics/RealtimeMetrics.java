@@ -13,21 +13,18 @@ import org.springframework.web.socket.CloseStatus;
 @Component
 @RequiredArgsConstructor
 public class RealtimeMetrics {
+    private static final String EVENTS_COUNTER = "modl.realtime.events";
+    private static final String TRANSPORT_TOPIC = "transport";
+    private static final String UNSET = "none";
+
     private final MeterRegistry meterRegistry;
 
-    public void recordConnect(RealtimeConnectionState state) {
+    public void recordConnect() {
         increment("connect");
-        log.info("Realtime websocket connected connectionId={}", state.getConnectionId());
     }
 
-    public void recordDisconnect(RealtimeConnectionState state, CloseStatus status) {
-        increment("disconnect");
-        log.info(
-            "Realtime websocket disconnected connectionId={} statusCode={} reason={}",
-            state.getConnectionId(),
-            status.getCode(),
-            status.getReason()
-        );
+    public void recordDisconnect(CloseStatus status) {
+        incrementReason("disconnect", closeReason(status));
     }
 
     public void recordAuthFailure(String reason) {
@@ -36,7 +33,7 @@ public class RealtimeMetrics {
     }
 
     public void recordTopicAuthorizationFailure(RealtimeConnectionState state, Topic topic, String phase) {
-        increment("topic_auth_failure", "phase", phase);
+        incrementPhase("topic_auth_failure", phase);
         log.warn(
             "Realtime topic authorization failed connectionId={} serverId={} topic={} phase={}",
             state.getConnectionId(),
@@ -47,7 +44,7 @@ public class RealtimeMetrics {
     }
 
     public void recordReject(RealtimeConnectionState state, String reason) {
-        increment("reject", "reason", reason);
+        incrementReason("reject", reason);
         log.warn("Realtime websocket rejected connectionId={} reason={}", state.getConnectionId(), reason);
     }
 
@@ -57,7 +54,7 @@ public class RealtimeMetrics {
     }
 
     public void recordSendAttempt(RealtimeConnectionState state, RealtimeOutboundEvent event) {
-        increment("send_attempt", "topic", event.topic().name());
+        incrementTopic("send_attempt", event.topic().name());
         log.debug(
             "Realtime send attempt connectionId={} serverId={} topic={}",
             state.getConnectionId(),
@@ -67,7 +64,7 @@ public class RealtimeMetrics {
     }
 
     public void recordSendSuccess(RealtimeConnectionState state, RealtimeOutboundEvent event) {
-        increment("send_success", "topic", event.topic().name());
+        incrementTopic("send_success", event.topic().name());
         log.debug(
             "Realtime send success connectionId={} serverId={} topic={}",
             state.getConnectionId(),
@@ -77,7 +74,7 @@ public class RealtimeMetrics {
     }
 
     public void recordSendFailure(RealtimeConnectionState state, RealtimeOutboundEvent event, Throwable exception) {
-        increment("send_failure", "topic", event.topic().name());
+        incrementTopic("send_failure", event.topic().name());
         log.warn(
             "Realtime send failed connectionId={} serverId={} topic={}",
             state.getConnectionId(),
@@ -88,7 +85,7 @@ public class RealtimeMetrics {
     }
 
     public void recordInvalidOutboundPayload(RealtimeOutboundEvent event, Object payloadCase) {
-        increment("invalid_outbound_payload", "topic", event.topic().name());
+        incrementTopic("invalid_outbound_payload", event.topic().name());
         log.warn(
             "Realtime outbound event rejected due to invalid topic/payload combination serverId={} topic={} payloadCase={}",
             event.serverId(),
@@ -98,12 +95,12 @@ public class RealtimeMetrics {
     }
 
     public void recordTransportSendSuccess(RealtimeConnectionState state) {
-        increment("send_success", "topic", "transport");
+        incrementTopic("send_success", TRANSPORT_TOPIC);
         log.debug("Realtime transport send success connectionId={}", state.getConnectionId());
     }
 
     public void recordTransportSendFailure(RealtimeConnectionState state, Throwable exception) {
-        increment("send_failure", "topic", "transport");
+        incrementTopic("send_failure", TRANSPORT_TOPIC);
         log.warn("Realtime transport send failed connectionId={}", state.getConnectionId(), exception);
     }
 
@@ -118,15 +115,38 @@ public class RealtimeMetrics {
     }
 
     public void recordReconnectClose(RealtimeConnectionState state, String reason) {
-        increment("reconnect_close", "reason", reason);
+        incrementReason("reconnect_close", reason);
         log.info("Realtime websocket closed for reconnect connectionId={} reason={}", state.getConnectionId(), reason);
     }
 
     private void increment(String event) {
-        meterRegistry.counter("modl.realtime.events", "event", event).increment();
+        record(event, UNSET, UNSET, UNSET);
     }
 
-    private void increment(String event, String tagKey, String tagValue) {
-        meterRegistry.counter("modl.realtime.events", "event", event, tagKey, tagValue).increment();
+    private void incrementTopic(String event, String topic) {
+        record(event, topic, UNSET, UNSET);
+    }
+
+    private void incrementReason(String event, String reason) {
+        record(event, UNSET, reason, UNSET);
+    }
+
+    private void incrementPhase(String event, String phase) {
+        record(event, UNSET, UNSET, phase);
+    }
+
+    private void record(String event, String topic, String reason, String phase) {
+        meterRegistry.counter(EVENTS_COUNTER, "event", event, "topic", topic, "reason", reason, "phase", phase).increment();
+    }
+
+    private static String closeReason(CloseStatus status) {
+        if (status == null) {
+            return UNSET;
+        }
+        return switch (status.getCode()) {
+            case 1000 -> "normal";
+            case 1001 -> "going_away";
+            default -> "abnormal";
+        };
     }
 }

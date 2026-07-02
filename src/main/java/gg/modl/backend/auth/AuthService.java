@@ -41,6 +41,17 @@ public class AuthService {
         emailService.send(email, EmailHTMLTemplate.USER_CODE.build(server.getServerName(), code));
     }
 
+    public void sendEmailChangeCode(Server server, String newEmail) throws MessagingException, UnsupportedEncodingException {
+        String code = prepareAndStoreCode(newEmail, (normalizedEmail, codeHash, expiresAt) ->
+            authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
+
+        if (code == null) {
+            return;
+        }
+
+        emailService.send(newEmail, EmailHTMLTemplate.EMAIL_CHANGE_CODE.build(server.getServerName(), code));
+    }
+
     private String prepareAndStoreCode(String email, CodeStorageAction storageAction) {
         String code = generateNumericCode(authConfiguration.getEmailCodeLength());
         String codeHash = hashCode(code);

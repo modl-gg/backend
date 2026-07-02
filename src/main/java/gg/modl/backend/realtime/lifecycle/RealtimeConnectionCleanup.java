@@ -26,7 +26,7 @@ public class RealtimeConnectionCleanup {
         connectionRegistry.markTerminal(session);
         connectionRegistry.unregister(session).ifPresent(state -> {
             rateLimiter.forget(state);
-            metrics.recordDisconnect(state, status);
+            metrics.recordDisconnect(status);
         });
     }
 
@@ -35,7 +35,7 @@ public class RealtimeConnectionCleanup {
         connectionRegistry.unregister(session).ifPresent(state -> {
             metrics.recordTransportError(state, exception);
             rateLimiter.forget(state);
-            metrics.recordDisconnect(state, status);
+            metrics.recordDisconnect(status);
         });
     }
 

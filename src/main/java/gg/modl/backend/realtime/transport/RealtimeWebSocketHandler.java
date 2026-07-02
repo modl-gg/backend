@@ -46,7 +46,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         RealtimeConnectionState state = connectionRegistry.register(session);
         session.getAttributes().put("realtime.connectionId", state.getConnectionId());
-        metrics.recordConnect(state);
+        metrics.recordConnect();
 
         if (!properties.isEnabled()) {
             metrics.recordReject(state, "disabled");

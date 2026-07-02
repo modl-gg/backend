@@ -84,8 +84,9 @@ public class RateLimitConfig {
         }
 
         if (path.startsWith("/v1/panel/auth/")) {
-            return path.equals("/v1/panel/auth/send-email-code")
-                   ? RateLimitTier.AUTH_SEND_CODE : RateLimitTier.AUTH;
+            boolean sendCode = path.equals("/v1/panel/auth/send-email-code")
+                               || path.equals("/v1/panel/auth/email/send-code");
+            return sendCode ? RateLimitTier.AUTH_SEND_CODE : RateLimitTier.AUTH;
         }
 
         if (path.startsWith("/v1/panel/migration/")) {
