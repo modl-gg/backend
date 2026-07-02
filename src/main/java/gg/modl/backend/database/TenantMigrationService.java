@@ -1,9 +1,12 @@
 package gg.modl.backend.database;
 
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.DeleteOneModel;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
+import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.SettingsFields;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,12 +26,12 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Criteria;
-import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.convert.MongoConverter;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,7 +41,8 @@ public class TenantMigrationService {
     static final String LOWERCASE_TICKET_UUIDS_MIGRATION_ID = "lowercase-ticket-uuids";
     static final String BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID = "backfill-staff-role-ids";
     static final String DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID = "dedupe-settings-by-type";
-    static final String DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID = "dedupe-players-by-minecraft-uuid";
+    static final String DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID = "dedupe-players-by-minecraft-uuid-v2";
+    static final String NORMALIZE_PLAYER_IDS_MIGRATION_ID = "normalize-player-ids";
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
     private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
@@ -55,6 +60,7 @@ public class TenantMigrationService {
         runMigrationOnce(template, BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID, this::backfillStaffRoleIds);
         runMigrationOnce(template, DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID, this::dedupeSettingsByType);
         runMigrationOnce(template, DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID, this::dedupePlayersByMinecraftUuid);
+        runMigrationOnce(template, NORMALIZE_PLAYER_IDS_MIGRATION_ID, this::normalizePlayerIds);
     }
 
     private void runMigrationOnce(MongoTemplate template, String migrationId, MigrationStep step) {
@@ -176,22 +182,33 @@ public class TenantMigrationService {
             return;
         }
 
+        MongoCollection<Document> players = template.getCollection(CollectionName.PLAYERS);
+        MongoConverter converter = template.getConverter();
+
         long mergedGroups = 0;
         List<Object> removableIds = new ArrayList<>();
         for (String minecraftUuid : duplicateUuids) {
-            List<Player> group = template.find(
-                Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)),
-                Player.class,
-                CollectionName.PLAYERS
-            );
-            if (group.size() < 2) {
+            List<Document> rawGroup = players
+                .find(Filters.eq(PlayerFields.MINECRAFT_UUID, minecraftUuid))
+                .into(new ArrayList<>());
+            if (rawGroup.size() < 2) {
                 continue;
             }
+
+            Map<Player, Object> storedIdByPlayer = new IdentityHashMap<>();
+            List<Player> group = new ArrayList<>(rawGroup.size());
+            for (Document rawPlayer : rawGroup) {
+                Player player = converter.read(Player.class, rawPlayer);
+                group.add(player);
+                storedIdByPlayer.put(player, rawPlayer.get(PlayerFields.ID));
+            }
+
             Player primary = duplicatePlayerMerger.merge(group);
-            template.save(primary, CollectionName.PLAYERS);
+            persistMergedPlayer(players, converter, primary, storedIdByPlayer.get(primary));
+
             for (Player player : group) {
-                if (!primary.getId().equals(player.getId())) {
-                    removableIds.add(player.getId());
+                if (player != primary) {
+                    removableIds.add(storedIdByPlayer.get(player));
                 }
             }
             mergedGroups++;
@@ -200,6 +217,41 @@ public class TenantMigrationService {
         long removedDocuments = removeByIds(template, CollectionName.PLAYERS, removableIds);
         log.info("Deduped players by minecraftUuid in database={} mergedGroups={} removedDocuments={}",
             template.getDb().getName(), mergedGroups, removedDocuments);
+    }
+
+    private void persistMergedPlayer(MongoCollection<Document> players, MongoConverter converter,
+                                     Player primary, Object storedId) {
+        Document merged = new Document();
+        converter.write(primary, merged);
+        players.updateOne(Filters.eq(PlayerFields.ID, storedId), Updates.combine(
+            Updates.set(PlayerFields.USERNAMES, merged.get(PlayerFields.USERNAMES)),
+            Updates.set(PlayerFields.IP_ADDRESSES, merged.get(PlayerFields.IP_ADDRESSES)),
+            Updates.set(PlayerFields.NOTES, merged.get(PlayerFields.NOTES)),
+            Updates.set(PlayerFields.PUNISHMENTS, merged.get(PlayerFields.PUNISHMENTS)),
+            Updates.set(PlayerFields.DATA, merged.get(PlayerFields.DATA))
+        ));
+    }
+
+    private void normalizePlayerIds(MongoTemplate template) {
+        MongoCollection<Document> players = template.getCollection(CollectionName.PLAYERS);
+        List<Document> legacyPlayers = players
+            .find(Filters.type(PlayerFields.ID, BsonType.OBJECT_ID))
+            .into(new ArrayList<>());
+
+        List<WriteModel<Document>> operations = new ArrayList<>(legacyPlayers.size() * 2);
+        for (Document legacyPlayer : legacyPlayers) {
+            Object legacyId = legacyPlayer.get(PlayerFields.ID);
+            Document reKeyedPlayer = new Document(legacyPlayer);
+            reKeyedPlayer.put(PlayerFields.ID, legacyId.toString());
+            operations.add(new DeleteOneModel<>(Filters.eq(PlayerFields.ID, legacyId)));
+            operations.add(new InsertOneModel<>(reKeyedPlayer));
+        }
+
+        if (!operations.isEmpty()) {
+            players.bulkWrite(operations);
+        }
+        log.info("Normalized player ids in database={} reKeyed={}",
+            template.getDb().getName(), legacyPlayers.size());
     }
 
     private List<String> findDuplicateMinecraftUuids(MongoTemplate template) {

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -14,23 +13,24 @@ import static org.mockito.Mockito.when;
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.DeleteOneModel;
+import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.UpdateOptions;
+import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
-import gg.modl.backend.player.data.Player;
-import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.DuplicatePlayerMerger;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
-import java.util.UUID;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.mongodb.core.MongoTemplate;
-import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
+import org.springframework.data.mongodb.core.convert.NoOpDbRefResolver;
+import org.springframework.data.mongodb.core.mapping.MongoMappingContext;
 
 class TenantMigrationServiceTest {
     @Test
@@ -63,7 +63,7 @@ class TenantMigrationServiceTest {
         assertThat(pipelineJson).contains("$reportedPlayerUuid");
 
         ArgumentCaptor<Bson> markerFilter = ArgumentCaptor.forClass(Bson.class);
-        verify(migrations, times(4)).updateOne(markerFilter.capture(), any(Bson.class), any(UpdateOptions.class));
+        verify(migrations, times(5)).updateOne(markerFilter.capture(), any(Bson.class), any(UpdateOptions.class));
         List<String> markerJsons = markerFilter.getAllValues().stream().map(TenantMigrationServiceTest::toJson).toList();
         assertThat(markerJsons).anyMatch(json -> json.contains(TenantMigrationService.LOWERCASE_TICKET_UUIDS_MIGRATION_ID));
         assertThat(markerJsons).anyMatch(json -> json.contains(TenantMigrationService.BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID));
@@ -189,7 +189,7 @@ class TenantMigrationServiceTest {
     }
 
     @Test
-    void dedupePlayersMergesDuplicatesAndDeletesLosers() {
+    void dedupePlayersMergesDuplicatesAndDeletesLosersByStoredId() {
         MongoTemplate template = mock(MongoTemplate.class);
         mockMigrationsCollection(template, null);
         mockTicketsCollection(template, 0L, 0L);
@@ -197,11 +197,15 @@ class TenantMigrationServiceTest {
         mockEmptySettingsDedupe(template);
 
         String minecraftUuid = "966eea38-a14e-3e73-a517-0438b82d88e8";
+        ObjectId loserStoredId = new ObjectId("507f1f77bcf86cd799439011");
         @SuppressWarnings("unchecked")
         MongoCollection<Document> players = mock(MongoCollection.class);
         @SuppressWarnings("unchecked")
         AggregateIterable<Document> aggregate = mock(AggregateIterable.class);
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> groupFind = mock(FindIterable.class);
         when(template.getCollection(CollectionName.PLAYERS)).thenReturn(players);
+        when(template.getConverter()).thenReturn(playerConverter());
         when(players.aggregate(anyList())).thenReturn(aggregate);
         when(aggregate.allowDiskUse(anyBoolean())).thenReturn(aggregate);
         when(aggregate.into(any())).thenAnswer(invocation -> {
@@ -209,35 +213,141 @@ class TenantMigrationServiceTest {
             sink.add(new Document("_id", minecraftUuid).append("count", 2));
             return sink;
         });
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> normalizeFind = mock(FindIterable.class);
+        when(players.find(any(Bson.class))).thenReturn(groupFind, normalizeFind);
+        when(normalizeFind.into(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(groupFind.into(any())).thenAnswer(invocation -> {
+            List<Document> sink = invocation.getArgument(0);
+            sink.add(new Document("_id", "keep").append("minecraftUuid", minecraftUuid)
+                .append("punishments", List.of(new Document("id", "p1"), new Document("id", "p2"))));
+            sink.add(new Document("_id", loserStoredId).append("minecraftUuid", minecraftUuid)
+                .append("punishments", List.of(new Document("id", "p3"))));
+            return sink;
+        });
+        when(players.updateOne(any(Bson.class), any(Bson.class))).thenReturn(UpdateResult.acknowledged(1L, 1L, null));
         when(players.deleteMany(any(Bson.class))).thenReturn(DeleteResult.acknowledged(1));
-
-        Player keep = Player.builder().id("keep").minecraftUuid(UUID.fromString(minecraftUuid))
-            .punishments(new ArrayList<>(List.of(punishment("p1"), punishment("p2"))))
-            .build();
-        Player drop = Player.builder().id("drop").minecraftUuid(UUID.fromString(minecraftUuid))
-            .punishments(new ArrayList<>(List.of(punishment("p3"))))
-            .build();
-        when(template.find(any(Query.class), eq(Player.class), eq(CollectionName.PLAYERS)))
-            .thenReturn(List.of(keep, drop));
 
         new TenantMigrationService(new DuplicatePlayerMerger()).applyMigrationsForTenant(template);
 
-        ArgumentCaptor<Player> savedCaptor = ArgumentCaptor.forClass(Player.class);
-        verify(template).save(savedCaptor.capture(), eq(CollectionName.PLAYERS));
-        assertThat(savedCaptor.getValue().getId()).isEqualTo("keep");
-        assertThat(savedCaptor.getValue().getPunishments()).extracting(Punishment::getId)
-            .containsExactlyInAnyOrder("p1", "p2", "p3");
+        ArgumentCaptor<Bson> updateFilterCaptor = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(players).updateOne(updateFilterCaptor.capture(), updateCaptor.capture());
+        assertThat(toJson(updateFilterCaptor.getValue())).contains("\"_id\": \"keep\"");
+        assertThat(toJson(updateCaptor.getValue())).contains("p1").contains("p2").contains("p3");
 
         ArgumentCaptor<Bson> deleteCaptor = ArgumentCaptor.forClass(Bson.class);
         verify(players).deleteMany(deleteCaptor.capture());
-        assertThat(toJson(deleteCaptor.getValue())).contains("drop").doesNotContain("keep");
+        String deleteJson = toJson(deleteCaptor.getValue());
+        assertThat(deleteJson).contains("$oid").contains(loserStoredId.toHexString());
+        assertThat(deleteJson).doesNotContain("keep");
     }
 
-    private Punishment punishment(String id) {
-        Punishment punishment = new Punishment();
-        punishment.setId(id);
-        punishment.setIssued(new Date());
-        return punishment;
+    @Test
+    void dedupePlayersPersistsMergedPrimaryByStoredObjectId() {
+        MongoTemplate template = mock(MongoTemplate.class);
+        mockMigrationsCollection(template, null);
+        mockTicketsCollection(template, 0L, 0L);
+        mockRoleCollections(template, List.of());
+        mockEmptySettingsDedupe(template);
+
+        String minecraftUuid = "966eea38-a14e-3e73-a517-0438b82d88e8";
+        ObjectId primaryStoredId = new ObjectId("507f191e810c19729de860ea");
+        @SuppressWarnings("unchecked")
+        MongoCollection<Document> players = mock(MongoCollection.class);
+        @SuppressWarnings("unchecked")
+        AggregateIterable<Document> aggregate = mock(AggregateIterable.class);
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> groupFind = mock(FindIterable.class);
+        when(template.getCollection(CollectionName.PLAYERS)).thenReturn(players);
+        when(template.getConverter()).thenReturn(playerConverter());
+        when(players.aggregate(anyList())).thenReturn(aggregate);
+        when(aggregate.allowDiskUse(anyBoolean())).thenReturn(aggregate);
+        when(aggregate.into(any())).thenAnswer(invocation -> {
+            List<Document> sink = invocation.getArgument(0);
+            sink.add(new Document("_id", minecraftUuid).append("count", 2));
+            return sink;
+        });
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> normalizeFind = mock(FindIterable.class);
+        when(players.find(any(Bson.class))).thenReturn(groupFind, normalizeFind);
+        when(normalizeFind.into(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(groupFind.into(any())).thenAnswer(invocation -> {
+            List<Document> sink = invocation.getArgument(0);
+            sink.add(new Document("_id", primaryStoredId).append("minecraftUuid", minecraftUuid)
+                .append("punishments", List.of(new Document("id", "p1"), new Document("id", "p2"))));
+            sink.add(new Document("_id", "loser").append("minecraftUuid", minecraftUuid)
+                .append("punishments", List.of(new Document("id", "p3"))));
+            return sink;
+        });
+        when(players.updateOne(any(Bson.class), any(Bson.class))).thenReturn(UpdateResult.acknowledged(1L, 1L, null));
+        when(players.deleteMany(any(Bson.class))).thenReturn(DeleteResult.acknowledged(1));
+
+        new TenantMigrationService(new DuplicatePlayerMerger()).applyMigrationsForTenant(template);
+
+        ArgumentCaptor<Bson> updateFilterCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(players).updateOne(updateFilterCaptor.capture(), any(Bson.class));
+        assertThat(toJson(updateFilterCaptor.getValue())).contains("$oid").contains(primaryStoredId.toHexString());
+
+        ArgumentCaptor<Bson> deleteCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(players).deleteMany(deleteCaptor.capture());
+        assertThat(toJson(deleteCaptor.getValue())).contains("loser").doesNotContain("$oid");
+    }
+
+    @Test
+    void normalizePlayerIdsReKeysLegacyObjectIdDocumentsToStrings() {
+        MongoTemplate template = mock(MongoTemplate.class);
+        mockMigrationsCollection(template, null);
+        mockTicketsCollection(template, 0L, 0L);
+        mockRoleCollections(template, List.of());
+        mockEmptySettingsDedupe(template);
+
+        ObjectId legacyId = new ObjectId("507f1f77bcf86cd799439011");
+        String uuid = "966eea38-a14e-3e73-a517-0438b82d88e8";
+        @SuppressWarnings("unchecked")
+        MongoCollection<Document> players = mock(MongoCollection.class);
+        @SuppressWarnings("unchecked")
+        AggregateIterable<Document> aggregate = mock(AggregateIterable.class);
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> legacyFind = mock(FindIterable.class);
+        when(template.getCollection(CollectionName.PLAYERS)).thenReturn(players);
+        when(players.aggregate(anyList())).thenReturn(aggregate);
+        when(aggregate.allowDiskUse(anyBoolean())).thenReturn(aggregate);
+        when(aggregate.into(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(players.find(any(Bson.class))).thenReturn(legacyFind);
+        when(legacyFind.into(any())).thenAnswer(invocation -> {
+            List<Document> sink = invocation.getArgument(0);
+            sink.add(new Document("_id", legacyId).append("minecraftUuid", uuid)
+                .append("usernames", List.of(new Document("username", "Legacy"))));
+            return sink;
+        });
+
+        new TenantMigrationService(mock(DuplicatePlayerMerger.class)).applyMigrationsForTenant(template);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<WriteModel<Document>>> opsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(players).bulkWrite(opsCaptor.capture());
+        List<WriteModel<Document>> operations = opsCaptor.getValue();
+        assertThat(operations).hasSize(2);
+        assertThat(operations.get(0)).isInstanceOf(DeleteOneModel.class);
+        assertThat(operations.get(1)).isInstanceOf(InsertOneModel.class);
+
+        DeleteOneModel<Document> delete = (DeleteOneModel<Document>) operations.get(0);
+        assertThat(toJson(delete.getFilter())).contains("$oid").contains(legacyId.toHexString());
+
+        InsertOneModel<Document> insert = (InsertOneModel<Document>) operations.get(1);
+        Document inserted = insert.getDocument();
+        assertThat(inserted.get("_id")).isInstanceOf(String.class).isEqualTo(legacyId.toHexString());
+        assertThat(inserted.getString("minecraftUuid")).isEqualTo(uuid);
+    }
+
+    private MappingMongoConverter playerConverter() {
+        MongoMappingContext mappingContext = new MongoMappingContext();
+        mappingContext.setAutoIndexCreation(false);
+        mappingContext.afterPropertiesSet();
+        MappingMongoConverter converter = new MappingMongoConverter(NoOpDbRefResolver.INSTANCE, mappingContext);
+        converter.afterPropertiesSet();
+        return converter;
     }
 
     private MongoCollection<Document> mockMigrationsCollection(MongoTemplate template, Document existingMarker) {
@@ -286,10 +396,14 @@ class TenantMigrationServiceTest {
         MongoCollection<Document> players = mock(MongoCollection.class);
         @SuppressWarnings("unchecked")
         AggregateIterable<Document> playersAggregate = mock(AggregateIterable.class);
+        @SuppressWarnings("unchecked")
+        FindIterable<Document> playersFind = mock(FindIterable.class);
         when(template.getCollection(CollectionName.PLAYERS)).thenReturn(players);
         when(players.aggregate(anyList())).thenReturn(playersAggregate);
         when(playersAggregate.allowDiskUse(anyBoolean())).thenReturn(playersAggregate);
         when(playersAggregate.into(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(players.find(any(Bson.class))).thenReturn(playersFind);
+        when(playersFind.into(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private record RoleCollections(MongoCollection<Document> staff, MongoCollection<Document> invitations) {}

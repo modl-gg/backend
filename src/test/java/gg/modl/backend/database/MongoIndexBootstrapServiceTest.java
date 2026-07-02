@@ -134,6 +134,34 @@ class MongoIndexBootstrapServiceTest {
     }
 
     @Test
+    void createTenantIndexesLeavesEquivalentPartialUniquePlayerIndexUntouched() {
+        TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
+        MongoTemplate template = mock(MongoTemplate.class);
+        IndexOperations players = mock(IndexOperations.class);
+        IndexOperations replays = mock(IndexOperations.class);
+        stubTenantIndexOps(template);
+        when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
+        when(replays.getIndexInfo()).thenReturn(List.of());
+        when(template.indexOps(CollectionName.PLAYERS)).thenReturn(players);
+        when(players.getIndexInfo()).thenReturn(List.of(IndexInfo.indexInfoOf(
+            new Document("name", "uidx_players_minecraftUuid")
+                .append("key", new Document("minecraftUuid", 1))
+                .append("unique", true)
+                .append("partialFilterExpression", new Document("minecraftUuid", new Document("$type", 2)))
+        )));
+
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(
+            tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
+        service.createTenantIndexes(template);
+
+        verify(players, never()).dropIndex("uidx_players_minecraftUuid");
+        ArgumentCaptor<IndexDefinition> created = ArgumentCaptor.forClass(IndexDefinition.class);
+        verify(players, atLeastOnce()).createIndex(created.capture());
+        assertThat(created.getAllValues())
+            .noneMatch(index -> "uidx_players_minecraftUuid".equals(index.getIndexOptions().getString("name")));
+    }
+
+    @Test
     void bootstrapExistingTenantsAppliesIndexesToEachConfiguredServer() {
         TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);

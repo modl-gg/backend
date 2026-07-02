@@ -27,6 +27,27 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class MongoIndexBootstrapService {
+    private static final String TYPE_OPERATOR = "$type";
+    private static final Map<String, Integer> BSON_TYPE_CODES = Map.ofEntries(
+        Map.entry("double", 1),
+        Map.entry("string", 2),
+        Map.entry("object", 3),
+        Map.entry("array", 4),
+        Map.entry("binData", 5),
+        Map.entry("objectId", 7),
+        Map.entry("bool", 8),
+        Map.entry("date", 9),
+        Map.entry("null", 10),
+        Map.entry("regex", 11),
+        Map.entry("javascript", 13),
+        Map.entry("int", 16),
+        Map.entry("timestamp", 17),
+        Map.entry("long", 18),
+        Map.entry("decimal", 19),
+        Map.entry("minKey", -1),
+        Map.entry("maxKey", 127)
+    );
+
     private final TenantMongoAccess tenantMongoAccess;
     private final ServerMongoRepository serverRepository;
     private final TenantMigrationService tenantMigrationService;
@@ -382,13 +403,57 @@ public class MongoIndexBootstrapService {
             if (existingPartialJson == null || specPartial == null) {
                 continue;
             }
-            if (!Document.parse(existingPartialJson).equals(specPartial)) {
+            if (!canonicalPartialFilter(Document.parse(existingPartialJson))
+                    .equals(canonicalPartialFilter(specPartial))) {
                 continue;
             }
 
             return true;
         }
         return false;
+    }
+
+    private Document canonicalPartialFilter(Document filter) {
+        Document canonical = new Document();
+        for (Map.Entry<String, Object> entry : filter.entrySet()) {
+            canonical.put(entry.getKey(), canonicalFilterValue(entry.getKey(), entry.getValue()));
+        }
+        return canonical;
+    }
+
+    private Object canonicalFilterValue(String key, Object value) {
+        if (TYPE_OPERATOR.equals(key)) {
+            return canonicalBsonType(value);
+        }
+        if (value instanceof Document nested) {
+            return canonicalPartialFilter(nested);
+        }
+        if (value instanceof List<?> elements) {
+            List<Object> canonical = new ArrayList<>(elements.size());
+            for (Object element : elements) {
+                canonical.add(element instanceof Document nested ? canonicalPartialFilter(nested) : element);
+            }
+            return canonical;
+        }
+        return value;
+    }
+
+    private Object canonicalBsonType(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String alias) {
+            Integer code = BSON_TYPE_CODES.get(alias);
+            return code != null ? code : alias;
+        }
+        if (value instanceof List<?> aliases) {
+            List<Object> canonical = new ArrayList<>(aliases.size());
+            for (Object alias : aliases) {
+                canonical.add(canonicalBsonType(alias));
+            }
+            return canonical;
+        }
+        return value;
     }
 
     private List<IndexField> fieldsFor(Document keys) {
