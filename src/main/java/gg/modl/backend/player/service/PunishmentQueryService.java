@@ -58,6 +58,7 @@ public class PunishmentQueryService {
     // Inline instance (not a constructor-injected bean) so the @RequiredArgsConstructor signature
     // stays stable for direct test constructors; a default ObjectMapper is sufficient for POJO->Map.
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int RECENT_PUNISHMENT_SCAN_LIMIT = 500;
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -286,32 +287,27 @@ public class PunishmentQueryService {
 
     public List<Map<String, Object>> getRecentPunishments(Server server, int hours) {
         Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
-        List<Player> players = punishmentRepository.findWithPunishmentsIssuedAfter(server, cutoff);
+        List<Player> players = punishmentRepository.findWithPunishmentsIssuedAfter(server, cutoff, RECENT_PUNISHMENT_SCAN_LIMIT);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
-        List<Punishment> recentPunishments = new ArrayList<>();
+        List<PunishmentContext> recent = new ArrayList<>();
+        Set<String> issuerIds = new HashSet<>();
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
                 if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
-                    recentPunishments.add(punishment);
+                    recent.add(new PunishmentContext(player, punishment));
+                    issuerIds.addAll(collectIssuerIds(punishment));
                 }
             }
         }
-        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, recentPunishments);
+        Map<String, String> resolvedIssuers = issuerIds.isEmpty() ? Map.of() : issuerNameResolver.batchResolve(issuerIds, server);
 
         List<Map<String, Object>> punishments = new ArrayList<>();
-        for (Player player : players) {
-            String username = getLatestUsername(player);
-            for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getIssued() == null || !punishment.getIssued().after(cutoff)) {
-                    continue;
-                }
-
-                Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(punishment, types, resolvedIssuers);
-                punishmentMap.put("playerName", username);
-                punishmentMap.put("playerUuid", player.getMinecraftUuid().toString());
-                punishments.add(punishmentMap);
-            }
+        for (PunishmentContext entry : recent) {
+            Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(entry.punishment(), types, resolvedIssuers);
+            punishmentMap.put("playerName", getLatestUsername(entry.player()));
+            punishmentMap.put("playerUuid", entry.player().getMinecraftUuid().toString());
+            punishments.add(punishmentMap);
         }
 
         punishments.sort((left, right) -> ((Date) right.get("issued")).compareTo((Date) left.get("issued")));

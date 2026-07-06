@@ -1,9 +1,11 @@
 package gg.modl.backend.settings.data;
 
+import jakarta.validation.Valid;
+
 public record PunishmentDurations(
-    OffenseLevelDurations low,
-    OffenseLevelDurations regular,
-    OffenseLevelDurations severe
+    @Valid OffenseLevelDurations low,
+    @Valid OffenseLevelDurations regular,
+    @Valid OffenseLevelDurations severe
 ) {
     public DurationDetail getDuration(String severity, String offenseLevel) {
         OffenseLevelDurations severityDurations = getForSeverity(severity);
@@ -11,10 +13,6 @@ public record PunishmentDurations(
     }
 
     public OffenseLevelDurations getForSeverity(String severity) {
-        return switch (SeverityLevel.normalize(severity)) {
-            case "low" -> low;
-            case "severe" -> severe;
-            default -> regular;
-        };
+        return SeverityLevel.select(severity, low, regular, severe);
     }
 }

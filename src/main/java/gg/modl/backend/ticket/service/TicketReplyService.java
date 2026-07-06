@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 public class TicketReplyService {
     private final TicketMongoRepository ticketRepository;
     private final TicketNotificationService notificationService;
+    private final TicketContentService contentService;
 
     public TicketReply addReply(Server server, String ticketId, AddReplyRequest request) {
         Ticket ticket = ticketRepository.findById(server, ticketId)
@@ -48,6 +49,30 @@ public class TicketReplyService {
         if (request.staff()) {
             notificationService.notifyTicketReply(server, saved, newReply);
         }
+
+        return newReply;
+    }
+
+    public TicketReply addPublicReply(Server server, String ticketId, String content, List<Object> attachments) {
+        Ticket ticket = ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+
+        if (ticket.isLocked()) {
+            throw new IllegalStateException("Ticket is locked and cannot accept new replies");
+        }
+
+        TicketReply newReply = TicketReply.builder()
+            .id(UUID.randomUUID().toString())
+            .name(ticket.getCreatorName())
+            .content(content)
+            .type("user")
+            .created(new Date())
+            .staff(false)
+            .attachments(contentService.normalizeAttachments(attachments))
+            .build();
+        ticket.ensureReplies().add(newReply);
+        ticket.setUpdatedAt(new Date());
+        ticketRepository.saveEntity(server, ticket);
 
         return newReply;
     }

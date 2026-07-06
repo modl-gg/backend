@@ -1,6 +1,5 @@
 package gg.modl.backend.replaylite.controller;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -13,12 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.replaylite.service.ReplayLiteService;
+import java.net.URI;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
@@ -28,25 +27,23 @@ class PublicReplayLiteControllerTest {
     private static final UUID REPLAY_ID = UUID.fromString("75f4b741-67df-414c-957b-a8a08222fc30");
 
     @Test
-    void downloadReplayStreamsBytesWithoutRedirectOrPublicCache() {
+    void downloadReplayRedirectsToPresignedUrlWithoutPublicCache() {
         ReplayLiteService service = Mockito.mock(ReplayLiteService.class);
         PublicReplayLiteController controller = new PublicReplayLiteController(service);
-        byte[] replayBytes = new byte[] {1, 2, 3};
         when(service.getPublicReplayDownload(eq(REPLAY_ID.toString()), any()))
             .thenReturn(Optional.of(new ReplayLiteService.ReplayLiteDownload(
-                replayBytes,
-                "application/octet-stream",
+                "https://cdn.example/replay-lite/object.modlreplay",
                 Instant.parse("2026-04-25T12:00:00Z")
             )));
 
         ResponseEntity<?> response = controller.downloadReplay(REPLAY_ID, new org.springframework.mock.web.MockHttpServletRequest());
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertArrayEquals(replayBytes, (byte[]) response.getBody());
-        assertNull(response.getHeaders().getLocation());
+        assertEquals(HttpStatus.FOUND, response.getStatusCode());
+        assertEquals(URI.create("https://cdn.example/replay-lite/object.modlreplay"), response.getHeaders().getLocation());
+        assertNull(response.getBody());
         assertEquals("private, no-store, max-age=0", response.getHeaders().getCacheControl());
         assertEquals("no-cache", response.getHeaders().getPragma());
-        assertEquals("inline; filename=\"" + REPLAY_ID + ".modlreplay\"", response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION));
+        assertEquals(0L, response.getHeaders().getExpires());
     }
 
     @Test

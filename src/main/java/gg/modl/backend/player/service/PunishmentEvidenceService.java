@@ -13,6 +13,7 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperation
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
 import gg.modl.backend.server.data.Server;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
@@ -36,7 +37,7 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         Date now = new Date();
-        context.punishment().getEvidence().add(new PunishmentEvidence(
+        PunishmentEvidence evidence = new PunishmentEvidence(
             null,
             evidenceUrl,
             "url",
@@ -46,15 +47,18 @@ public class PunishmentEvidenceService {
             null,
             null,
             null
-        ));
-        context.punishment().getNotes().add(new PunishmentNote(
+        );
+        PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
             "added evidence",
             now,
             resolvedIssuerName,
             issuerId
-        ));
-        punishmentRepository.replacePunishments(server, context.player());
+        );
+        context.punishment().getEvidence().add(evidence);
+        context.punishment().getNotes().add(note);
+        punishmentRepository.appendEvidence(server, context.player().getMinecraftUuid().toString(), punishmentId,
+            List.of(evidence), note);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence added", true, 1);
     }
@@ -71,7 +75,7 @@ public class PunishmentEvidenceService {
         String evIssuerId = request.issuerId();
         String evIssuerName = evIssuerId != null ? null : (request.issuerName() != null ? request.issuerName() : "System");
 
-        punishment.getEvidence().add(new PunishmentEvidence(
+        PunishmentEvidence evidence = new PunishmentEvidence(
             request.text(),
             request.url(),
             request.type(),
@@ -81,9 +85,9 @@ public class PunishmentEvidenceService {
             request.fileName(),
             request.fileType(),
             request.fileSize()
-        ));
-
-        punishmentRepository.replacePunishments(server, player);
+        );
+        punishment.getEvidence().add(evidence);
+        punishmentRepository.appendEvidence(server, player.getMinecraftUuid().toString(), punishmentId, List.of(evidence), null);
         realtimePublisher.invalidatePunishments(server, punishmentId);
         return player;
     }
@@ -100,8 +104,9 @@ public class PunishmentEvidenceService {
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
         Date now = new Date();
+        List<PunishmentEvidence> evidenceList = new ArrayList<>();
         for (UploadedEvidenceItem evidenceItem : evidenceItems) {
-            context.punishment().getEvidence().add(new PunishmentEvidence(
+            PunishmentEvidence evidence = new PunishmentEvidence(
                 null,
                 evidenceItem.url(),
                 "file",
@@ -111,16 +116,19 @@ public class PunishmentEvidenceService {
                 evidenceItem.fileName(),
                 evidenceItem.fileType(),
                 evidenceItem.fileSize()
-            ));
+            );
+            evidenceList.add(evidence);
+            context.punishment().getEvidence().add(evidence);
         }
-        context.punishment().getNotes().add(new PunishmentNote(
+        PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
             "uploaded " + evidenceItems.size() + " evidence file(s)",
             now,
             resolvedIssuerName,
             issuerId
-        ));
-        punishmentRepository.replacePunishments(server, context.player());
+        );
+        context.punishment().getNotes().add(note);
+        punishmentRepository.appendEvidence(server, context.player().getMinecraftUuid().toString(), punishmentId, evidenceList, note);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Evidence uploaded successfully", true, evidenceItems.size());
     }
@@ -132,8 +140,9 @@ public class PunishmentEvidenceService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        context.punishment().getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        punishmentRepository.replacePunishments(server, context.player());
+        PunishmentNote note = new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId);
+        context.punishment().getNotes().add(note);
+        punishmentRepository.addPunishmentNote(server, context.player().getMinecraftUuid().toString(), punishmentId, note, null);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Note added", true, 1);
     }
@@ -148,8 +157,9 @@ public class PunishmentEvidenceService {
         }
 
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        punishment.getNotes().add(new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId));
-        punishmentRepository.replacePunishments(server, player);
+        PunishmentNote note = new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId);
+        punishment.getNotes().add(note);
+        punishmentRepository.addPunishmentNote(server, player.getMinecraftUuid().toString(), punishmentId, note, null);
         realtimePublisher.invalidatePunishments(server, punishmentId);
         return player;
     }

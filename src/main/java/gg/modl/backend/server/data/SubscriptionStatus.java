@@ -2,6 +2,7 @@ package gg.modl.backend.server.data;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
+import java.util.Locale;
 
 public enum SubscriptionStatus {
     ACTIVE("ACTIVE"),
@@ -27,5 +28,16 @@ public enum SubscriptionStatus {
             if (v.value.equalsIgnoreCase(value)) return v;
         }
         throw new IllegalArgumentException("Unknown SubscriptionStatus: " + value);
+    }
+
+    public static SubscriptionStatus fromStripeOrInactive(String status) {
+        if (status == null) {
+            return INACTIVE;
+        }
+        try {
+            return valueOf(status.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            return INACTIVE;
+        }
     }
 }

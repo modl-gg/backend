@@ -52,7 +52,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
     );
     private static final Set<String> SETTINGS_PUNISHMENT_PATHS = Set.of(
         "/punishment-types", "/status-thresholds", "/ai-moderation",
-        "/ai-apply-punishment", "/ai-dismiss-suggestion"
+        "/ai-dismiss-suggestion"
     );
 
     @Override
@@ -203,6 +203,10 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
 
     private String resolveSettingsPermission(String path, String method) {
         String base = RESTMappingV1.PANEL_SETTINGS;
+
+        if (startsWithEndpoint(path, base + "/ai-apply-punishment")) {
+            return PERMIT;
+        }
 
         for (String suffix : SETTINGS_PUNISHMENT_PATHS) {
             if (startsWithEndpoint(path, base + suffix)) {

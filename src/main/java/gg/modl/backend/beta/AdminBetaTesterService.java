@@ -67,26 +67,16 @@ public class AdminBetaTesterService {
             throw new BetaRequestException("Server name is required.", HttpStatus.BAD_REQUEST);
         }
 
-        subdomainValidator.validate(customDomain).ifPresent(message -> {
-            throw new BetaRequestException(message, HttpStatus.BAD_REQUEST);
-        });
-        String subdomain = subdomainValidator.normalize(customDomain);
-
         String normalizedEmail = EmailAddressUtil.normalizeIfValid(adminEmail);
         if (normalizedEmail == null) {
             throw new BetaRequestException("A valid admin email is required.", HttpStatus.BAD_REQUEST);
         }
 
-        if (serverRepository.findByCustomDomain(subdomain).isPresent()) {
-            throw new BetaRequestException("This subdomain is already in use.", HttpStatus.CONFLICT);
-        }
-        ServerService.ServerExistResult exist = serverService.doesServerExist(normalizedEmail, trimmedName, subdomain);
-        if (exist.emailMatch()) {
-            throw new BetaRequestException("An account with this email already exists.", HttpStatus.CONFLICT);
-        }
-        if (exist.nameMatch()) {
-            throw new BetaRequestException("This server name is already taken.", HttpStatus.CONFLICT);
-        }
+        String subdomain = subdomainValidator.normalize(customDomain);
+        registrationService.validateIdentity(normalizedEmail, trimmedName, subdomain)
+            .ifPresent(rejection -> {
+                throw new BetaRequestException(rejection.message(), rejection.status());
+            });
 
         Server saved = persistBetaServer(trimmedName, subdomain, normalizedEmail, actingAdminEmail);
 

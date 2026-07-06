@@ -9,6 +9,7 @@ import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository.MonitoringServerStats;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository.MonitoringLogStats;
 import gg.modl.backend.server.data.ProvisioningStatus;
+import gg.modl.backend.infrastructure.util.CsvUtil;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import java.time.Instant;
@@ -274,15 +275,16 @@ public class AdminMonitoringService {
             10000
         );
 
-        StringBuilder csv = new StringBuilder("Timestamp,Level,Source,Category,Message,Resolved,Resolved By\n");
+        StringBuilder csv = new StringBuilder(CsvUtil.row("Timestamp", "Level", "Source", "Category", "Message", "Resolved", "Resolved By"));
         for (SystemLog logEntry : logs) {
-            csv.append("\"").append(logEntry.getTimestamp()).append("\",");
-            csv.append("\"").append(logEntry.getLevel() != null ? logEntry.getLevel() : "").append("\",");
-            csv.append("\"").append(logEntry.getSource() != null ? logEntry.getSource() : "").append("\",");
-            csv.append("\"").append(logEntry.getCategory() != null ? logEntry.getCategory() : "").append("\",");
-            csv.append("\"").append(logEntry.getMessage() != null ? logEntry.getMessage().replace("\"", "\"\"") : "").append("\",");
-            csv.append("\"").append(logEntry.isResolved() ? "Yes" : "No").append("\",");
-            csv.append("\"").append(logEntry.getResolvedBy() != null ? logEntry.getResolvedBy() : "").append("\"\n");
+            csv.append(CsvUtil.row(
+                logEntry.getTimestamp(),
+                logEntry.getLevel(),
+                logEntry.getSource(),
+                logEntry.getCategory(),
+                logEntry.getMessage(),
+                logEntry.isResolved() ? "Yes" : "No",
+                logEntry.getResolvedBy()));
         }
         return csv.toString();
     }

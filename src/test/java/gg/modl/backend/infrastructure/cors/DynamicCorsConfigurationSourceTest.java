@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.server.ServerService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -39,7 +40,7 @@ class DynamicCorsConfigurationSourceTest {
         properties.setAppDomains("modl.gg");
         properties.setReplayLiteOrigins("https://replays.modl.gg,http://localhost:5173");
 
-        DynamicCorsConfigurationSource source = new DynamicCorsConfigurationSource(serverService, properties);
+        DynamicCorsConfigurationSource source = new DynamicCorsConfigurationSource(serverService, properties, new ModlProperties());
         source.initParsedOrigins();
         return source;
     }

@@ -1,12 +1,15 @@
 package gg.modl.backend.ticket.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.fieldViolation;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.optionalString;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.validationError;
+
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
-import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.AssignReportRequest;
 import gg.modl.proto.modl.v1.DismissReportRequest;
 import gg.modl.proto.modl.v1.FieldViolation;
@@ -82,7 +85,7 @@ public class MinecraftReportsV3Controller {
         validateRequiredString(violations, "dismissed_by", request.getDismissedBy(), RequestValidationLimits.REPORT_STAFF_NAME_MAX_LENGTH);
         validateOptionalString(violations, "reason", request.hasReason(), request.getReason(), RequestValidationLimits.REPORT_REASON_MAX_LENGTH);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -110,7 +113,7 @@ public class MinecraftReportsV3Controller {
         validateOptionalString(violations, "resolution", true, request.getResolution(), RequestValidationLimits.REPORT_REASON_MAX_LENGTH);
         validateRequiredString(violations, "punishment_id", request.getPunishmentId(), RequestValidationLimits.REPORT_PUNISHMENT_ID_MAX_LENGTH);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -137,7 +140,7 @@ public class MinecraftReportsV3Controller {
         List<FieldViolation> violations = new ArrayList<>();
         validateRequiredString(violations, "assignee", request.getAssignee(), RequestValidationLimits.REPORT_ASSIGNEE_MAX_LENGTH);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -164,10 +167,6 @@ public class MinecraftReportsV3Controller {
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toReportOperationResponse(200, true, successMessage));
     }
 
-    private static String optionalString(boolean hasValue, String value) {
-        return hasValue ? value : null;
-    }
-
     private static void validateRequiredString(List<FieldViolation> violations, String field, String value, int maxLength) {
         if (value == null || value.isBlank()) {
             violations.add(fieldViolation(field, field + " is required"));
@@ -190,21 +189,4 @@ public class MinecraftReportsV3Controller {
         }
     }
 
-    private static FieldViolation fieldViolation(String field, String message) {
-        return FieldViolation.newBuilder()
-            .setField(field)
-            .setMessage(message)
-            .build();
-    }
-
-    private static ResponseEntity<ApiError> protobufValidationError(List<FieldViolation> violations) {
-        ApiError.Builder error = ApiError.newBuilder()
-            .setStatusCode(HttpStatus.BAD_REQUEST.value())
-            .setCode("INVALID_ARGUMENT")
-            .setMessage("Invalid data provided.");
-        violations.forEach(error::addFieldViolations);
-        return ResponseEntity.badRequest()
-            .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-            .body(error.build());
-    }
 }

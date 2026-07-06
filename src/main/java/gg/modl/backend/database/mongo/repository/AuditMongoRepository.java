@@ -24,6 +24,7 @@ import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOptions;
 import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -185,7 +186,7 @@ public class AuditMongoRepository {
                 .and("punishments." + PunishmentFields.EVIDENCE).as(ALIAS_EVIDENCE)
                 .and("punishments." + PunishmentFields.ATTACHED_TICKET_IDS).as(ALIAS_ATTACHED_TICKET_IDS)
                 .and(PlayerFields.USERNAMES).as(ALIAS_USERNAMES)
-        );
+        ).withOptions(AggregationOptions.builder().allowDiskUse(true).build());
 
         return tenantMongoAccess.forServer(server)
             .aggregate(aggregation, CollectionName.PLAYERS, Document.class)

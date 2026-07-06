@@ -1,5 +1,6 @@
 package gg.modl.backend.infrastructure.filter;
 
+import gg.modl.backend.infrastructure.origin.OriginPolicy;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
@@ -21,7 +22,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     private final ServerService serverService;
     private final boolean developmentMode;
     private final String devServerDomain;
-    private final Set<String> systemOrigins;
+    private final OriginPolicy originPolicy;
 
     private static final Set<String> EXCLUDED_PATHS = Set.of(
         RESTMappingV1.PUBLIC_REGISTRATION,
@@ -41,7 +42,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
         this.serverService = serverService;
         this.developmentMode = developmentMode;
         this.devServerDomain = devServerDomain;
-        this.systemOrigins = HostExtractionUtil.parseCommaSeparated(systemOrigins);
+        this.originPolicy = new OriginPolicy(HostExtractionUtil.parseCommaSeparated(systemOrigins), Set.of(), developmentMode);
     }
 
     @Override
@@ -67,7 +68,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
         // proxied Host is localhost in this supported dev configuration.
         boolean devHostOverrideApplied = false;
         if (developmentMode && devServerDomain != null && !devServerDomain.isBlank()) {
-            if (serverDomain == null || serverDomain.isBlank() || isLocalhost(serverDomain)) {
+            if (serverDomain == null || serverDomain.isBlank() || originPolicy.isDevLocalhost(serverDomain)) {
                 serverDomain = devServerDomain;
                 devHostOverrideApplied = true;
             }
@@ -143,7 +144,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return true;
         }
 
-        if (systemOrigins.contains(origin)) {
+        if (originPolicy.isSystemOrigin(origin)) {
             return true;
         }
 
@@ -152,18 +153,11 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return false;
         }
 
-        if (developmentMode && isLocalhost(originHost)) {
+        if (originPolicy.isDevLocalhost(originHost)) {
             return true;
         }
 
-        String normalizedDomain = HostExtractionUtil.extractHost(serverDomain);
-        return normalizedDomain != null && originHost.equalsIgnoreCase(normalizedDomain);
-    }
-
-    private boolean isLocalhost(String host) {
-        String normalized = host.toLowerCase();
-        return "localhost".equals(normalized) || "0.0.0.0".equals(normalized)
-               || "::1".equals(normalized) || normalized.startsWith("127.");
+        return originPolicy.isTenantOwnOrigin(origin, serverDomain);
     }
 
 }

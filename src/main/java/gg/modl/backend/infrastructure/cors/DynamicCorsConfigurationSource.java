@@ -1,6 +1,8 @@
 package gg.modl.backend.infrastructure.cors;
 
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.origin.OriginPolicy;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
@@ -22,6 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
     private final ModlCorsProperties corsProperties;
+    private final ModlProperties modlProperties;
     private final Map<String, CachedOrigin> originCache = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -30,8 +33,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             }
         }
     );
-    private volatile Set<String> parsedSystemOrigins = Set.of();
-    private volatile Set<String> parsedAppDomains = Set.of();
+    private volatile OriginPolicy originPolicy = new OriginPolicy(Set.of(), Set.of(), false);
     private volatile Set<String> parsedReplayLiteOrigins = Set.of();
     private static final int MAX_CACHE_SIZE = 10_000;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000;
@@ -46,7 +48,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         String path = request.getRequestURI();
         boolean adminPath = isAdminPath(path);
 
-        if (adminPath && !isSystemOrigin(origin)) {
+        if (adminPath && !originPolicy.isSystemOrigin(origin)) {
             return null;
         }
 
@@ -100,7 +102,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             return parsedReplayLiteOrigins.contains(origin);
         }
 
-        if (isSystemOrigin(origin)) {
+        if (originPolicy.isSystemOrigin(origin)) {
             return true;
         }
 
@@ -109,7 +111,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             return false;
         }
 
-        if (isAppDomainOrSubdomain(host)) {
+        if (originPolicy.isAppDomainOrSubdomain(host)) {
             return true;
         }
 
@@ -117,19 +119,13 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         return server != null;
     }
 
-    private boolean isAppDomainOrSubdomain(String host) {
-        return parsedAppDomains.stream()
-            .anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
-    }
-
-    private boolean isSystemOrigin(String origin) {
-        return parsedSystemOrigins.contains(origin);
-    }
-
     @PostConstruct
     void initParsedOrigins() {
-        parsedSystemOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins());
-        parsedAppDomains = HostExtractionUtil.parseCommaSeparated(corsProperties.getAppDomains());
+        originPolicy = new OriginPolicy(
+            HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()),
+            HostExtractionUtil.parseCommaSeparated(corsProperties.getAppDomains()),
+            modlProperties.isDevelopmentMode()
+        );
         parsedReplayLiteOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getReplayLiteOrigins());
     }
 

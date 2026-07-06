@@ -2,29 +2,19 @@ package gg.modl.backend.appeal.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
+import gg.modl.backend.infrastructure.proto.PublicDataRedactor;
 import gg.modl.backend.ticket.controller.PanelTicketProtoMapper;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.proto.modl.v1.AddPublicAppealReplyResponse;
 import gg.modl.proto.modl.v1.CreatePublicAppealResponse;
 import gg.modl.proto.modl.v1.PublicAppealResponse;
-import java.util.HashMap;
+import gg.modl.proto.modl.v1.TicketVerificationRequiredResponse;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-/**
- * Maps the appeal domain to the public appeal proto messages. Mirrors the redaction rules previously
- * applied by {@code PublicAppealResponse#fromTicketResponse}: contact/identity fields are stripped from
- * the free-form data and only the public-facing reply fields are exposed.
- */
 final class PublicAppealProtoMapper {
-    private static final Set<String> REDACTED_DATA_KEYS = Set.of(
-        "contactEmail", "contact_email", "creatorEmail", "creatorIdentifier", "emailAuthEnabled", "email", "playerUuid");
-
     private PublicAppealProtoMapper() {
     }
 
@@ -42,7 +32,7 @@ final class PublicAppealProtoMapper {
             .setCreatorName(stringValue(appeal.creatorName()))
             .setCreatorUuid("")
             .setLocked(appeal.locked())
-            .setData(toStruct(filterPublicData(appeal.data())));
+            .setData(PublicDataRedactor.toPublicStruct(appeal.data(), PublicDataRedactor.SYSTEM_DATA_ALLOWLIST));
 
         if (appeal.date() != null) {
             builder.setCreated(toTimestamp(appeal.date()));
@@ -85,12 +75,11 @@ final class PublicAppealProtoMapper {
             .build();
     }
 
-    private static Map<String, Object> filterPublicData(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> filtered = new HashMap<>(data);
-        filtered.keySet().removeAll(REDACTED_DATA_KEYS);
-        return filtered;
+    static TicketVerificationRequiredResponse toVerificationRequiredResponse(String recordId, String emailHint) {
+        return TicketVerificationRequiredResponse.newBuilder()
+            .setRequiresVerification(true)
+            .setEmailHint(stringValue(emailHint))
+            .setTicketId(stringValue(recordId))
+            .build();
     }
 }

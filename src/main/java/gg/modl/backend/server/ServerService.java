@@ -10,9 +10,13 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -31,6 +35,11 @@ public class ServerService {
     private final Cache<String, Optional<Server>> serverCache = Caffeine.newBuilder()
         .maximumSize(500)
         .expireAfterWrite(Duration.ofMinutes(5))
+        .build();
+
+    private final Cache<String, Server> apiKeyCache = Caffeine.newBuilder()
+        .maximumSize(10_000)
+        .expireAfterWrite(Duration.ofSeconds(60))
         .build();
 
     public ServerService(
@@ -104,6 +113,13 @@ public class ServerService {
 
     public void evictAllServerCaches() {
         serverCache.invalidateAll();
+        apiKeyCache.invalidateAll();
+    }
+
+    public void evictApiKey(@NotNull String apiKey) {
+        if (!apiKey.isBlank()) {
+            apiKeyCache.invalidate(hashApiKey(apiKey));
+        }
     }
 
     public boolean isAdminEmailInUse(String adminEmail, String excludingServerId) {
@@ -117,35 +133,31 @@ public class ServerService {
 
     @Nullable
     private String extractSubdomain(@NotNull String domain) {
+        AppDomainMatch match = matchAppDomain(domain);
+        return match != null ? match.subdomain() : null;
+    }
+
+    @Nullable
+    public String getAppDomain(@NotNull String domain) {
+        AppDomainMatch match = matchAppDomain(domain);
+        return match != null ? match.appDomain() : null;
+    }
+
+    @Nullable
+    private AppDomainMatch matchAppDomain(@NotNull String domain) {
         for (String appDomain : appDomains) {
             String suffix = "." + appDomain;
             if (domain.endsWith(suffix)) {
                 String subdomain = domain.substring(0, domain.length() - suffix.length());
                 if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return subdomain;
+                    return new AppDomainMatch(appDomain, subdomain);
                 }
             }
         }
         return null;
     }
 
-    /**
-     * Returns the matching app domain (e.g. "modl.gg") if the given domain is a subdomain of one,
-     * or null if it's a custom domain.
-     */
-    @Nullable
-    public String getAppDomain(@NotNull String domain) {
-        for (String appDomain : appDomains) {
-            String suffix = "." + appDomain;
-            if (domain.endsWith(suffix)) {
-                String subdomain = domain.substring(0, domain.length() - suffix.length());
-                if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return appDomain;
-                }
-            }
-        }
-        return null;
-    }
+    private record AppDomainMatch(String appDomain, String subdomain) {}
 
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
@@ -182,7 +194,30 @@ public class ServerService {
 
     @Nullable
     public Server getServerByApiKey(@NotNull String apiKey) {
-        return serverRepository.findByApiKey(apiKey).orElse(null);
+        if (apiKey.isBlank()) {
+            return null;
+        }
+
+        String cacheKey = hashApiKey(apiKey);
+        Server cached = apiKeyCache.getIfPresent(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
+        if (server != null) {
+            apiKeyCache.put(cacheKey, server);
+        }
+        return server;
+    }
+
+    private String hashApiKey(@NotNull String apiKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(apiKey.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", e);
+        }
     }
 
     @Nullable

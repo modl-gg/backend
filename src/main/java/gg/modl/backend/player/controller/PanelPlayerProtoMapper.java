@@ -1,5 +1,6 @@
 package gg.modl.backend.player.controller;
 
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.UsernameEntry;
@@ -85,7 +86,7 @@ final class PanelPlayerProtoMapper {
         detail.punishments().forEach(punishment -> builder.addPunishments(toPunishment(punishment)));
 
         if (detail.data() != null) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(detail.data()));
+            builder.setData(ProtoMapperSupport.legacyStruct(detail.data()));
         }
         if (detail.latestIPData() != null) {
             builder.setLatestIpData(toIpEntry(detail.latestIPData()));
@@ -218,7 +219,7 @@ final class PanelPlayerProtoMapper {
             request.getAttachedTicketIdsList().isEmpty() ? null : List.copyOf(request.getAttachedTicketIdsList()),
             request.hasSeverity() ? request.getSeverity() : null,
             request.hasStatus() ? request.getStatus() : null,
-            request.hasData() ? MinecraftPlayerProtoMapper.structToMap(request.getData()) : null,
+            request.hasData() ? ProtoMapperSupport.structToMap(request.getData()) : null,
             request.hasReason() ? request.getReason() : null,
             request.hasDuration() ? request.getDuration() : null
         );
@@ -347,7 +348,7 @@ final class PanelPlayerProtoMapper {
             builder.setAppealTicketId(modification.appealTicketId());
         }
         if (modification.data() != null) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(modification.data()));
+            builder.setData(ProtoMapperSupport.legacyStruct(modification.data()));
         }
         return builder.build();
     }

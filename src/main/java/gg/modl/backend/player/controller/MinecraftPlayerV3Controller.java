@@ -2,6 +2,7 @@ package gg.modl.backend.player.controller;
 
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -64,7 +65,7 @@ public class MinecraftPlayerV3Controller {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         Map<String, Object> ipInfo = request.hasIpInfo()
-            ? MinecraftPlayerProtoMapper.structToMap(request.getIpInfo())
+            ? ProtoMapperSupport.structToMap(request.getIpInfo())
             : null;
 
         MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.login(

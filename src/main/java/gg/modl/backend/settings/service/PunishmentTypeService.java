@@ -45,20 +45,16 @@ public class PunishmentTypeService {
 
     private List<PunishmentType> loadOrInitializeTypes(@NotNull Server server) {
         Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_PUNISHMENT_TYPES).orElse(null);
+        Object data = settings != null ? settings.getData() : null;
+        return codec(server).decode(data);
+    }
 
-        if (settings == null || settings.getData() == null) {
-            return persistPunishmentTypes(server, DefaultPunishmentTypes.getAll());
-        }
-
-        try {
-            return objectMapper.convertValue(
-                settings.getData(),
-                new TypeReference<List<PunishmentType>>() {}
-            );
-        } catch (Exception e) {
-            log.error("Failed to convert punishment types from settings, initializing defaults", e);
-            return persistPunishmentTypes(server, DefaultPunishmentTypes.getAll());
-        }
+    private SettingsCodec<List<PunishmentType>> codec(@NotNull Server server) {
+        return SettingsCodec.of(
+            objectMapper,
+            new TypeReference<List<PunishmentType>>() {},
+            () -> persistPunishmentTypes(server, DefaultPunishmentTypes.getAll())
+        );
     }
 
     public List<PunishmentType> initializeDefaultTypes(@NotNull Server server) {

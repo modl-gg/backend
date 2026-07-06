@@ -2,14 +2,15 @@ package gg.modl.backend.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.TenantMongoAccess;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import java.util.List;
@@ -20,6 +21,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.IndexDefinition;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
+import org.springframework.data.mongodb.core.query.Query;
 
 class MongoIndexBootstrapServiceTest {
     @Test
@@ -52,7 +54,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("unique", true)
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
@@ -99,7 +101,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("key", new Document("email", 1))
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.initGlobalIndexes();
 
         verify(adminUsers).createIndex(any());
@@ -118,7 +120,7 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
         when(replays.getIndexInfo()).thenReturn(List.of());
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.createTenantIndexes(template);
 
         ArgumentCaptor<IndexDefinition> replayIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
@@ -130,6 +132,45 @@ class MongoIndexBootstrapServiceTest {
         assertThat(replayIndexCaptor.getAllValues()).anySatisfy(index -> {
             assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_replays_status_createdAt");
             assertThat(index.getIndexKeys()).isEqualTo(new Document("status", 1).append("createdAt", 1));
+        });
+    }
+
+    @Test
+    void createTenantIndexesCreatesStorageFilesAndCaseInsensitiveUsernameIndexes() {
+        TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
+        MongoTemplate template = mock(MongoTemplate.class);
+        IndexOperations replays = mock(IndexOperations.class);
+        IndexOperations storageFiles = mock(IndexOperations.class);
+        IndexOperations players = mock(IndexOperations.class);
+        stubTenantIndexOps(template);
+        when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
+        when(replays.getIndexInfo()).thenReturn(List.of());
+        when(template.indexOps(CollectionName.STORAGE_FILES)).thenReturn(storageFiles);
+        when(storageFiles.getIndexInfo()).thenReturn(List.of());
+        when(template.indexOps(CollectionName.PLAYERS)).thenReturn(players);
+        when(players.getIndexInfo()).thenReturn(List.of());
+
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        service.createTenantIndexes(template);
+
+        ArgumentCaptor<IndexDefinition> storageCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
+        verify(storageFiles, atLeastOnce()).createIndex(storageCaptor.capture());
+        assertThat(storageCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("uidx_storage_files_key");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("key", 1));
+            assertThat(index.getIndexOptions().getBoolean("unique")).isTrue();
+        });
+        assertThat(storageCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_storage_files_key_createdAt");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("key", 1).append("createdAt", -1));
+        });
+
+        ArgumentCaptor<IndexDefinition> playerCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
+        verify(players, atLeastOnce()).createIndex(playerCaptor.capture());
+        assertThat(playerCaptor.getAllValues()).anySatisfy(index -> {
+            assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_players_usernames_username_ci");
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("usernames.username", 1));
+            assertThat(index.getIndexOptions().get("collation")).isNotNull();
         });
     }
 
@@ -151,7 +192,7 @@ class MongoIndexBootstrapServiceTest {
         )));
 
         MongoIndexBootstrapService service = new MongoIndexBootstrapService(
-            tenantMongoAccess, mock(ServerMongoRepository.class), mock(TenantMigrationService.class));
+            tenantMongoAccess, mock(TenantMigrationService.class));
         service.createTenantIndexes(template);
 
         verify(players, never()).dropIndex("uidx_players_minecraftUuid");
@@ -164,7 +205,7 @@ class MongoIndexBootstrapServiceTest {
     @Test
     void bootstrapExistingTenantsAppliesIndexesToEachConfiguredServer() {
         TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        MongoTemplate globalTemplate = mock(MongoTemplate.class);
         MongoTemplate firstTemplate = mock(MongoTemplate.class);
         MongoTemplate secondTemplate = mock(MongoTemplate.class);
         IndexOperations firstReplays = mock(IndexOperations.class);
@@ -179,22 +220,24 @@ class MongoIndexBootstrapServiceTest {
         Server configured = new Server("alpha", "alpha", "server_alpha", "alpha@example.com", true, ServerPlan.FREE);
         Server alsoConfigured = new Server("beta", "beta", "server_beta", "beta@example.com", true, ServerPlan.FREE);
         Server unprovisioned = new Server("gamma", "gamma", null, "gamma@example.com", false, ServerPlan.FREE);
-        when(serverRepository.findAll()).thenReturn(List.of(configured, alsoConfigured, unprovisioned));
+        when(tenantMongoAccess.global()).thenReturn(globalTemplate);
+        when(globalTemplate.find(any(Query.class), eq(Server.class), eq(CollectionName.MODL_SERVERS)))
+            .thenReturn(List.of(configured, alsoConfigured, unprovisioned));
         when(tenantMongoAccess.forServer(configured)).thenReturn(firstTemplate);
         when(tenantMongoAccess.forServer(alsoConfigured)).thenReturn(secondTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.bootstrapExistingTenants();
 
-        verify(firstReplays, atLeastOnce()).createIndex(any());
-        verify(secondReplays, atLeastOnce()).createIndex(any());
+        verify(firstReplays, timeout(5000).atLeastOnce()).createIndex(any());
+        verify(secondReplays, timeout(5000).atLeastOnce()).createIndex(any());
         verify(tenantMongoAccess, never()).forServer(unprovisioned);
     }
 
     @Test
     void bootstrapExistingTenantsContinuesWhenIndividualTenantFails() {
         TenantMongoAccess tenantMongoAccess = mock(TenantMongoAccess.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        MongoTemplate globalTemplate = mock(MongoTemplate.class);
         MongoTemplate goodTemplate = mock(MongoTemplate.class);
         IndexOperations goodReplays = mock(IndexOperations.class);
         stubTenantIndexOps(goodTemplate);
@@ -203,14 +246,16 @@ class MongoIndexBootstrapServiceTest {
 
         Server broken = new Server("broken", "broken", "server_broken", "broken@example.com", true, ServerPlan.FREE);
         Server healthy = new Server("healthy", "healthy", "server_healthy", "healthy@example.com", true, ServerPlan.FREE);
-        when(serverRepository.findAll()).thenReturn(List.of(broken, healthy));
+        when(tenantMongoAccess.global()).thenReturn(globalTemplate);
+        when(globalTemplate.find(any(Query.class), eq(Server.class), eq(CollectionName.MODL_SERVERS)))
+            .thenReturn(List.of(broken, healthy));
         when(tenantMongoAccess.forServer(broken)).thenThrow(new IllegalStateException("boom"));
         when(tenantMongoAccess.forServer(healthy)).thenReturn(goodTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, serverRepository, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.bootstrapExistingTenants();
 
-        verify(goodReplays, atLeastOnce()).createIndex(any());
+        verify(goodReplays, timeout(5000).atLeastOnce()).createIndex(any());
     }
 
     private void stubTenantIndexOps(MongoTemplate template) {
@@ -222,6 +267,7 @@ class MongoIndexBootstrapServiceTest {
             CollectionName.INVITATIONS,
             CollectionName.TICKET_VERIFICATIONS,
             CollectionName.TICKETS,
+            CollectionName.STORAGE_FILES,
             CollectionName.KNOWLEDGEBASE_CATEGORIES,
             CollectionName.KNOWLEDGEBASE_ARTICLES,
             CollectionName.WEBAUTHN_CREDENTIALS,

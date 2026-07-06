@@ -1,5 +1,10 @@
 package gg.modl.backend.ticket.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.error;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.fieldViolation;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.isBlank;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.validationError;
+
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
@@ -10,7 +15,6 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
-import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.ClaimTicketResponse;
 import gg.modl.proto.modl.v1.FieldViolation;
 import gg.modl.proto.modl.v1.MinecraftClaimTicketRequest;
@@ -22,7 +26,6 @@ import gg.modl.proto.modl.v1.TicketsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -53,7 +56,7 @@ public class MinecraftTicketsV3Controller {
     ) {
         List<FieldViolation> violations = validateCreateTicketRequest(request);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -86,7 +89,7 @@ public class MinecraftTicketsV3Controller {
     ) {
         List<FieldViolation> violations = validateCreateTicketRequest(request);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -111,7 +114,7 @@ public class MinecraftTicketsV3Controller {
         HttpServletRequest httpRequest
     ) {
         if (limit < RequestValidationLimits.PAGINATION_LIMIT_MIN || limit > RequestValidationLimits.PAGINATION_LIMIT_MAX) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid data provided.");
+            return error(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid data provided.");
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -134,7 +137,7 @@ public class MinecraftTicketsV3Controller {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
             .stream()
-            .map(MinecraftTicketsV3Controller::toLegacyPlayerTicketItem)
+            .map(minecraftTicketService::toPlayerTicketItem)
             .toList();
 
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, tickets));
@@ -151,7 +154,7 @@ public class MinecraftTicketsV3Controller {
         Server server = RequestUtil.getRequestServer(httpRequest);
         Ticket ticket = minecraftTicketService.getMinecraftTicket(server, id).orElse(null);
         if (ticket == null) {
-            return protobufError(HttpStatus.NOT_FOUND, "NOT_FOUND", "Ticket not found");
+            return error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Ticket not found");
         }
 
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketDetailResponse(
@@ -172,7 +175,7 @@ public class MinecraftTicketsV3Controller {
     ) {
         List<FieldViolation> violations = validateClaimTicketRequest(request);
         if (!violations.isEmpty()) {
-            return protobufValidationError(violations);
+            return validationError(violations);
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -223,7 +226,7 @@ public class MinecraftTicketsV3Controller {
             return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, List.of()));
         }
         if (!isValidTicketIdsRequest(effectiveRequest)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid data provided.");
+            return error(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid data provided.");
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -233,17 +236,6 @@ public class MinecraftTicketsV3Controller {
             .toList();
 
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, tickets));
-    }
-
-    private static Map<String, Object> toLegacyPlayerTicketItem(Ticket ticket) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("createdAt", ticket.getCreated());
-        return response;
     }
 
     private static boolean isValidTicketIdsRequest(MinecraftTicketsByIdsRequest request) {
@@ -326,35 +318,4 @@ public class MinecraftTicketsV3Controller {
         }
     }
 
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private static FieldViolation fieldViolation(String field, String message) {
-        return FieldViolation.newBuilder()
-            .setField(field)
-            .setMessage(message)
-            .build();
-    }
-
-    private static ResponseEntity<ApiError> protobufValidationError(List<FieldViolation> violations) {
-        ApiError.Builder error = ApiError.newBuilder()
-            .setStatusCode(HttpStatus.BAD_REQUEST.value())
-            .setCode("INVALID_ARGUMENT")
-            .setMessage("Invalid data provided.");
-        violations.forEach(error::addFieldViolations);
-        return ResponseEntity.badRequest()
-            .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-            .body(error.build());
-    }
-
-    private static ResponseEntity<ApiError> protobufError(HttpStatus status, String code, String message) {
-        return ResponseEntity.status(status)
-            .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
-            .body(ApiError.newBuilder()
-                .setStatusCode(status.value())
-                .setCode(code)
-                .setMessage(message)
-                .build());
-    }
 }

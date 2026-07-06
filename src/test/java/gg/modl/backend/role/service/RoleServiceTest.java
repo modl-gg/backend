@@ -26,14 +26,19 @@ import org.mockito.ArgumentCaptor;
 
 class RoleServiceTest {
 
+    private static final RoleAuthorization.PerformerAuthority SUPER_ADMIN =
+        new RoleAuthorization.PerformerAuthority(null, true, true);
+
     @Test
     void defaultTicketRolesIncludeAppealModifyPermission() {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
+        StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
         RoleService roleService = new RoleService(
             roleRepository,
-            mock(StaffMongoRepository.class),
+            staffRepository,
             permissionService,
+            new RoleAuthorization(permissionService, staffRepository),
             mock(ServerTimestampService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
@@ -59,15 +64,13 @@ class RoleServiceTest {
     void updateRolePermissionsRejectsSuperAdminRole() {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
-        RoleService roleService = new RoleService(
-            roleRepository, mock(StaffMongoRepository.class), permissionService, mock(ServerTimestampService.class));
+        RoleService roleService = roleService(roleRepository, permissionService);
         Server server = server();
 
         assertThrows(ForbiddenException.class,
-            () -> roleService.updateRolePermissions(server, "super-admin", List.of("ticket.reply.all"), null, false, false));
-        // Substring parity with updateRole/deleteRole.
+            () -> roleService.updateRolePermissions(server, "super-admin", List.of("ticket.reply.all"), SUPER_ADMIN));
         assertThrows(ForbiddenException.class,
-            () -> roleService.updateRolePermissions(server, "custom-super-admin-x", List.of("ticket.reply.all"), null, false, false));
+            () -> roleService.updateRolePermissions(server, "custom-super-admin-x", List.of("ticket.reply.all"), SUPER_ADMIN));
         verify(roleRepository, never()).saveEntity(any(Server.class), any());
     }
 
@@ -75,12 +78,11 @@ class RoleServiceTest {
     void updateRolePermissionsReturnsFalseForMissingRole() {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
-        RoleService roleService = new RoleService(
-            roleRepository, mock(StaffMongoRepository.class), permissionService, mock(ServerTimestampService.class));
+        RoleService roleService = roleService(roleRepository, permissionService);
         Server server = server();
         when(roleRepository.findById(server, "missing")).thenReturn(Optional.empty());
 
-        assertFalse(roleService.updateRolePermissions(server, "missing", List.of("ticket.reply.all"), null, false, false));
+        assertFalse(roleService.updateRolePermissions(server, "missing", List.of("ticket.reply.all"), SUPER_ADMIN));
         verify(roleRepository, never()).saveEntity(any(Server.class), any());
     }
 
@@ -88,8 +90,7 @@ class RoleServiceTest {
     void updateRolePermissionsFiltersInvalidPermissionIds() {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
-        RoleService roleService = new RoleService(
-            roleRepository, mock(StaffMongoRepository.class), permissionService, mock(ServerTimestampService.class));
+        RoleService roleService = roleService(roleRepository, permissionService);
         Server server = server();
         StaffRole role = StaffRole.builder()
             .id("custom-1").name("Custom").order(5)
@@ -100,7 +101,7 @@ class RoleServiceTest {
         when(roleRepository.saveEntity(eq(server), any())).thenAnswer(inv -> inv.getArgument(1));
 
         boolean result = roleService.updateRolePermissions(
-            server, "custom-1", List.of("ticket.reply.all", "bogus.perm"), null, false, false);
+            server, "custom-1", List.of("ticket.reply.all", "bogus.perm"), SUPER_ADMIN);
 
         assertTrue(result);
         ArgumentCaptor<StaffRole> captor = ArgumentCaptor.forClass(StaffRole.class);
@@ -112,8 +113,7 @@ class RoleServiceTest {
     void updateRolePermissionsRejectsExpansionWithPerformerIdentity() {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService permissionService = mock(PermissionService.class);
-        RoleService roleService = new RoleService(
-            roleRepository, mock(StaffMongoRepository.class), permissionService, mock(ServerTimestampService.class));
+        RoleService roleService = roleService(roleRepository, permissionService);
         Server server = server();
         StaffRole targetRole = StaffRole.builder()
             .id("custom-target").name("Target").order(5)
@@ -126,17 +126,29 @@ class RoleServiceTest {
         when(roleRepository.findById(server, "custom-target")).thenReturn(Optional.of(targetRole));
         when(permissionService.getAllPermissionIds(server)).thenReturn(List.of("ticket.reply.all", "punishment.modify"));
         when(permissionService.getRoleById(server, "custom-performer")).thenReturn(Optional.of(performerRole));
+        when(permissionService.hasPermission(server, "custom-performer", RoleAuthorization.MANAGE_ROLES_PERMISSION))
+            .thenReturn(true);
         when(roleRepository.saveEntity(eq(server), any())).thenAnswer(inv -> inv.getArgument(1));
 
-        // Performer outranks target but tries to ADD punishment.modify which it does not hold -> stripped, not granted.
+        RoleAuthorization.PerformerAuthority performer =
+            new RoleAuthorization.PerformerAuthority("custom-performer", false, true);
         boolean result = roleService.updateRolePermissions(
-            server, "custom-target", List.of("ticket.reply.all", "punishment.modify"),
-            "custom-performer", false, true);
+            server, "custom-target", List.of("ticket.reply.all", "punishment.modify"), performer);
 
         assertTrue(result);
         ArgumentCaptor<StaffRole> captor = ArgumentCaptor.forClass(StaffRole.class);
         verify(roleRepository).saveEntity(eq(server), captor.capture());
         assertEquals(List.of("ticket.reply.all"), captor.getValue().getPermissions());
+    }
+
+    private RoleService roleService(StaffRoleMongoRepository roleRepository, PermissionService permissionService) {
+        StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
+        return new RoleService(
+            roleRepository,
+            staffRepository,
+            permissionService,
+            new RoleAuthorization(permissionService, staffRepository),
+            mock(ServerTimestampService.class));
     }
 
     private Server server() {

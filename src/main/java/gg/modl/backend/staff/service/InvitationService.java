@@ -11,6 +11,7 @@ import gg.modl.backend.email.EmailService;
 import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Invitation;
@@ -36,13 +37,12 @@ public class InvitationService {
     private final IdGenerator idGenerator;
     private final ModlProperties modlProperties;
     private final PermissionService permissionService;
+    private final RoleAuthorization roleAuthorization;
     private final ServerLimitPolicy serverLimitPolicy;
-
-    private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
-    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail, String inviterRole) {
+    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, RoleAuthorization.PerformerAuthority performer) {
         List<String> emailsToInvite = new ArrayList<>();
         if (request.emails() != null && !request.emails().isEmpty()) {
             emailsToInvite.addAll(request.emails());
@@ -63,7 +63,7 @@ public class InvitationService {
         if (normalizedEmailsToInvite.isEmpty()) {
             throw new ValidationException("No valid emails provided");
         }
-        StaffRole grantedRole = validateGrantableRole(server, request.role(), inviterRole);
+        StaffRole grantedRole = roleAuthorization.assertGrantableRole(server, performer, request.role());
 
         long staffLimit = staffLimitFor(server);
         long currentStaffCount = staffRepository.countAll(server);
@@ -290,27 +290,6 @@ public class InvitationService {
         return username;
     }
 
-    // targetRoleName is the requested role (clients send role names); inviterRoleId is the acting staff's stored role id.
-    private StaffRole validateGrantableRole(Server server, String targetRoleName, String inviterRoleId) {
-        StaffRole targetRole = permissionService.getRoleByName(server, targetRoleName)
-            .orElseThrow(() -> new ValidationException("Unknown staff role"));
-        if (SUPER_ADMIN_ROLE_ID.equals(targetRole.getId())) {
-            throw new ForbiddenException("You do not have authority to grant this role");
-        }
-        if (inviterRoleId == null || inviterRoleId.isBlank()) {
-            throw new ForbiddenException("You do not have authority to grant staff roles");
-        }
-        if (SUPER_ADMIN_ROLE_ID.equals(inviterRoleId)) {
-            return targetRole;
-        }
-        StaffRole inviterRole = permissionService.getRoleById(server, inviterRoleId)
-            .orElseThrow(() -> new ForbiddenException("You do not have authority to grant staff roles"));
-        if (inviterRole.getOrder() >= targetRole.getOrder()) {
-            throw new ForbiddenException("You do not have authority to grant this role");
-        }
-        return targetRole;
-    }
-
     // The accept path is unauthenticated; the stored roleId already snapshots the grantability decision
     // validated at invite time, so no order/authority comparison is meaningful here. Only resolve the
     // role (deleted/legacy-name-keyed roles fail to resolve -> 400) and reject super-admin as defense-in-depth.
@@ -318,7 +297,7 @@ public class InvitationService {
         StaffRole role = permissionService.getRoleById(server, roleId)
             .orElseThrow(() -> new ValidationException(
                 "This invitation references a role that no longer exists. Please request a new invitation."));
-        if (SUPER_ADMIN_ROLE_ID.equals(role.getId())) {
+        if (RoleAuthorization.isSuperAdminRole(role)) {
             throw new ForbiddenException("This invitation role must be reissued by an administrator");
         }
         return role;

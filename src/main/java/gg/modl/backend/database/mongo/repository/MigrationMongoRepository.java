@@ -2,6 +2,7 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.MigrationStatusFields;
 import gg.modl.backend.migration.data.MigrationStatus;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
@@ -24,85 +25,85 @@ public class MigrationMongoRepository extends AbstractServerMongoRepository<Migr
     }
 
     public Optional<MigrationStatus> findLatest(Server server) {
-        Query query = new Query().with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(1);
+        Query query = new Query().with(Sort.by(Sort.Direction.DESC, MigrationStatusFields.STARTED_AT)).limit(1);
         return findOne(server, query);
     }
 
     public Optional<MigrationStatus> findLatestCompletedOrFailed(Server server) {
-        Query query = Query.query(Criteria.where("status").in("completed", "failed").and("cooldownExempt").ne(true))
-            .with(Sort.by(Sort.Direction.DESC, "completedAt")).limit(1);
+        Query query = Query.query(Criteria.where(MigrationStatusFields.STATUS).in("completed", "failed").and(MigrationStatusFields.COOLDOWN_EXEMPT).ne(true))
+            .with(Sort.by(Sort.Direction.DESC, MigrationStatusFields.COMPLETED_AT)).limit(1);
         return findOne(server, query);
     }
 
     public Optional<MigrationStatus> findActiveMigration(Server server) {
-        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES))
-            .with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(1);
+        Query query = Query.query(Criteria.where(MigrationStatusFields.STATUS).in(ACTIVE_STATUSES))
+            .with(Sort.by(Sort.Direction.DESC, MigrationStatusFields.STARTED_AT)).limit(1);
         return findOne(server, query);
     }
 
     public Optional<MigrationStatus> findActiveMigration(Server server, Date staleBefore) {
-        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES).and("startedAt").gte(staleBefore))
-            .with(Sort.by(Sort.Direction.DESC, "startedAt")).limit(1);
+        Query query = Query.query(Criteria.where(MigrationStatusFields.STATUS).in(ACTIVE_STATUSES).and(MigrationStatusFields.STARTED_AT).gte(staleBefore))
+            .with(Sort.by(Sort.Direction.DESC, MigrationStatusFields.STARTED_AT)).limit(1);
         return findOne(server, query);
     }
 
     public boolean existsActiveMigration(Server server) {
-        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES));
+        Query query = Query.query(Criteria.where(MigrationStatusFields.STATUS).in(ACTIVE_STATUSES));
         return exists(server, query);
     }
 
     public boolean existsActiveMigration(Server server, Date staleBefore) {
-        Query query = Query.query(Criteria.where("status").in(ACTIVE_STATUSES).and("startedAt").gte(staleBefore));
+        Query query = Query.query(Criteria.where(MigrationStatusFields.STATUS).in(ACTIVE_STATUSES).and(MigrationStatusFields.STARTED_AT).gte(staleBefore));
         return exists(server, query);
     }
 
     public long failStaleMigrations(Server server, Date staleBefore, Date now, String message) {
         Query query = Query.query(new Criteria().andOperator(
-            Criteria.where("status").in(ACTIVE_STATUSES),
+            Criteria.where(MigrationStatusFields.STATUS).in(ACTIVE_STATUSES),
             new Criteria().orOperator(
-                Criteria.where("startedAt").lt(staleBefore),
-                Criteria.where("startedAt").exists(false)
+                Criteria.where(MigrationStatusFields.STARTED_AT).lt(staleBefore),
+                Criteria.where(MigrationStatusFields.STARTED_AT).exists(false)
             )
         ));
         Update update = new Update()
-            .set("status", "failed")
-            .set("completedAt", now)
-            .set("error", message)
-            .set("progress.message", message)
-            .set("cooldownExempt", true);
+            .set(MigrationStatusFields.STATUS, "failed")
+            .set(MigrationStatusFields.COMPLETED_AT, now)
+            .set(MigrationStatusFields.ERROR, message)
+            .set(MigrationStatusFields.PROGRESS_MESSAGE, message)
+            .set(MigrationStatusFields.COOLDOWN_EXEMPT, true);
         return updateMulti(server, query, update).getModifiedCount();
     }
 
     public void cancelMigration(Server server, String id, String error, Date completedAt,
                                 String progressMessage, boolean cooldownExempt) {
         Update update = new Update()
-            .set("status", "failed")
-            .set("error", error)
-            .set("completedAt", completedAt)
-            .set("progress.message", progressMessage)
-            .set("cooldownExempt", cooldownExempt);
-        updateFirst(server, Query.query(Criteria.where("_id").is(id)), update);
+            .set(MigrationStatusFields.STATUS, "failed")
+            .set(MigrationStatusFields.ERROR, error)
+            .set(MigrationStatusFields.COMPLETED_AT, completedAt)
+            .set(MigrationStatusFields.PROGRESS_MESSAGE, progressMessage)
+            .set(MigrationStatusFields.COOLDOWN_EXEMPT, cooldownExempt);
+        updateFirst(server, Query.query(Criteria.where(MigrationStatusFields.ID).is(id)), update);
     }
 
     public void updateProgress(Server server, String id, String status, String message,
                                 Integer recordsProcessed, Integer recordsSkipped,
                                 Integer totalRecords, Date completedAt) {
         Update update = new Update()
-            .set("status", status)
-            .set("progress.message", message);
+            .set(MigrationStatusFields.STATUS, status)
+            .set(MigrationStatusFields.PROGRESS_MESSAGE, message);
 
         if (recordsProcessed != null) {
-            update.set("progress.recordsProcessed", recordsProcessed);
+            update.set(MigrationStatusFields.PROGRESS_RECORDS_PROCESSED, recordsProcessed);
         }
         if (recordsSkipped != null) {
-            update.set("progress.recordsSkipped", recordsSkipped);
+            update.set(MigrationStatusFields.PROGRESS_RECORDS_SKIPPED, recordsSkipped);
         }
         if (totalRecords != null) {
-            update.set("progress.totalRecords", totalRecords);
+            update.set(MigrationStatusFields.PROGRESS_TOTAL_RECORDS, totalRecords);
         }
         if (completedAt != null) {
-            update.set("completedAt", completedAt);
+            update.set(MigrationStatusFields.COMPLETED_AT, completedAt);
         }
-        updateFirst(server, Query.query(Criteria.where("_id").is(id)), update);
+        updateFirst(server, Query.query(Criteria.where(MigrationStatusFields.ID).is(id)), update);
     }
 }

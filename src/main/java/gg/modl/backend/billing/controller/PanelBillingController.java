@@ -72,6 +72,7 @@ public class PanelBillingController {
     @GetMapping("/status")
     public ResponseEntity<BillingStatusResponse> getBillingStatus(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
+        billingService.reconcileBillingStatus(server);
         return ResponseEntity.ok(PanelBillingProtoMapper.toBillingStatusResponse(billingService.getBillingStatus(server)));
     }
 

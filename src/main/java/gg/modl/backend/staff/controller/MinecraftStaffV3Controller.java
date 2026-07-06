@@ -3,6 +3,7 @@ package gg.modl.backend.staff.controller;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftStaffV3Controller {
     private final StaffService staffService;
+    private final RoleAuthorization roleAuthorization;
 
     @GetMapping(produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE)
     public ResponseEntity<StaffListResponse> getAllStaff(HttpServletRequest request) {
@@ -63,12 +65,9 @@ public class MinecraftStaffV3Controller {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
-        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
-        boolean hasIdentity = actingStaffId != null;
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.minecraftPerformer(server, actingStaffId);
 
-        if (!staffService.updateMinecraftStaffRole(
-                server, id, request.getRole(), actingStaffId,
-                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
+        if (!staffService.updateMinecraftStaffRole(server, id, request.getRole(), performer)) {
             return operationResponse(HttpStatus.NOT_FOUND, false, "Staff member not found");
         }
 

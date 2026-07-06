@@ -9,6 +9,9 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.service.PublicRecordAccessService;
+import gg.modl.backend.ticket.service.PublicRecordAccessService.Access;
+import gg.modl.backend.ticket.service.PublicRecordAccessService.AccessResult;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
@@ -16,7 +19,9 @@ import gg.modl.proto.modl.v1.AddReplyRequest;
 import gg.modl.proto.modl.v1.AddTicketReplyResponse;
 import gg.modl.proto.modl.v1.PanelResource;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -35,6 +40,7 @@ public class PublicTicketController {
     private final TicketService ticketService;
     private final TicketReplyService ticketReplyService;
     private final TicketEmailVerificationService verificationService;
+    private final PublicRecordAccessService recordAccessService;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @PostMapping
@@ -70,26 +76,19 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
-        if (rawTicket.isEmpty()) {
+        Ticket ticket = ticketService.getTicketRaw(server, id).orElse(null);
+        AccessResult access = recordAccessService.authorize(server, ticket, ticketToken);
+        if (access.access() == Access.NOT_FOUND) {
             return ResponseEntity.notFound().build();
         }
-
-        Ticket ticket = rawTicket.get();
-
-        if (ticket.isHidden()) {
-            return ResponseEntity.notFound().build();
-        }
-
-        if (ticket.isEmailAuthEnabled()
-            && (ticketToken == null || !verificationService.validateToken(server, id, ticketToken))) {
-            String emailHint = ticketService.getEmailHint(ticket);
+        if (access.access() == Access.TOKEN_REQUIRED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(PublicTicketProtoMapper.toVerificationRequiredResponse(id, emailHint));
+                .body(PublicTicketProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
         }
 
-        TicketResponse ticketResponse = ticketService.getTicketById(server, id);
-        return ResponseEntity.ok(PublicTicketProtoMapper.toPublicTicketResponse(ticketResponse, ticket));
+        TicketResponse ticketResponse = ticketService.toResponse(server, ticket);
+        Set<String> formFieldAllowlist = ticketService.getPublicFormFieldIds(server, ticket);
+        return ResponseEntity.ok(PublicTicketProtoMapper.toPublicTicketResponse(ticketResponse, ticket, formFieldAllowlist));
     }
 
     @GetMapping("/{id}/status")
@@ -100,18 +99,16 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
-        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+        Ticket ticket = ticketService.getTicketRaw(server, id).orElse(null);
+        AccessResult access = recordAccessService.authorize(server, ticket, ticketToken);
+        if (access.access() == Access.NOT_FOUND) {
             return ResponseEntity.notFound().build();
         }
-
-        Ticket ticket = rawTicket.get();
-        if (ticket.isEmailAuthEnabled()
-            && (ticketToken == null || !verificationService.validateToken(server, id, ticketToken))) {
+        if (access.access() == Access.TOKEN_REQUIRED) {
             throw new ForbiddenException("Email verification required");
         }
 
-        TicketResponse ticketResp = ticketService.getTicketById(server, id);
+        TicketResponse ticketResp = ticketService.toResponse(server, ticket);
         return ResponseEntity.ok(PublicTicketProtoMapper.toStatusResponse(ticketResp));
     }
 
@@ -124,22 +121,17 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
-        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+        Ticket ticket = ticketService.getTicketRaw(server, id).orElse(null);
+        AccessResult access = recordAccessService.authorize(server, ticket, ticketToken);
+        if (access.access() == Access.NOT_FOUND) {
             return ResponseEntity.notFound().build();
         }
-
-        Ticket ticket = rawTicket.get();
-        if (ticket.isEmailAuthEnabled()
-            && (ticketToken == null || !verificationService.validateToken(server, id, ticketToken))) {
+        if (access.access() == Access.TOKEN_REQUIRED) {
             throw new ForbiddenException("Email verification required");
         }
 
-        if (replyRequest.getStaff()) {
-            throw new ValidationException("Public replies cannot be marked as staff");
-        }
-
-        TicketReply reply = ticketReplyService.addReply(server, id, PanelTicketProtoMapper.fromAddReplyRequest(replyRequest));
+        List<Object> attachments = PublicTicketProtoMapper.attachmentsFromReply(replyRequest);
+        TicketReply reply = ticketReplyService.addPublicReply(server, id, replyRequest.getContent(), attachments);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(AddTicketReplyResponse.newBuilder()
@@ -193,8 +185,8 @@ public class PublicTicketController {
         }
 
         Ticket ticket = rawTicket.get();
-        if (!ticket.isEmailAuthEnabled()) {
-            throw new ValidationException("Email auth is not enabled for this ticket");
+        if (ticketService.getEmailHint(ticket) == null) {
+            throw new ValidationException("No email associated with this ticket");
         }
 
         String emailHint = verificationService.sendVerificationCode(server, ticket);

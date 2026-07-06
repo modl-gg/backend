@@ -7,13 +7,12 @@ import gg.modl.backend.replaylite.dto.ReplayLitePublicResponse;
 import gg.modl.backend.replaylite.service.ReplayLiteService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URI;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -51,25 +50,21 @@ public class PublicReplayLiteController {
     @GetMapping("/{replayId}/download")
     public ResponseEntity<?> downloadReplay(@PathVariable UUID replayId, HttpServletRequest httpRequest) {
         return replayLiteService.getPublicReplayDownload(replayId.toString(), RequestUtil.getClientIp(httpRequest))
-            .<ResponseEntity<?>>map(download -> ResponseEntity.ok()
-                .headers(downloadHeaders(replayId, download))
-                .body(download.bytes()))
+            .<ResponseEntity<?>>map(download -> ResponseEntity.status(HttpStatus.FOUND)
+                .headers(redirectHeaders())
+                .location(URI.create(download.url()))
+                .build())
             .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Replay not found"
             )));
     }
 
-    private HttpHeaders downloadHeaders(UUID replayId, ReplayLiteService.ReplayLiteDownload download) {
+    private HttpHeaders redirectHeaders() {
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType(download.contentType()));
-        headers.setContentLength(download.bytes().length);
         headers.setCacheControl("private, no-store, max-age=0");
         headers.setPragma("no-cache");
         headers.setExpires(0);
-        headers.setContentDisposition(ContentDisposition.inline()
-            .filename(replayId + ".modlreplay")
-            .build());
         return headers;
     }
 

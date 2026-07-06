@@ -1,9 +1,11 @@
 package gg.modl.backend.staff.controller;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.log.service.PanelActionAuditor;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
 import gg.modl.backend.staff.dto.request.CreateStaffRequest;
@@ -19,6 +21,9 @@ import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PanelStaffListResponse;
 import gg.modl.proto.modl.v1.StaffMutationResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,8 +42,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelStaffController {
     private final StaffService staffService;
     private final InvitationService invitationService;
+    private final RoleAuthorization roleAuthorization;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final PanelActionAuditor panelActionAuditor;
+    private final Validator validator;
 
     @GetMapping
     public ResponseEntity<PanelStaffListResponse> getAllStaff(HttpServletRequest request) {
@@ -75,11 +82,12 @@ public class PanelStaffController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String performerEmail = RequestUtil.getSessionEmail(request);
-        String performerRole = resolvePerformerRole(server, performerEmail);
+        RoleAuthorization.PerformerAuthority performer =
+            roleAuthorization.panelPerformer(server, RequestUtil.getSessionEmail(request));
 
         CreateStaffRequest mappedRequest = PanelStaffProtoMapper.toCreateStaffRequest(createRequest);
-        StaffResponse staff = staffService.createStaff(server, mappedRequest, performerEmail, performerRole);
+        validate(mappedRequest);
+        StaffResponse staff = staffService.createStaff(server, mappedRequest, performer);
         invalidateStaff(server);
         return ResponseEntity.status(HttpStatus.CREATED).body(PanelStaffProtoMapper.toStaffResponse(staff));
     }
@@ -108,10 +116,10 @@ public class PanelStaffController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String performerEmail = RequestUtil.getSessionEmail(request);
-        String performerRole = resolvePerformerRole(server, performerEmail);
+        RoleAuthorization.PerformerAuthority performer =
+            roleAuthorization.panelPerformer(server, RequestUtil.getSessionEmail(request));
 
-        return staffService.updateStaffRole(server, id, roleRequest.getRole(), performerEmail, performerRole)
+        return staffService.updateStaffRole(server, id, roleRequest.getRole(), performer)
             .map(staff -> {
                 invalidateStaff(server);
                 return ResponseEntity.ok(
@@ -126,9 +134,10 @@ public class PanelStaffController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String removerEmail = RequestUtil.getSessionEmail(request);
+        RoleAuthorization.PerformerAuthority performer =
+            roleAuthorization.panelPerformer(server, RequestUtil.getSessionEmail(request));
 
-        boolean deleted = staffService.deleteStaff(server, id, removerEmail);
+        boolean deleted = staffService.deleteStaff(server, id, performer);
         if (deleted) {
             invalidateStaff(server);
             return ResponseEntity.ok(
@@ -144,10 +153,10 @@ public class PanelStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String inviterEmail = RequestUtil.getSessionEmail(request);
-        String inviterRole = resolvePerformerRole(server, inviterEmail);
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.panelPerformer(server, inviterEmail);
 
         InviteStaffRequest mappedRequest = PanelStaffProtoMapper.toInviteStaffRequest(inviteRequest);
-        InviteResultResponse result = invitationService.sendInvitations(server, mappedRequest, inviterEmail, inviterRole);
+        InviteResultResponse result = invitationService.sendInvitations(server, mappedRequest, performer);
 
         if (result.success().isEmpty()) {
             return ResponseEntity.badRequest().body(PanelStaffProtoMapper.toInviteResultResponse(result));
@@ -213,12 +222,10 @@ public class PanelStaffController {
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_STAFF);
     }
 
-    private String resolvePerformerRole(Server server, String email) {
-        if (email != null && server.getAdminEmail() != null && email.equalsIgnoreCase(server.getAdminEmail())) {
-            return "super-admin";
+    private <T> void validate(T request) {
+        Set<ConstraintViolation<T>> violations = validator.validate(request);
+        if (!violations.isEmpty()) {
+            throw new ValidationException(violations.iterator().next().getMessage());
         }
-        return staffService.getStaffByEmail(server, email)
-            .map(staff -> staff.getRoleId())
-            .orElse("");
     }
 }

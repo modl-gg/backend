@@ -1,10 +1,16 @@
 package gg.modl.backend.ticket.controller;
 
-import com.google.protobuf.ListValue;
-import com.google.protobuf.NullValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValueOrZero;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.optionalString;
+
 import com.google.protobuf.Struct;
 import com.google.protobuf.Timestamp;
-import com.google.protobuf.Value;
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
@@ -23,17 +29,12 @@ import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.TicketsResponse;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
-import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.function.Consumer;
-import java.util.stream.StreamSupport;
-import org.bson.types.Binary;
-import org.bson.types.ObjectId;
 
 final class MinecraftTicketProtoMapper {
     private MinecraftTicketProtoMapper() {
@@ -164,7 +165,7 @@ final class MinecraftTicketProtoMapper {
             .setCreatedAt(epochMillis(ticket.get("createdAt")))
             .setHasStaffResponse(booleanValue(ticket.get("hasStaffResponse")))
             .setLocked(booleanValue(ticket.get("locked")))
-            .setReplyCount(intValue(ticket.get("replyCount")));
+            .setReplyCount(intValueOrZero(ticket.get("replyCount")));
 
         setOptionalString(builder::setFirstReplyContent, ticket.get("firstReplyContent"));
         setOptionalLong(builder::setUpdatedAt, ticket.get("updatedAt"));
@@ -222,64 +223,9 @@ final class MinecraftTicketProtoMapper {
             if (chatMessage.getSender() != null) {
                 message.put("sender", chatMessage.getSender());
             }
-            return toStruct(message);
+            return ProtoMapperSupport.legacyStruct(message);
         }
-        return toStruct(map(value));
-    }
-
-    private static Struct toStruct(Map<String, Object> map) {
-        Struct.Builder builder = Struct.newBuilder();
-        map.forEach((key, value) -> builder.putFields(key, toValue(value)));
-        return builder.build();
-    }
-
-    private static Value toValue(Object value) {
-        if (value == null) {
-            return Value.newBuilder().setNullValue(NullValue.NULL_VALUE).build();
-        }
-        if (value instanceof String string) {
-            return Value.newBuilder().setStringValue(string).build();
-        }
-        if (value instanceof Date date) {
-            return Value.newBuilder().setStringValue(date.toInstant().toString()).build();
-        }
-        if (value instanceof Instant instant) {
-            return Value.newBuilder().setStringValue(instant.toString()).build();
-        }
-        if (value instanceof Number number) {
-            return Value.newBuilder().setNumberValue(number.doubleValue()).build();
-        }
-        if (value instanceof Boolean bool) {
-            return Value.newBuilder().setBoolValue(bool).build();
-        }
-        if (value instanceof Map<?, ?> nestedMap) {
-            return Value.newBuilder().setStructValue(toStruct(stringObjectMap(nestedMap))).build();
-        }
-        if (value instanceof Iterable<?> iterable) {
-            ListValue.Builder list = ListValue.newBuilder();
-            iterable.forEach(item -> list.addValues(toValue(item)));
-            return Value.newBuilder().setListValue(list).build();
-        }
-        if (value instanceof ObjectId objectId) {
-            return Value.newBuilder().setStringValue(objectId.toHexString()).build();
-        }
-        if (value instanceof UUID uuid) {
-            return Value.newBuilder().setStringValue(uuid.toString()).build();
-        }
-        if (value instanceof Binary binary) {
-            return Value.newBuilder().setStringValue(Base64.getEncoder().encodeToString(binary.getData())).build();
-        }
-        return Value.newBuilder().setStringValue(ProtoMapperSupport.coerceUnexpectedToString(value)).build();
-    }
-
-    private static void setOptionalString(Consumer<String> setter, Object value) {
-        if (value != null) {
-            setter.accept(stringValue(value));
-        }
-    }
-
-    private static String optionalString(boolean hasValue, String value) {
-        return hasValue ? value : null;
+        return ProtoMapperSupport.legacyStruct(map(value));
     }
 
     private static void setOptionalLong(Consumer<Long> setter, Object value) {
@@ -346,59 +292,4 @@ final class MinecraftTicketProtoMapper {
         return 0L;
     }
 
-    private static int intValue(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof CharSequence chars) {
-            try {
-                return Integer.parseInt(chars.toString());
-            } catch (NumberFormatException ignored) {
-                return 0;
-            }
-        }
-        return 0;
-    }
-
-    private static boolean booleanValue(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        return value != null && Boolean.parseBoolean(value.toString());
-    }
-
-    private static String stringValue(Object value) {
-        return value == null ? "" : Objects.toString(value);
-    }
-
-    private static List<?> list(Object value) {
-        if (value instanceof List<?> list) {
-            return list;
-        }
-        if (value instanceof Iterable<?> iterable) {
-            return StreamSupport.stream(iterable.spliterator(), false).toList();
-        }
-        return List.of();
-    }
-
-    private static List<Map<String, Object>> listOfMaps(Object value) {
-        return list(value).stream()
-            .filter(Map.class::isInstance)
-            .map(Map.class::cast)
-            .map(MinecraftTicketProtoMapper::stringObjectMap)
-            .toList();
-    }
-
-    private static Map<String, Object> map(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return stringObjectMap(map);
-        }
-        return Map.of();
-    }
-
-    private static Map<String, Object> stringObjectMap(Map<?, ?> map) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        map.forEach((key, value) -> result.put(Objects.toString(key), value));
-        return result;
-    }
 }

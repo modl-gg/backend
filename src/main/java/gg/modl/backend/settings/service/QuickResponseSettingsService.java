@@ -60,8 +60,7 @@ public class QuickResponseSettingsService {
             currentSettings.setCategories(quickResponses.categories());
         }
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(currentSettings, Map.class);
+        Map<String, Object> data = codec().encode(currentSettings);
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
             server,
             SETTINGS_TYPE_QUICK_RESPONSES,
@@ -77,20 +76,15 @@ public class QuickResponseSettingsService {
     }
 
     private QuickResponseSettings mapToQuickResponseSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return defaultQuickResponseSettings();
+        QuickResponseSettings mapped = codec().decode(data);
+        if (mapped.getCategories() == null) {
+            mapped.setCategories(new ArrayList<>());
         }
+        return mapped;
+    }
 
-        try {
-            QuickResponseSettings mapped = objectMapper.convertValue(data, QuickResponseSettings.class);
-            if (mapped.getCategories() == null) {
-                mapped.setCategories(new ArrayList<>());
-            }
-            return mapped;
-        } catch (Exception e) {
-            log.error("Failed to parse quick response settings", e);
-            return defaultQuickResponseSettings();
-        }
+    private SettingsCodec<QuickResponseSettings> codec() {
+        return SettingsCodec.of(objectMapper, QuickResponseSettings.class, this::defaultQuickResponseSettings);
     }
 
     private QuickResponseSettings defaultQuickResponseSettings() {

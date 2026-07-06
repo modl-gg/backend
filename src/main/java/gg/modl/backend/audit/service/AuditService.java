@@ -1,5 +1,7 @@
 package gg.modl.backend.audit.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.audit.data.AuditLog;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
@@ -21,6 +23,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -47,16 +50,17 @@ public class AuditService {
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentMutationService punishmentMutationService;
 
+    private final Cache<String, List<ActivePunishmentResponse>> activePunishmentsCache = Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(60))
+        .maximumSize(500)
+        .build();
+
     // Real collection names; the single canonical allowlist for the raw DB viewer (shared with AuditController).
     public static final Set<String> ALLOWED_TABLES = Set.of(
-        CollectionName.MODL_SERVERS,
         CollectionName.PLAYERS,
-        CollectionName.SESSIONS,
-        CollectionName.AUTH_CODES,
         CollectionName.SETTINGS,
         CollectionName.STAFF,
         CollectionName.STAFF_ROLES,
-        CollectionName.INVITATIONS,
         CollectionName.TICKETS,
         CollectionName.TICKET_VERIFICATIONS,
         CollectionName.LOGS,
@@ -132,30 +136,38 @@ public class AuditService {
     }
 
     public List<ActivePunishmentResponse> getPunishmentsList(Server server, String statusFilter) {
-        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
-        List<Document> rows = auditRepository.aggregatePunishmentRows(server);
-        Map<String, String> resolvedIssuers = resolveIssuerNames(server, rows);
+        List<ActivePunishmentResponse> all =
+            activePunishmentsCache.get(server.getId(), key -> computeAllPunishments(server));
 
         boolean filterActive = "active".equalsIgnoreCase(statusFilter);
         boolean filterInactive = "inactive".equalsIgnoreCase(statusFilter);
 
         List<ActivePunishmentResponse> results = new ArrayList<>();
+        for (ActivePunishmentResponse punishment : all) {
+            if (filterActive && !punishment.active()) {
+                continue;
+            }
+            if (filterInactive && punishment.active()) {
+                continue;
+            }
+            results.add(punishment);
+        }
+        return results;
+    }
+
+    private List<ActivePunishmentResponse> computeAllPunishments(Server server) {
+        List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
+        Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
+        List<Document> rows = auditRepository.aggregatePunishmentRows(server);
+        Map<String, String> resolvedIssuers = resolveIssuerNames(server, rows);
+
+        List<ActivePunishmentResponse> results = new ArrayList<>();
         for (Document row : rows) {
             Punishment punishment = reconstructPunishment(row);
             boolean active = statusCalculator.isPunishmentActive(punishment);
-
-            if (filterActive && !active) {
-                continue;
-            }
-            if (filterInactive && active) {
-                continue;
-            }
-
             results.add(mapToActivePunishmentResponse(
                 server, row, punishment, active, typesByOrdinal, resolvedIssuers));
         }
-
         return results;
     }
 
@@ -603,6 +615,7 @@ public class AuditService {
                     }
                 }
             }
+            activePunishmentsCache.invalidate(server.getId());
             return count;
         } catch (Exception e) {
             log.error("Error during {}", operationName, e);

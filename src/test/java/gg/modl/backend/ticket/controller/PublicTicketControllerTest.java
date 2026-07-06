@@ -22,6 +22,8 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.Ticket.ChatMessage;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.service.PublicAccessProperties;
+import gg.modl.backend.ticket.service.PublicRecordAccessService;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
@@ -29,6 +31,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -48,10 +51,12 @@ class PublicTicketControllerTest {
         TicketReplyService ticketReplyService = mock(TicketReplyService.class);
         verificationService = mock(TicketEmailVerificationService.class);
         RealtimeEventPublisher realtimeEventPublisher = mock(RealtimeEventPublisher.class);
+        PublicRecordAccessService recordAccessService =
+            new PublicRecordAccessService(verificationService, new PublicAccessProperties());
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, realtimeEventPublisher))
+            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, recordAccessService, realtimeEventPublisher))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
@@ -81,7 +86,7 @@ class PublicTicketControllerTest {
         Date created = new Date(1_700_000_000_000L);
         when(ticketService.getTicketRaw(server, "TICKET-1")).thenReturn(Optional.of(ticket));
         when(verificationService.validateToken(server, "TICKET-1", "valid-token")).thenReturn(true);
-        when(ticketService.getTicketById(server, "TICKET-1")).thenReturn(new TicketResponse(
+        when(ticketService.toResponse(server, ticket)).thenReturn(new TicketResponse(
             "TICKET-1",
             "support",
             "support",
@@ -125,7 +130,7 @@ class PublicTicketControllerTest {
         Date created = new Date(1_700_000_000_000L);
         when(ticketService.getTicketRaw(server, "TICKET-1")).thenReturn(Optional.of(ticket));
         when(verificationService.validateToken(server, "TICKET-1", "valid-token")).thenReturn(true);
-        when(ticketService.getTicketById(server, "TICKET-1")).thenReturn(new TicketResponse(
+        when(ticketService.toResponse(server, ticket)).thenReturn(new TicketResponse(
             "TICKET-1",
             "support",
             "Support",
@@ -169,6 +174,8 @@ class PublicTicketControllerTest {
             List.of()
         ));
 
+        when(ticketService.getPublicFormFieldIds(server, ticket)).thenReturn(Set.of("description"));
+
         mockMvc.perform(get(RESTMappingV1.PUBLIC_TICKETS + "/TICKET-1")
                 .param("token", "valid-token"))
             .andExpect(status().isOk())
@@ -204,7 +211,7 @@ class PublicTicketControllerTest {
             .build();
         Date created = new Date(1_700_000_000_000L);
         when(ticketService.getTicketRaw(server, "TICKET-1")).thenReturn(Optional.of(ticket));
-        when(ticketService.getTicketById(server, "TICKET-1")).thenReturn(new TicketResponse(
+        when(ticketService.toResponse(server, ticket)).thenReturn(new TicketResponse(
             "TICKET-1",
             "support",
             "Support",

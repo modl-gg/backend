@@ -2,6 +2,8 @@ package gg.modl.backend.analytics.service;
 
 import static gg.modl.backend.infrastructure.util.SafeConvertUtil.toInt;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.OverviewResponse;
 import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
@@ -12,10 +14,12 @@ import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.IdCoun
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -48,8 +52,29 @@ public class AnalyticsService {
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
 
+    private final Cache<String, OverviewResponse> overviewCache = analyticsResultCache();
+    private final Cache<String, TicketAnalyticsResponse> ticketAnalyticsCache = analyticsResultCache();
+    private final Cache<String, PunishmentAnalyticsResponse> punishmentAnalyticsCache = analyticsResultCache();
+    private final Cache<String, AuditLogsAnalyticsResponse> auditLogsAnalyticsCache = analyticsResultCache();
+    private final Cache<String, PlayerActivityResponse> playerActivityCache = analyticsResultCache();
+
+    private static <V> Cache<String, V> analyticsResultCache() {
+        return Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofSeconds(60))
+            .maximumSize(500)
+            .build();
+    }
+
+    private static String cacheKey(Server server, String period) {
+        return server.getId() + ":" + period;
+    }
+
     @NotNull
     public OverviewResponse getOverview(@NotNull Server server) {
+        return overviewCache.get(server.getId(), key -> computeOverview(server));
+    }
+
+    private OverviewResponse computeOverview(Server server) {
         final Date thirtyDaysAgo = DateRangeUtil.daysAgo(30);
         final Date sixtyDaysAgo = DateRangeUtil.daysAgo(60);
         final AnalyticsMongoRepository.OverviewStats stats = analyticsRepository.loadOverviewStats(server, thirtyDaysAgo, sixtyDaysAgo);
@@ -71,6 +96,10 @@ public class AnalyticsService {
 
     @NotNull
     public TicketAnalyticsResponse getTicketAnalytics(@NotNull Server server, @NotNull String period) {
+        return ticketAnalyticsCache.get(cacheKey(server, period), key -> computeTicketAnalytics(server, period));
+    }
+
+    private TicketAnalyticsResponse computeTicketAnalytics(Server server, String period) {
         final Date startDate = DateRangeUtil.getStartDate(period);
         final List<IdCountResult> statusResults = analyticsRepository.aggregateTicketStatusCounts(server, startDate);
         final List<TicketAnalyticsResponse.StatusCount> byStatus = statusResults.stream()
@@ -125,6 +154,10 @@ public class AnalyticsService {
     }
 
     public PunishmentAnalyticsResponse getPunishmentAnalytics(Server server, String period) {
+        return punishmentAnalyticsCache.get(cacheKey(server, period), key -> computePunishmentAnalytics(server, period));
+    }
+
+    private PunishmentAnalyticsResponse computePunishmentAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
         Document facetResults = analyticsRepository.aggregatePunishmentAnalytics(server, startDate, ANALYTICS_TIME_ZONE);
         if (facetResults == null) {
@@ -188,9 +221,8 @@ public class AnalyticsService {
 
     private Map<Integer, String> resolvePunishmentTypeNames(Server server) {
         Map<Integer, String> typeNames = new HashMap<>();
-        punishmentTypeService.getPunishmentTypes(server).forEach(type ->
-            typeNames.put(type.getOrdinal(), type.getName())
-        );
+        PunishmentTypeIndex.byOrdinal(punishmentTypeService.getPunishmentTypes(server))
+            .forEach((ordinal, type) -> typeNames.put(ordinal, type.getName()));
         return typeNames;
     }
 
@@ -224,6 +256,10 @@ public class AnalyticsService {
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
+        return auditLogsAnalyticsCache.get(cacheKey(server, period), key -> computeAuditLogsAnalytics(server, period));
+    }
+
+    private AuditLogsAnalyticsResponse computeAuditLogsAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
         List<IdCountResult> levelResults = analyticsRepository.aggregateAuditLogLevelCounts(server, startDate);
         List<AuditLogsAnalyticsResponse.LevelCount> byLevel = levelResults.stream()
@@ -264,6 +300,10 @@ public class AnalyticsService {
     }
 
     public PlayerActivityResponse getPlayerActivityAnalytics(Server server, String period) {
+        return playerActivityCache.get(cacheKey(server, period), key -> computePlayerActivityAnalytics(server, period));
+    }
+
+    private PlayerActivityResponse computePlayerActivityAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
 
         Document facetResults = analyticsRepository.aggregatePlayerActivity(server, startDate, ANALYTICS_TIME_ZONE);

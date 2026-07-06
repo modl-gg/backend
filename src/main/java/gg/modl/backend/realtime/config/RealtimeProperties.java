@@ -60,6 +60,13 @@ public class RealtimeProperties {
     @Min(1000)
     private long asyncSendTimeoutMs = 10_000;
 
+    @Min(1)
+    @Max(64)
+    private int dispatchWorkers = Math.min(Runtime.getRuntime().availableProcessors(), 8);
+
+    @Min(1)
+    private int dispatchQueueCapacity = 10_000;
+
     // Upper bound after which a wedged terminal-but-open session is force-evicted by the heartbeat
     // sweeper (~3 sweep intervals).
     @Min(1000)

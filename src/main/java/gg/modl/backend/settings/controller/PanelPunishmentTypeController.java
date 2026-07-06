@@ -12,8 +12,11 @@ import gg.modl.proto.modl.v1.PanelPunishmentTypesResponse;
 import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PunishmentTypeRequest;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,6 +35,7 @@ public class PanelPunishmentTypeController {
     private final PunishmentTypeService punishmentTypeService;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final PermissionService permissionService;
+    private final Validator validator;
 
     @GetMapping
     public PanelPunishmentTypesResponse getPunishmentTypes(HttpServletRequest request) {
@@ -60,6 +64,7 @@ public class PanelPunishmentTypeController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType updatedType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
+        validate(updatedType);
 
         String previousName = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
             .map(PunishmentType::getName)
@@ -82,6 +87,7 @@ public class PanelPunishmentTypeController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType newType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
+        validate(newType);
         PunishmentType created = punishmentTypeService.createPunishmentType(server, newType);
         invalidatePunishmentTypes(server, created.getOrdinal());
         return PanelSettingsProtoMapper.toPunishmentType(created);
@@ -122,5 +128,12 @@ public class PanelPunishmentTypeController {
             PanelResource.PANEL_RESOURCE_PUNISHMENT_TYPES,
             ordinal != null ? String.valueOf(ordinal) : null
         );
+    }
+
+    private <T> void validate(T target) {
+        Set<ConstraintViolation<T>> violations = validator.validate(target);
+        if (!violations.isEmpty()) {
+            throw new ValidationException(violations.iterator().next().getMessage());
+        }
     }
 }

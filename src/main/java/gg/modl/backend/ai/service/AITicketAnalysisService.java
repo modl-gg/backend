@@ -1,5 +1,6 @@
 package gg.modl.backend.ai.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.admin.data.SystemPrompt;
@@ -8,6 +9,7 @@ import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.ai.data.DefaultPrompts;
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.limits.ServerLimitPolicy;
@@ -19,13 +21,17 @@ import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.AIModerationSettings.AIPunishmentConfig;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -51,11 +57,17 @@ public class AITicketAnalysisService {
     private final ServerLimitPolicy serverLimitPolicy;
     private final ObjectMapper objectMapper;
     private final SystemPromptMongoRepository systemPromptRepository;
+    private final StaffMongoRepository staffRepository;
     public static final String AI_MODERATOR = "AI Moderator";
+    private static final String DEFAULT_ISSUER_NAME = "Staff";
+    private static final double AUTOMATED_ACTION_CONFIDENCE_THRESHOLD = 0.85;
+    private static final String REPORTED_PLAYER_REFERENCE = "the reported player identified in the untrusted chat data";
+    private static final SecureRandom NONCE_RANDOM = new SecureRandom();
 
     @Async
     public void analyzeTicketAsync(@NotNull Server server, @NotNull String ticketId) {
-        if (!shouldAnalyze(server)) {
+        final AIModerationSettings settings = resolveActiveModerationSettings(server);
+        if (settings == null) {
             log.debug("Skipping AI analysis for ticket {}: preconditions not met", ticketId);
             return;
         }
@@ -77,15 +89,14 @@ public class AITicketAnalysisService {
             return;
         }
 
-        final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        final String promptTemplate = getSystemPrompt();
-        final String chatLog = ticket.getChatMessages()
-            .stream().map(AITicketAnalysisService::formatChatLine).collect(Collectors.joining("\n"));
-        final String fullPrompt = buildPrompt(promptTemplate, chatLog, ticket.getReportedPlayer(), settings);
+        final ModerationPrompt prompt = buildModerationPrompt(ticket, settings);
+        if (prompt == null) {
+            return;
+        }
 
         final String rawResponse;
         try {
-            rawResponse = llmService.generate(fullPrompt);
+            rawResponse = llmService.generate(prompt.systemInstruction(), prompt.userContent());
         } catch (Exception e) {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return;
@@ -93,7 +104,7 @@ public class AITicketAnalysisService {
 
         final AIAnalysisResult result = parseResponse(rawResponse);
         if (result == null) {
-            return; // failed but we can just ignore (do not meter a request that produced no usable analysis)
+            return;
         }
 
         ticket.setAiAnalysis(result);
@@ -106,44 +117,40 @@ public class AITicketAnalysisService {
         usageTrackingService.incrementAiRequests(server.getId(), 1);
     }
 
-    private boolean shouldAnalyze(@NotNull Server server) {
+    @Nullable
+    private AIModerationSettings resolveActiveModerationSettings(@NotNull Server server) {
         if (!llmService.isAvailable()) {
             log.debug("LLM service not available");
-            return false;
+            return null;
         }
 
         final ServerLimits limits = serverLimitPolicy.resolve(server);
         if (!limits.isAiModerationEnabled()) {
-            return false;
+            return null;
         }
 
         final AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
-        if (!settings.isEnableAIReview() || settings.getAiPunishmentConfigs().isEmpty()) {
-            return false;
+        if (!settings.isEnableAIReview()
+            || settings.getAiPunishmentConfigs() == null
+            || settings.getAiPunishmentConfigs().isEmpty()) {
+            return null;
         }
 
-        // Check AI usage cap via direct usage snapshot to avoid loading the full server document.
         final ServerMongoRepository.AIUsageSnapshot usageSnapshot = serverRepository.findAIUsageSnapshotById(server.getId()).orElse(null);
         if (usageSnapshot != null) {
             long currentUsage = usageSnapshot.aiRequestsCurrentPeriod();
             long limit = limits.getAiRequestLimit();
             if (currentUsage >= limit) {
                 log.debug("Server {} has reached AI request limit ({}/{})", server.getServerName(), currentUsage, limit);
-                return false;
+                return null;
             }
         }
 
-        return true;
+        return settings;
     }
 
     private boolean isChatReport(Ticket ticket) {
         return ticket.getType() == TicketCategory.CHAT;
-    }
-
-    private static String formatChatLine(Ticket.ChatMessage message) {
-        return message.getSender() != null && !message.getSender().isBlank()
-            ? message.getSender() + ": " + message.getContent()
-            : message.getContent();
     }
 
     private void executeAutomatedAction(Server server, Ticket ticket, AIAnalysisResult result, AIModerationSettings settings) {
@@ -162,6 +169,13 @@ public class AITicketAnalysisService {
         }
 
         if (ticket.getStatus() == TicketStatus.CLOSED || ticket.isLocked()) {
+            return;
+        }
+
+        final Double confidence = result.getConfidence();
+        if (confidence == null || confidence < AUTOMATED_ACTION_CONFIDENCE_THRESHOLD) {
+            log.info("Skipping automated action for ticket {}: confidence {} below threshold {}. Leaving suggestion for human review.",
+                ticket.getId(), confidence, AUTOMATED_ACTION_CONFIDENCE_THRESHOLD);
             return;
         }
 
@@ -270,12 +284,52 @@ public class AITicketAnalysisService {
         return DefaultPrompts.MINECRAFT;
     }
 
-    @NotNull
-    private String buildPrompt(@NotNull String promptTemplate, @NotNull String chatLog, @NotNull String reportedPlayer, @NotNull AIModerationSettings settings) {
-        return promptTemplate
-            .replace("{{REPORTED_PLAYER}}", reportedPlayer)
+    @Nullable
+    private ModerationPrompt buildModerationPrompt(@NotNull Ticket ticket, @NotNull AIModerationSettings settings) {
+        final String nonce = generateNonce();
+        final String beginMarker = "===BEGIN_UNTRUSTED_CHAT_DATA:" + nonce + "===";
+        final String endMarker = "===END_UNTRUSTED_CHAT_DATA:" + nonce + "===";
+
+        final String chatJson;
+        try {
+            chatJson = objectMapper.writeValueAsString(buildChatPayload(ticket));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize chat data for ticket {}", ticket.getId(), e);
+            return null;
+        }
+
+        final String userContent = beginMarker + "\n" + chatJson + "\n" + endMarker;
+        final String systemInstruction = getSystemPrompt()
+            .replace("{{REPORTED_PLAYER}}", REPORTED_PLAYER_REFERENCE)
             .replace("{{PUNISHMENT_TYPES}}", formatPunishmentTypes(settings))
-            .replace("{{CHAT_LOG}}", chatLog);
+            .replace("{{CHAT_LOG}}", "")
+            + "\n\n"
+            + DefaultPrompts.UNTRUSTED_DATA_DIRECTIVE.formatted(beginMarker, endMarker);
+
+        return new ModerationPrompt(systemInstruction, userContent);
+    }
+
+    @NotNull
+    private Map<String, Object> buildChatPayload(@NotNull Ticket ticket) {
+        final List<Map<String, Object>> messages = new ArrayList<>();
+        for (Ticket.ChatMessage message : ticket.getChatMessages()) {
+            final Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("sender", message.getSender());
+            entry.put("content", message.getContent());
+            messages.add(entry);
+        }
+
+        final Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("reportedPlayer", ticket.getReportedPlayer());
+        payload.put("messages", messages);
+        return payload;
+    }
+
+    @NotNull
+    private static String generateNonce() {
+        final byte[] bytes = new byte[16];
+        NONCE_RANDOM.nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
     }
 
     @NotNull
@@ -321,11 +375,36 @@ public class AITicketAnalysisService {
                 }
             }
 
-            return new AIAnalysisResult(analysis, suggestedAction, new Date(), rawResponse);
+            final AIAnalysisResult result = new AIAnalysisResult(analysis, suggestedAction, new Date(), rawResponse);
+            result.setConfidence(parseDoubleField(json, "confidence"));
+            return result;
         } catch (Exception e) {
             log.error("Failed to parse AI response: {}", rawResponse, e);
             return null;
         }
+    }
+
+    @Nullable
+    private Double parseDoubleField(@Nullable JsonNode node, @Nullable String field) {
+        if (node == null || field == null || !node.has(field) || node.get(field).isNull()) {
+            return null;
+        }
+
+        final JsonNode value = node.get(field);
+        if (value.isNumber()) {
+            return value.asDouble();
+        }
+
+        if (value.isTextual()) {
+            try {
+                return Double.parseDouble(value.asText());
+            } catch (NumberFormatException e) {
+                log.warn("Non-numeric value for {}: {}", field, value.asText());
+                return null;
+            }
+        }
+
+        return null;
     }
 
     @Nullable
@@ -365,7 +444,7 @@ public class AITicketAnalysisService {
     }
 
     @NotNull
-    public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @NotNull String staffName) {
+    public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @Nullable String actingEmail) {
         final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
 
         if (ticket == null) {
@@ -390,10 +469,23 @@ public class AITicketAnalysisService {
             return new AISuggestionResult(false, "No valid reported player UUID");
         }
 
-        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, playerUuid, staffName);
+        punishmentLifecycleService.validatePunishmentPermission(server, actingEmail, aiAnalysis.getSuggestedAction().getPunishmentTypeId());
+
+        applyPunishmentAndCloseTicket(server, ticket, aiAnalysis, playerUuid, resolveIssuerName(server, actingEmail));
         ticketRepository.saveEntity(server, ticket);
 
         return new AISuggestionResult(true, null);
+    }
+
+    @NotNull
+    private String resolveIssuerName(@NotNull Server server, @Nullable String email) {
+        if (email == null) {
+            return DEFAULT_ISSUER_NAME;
+        }
+        return staffRepository.findByEmailIgnoreCase(server, email)
+            .map(Staff::getUsername)
+            .filter(name -> name != null && !name.isBlank())
+            .orElse(DEFAULT_ISSUER_NAME);
     }
 
     @NotNull
@@ -416,4 +508,6 @@ public class AITicketAnalysisService {
     }
 
     public record AISuggestionResult(boolean success, String error) {}
+
+    private record ModerationPrompt(String systemInstruction, String userContent) {}
 }

@@ -5,8 +5,6 @@ import java.net.InetAddress;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Date;
-import java.util.List;
-import java.util.Map;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -14,72 +12,28 @@ import org.springframework.stereotype.Component;
 @Component
 @Slf4j
 public class MigrationValidator {
+    public static final int MAX_PLAYER_RECORDS = 1_000_000;
+
     private static final Pattern UUID_PATTERN = Pattern.compile(RegExpConstants.UUID);
     private static final Pattern UUID_NO_DASHES_PATTERN = Pattern.compile("^[0-9a-fA-F]{32}$");
 
-    public ValidationResult validateMigrationData(Map<String, Object> data) {
-        if (data == null) {
-            return ValidationResult.error("Migration data is null");
-        }
-
-        Object playersObj = data.get("players");
-        if (playersObj == null) {
+    public ValidationResult validateHeader(boolean playersPresent, boolean playersIsArray,
+                                           Integer declaredPlayerCount) {
+        if (!playersPresent) {
             return ValidationResult.error("Missing 'players' field");
         }
-
-        if (!(playersObj instanceof List<?>)) {
+        if (!playersIsArray) {
             return ValidationResult.error("'players' field must be an array");
         }
-
-        List<?> players = (List<?>) playersObj;
-
-        if (players.isEmpty()) {
-            return ValidationResult.error("Players array cannot be empty");
-        }
-
-        if (players.size() > 1_000_000) {
-            return ValidationResult.error("Players array exceeds maximum length of 1,000,000");
-        }
-
-        int sampleSize = Math.min(100, players.size());
-        for (int i = 0; i < sampleSize; i++) {
-            int randomIndex = (int) (Math.random() * players.size());
-            Object playerObj = players.get(randomIndex);
-
-            if (!(playerObj instanceof Map<?, ?>)) {
-                return ValidationResult.error("Invalid player object at index " + randomIndex);
+        if (declaredPlayerCount != null) {
+            if (declaredPlayerCount <= 0) {
+                return ValidationResult.error("Players array cannot be empty");
             }
-
-            Map<?, ?> player = (Map<?, ?>) playerObj;
-
-            Object uuidObj = player.get("minecraftUuid");
-            if (uuidObj == null || !(uuidObj instanceof String)) {
-                return ValidationResult.error("Missing or invalid minecraftUuid at index " + randomIndex);
-            }
-
-            String uuid = (String) uuidObj;
-            if (!isValidUuid(uuid)) {
-                return ValidationResult.error("Invalid UUID format at index " + randomIndex + ": " + uuid);
-            }
-
-            Object usernamesObj = player.get("usernames");
-            if (usernamesObj != null && !(usernamesObj instanceof List<?>)) {
-                return ValidationResult.error("Invalid usernames field at index " + randomIndex);
-            }
-
-            Object punishmentsObj = player.get("punishments");
-            if (punishmentsObj != null) {
-                if (!(punishmentsObj instanceof List<?>)) {
-                    return ValidationResult.error("Invalid punishments field at index " + randomIndex);
-                }
-                List<?> punishments = (List<?>) punishmentsObj;
-                if (punishments.size() > 50000) {
-                    return ValidationResult.error("Too many punishments at index " + randomIndex);
-                }
+            if (declaredPlayerCount > MAX_PLAYER_RECORDS) {
+                return ValidationResult.error("Players array exceeds maximum length of 1,000,000");
             }
         }
-
-        return ValidationResult.success(players.size());
+        return ValidationResult.success(declaredPlayerCount == null ? 0 : declaredPlayerCount);
     }
 
     public boolean isValidUuid(String uuid) {

@@ -1,6 +1,9 @@
 package gg.modl.backend.player.external;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import java.net.URI;
+import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
@@ -21,9 +24,21 @@ public class CrafatarProxyService {
     private static final int MAX_AVATAR_SIZE = 512;
     private static final int MAX_AVATAR_BYTES = 1024 * 1024; // 1 MiB
 
+    private static final long MAX_AVATAR_CACHE_BYTES = 64L * 1024 * 1024;
+
+    private final Cache<String, byte[]> avatarCache = Caffeine.newBuilder()
+        .maximumWeight(MAX_AVATAR_CACHE_BYTES)
+        .weigher((String key, byte[] body) -> body.length)
+        .expireAfterWrite(Duration.ofMinutes(10))
+        .build();
+
     public byte[] getAvatar(String uuid, int size, boolean overlay) {
         int clampedSize = Math.max(MIN_AVATAR_SIZE, Math.min(size, MAX_AVATAR_SIZE));
+        String cacheKey = clampedSize + ":" + overlay + ":" + uuid;
+        return avatarCache.get(cacheKey, key -> fetchAvatar(uuid, clampedSize, overlay));
+    }
 
+    private byte[] fetchAvatar(String uuid, int clampedSize, boolean overlay) {
         // Try Crafatar first. Values are passed as URI variables so a stray ?/&/# in uuid is
         // percent-encoded by DefaultUriBuilderFactory and never re-parsed as URL structure.
         try {

@@ -3,7 +3,6 @@ package gg.modl.backend.settings.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
-import gg.modl.backend.settings.data.Settings;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -14,21 +13,23 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @RequiredArgsConstructor
 public class AIModerationSettingsService {
-    private final SettingsRepositoryAccess settingsRepositoryAccess;
+    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_AI_MODERATION = "aiModerationSettings";
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
-        AIModerationSettings existing = getAIModerationSettings(server);
+        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION);
+        AIModerationSettings existing = codec().decode(current.data());
 
         Map<String, AIModerationSettings.AIPunishmentConfig> incoming = newSettings.getAiPunishmentConfigs();
+        Map<String, AIModerationSettings.AIPunishmentConfig> existingConfigs = existing.getAiPunishmentConfigs() != null
+            ? existing.getAiPunishmentConfigs()
+            : new HashMap<>();
         Map<String, AIModerationSettings.AIPunishmentConfig> mergedConfigs;
         if (incoming == null || incoming.isEmpty()) {
-            mergedConfigs = existing.getAiPunishmentConfigs();
+            mergedConfigs = existingConfigs;
         } else {
-            mergedConfigs = new HashMap<>(existing.getAiPunishmentConfigs() != null
-                ? existing.getAiPunishmentConfigs()
-                : new HashMap<>());
+            mergedConfigs = new HashMap<>(existingConfigs);
             mergedConfigs.putAll(incoming);
         }
 
@@ -38,29 +39,16 @@ public class AIModerationSettingsService {
             .aiPunishmentConfigs(mergedConfigs)
             .build();
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(toPersist, Map.class);
-        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_AI_MODERATION, data);
+        settingsDocumentService.saveRawState(server, SETTINGS_TYPE_AI_MODERATION, current.version(), codec().encode(toPersist));
         return getAIModerationSettings(server);
     }
 
     public AIModerationSettings getAIModerationSettings(Server server) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_AI_MODERATION).orElse(null);
+        return codec().decode(settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION).data());
+    }
 
-        if (settings == null || settings.getData() == null) {
-            return createDefaultSettings();
-        }
-
-        try {
-            return objectMapper.convertValue(settings.getData(), AIModerationSettings.class);
-        } catch (Exception e) {
-            log.error("Error converting AI moderation settings", e);
-            return AIModerationSettings.builder()
-                .enableAIReview(false)
-                .enableAutomatedActions(false)
-                .aiPunishmentConfigs(new HashMap<>())
-                .build();
-        }
+    private SettingsCodec<AIModerationSettings> codec() {
+        return SettingsCodec.of(objectMapper, AIModerationSettings.class, this::createDefaultSettings);
     }
 
     private AIModerationSettings createDefaultSettings() {

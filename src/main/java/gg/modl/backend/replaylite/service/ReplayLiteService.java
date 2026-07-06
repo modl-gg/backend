@@ -34,6 +34,7 @@ public class ReplayLiteService {
     public static final long MAX_REPLAY_SIZE_BYTES = 10 * 1024 * 1024L;
     private static final Duration PENDING_UPLOAD_TTL = Duration.ofMinutes(15);
     private static final Duration CONFIRMED_REPLAY_TTL = Duration.ofHours(24);
+    private static final Duration DOWNLOAD_PRESIGN_TTL = Duration.ofMinutes(5);
     private static final int DAILY_CONFIRMED_LIMIT = 100;
     private static final DateTimeFormatter KEY_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -184,12 +185,14 @@ public class ReplayLiteService {
         abuseGuard.checkIp(clientIp);
         abuseGuard.checkDownload(replayId);
         return findAvailablePublicReplay(replayId)
-            .flatMap(document -> storageService.downloadObject(document.getObjectKey(), MAX_REPLAY_SIZE_BYTES)
-                .map(download -> new ReplayLiteDownload(
-                    download.bytes(),
-                    download.contentType(),
-                    document.getExpiresAt()
-                )));
+            .map(document -> {
+                ReplayLiteStorageService.PresignedDownload presigned = storageService.createPresignedDownload(
+                    document.getObjectKey(),
+                    document.getId() + ".modlreplay",
+                    DOWNLOAD_PRESIGN_TTL
+                );
+                return new ReplayLiteDownload(presigned.url(), presigned.expiresAt());
+            });
     }
 
     public void submitLabels(String replayId, List<ReplayLiteLabel> labels, String clientIp) {
@@ -303,5 +306,5 @@ public class ReplayLiteService {
             .orElse(true);
     }
 
-    public record ReplayLiteDownload(byte[] bytes, String contentType, Instant expiresAt) {}
+    public record ReplayLiteDownload(String url, Instant expiresAt) {}
 }

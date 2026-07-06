@@ -67,13 +67,11 @@ public class PunishmentMutationService {
         }
 
         punishment.getModifications().add(modification);
-        if (request.effectiveDuration() != null) {
-            if (punishment.getStarted() == null) {
-                punishment.setStarted(now);
-            }
+        punishmentRepository.appendModification(server, playerUuid.toString(), punishmentId, modification);
+        if (request.effectiveDuration() != null && punishment.getStarted() == null) {
+            punishment.setStarted(now);
+            punishmentRepository.setPunishmentStartedIfUnset(server, playerUuid.toString(), punishmentId, now);
         }
-
-        punishmentRepository.replacePunishments(server, player);
         realtimePublisher.punishmentModified(server, player, punishment);
         return player;
     }
@@ -93,12 +91,9 @@ public class PunishmentMutationService {
         Punishment punishment = context.punishment();
         Date now = new Date();
 
-        // Normalize make-permanent intent (null) to -1L so the modification's effectiveDuration and
-        // data.duration agree, keeping data.duration coherent for all other readers (audit reconstruct,
-        // plugin display). The read side treats null/0/negative identically as permanent.
         Long effective = (newDuration == null) ? -1L : newDuration;
 
-        punishment.getModifications().add(new PunishmentModification(
+        PunishmentModification modification = new PunishmentModification(
             IdGenerator.generateShortId(),
             PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
             now,
@@ -108,24 +103,28 @@ public class PunishmentMutationService {
             effective,
             null,
             null
-        ));
+        );
 
         String durationText = newDuration == null || newDuration < 0
                               ? "permanent"
                               : PunishmentMapper.formatDuration(newDuration, false);
-        punishment.getNotes().add(new PunishmentNote(
+        PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
             "changed duration to " + durationText,
             now,
             resolvedIssuerName,
             issuerId
-        ));
+        );
+
+        punishment.getModifications().add(modification);
+        punishment.getNotes().add(note);
         punishment.getData().put("duration", effective);
+        String uuid = context.player().getMinecraftUuid().toString();
+        punishmentRepository.appendDurationChange(server, uuid, punishmentId, modification, note, effective);
         if (punishment.getStarted() == null) {
             punishment.setStarted(now);
+            punishmentRepository.setPunishmentStartedIfUnset(server, uuid, punishmentId, now);
         }
-
-        punishmentRepository.replacePunishments(server, context.player());
         realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         if (PunishmentData.isAltBlocking(punishment.getData())) {
@@ -157,15 +156,17 @@ public class PunishmentMutationService {
         Punishment punishment = context.punishment();
         Date now = new Date();
         String resolvedIssuerName = issuerId != null ? null : issuerName;
-        punishment.getData().put(toggleOption.dataKey, enabled);
-        punishment.getNotes().add(new PunishmentNote(
+        PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
             (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
             now,
             resolvedIssuerName,
             issuerId
-        ));
-        punishmentRepository.replacePunishments(server, context.player());
+        );
+        punishment.getData().put(toggleOption.dataKey, enabled);
+        punishment.getNotes().add(note);
+        punishmentRepository.setPunishmentData(server, context.player().getMinecraftUuid().toString(), punishmentId,
+            Map.of(toggleOption.dataKey, enabled), note);
         realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Option toggled", true, 1);
@@ -187,10 +188,8 @@ public class PunishmentMutationService {
             );
         }
 
-        Map<String, Object> updatedData = context.punishment().getData();
-        updatedData.put("statWipeCompleted", true);
-        updatedData.put("statWipeCompletedAt", new Date());
-        punishmentRepository.replacePunishments(server, context.player());
+        punishmentRepository.setPunishmentData(server, context.player().getMinecraftUuid().toString(), punishmentId,
+            Map.of("statWipeCompleted", true, "statWipeCompletedAt", new Date()), null);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Stat wipe acknowledged", true, 1);
     }
@@ -268,7 +267,7 @@ public class PunishmentMutationService {
         removedIds.removeAll(currentIds);
 
         punishment.setAttachedTicketIds(currentIds);
-        punishmentRepository.replacePunishments(server, player);
+        punishmentRepository.setPunishmentTickets(server, player.getMinecraftUuid().toString(), punishment.getId(), currentIds);
 
         if (request.modifyAssociatedTickets()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);

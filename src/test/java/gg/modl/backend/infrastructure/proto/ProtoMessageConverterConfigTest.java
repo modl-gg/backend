@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,7 +14,6 @@ import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.beta.SubdomainValidator;
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import gg.modl.backend.infrastructure.turnstile.TurnstileService;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.registration.PublicRegistrationController;
 import gg.modl.backend.registration.RegistrationService;
@@ -24,6 +22,7 @@ import gg.modl.proto.modl.v1.PublicRegistrationRequest;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
@@ -112,14 +111,14 @@ class ProtoMessageConverterConfigTest {
 
     private static MockMvc buildMockMvc(List<HttpMessageConverter<?>> converters) {
         ServerService serverService = mock(ServerService.class);
-        TurnstileService turnstileService = mock(TurnstileService.class);
         RegistrationService registrationService = mock(RegistrationService.class);
-        when(registrationService.reserveRateLimit(anyString()))
-            .thenReturn(new RegistrationService.RateLimitResult(false, 0));
-        when(turnstileService.validateToken(any(), any())).thenReturn(false);
+        when(registrationService.performRegistration(any()))
+            .thenReturn(new RegistrationService.RegistrationOutcome.Rejected(
+                new RegistrationService.RegistrationRejection(
+                    HttpStatus.BAD_REQUEST, "Security verification failed. Please try again.")));
 
         PublicRegistrationController controller = new PublicRegistrationController(
-            serverService, turnstileService, mock(SessionService.class), registrationService, mock(CookieUtil.class),
+            serverService, mock(SessionService.class), registrationService, mock(CookieUtil.class),
             new SubdomainValidator());
 
         return MockMvcBuilders.standaloneSetup(controller)

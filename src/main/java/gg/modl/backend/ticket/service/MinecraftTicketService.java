@@ -414,6 +414,17 @@ public class MinecraftTicketService {
         return response;
     }
 
+    public Map<String, Object> toPlayerTicketItem(Ticket ticket) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", ticket.getId());
+        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
+        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
+        response.put("subject", ticket.getSubject());
+        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
+        response.put("createdAt", ticket.getCreated());
+        return response;
+    }
+
     public enum MinecraftTicketClaimStatus {
         SUCCESS,
         NOT_FOUND,

@@ -20,6 +20,7 @@ public class TurnstileService {
     private final RestTemplate restTemplate;
     private final TurnstileConfiguration config;
     private final ModlProperties modlProperties;
+    private volatile boolean warnedAboutMissingHostnames = false;
 
     public boolean validateToken(String token, String remoteIp) {
         if (config.getSecretKey() == null || config.getSecretKey().isBlank()) {
@@ -60,25 +61,71 @@ public class TurnstileService {
                 return false;
             }
 
-            final List<String> expected = config.getExpectedHostnames();
-            final List<String> allowed = expected == null
-                ? List.of()
-                : expected.stream().filter(h -> h != null && !h.isBlank()).map(String::trim).toList();
-            if (!allowed.isEmpty() && !modlProperties.isDevelopmentMode()) {
-                final String host = response.hostname();
-                final boolean hostAllowed = host != null
-                    && allowed.stream().anyMatch(h -> h.equalsIgnoreCase(host.trim()));
-                if (!hostAllowed) {
-                    log.warn("Turnstile token solved on unexpected hostname '{}', expected one of {}", host, allowed);
-                    return false;
-                }
-            }
-
-            return true;
+            return isHostnameAllowed(response.hostname());
         } catch (Exception e) {
             log.error("Error validating Turnstile token", e);
             return false;
         }
+    }
+
+    private boolean isHostnameAllowed(String host) {
+        final List<String> allowed = resolveAllowedHostnames();
+        if (allowed.isEmpty()) {
+            if (modlProperties.isDevelopmentMode()) {
+                return true;
+            }
+            warnMissingHostnamePinningOnce();
+            return false;
+        }
+        if (modlProperties.isDevelopmentMode()) {
+            return true;
+        }
+        final boolean hostAllowed = host != null
+            && allowed.stream().anyMatch(h -> h.equalsIgnoreCase(host.trim()));
+        if (!hostAllowed) {
+            log.warn("Turnstile token solved on unexpected hostname '{}', expected one of {}", host, allowed);
+            return false;
+        }
+        return true;
+    }
+
+    private List<String> resolveAllowedHostnames() {
+        final List<String> explicit = normalizeHostnames(config.getExpectedHostnames());
+        if (!explicit.isEmpty()) {
+            return explicit;
+        }
+        return defaultHostnamesFromAppDomain();
+    }
+
+    private List<String> normalizeHostnames(List<String> hostnames) {
+        if (hostnames == null) {
+            return List.of();
+        }
+        return hostnames.stream()
+            .filter(h -> h != null && !h.isBlank())
+            .map(String::trim)
+            .toList();
+    }
+
+    private List<String> defaultHostnamesFromAppDomain() {
+        final String appDomain = modlProperties.getAppDomain();
+        if (appDomain != null && !appDomain.isBlank()) {
+            return List.of(appDomain.trim());
+        }
+        final String domain = modlProperties.getDomain();
+        if (domain != null && !domain.isBlank()) {
+            return List.of(domain.trim());
+        }
+        return List.of();
+    }
+
+    private void warnMissingHostnamePinningOnce() {
+        if (warnedAboutMissingHostnames) {
+            return;
+        }
+        warnedAboutMissingHostnames = true;
+        log.error("Turnstile hostname pinning is not configured and no app domain is available; rejecting token. "
+            + "Set CLOUDFLARE_TURNSTILE_HOSTNAMES (modl.turnstile.expected-hostnames) to the hostname(s) serving the widget.");
     }
 
     public record TurnstileResponse(

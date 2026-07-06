@@ -17,6 +17,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Invitation;
@@ -51,27 +52,11 @@ public class StaffService {
     private final PunishmentMongoRepository punishmentRepository;
     private final PlayerService playerService;
     private final PermissionService permissionService;
+    private final RoleAuthorization roleAuthorization;
     private final ServerTimestampService serverTimestampService;
     private final WebAuthnService webAuthnService;
 
     private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
-
-    // Resolved performer identity for the API-key minecraft path (no authenticated staff session).
-    // A null roleId / isSuperAdmin == false signals "no trustworthy identity" (safe-degrade).
-    public record MinecraftPerformer(String roleId, boolean isSuperAdmin) {}
-
-    public MinecraftPerformer resolveMinecraftPerformer(Server server, String actingStaffId) {
-        if (actingStaffId == null || actingStaffId.isBlank()) {
-            return new MinecraftPerformer(null, false);
-        }
-        Staff staff = staffRepository.findById(server, actingStaffId).orElse(null);
-        if (staff == null) {
-            return new MinecraftPerformer(null, false);
-        }
-        boolean superAdmin = server.getAdminEmail() != null
-            && server.getAdminEmail().equalsIgnoreCase(staff.getEmail());
-        return new MinecraftPerformer(staff.getRoleId(), superAdmin);
-    }
 
     private final Cache<String, Optional<Staff>> staffByEmailCache = Caffeine.newBuilder()
         .maximumSize(1000)
@@ -161,7 +146,7 @@ public class StaffService {
         return staffRepository.existsByUsername(server, username);
     }
 
-    public StaffResponse createStaff(Server server, CreateStaffRequest request, String performerEmail, String performerRole) {
+    public StaffResponse createStaff(Server server, CreateStaffRequest request, RoleAuthorization.PerformerAuthority performer) {
         // Canonicalize the email so it stores in the same lowercase form every lookup queries
         // (read paths normalize); otherwise mixed-case storage is unreachable and duplicable.
         String email = EmailAddressUtil.normalizeIfValid(request.email());
@@ -174,7 +159,7 @@ public class StaffService {
         }
 
         String requestedRole = request.role() != null ? request.role() : "Helper";
-        StaffRole grantedRole = validateGrantableRole(server, requestedRole, performerRole);
+        StaffRole grantedRole = roleAuthorization.assertGrantableRole(server, performer, requestedRole);
 
         Staff staff = Staff.builder()
             .email(email)
@@ -211,7 +196,7 @@ public class StaffService {
         return Optional.of(toStaffResponse(server, staff, "Active"));
     }
 
-    public boolean deleteStaff(Server server, String id, String removerEmail) {
+    public boolean deleteStaff(Server server, String id, RoleAuthorization.PerformerAuthority performer) {
         if (invitationRepository.deleteById(server, id)) {
             return true;
         }
@@ -222,14 +207,7 @@ public class StaffService {
             return false;
         }
 
-        if (staffToRemove.getEmail().equalsIgnoreCase(removerEmail)) {
-            throw new ValidationException("You cannot remove yourself");
-        }
-
-        if (server.getAdminEmail() != null &&
-            staffToRemove.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
-            throw new ForbiddenException("Cannot remove the server administrator");
-        }
+        roleAuthorization.assertCanActOnStaff(server, performer, staffToRemove);
 
         staffRepository.deleteById(server, id);
         evictStaffByEmailCache(server, staffToRemove.getEmail());
@@ -239,23 +217,16 @@ public class StaffService {
         return true;
     }
 
-    public Optional<StaffResponse> updateStaffRole(Server server, String id, String newRole, String performerEmail, String performerRole) {
+    public Optional<StaffResponse> updateStaffRole(Server server, String id, String newRole, RoleAuthorization.PerformerAuthority performer) {
         Staff staff = staffRepository.findById(server, id).orElse(null);
 
         if (staff == null) {
             return Optional.empty();
         }
 
-        if (server.getAdminEmail() != null &&
-            staff.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
-            throw new ForbiddenException("Cannot change the role of the server administrator");
-        }
+        roleAuthorization.assertCanActOnStaff(server, performer, staff);
 
-        if (staff.getEmail().equalsIgnoreCase(performerEmail)) {
-            throw new ForbiddenException("You cannot change your own role");
-        }
-
-        StaffRole validatedRole = validateGrantableRole(server, newRole, performerRole);
+        StaffRole validatedRole = roleAuthorization.assertGrantableRole(server, performer, newRole);
         staff.setRoleId(validatedRole.getId());
         staff.setUpdatedAt(new Date());
         Staff saved = staffRepository.saveEntity(server, staff);
@@ -263,27 +234,6 @@ public class StaffService {
         serverTimestampService.updateStaffPermissionsTimestamp(server);
 
         return Optional.of(toStaffResponse(server, saved, "Active"));
-    }
-
-    // targetRoleName is the requested role (clients send role names); performerRoleId is the acting staff's stored role id.
-    private StaffRole validateGrantableRole(Server server, String targetRoleName, String performerRoleId) {
-        StaffRole targetRole = permissionService.getRoleByName(server, targetRoleName)
-            .orElseThrow(() -> new ValidationException("Unknown staff role"));
-        if (SUPER_ADMIN_ROLE_ID.equals(targetRole.getId())) {
-            throw new ForbiddenException("You do not have authority to grant this role");
-        }
-        if (performerRoleId == null || performerRoleId.isBlank()) {
-            throw new ForbiddenException("You do not have authority to grant staff roles");
-        }
-        if (SUPER_ADMIN_ROLE_ID.equals(performerRoleId)) {
-            return targetRole;
-        }
-        StaffRole performerRole = permissionService.getRoleById(server, performerRoleId)
-            .orElseThrow(() -> new ForbiddenException("You do not have authority to grant staff roles"));
-        if (performerRole.getOrder() >= targetRole.getOrder()) {
-            throw new ForbiddenException("You do not have authority to grant this role");
-        }
-        return targetRole;
     }
 
     public List<MinecraftStaffSummaryResponse> getMinecraftStaffSummary(Server server) {
@@ -411,32 +361,17 @@ public class StaffService {
             .toList();
     }
 
-    public boolean updateMinecraftStaffRole(Server server, String id, String roleName, String actingStaffId,
-                                            String performerRoleId, boolean isSuperAdmin, boolean hasPerformerIdentity) {
+    public boolean updateMinecraftStaffRole(Server server, String id, String roleName,
+                                            RoleAuthorization.PerformerAuthority performer) {
+        roleAuthorization.requireStaffManage(server, performer, RoleAuthorization.MANAGE_MEMBERS_PERMISSION);
+
         Staff staff = staffRepository.findById(server, id).orElse(null);
         if (staff == null) {
             return false;
         }
 
-        // Always-safe protections that need no performer identity.
-        if (server.getAdminEmail() != null && staff.getEmail() != null
-            && staff.getEmail().equalsIgnoreCase(server.getAdminEmail())) {
-            throw new ForbiddenException("Cannot change the role of the server administrator");
-        }
-        if (hasPerformerIdentity && actingStaffId != null && actingStaffId.equals(id)) {
-            throw new ForbiddenException("You cannot change your own role");
-        }
-
-        StaffRole validatedRole;
-        if (hasPerformerIdentity) {
-            // Full panel-equivalent enforcement (hierarchy + grantability + super-admin block).
-            String effectivePerformerRoleId = isSuperAdmin ? SUPER_ADMIN_ROLE_ID : performerRoleId;
-            validatedRole = validateGrantableRole(server, roleName, effectivePerformerRoleId);
-        } else {
-            // Legacy/owner/absent-header degrade: keep the super-admin-grant block (validate as super-admin
-            // performer so the order check is skipped) but resolve role-not-found as a 404 like before.
-            validatedRole = validateGrantableRole(server, roleName, SUPER_ADMIN_ROLE_ID);
-        }
+        roleAuthorization.assertCanActOnStaff(server, performer, staff);
+        StaffRole validatedRole = roleAuthorization.assertGrantableRole(server, performer, roleName);
 
         staff.setRoleId(validatedRole.getId());
         staff.setUpdatedAt(new Date());

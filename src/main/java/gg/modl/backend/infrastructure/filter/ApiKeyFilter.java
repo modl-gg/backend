@@ -8,8 +8,8 @@ import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.service.ApiKeySettingsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,7 +27,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @RequiredArgsConstructor
 public class ApiKeyFilter extends OncePerRequestFilter {
-    private final ApiKeySettingsService apiKeyService;
+    private final ServerService serverService;
     private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
     private final StagingEnvironment stagingEnvironment;
 
@@ -54,7 +54,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
             return;
         }
 
-        final Server server = apiKeyService.findServerByApiKey(apiKey);
+        final Server server = serverService.getServerByApiKey(apiKey);
         if (server == null) {
             writeUnauthorized(request, response);
             return;

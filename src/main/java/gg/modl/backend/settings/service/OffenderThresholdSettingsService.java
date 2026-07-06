@@ -56,8 +56,7 @@ public class OffenderThresholdSettingsService {
 
         current = normalizeSettings(current);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(current, Map.class);
+        Map<String, Object> data = codec().encode(current);
         SettingsDocumentService.RawSettingsState updated;
         try {
             updated = settingsDocumentService.saveRawState(
@@ -78,20 +77,15 @@ public class OffenderThresholdSettingsService {
     }
 
     private OffenderThresholdSettings mapToThresholdSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
+        OffenderThresholdSettings mapped = codec().decode(data);
+        if (mapped.getSocial() == null || mapped.getGameplay() == null) {
             return OffenderThresholdSettings.defaults();
         }
+        return normalizeSettings(mapped);
+    }
 
-        try {
-            OffenderThresholdSettings mapped = objectMapper.convertValue(data, OffenderThresholdSettings.class);
-            if (mapped.getSocial() == null || mapped.getGameplay() == null) {
-                return OffenderThresholdSettings.defaults();
-            }
-            return normalizeSettings(mapped);
-        } catch (Exception e) {
-            log.warn("Failed to parse status thresholds, using defaults", e);
-            return OffenderThresholdSettings.defaults();
-        }
+    private SettingsCodec<OffenderThresholdSettings> codec() {
+        return SettingsCodec.of(objectMapper, OffenderThresholdSettings.class, OffenderThresholdSettings::defaults);
     }
 
     private OffenderThresholdSettings normalizeSettings(OffenderThresholdSettings settings) {

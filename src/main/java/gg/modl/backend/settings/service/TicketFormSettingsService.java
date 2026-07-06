@@ -28,8 +28,7 @@ public class TicketFormSettingsService {
     ) {
         TicketFormSettings merged = newSettings != null ? newSettings : getDefaultTicketFormSettings();
         ensureFormDefaults(merged);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(merged, Map.class);
+        Map<String, Object> data = codec().encode(merged);
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
             server,
@@ -70,18 +69,13 @@ public class TicketFormSettingsService {
     }
 
     private TicketFormSettings mapToTicketFormSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return getDefaultTicketFormSettings();
-        }
+        TicketFormSettings mapped = codec().decode(data);
+        ensureFormDefaults(mapped);
+        return mapped;
+    }
 
-        try {
-            TicketFormSettings mapped = objectMapper.convertValue(data, TicketFormSettings.class);
-            ensureFormDefaults(mapped);
-            return mapped;
-        } catch (Exception e) {
-            log.error("Error converting ticket form settings", e);
-            return getDefaultTicketFormSettings();
-        }
+    private SettingsCodec<TicketFormSettings> codec() {
+        return SettingsCodec.of(objectMapper, TicketFormSettings.class, this::getDefaultTicketFormSettings);
     }
 
     private void ensureFormDefaults(TicketFormSettings settings) {

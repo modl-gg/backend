@@ -2,11 +2,12 @@ package gg.modl.backend.admin.service;
 
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.email.EmailAddressUtil;
+import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.util.CsvUtil;
 import gg.modl.backend.server.ServerService;
-import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import java.util.Date;
 import java.util.HashMap;
@@ -119,24 +120,27 @@ public class AdminServerService {
     }
 
     public Server createServer(String serverName, String customDomain, String adminEmail, String plan) {
-        Date now = new Date();
         ServerPlan serverPlan = plan != null ? ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT)) : ServerPlan.FREE;
-        Server server = new Server(serverName, customDomain, "server_" + customDomain, adminEmail, false, serverPlan);
-        server.setProvisioningStatus(ProvisioningStatus.PENDING);
-        server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
-        server.setCreatedAt(now);
-        server.setUpdatedAt(now);
-        Server saved = serverRepository.saveEntity(server);
-        serverService.evictAllServerCaches();
-        return saved;
+        return serverService.createServer(serverName, customDomain, adminEmail, null, serverPlan);
+    }
+
+    public void changeAdminEmail(Server server, String newAdminEmail) {
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(newAdminEmail);
+        if (normalizedEmail == null) {
+            throw new ValidationException("A valid admin email is required");
+        }
+        if (serverService.isAdminEmailInUse(normalizedEmail, server.getId())) {
+            throw new ValidationException("Admin email is already in use by another server");
+        }
+        serverService.changeAdminEmail(server, normalizedEmail);
     }
 
     public String exportServersCsv(String plan, String status) {
         List<Server> servers = findServers(null, plan, status, "createdAt", "desc", 0, 10000);
         StringBuilder csv = new StringBuilder();
-        csv.append("id,serverName,customDomain,adminEmail,plan,provisioningStatus,emailVerified,createdAt\n");
+        csv.append(CsvUtil.row("id", "serverName", "customDomain", "adminEmail", "plan", "provisioningStatus", "emailVerified", "createdAt"));
         for (Server s : servers) {
-            csv.append(String.format("%s,%s,%s,%s,%s,%s,%s,%s\n",
+            csv.append(CsvUtil.row(
                 s.getId(), s.getServerName(), s.getCustomDomain(), s.getAdminEmail(),
                 s.getPlan(), s.getProvisioningStatus(), s.getEmailVerified(), s.getCreatedAt()));
         }

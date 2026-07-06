@@ -1,7 +1,6 @@
 package gg.modl.backend.player.controller;
 
 import com.google.protobuf.Empty;
-import com.google.protobuf.Struct;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -32,9 +31,6 @@ import gg.modl.proto.modl.v1.PardonResponse;
 import gg.modl.proto.modl.v1.PunishmentAcknowledgeRequest;
 import gg.modl.proto.modl.v1.PunishmentAcknowledgeResponse;
 import gg.modl.proto.modl.v1.PunishmentCreateResponse;
-import gg.modl.proto.modl.v1.PunishmentEvidence;
-import gg.modl.proto.modl.v1.PunishmentModification;
-import gg.modl.proto.modl.v1.PunishmentNote;
 import gg.modl.proto.modl.v1.PunishmentDetailResponse;
 import gg.modl.proto.modl.v1.PunishmentPreviewResponse;
 import gg.modl.proto.modl.v1.RecentPunishmentsResponse;
@@ -46,16 +42,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
-import java.util.function.Consumer;
-import java.util.function.IntConsumer;
-import java.util.function.LongConsumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -100,7 +88,7 @@ public class MinecraftPunishmentV3Controller {
         RecentPunishmentsResponse.Builder response = RecentPunishmentsResponse.newBuilder()
             .setStatus(200);
         punishmentQueryService.getRecentPunishments(server, hours).stream()
-            .map(this::toRecentPunishment)
+            .map(MinecraftPunishmentProtoMapper::toRecentPunishment)
             .forEach(response::addPunishments);
 
         return ResponseEntity.ok(response.build());
@@ -128,7 +116,7 @@ public class MinecraftPunishmentV3Controller {
 
         return ResponseEntity.ok(PunishmentDetailResponse.newBuilder()
             .setStatus(200)
-            .setPunishment(toPunishmentDetail(punishment))
+            .setPunishment(MinecraftPunishmentProtoMapper.toPunishmentDetail(punishment))
             .build());
     }
 
@@ -145,7 +133,7 @@ public class MinecraftPunishmentV3Controller {
         Server server = RequestUtil.getRequestServer(httpRequest);
         String punishmentId = punishmentLifecycleService.createMinecraftPunishment(
             server,
-            toLegacyCreatePunishmentRequest(request)
+            MinecraftPunishmentProtoMapper.toLegacyCreatePunishmentRequest(request)
         );
 
         return ResponseEntity.ok(PunishmentCreateResponse.newBuilder()
@@ -166,7 +154,7 @@ public class MinecraftPunishmentV3Controller {
     ) {
         validateCreatePunishmentData(request);
         Server server = RequestUtil.getRequestServer(httpRequest);
-        punishmentLifecycleService.createMinecraftPunishment(server, toLegacyCreatePunishmentRequest(request));
+        punishmentLifecycleService.createMinecraftPunishment(server, MinecraftPunishmentProtoMapper.toLegacyCreatePunishmentRequest(request));
         return ResponseEntity.ok(Empty.getDefaultInstance());
     }
 
@@ -496,231 +484,10 @@ public class MinecraftPunishmentV3Controller {
             .body(builder.build());
     }
 
-    private PunishmentDetailResponse.PunishmentDetailEntry toPunishmentDetail(Map<String, Object> punishment) {
-        PunishmentDetailResponse.PunishmentDetailEntry.Builder builder =
-            PunishmentDetailResponse.PunishmentDetailEntry.newBuilder()
-                .setPlayerName(stringValue(punishment.get("playerName")))
-                .setPlayerUuid(stringValue(punishment.get("playerUuid")))
-                .setId(stringValue(punishment.get("id")))
-                .setIssuerName(stringValue(punishment.get("issuerName")))
-                .setIssued(detailStringValue(punishment.get("issued")))
-                .setStarted(detailStringValue(punishment.get("started")))
-                .setType(stringValue(punishment.get("type")))
-                .setTypeOrdinal(intValue(punishment.get("typeOrdinal")));
-
-        list(punishment.get("attachedTicketIds")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAttachedTicketIds);
-
-        Map<String, Object> data = mapValue(punishment.get("data"));
-        if (data != null) {
-            builder.setData(toDetailStruct(data));
-        }
-        listOfMaps(punishment.get("modifications")).stream()
-            .map(this::toDetailStruct)
-            .forEach(builder::addModifications);
-        listOfMaps(punishment.get("notes")).stream()
-            .map(this::toDetailStruct)
-            .forEach(builder::addNotes);
-        listOfMaps(punishment.get("evidence")).stream()
-            .map(this::toDetailStruct)
-            .forEach(builder::addEvidence);
-
-        return builder.build();
-    }
-
-    private Struct toDetailStruct(Map<String, Object> map) {
-        return MinecraftPlayerProtoMapper.toStruct(normalizeDetailMap(map));
-    }
-
-    private Map<String, Object> normalizeDetailMap(Map<String, Object> map) {
-        Map<String, Object> normalized = new LinkedHashMap<>();
-        map.forEach((key, value) -> normalized.put(key, normalizeDetailValue(value)));
-        return normalized;
-    }
-
-    private Object normalizeDetailValue(Object value) {
-        if (value instanceof Date date) {
-            return date.toInstant().toString();
-        }
-        if (value instanceof Map<?, ?> map) {
-            Map<String, Object> normalized = new LinkedHashMap<>();
-            map.forEach((key, nestedValue) ->
-                normalized.put(Objects.toString(key), normalizeDetailValue(nestedValue)));
-            return normalized;
-        }
-        if (value instanceof Iterable<?> iterable) {
-            List<Object> normalized = new ArrayList<>();
-            iterable.forEach(item -> normalized.add(normalizeDetailValue(item)));
-            return normalized;
-        }
-        return value;
-    }
-
-    private String detailStringValue(Object value) {
-        if (value instanceof Date date) {
-            return date.toInstant().toString();
-        }
-        return stringValue(value);
-    }
-
-    private RecentPunishmentsResponse.RecentPunishment toRecentPunishment(Map<String, Object> punishment) {
-        RecentPunishmentsResponse.RecentPunishment.Builder builder =
-            RecentPunishmentsResponse.RecentPunishment.newBuilder()
-                .setPlayerName(stringValue(punishment.get("playerName")))
-                .setPlayerUuid(stringValue(punishment.get("playerUuid")))
-                .setId(stringValue(punishment.get("id")))
-                .setIssuerName(stringValue(punishment.get("issuerName")))
-                .setIssued(longValue(punishment.get("issued")))
-                .setType(stringValue(punishment.get("type")));
-
-        setOptionalLong(builder::setStarted, punishment.get("started"));
-        setOptionalInt(builder::setTypeOrdinal, punishment.get("typeOrdinal"));
-        listOfMaps(punishment.get("modifications")).stream()
-            .map(this::toPunishmentModification)
-            .forEach(builder::addModifications);
-        listOfMaps(punishment.get("notes")).stream()
-            .map(this::toPunishmentNote)
-            .forEach(builder::addNotes);
-        listOfMaps(punishment.get("evidence")).stream()
-            .map(this::toPunishmentEvidence)
-            .forEach(builder::addEvidence);
-        list(punishment.get("attachedTicketIds")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAttachedTicketIds);
-
-        Map<String, Object> data = mapValue(punishment.get("data"));
-        if (data != null) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(data));
-        }
-
-        return builder.build();
-    }
-
     private void validateRecentHours(int hours) {
         if (hours < 1 || hours > 8760) {
             throw new ValidationException("hours must be between 1 and 8760");
         }
-    }
-
-    private PunishmentModification toPunishmentModification(Map<String, Object> modification) {
-        PunishmentModification.Builder builder = PunishmentModification.newBuilder()
-            .setId(stringValue(modification.get("id")))
-            .setType(stringValue(modification.get("type")))
-            .setDate(longValue(modification.get("date")))
-            .setReason(stringValue(modification.get("reason")));
-
-        setOptionalString(builder::setIssuerName, modification.get("issuerName"));
-        setOptionalString(builder::setIssuerId, modification.get("issuerId"));
-        setOptionalLong(builder::setEffectiveDuration, modification.get("effectiveDuration"));
-        setOptionalString(builder::setAppealTicketId, modification.get("appealTicketId"));
-        Map<String, Object> data = mapValue(modification.get("data"));
-        if (data != null) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(data));
-        }
-
-        return builder.build();
-    }
-
-    private PunishmentNote toPunishmentNote(Map<String, Object> note) {
-        PunishmentNote.Builder builder = PunishmentNote.newBuilder()
-            .setId(stringValue(note.get("id")))
-            .setText(stringValue(note.get("text")))
-            .setDate(longValue(note.get("date")));
-
-        setOptionalString(builder::setIssuerName, note.get("issuerName"));
-        setOptionalString(builder::setIssuerId, note.get("issuerId"));
-        return builder.build();
-    }
-
-    private PunishmentEvidence toPunishmentEvidence(Map<String, Object> evidence) {
-        PunishmentEvidence.Builder builder = PunishmentEvidence.newBuilder()
-            .setType(stringValue(evidence.get("type")))
-            .setUploadedAt(longValue(evidence.get("uploadedAt")));
-
-        setOptionalString(builder::setText, evidence.get("text"));
-        setOptionalString(builder::setUrl, evidence.get("url"));
-        setOptionalString(builder::setUploadedBy, evidence.get("uploadedBy"));
-        setOptionalString(builder::setUploadedById, evidence.get("uploadedById"));
-        setOptionalString(builder::setFileName, evidence.get("fileName"));
-        setOptionalString(builder::setFileType, evidence.get("fileType"));
-        setOptionalLong(builder::setFileSize, evidence.get("fileSize"));
-        return builder.build();
-    }
-
-    private void setOptionalString(Consumer<String> setter, Object value) {
-        if (value != null) {
-            setter.accept(Objects.toString(value));
-        }
-    }
-
-    private void setOptionalLong(LongConsumer setter, Object value) {
-        if (value != null) {
-            setter.accept(longValue(value));
-        }
-    }
-
-    private void setOptionalInt(IntConsumer setter, Object value) {
-        if (value != null) {
-            setter.accept(intValue(value));
-        }
-    }
-
-    private String stringValue(Object value) {
-        return value == null ? "" : Objects.toString(value);
-    }
-
-    private int intValue(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String string && !string.isBlank()) {
-            return Integer.parseInt(string);
-        }
-        return 0;
-    }
-
-    private long longValue(Object value) {
-        if (value instanceof Date date) {
-            return date.getTime();
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String string && !string.isBlank()) {
-            return Long.parseLong(string);
-        }
-        return 0L;
-    }
-
-    private List<?> list(Object value) {
-        if (value instanceof List<?> values) {
-            return values;
-        }
-        return List.of();
-    }
-
-    private List<Map<String, Object>> listOfMaps(Object value) {
-        return list(value).stream()
-            .filter(Map.class::isInstance)
-            .map(item -> {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> map = (Map<String, Object>) item;
-                return map;
-            })
-            .toList();
-    }
-
-    private Map<String, Object> mapValue(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> typed = (Map<String, Object>) map;
-            return typed;
-        }
-        if (value instanceof Struct struct) {
-            return MinecraftPlayerProtoMapper.structToMap(struct);
-        }
-        return null;
     }
 
     private ResponseEntity<PardonResponse> pardonResponse(
@@ -762,24 +529,6 @@ public class MinecraftPunishmentV3Controller {
             throw new ValidationException("data must contain no more than "
                 + RequestValidationLimits.PLAYER_PUNISHMENT_DATA_MAX_ENTRIES + " entries");
         }
-    }
-
-    private MinecraftPunishmentController.MinecraftCreatePunishmentRequest toLegacyCreatePunishmentRequest(
-        CreatePunishmentRequest request
-    ) {
-        return new MinecraftPunishmentController.MinecraftCreatePunishmentRequest(
-            request.getTargetUuid(),
-            request.hasIssuerName() ? request.getIssuerName() : null,
-            request.hasIssuerId() ? request.getIssuerId() : null,
-            request.getTypeOrdinal(),
-            request.hasReason() ? request.getReason() : null,
-            request.hasDuration() ? request.getDuration() : null,
-            request.hasData() ? MinecraftPlayerProtoMapper.structToMap(request.getData()) : null,
-            request.getNotesList(),
-            request.getAttachedTicketIdsList(),
-            request.hasSeverity() ? request.getSeverity() : null,
-            request.hasStatus() ? request.getStatus() : null
-        );
     }
 
     private String emptyToNull(String value) {

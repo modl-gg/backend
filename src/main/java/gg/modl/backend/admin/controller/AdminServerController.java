@@ -109,14 +109,14 @@ public class AdminServerController {
 
     @PutMapping("/{id}")
     public ResponseEntity<?> updateServer(@PathVariable String id, @RequestBody UpdateServerRequest request) {
-        if (serverService.findById(id).isEmpty()) {
-            throw new ResourceNotFoundException("Server not found");
+        Server server = serverService.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+
+        if (request.hasAdminEmail()) {
+            serverService.changeAdminEmail(server, request.getAdminEmail());
         }
 
         Map<String, Object> updateData = new HashMap<>();
-        if (request.hasAdminEmail()) {
-            updateData.put("adminEmail", request.getAdminEmail());
-        }
         if (request.hasEmailVerified()) {
             updateData.put("emailVerified", request.getEmailVerified());
         }

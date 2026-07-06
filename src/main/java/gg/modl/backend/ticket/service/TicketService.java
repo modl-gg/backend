@@ -61,6 +61,10 @@ public class TicketService {
         return toTicketResponse(server, ticket);
     }
 
+    public TicketResponse toResponse(Server server, Ticket ticket) {
+        return toTicketResponse(server, ticket);
+    }
+
     private TicketResponse toTicketResponse(Server server, Ticket ticket) {
         List<TicketReply> processedReplies = processRepliesWithNames(server, ticket);
         String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
@@ -573,14 +577,22 @@ public class TicketService {
     }
 
     public String getEmailHint(Ticket ticket) {
-        if (ticket.getData() == null) {
-            return null;
+        String email = TicketEmailVerificationService.resolveContactEmail(ticket);
+        return email == null ? null : EmailAddressUtil.mask(email);
+    }
+
+    public Set<String> getPublicFormFieldIds(Server server, Ticket ticket) {
+        if (ticket == null || ticket.getType() == null) {
+            return Set.of();
         }
-        Object email = ticket.getData().get("creatorEmail");
-        if (email == null) {
-            return null;
+        TicketFormSettings.TicketForm form = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
+        if (form == null || form.getFields() == null) {
+            return Set.of();
         }
-        return EmailAddressUtil.mask(email.toString());
+        return form.getFields().stream()
+            .map(TicketFormSettings.FormField::getId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
     }
 
     private static String normalizeUuid(String value) {

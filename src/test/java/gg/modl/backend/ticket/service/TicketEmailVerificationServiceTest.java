@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.TicketVerificationMongoRepository;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeCodec;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.ticket.config.TicketEmailVerificationConfiguration;
@@ -25,7 +26,8 @@ class TicketEmailVerificationServiceTest {
         TicketEmailVerificationService service = new TicketEmailVerificationService(
             repository,
             mock(EmailService.class),
-            config
+            config,
+            new OneTimeCodeCodec()
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         when(repository.consumeMatchingCode(eq(server), eq("ticket-1"), any(), any(Date.class)))

@@ -1,11 +1,13 @@
 package gg.modl.backend.storage.controller;
 
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
+import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
@@ -32,11 +34,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.PANEL_STORAGE)
 @RequiredArgsConstructor
 public class PanelStorageController {
+    private static final int MAX_BULK_DELETE_KEYS = 1000;
+
     private final S3StorageService s3StorageService;
     private final StorageQuotaService quotaService;
     private final StorageMetadataService storageMetadataService;
     private final StorageSyncService storageSyncService;
     private final PermissionService permissionService;
+    private final MediaValidationService validationService;
 
     @GetMapping("/quota")
     public ResponseEntity<StorageQuotaResponse> getQuota(HttpServletRequest request) {
@@ -62,11 +67,11 @@ public class PanelStorageController {
         Server server = RequestUtil.getRequestServer(request);
         List<String> keys = body.getKeysList();
 
-        String prefix = server.getDatabaseName() + "/";
+        if (keys.size() > MAX_BULK_DELETE_KEYS) {
+            throw new ValidationException("Too many keys in bulk delete request. Maximum is " + MAX_BULK_DELETE_KEYS);
+        }
         for (String key : keys) {
-            if (!key.startsWith(prefix)) {
-                throw new ForbiddenException("Access denied for key: " + key);
-            }
+            validationService.assertKeyOwnedByServer(server, key);
         }
 
         int deleted = s3StorageService.bulkDelete(keys);
@@ -92,10 +97,7 @@ public class PanelStorageController {
         Server server = RequestUtil.getRequestServer(request);
 
         String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
-
-        if (!normalizedKey.startsWith(server.getDatabaseName() + "/")) {
-            throw new ForbiddenException("Access denied");
-        }
+        validationService.assertKeyOwnedByServer(server, normalizedKey);
 
         String url = s3StorageService.getPresignedUrl(normalizedKey);
         if (url == null) {

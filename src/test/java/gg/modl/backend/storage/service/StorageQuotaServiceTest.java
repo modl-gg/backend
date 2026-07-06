@@ -19,14 +19,12 @@ import org.junit.jupiter.api.Test;
 class StorageQuotaServiceTest {
 
     @Test
-    void canUploadUsesTrackedCounterAndCustomPremiumLimit() {
+    void canUploadUsesTrackedCounterAndDoesNotTriggerSync() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
-        S3StorageService s3StorageService = mock(S3StorageService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         StorageSyncService storageSyncService = mock(StorageSyncService.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
-            s3StorageService,
             usageTrackingService,
             mock(ServerMongoRepository.class),
             storageSyncService,
@@ -38,14 +36,13 @@ class StorageQuotaServiceTest {
 
         assertTrue(service.canUpload(server, 1_000L));
         assertFalse(service.canUpload(server, 1_001L));
-        verify(s3StorageService, never()).calculateStorageUsed(any());
+        verify(storageSyncService, never()).triggerAsyncSync(any(Server.class));
     }
 
     @Test
     void canUploadFallsBackToDefaultPremiumLimit() {
         StorageQuotaService service = new StorageQuotaService(
             mock(StorageMetadataService.class),
-            mock(S3StorageService.class),
             mock(UsageTrackingService.class),
             mock(ServerMongoRepository.class),
             mock(StorageSyncService.class),
@@ -58,14 +55,28 @@ class StorageQuotaServiceTest {
     }
 
     @Test
+    void canUploadTreatsMissingCounterAsZeroAndTriggersSync() {
+        StorageSyncService storageSyncService = mock(StorageSyncService.class);
+        StorageQuotaService service = new StorageQuotaService(
+            mock(StorageMetadataService.class),
+            mock(UsageTrackingService.class),
+            mock(ServerMongoRepository.class),
+            storageSyncService,
+            new DefaultServerLimitPolicy()
+        );
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.PREMIUM);
+
+        assertTrue(service.canUpload(server, 1_000L));
+        verify(storageSyncService).triggerAsyncSync(server);
+    }
+
+    @Test
     void confirmAndRecordFileReservesQuotaBeforeRecordingMetadata() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
-        S3StorageService s3StorageService = mock(S3StorageService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
-            s3StorageService,
             usageTrackingService,
             serverRepository,
             mock(StorageSyncService.class),
@@ -82,18 +93,15 @@ class StorageQuotaServiceTest {
         assertEquals(StorageQuotaService.ConfirmResult.SUCCESS,
             service.confirmAndRecordFile(server, "db/evidence/file.png", 1_000L, "image/png"));
         verify(metadataService).recordReservedFile(server, "db/evidence/file.png", 1_000L, "image/png");
-        verify(s3StorageService, never()).calculateStorageUsed(any());
     }
 
     @Test
     void confirmAndRecordFileRejectsWhenAtomicReservationFails() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
-        S3StorageService s3StorageService = mock(S3StorageService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
-            s3StorageService,
             usageTrackingService,
             serverRepository,
             mock(StorageSyncService.class),
@@ -112,12 +120,10 @@ class StorageQuotaServiceTest {
     @Test
     void confirmAndRecordFileRollsBackReservationWhenMetadataAlreadyExistsAfterRace() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
-        S3StorageService s3StorageService = mock(S3StorageService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
-            s3StorageService,
             usageTrackingService,
             serverRepository,
             mock(StorageSyncService.class),

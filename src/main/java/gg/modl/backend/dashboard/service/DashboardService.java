@@ -18,6 +18,7 @@ import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
@@ -31,7 +32,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -131,11 +131,7 @@ public class DashboardService {
     }
 
     private Map<Integer, PunishmentType> buildPunishmentTypeByOrdinal(Server server) {
-        Map<Integer, PunishmentType> punishmentTypes = new LinkedHashMap<>();
-        for (PunishmentType punishmentType : punishmentTypeService.getPunishmentTypes(server)) {
-            punishmentTypes.put(punishmentType.getOrdinal(), punishmentType);
-        }
-        return punishmentTypes;
+        return PunishmentTypeIndex.byOrdinal(punishmentTypeService.getPunishmentTypes(server));
     }
 
     private boolean isPunishmentActiveSafely(Punishment punishment) {

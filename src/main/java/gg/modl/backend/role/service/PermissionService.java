@@ -185,24 +185,10 @@ public class PermissionService {
 
     private boolean computeHasPermission(Server server, String roleId, String permission) {
         StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
-
         if (role == null) {
             return false;
         }
-
-        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
-            return true;
-        }
-
-        for (String perm : role.getPermissions()) {
-            if (perm.equals(permission)) {
-                return true;
-            }
-            if (permission.startsWith(perm + ".")) {
-                return true;
-            }
-        }
-        return false;
+        return RoleAuthorization.roleGrants(role, permission);
     }
 
     public boolean hasAnyPermissionWithPrefix(Server server, String roleId, String prefix) {
@@ -217,15 +203,12 @@ public class PermissionService {
 
     private boolean computeHasPermissionWithPrefix(Server server, String roleId, String prefix) {
         StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
-
         if (role == null) {
             return false;
         }
-
-        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
+        if (RoleAuthorization.isSuperAdminRole(role)) {
             return true;
         }
-
         return role.getPermissions().stream().anyMatch(p -> p.startsWith(prefix));
     }
 
@@ -284,8 +267,7 @@ public class PermissionService {
     }
 
     public boolean isSuperAdmin(Server server, String staffEmail) {
-        return server.getAdminEmail() != null &&
-               server.getAdminEmail().equalsIgnoreCase(staffEmail);
+        return RoleAuthorization.isSuperAdminEmail(server, staffEmail);
     }
 
     public boolean isAuthorizedEmail(Server server, String email) {

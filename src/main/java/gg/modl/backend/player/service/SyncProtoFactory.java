@@ -1,5 +1,6 @@
 package gg.modl.backend.player.service;
 
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.player.controller.MinecraftPlayerProtoMapper;
 import gg.modl.proto.modl.v1.SyncActiveStaffMember;
 import gg.modl.proto.modl.v1.SyncData;
@@ -99,7 +100,7 @@ public class SyncProtoFactory {
         setOptionalLong(builder::setTimestamp, notification.get("timestamp"));
         Object data = notification.get("data");
         if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(stringObjectMap(dataMap)));
+            builder.setData(ProtoMapperSupport.legacyStruct(stringObjectMap(dataMap)));
         }
         return builder.build();
     }
@@ -113,7 +114,7 @@ public class SyncProtoFactory {
         setOptionalLong(builder::setTimestamp, notification.get("timestamp"));
         Object data = notification.get("data");
         if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(MinecraftPlayerProtoMapper.toStruct(stringObjectMap(dataMap)));
+            builder.setData(ProtoMapperSupport.legacyStruct(stringObjectMap(dataMap)));
         }
         return builder.build();
     }

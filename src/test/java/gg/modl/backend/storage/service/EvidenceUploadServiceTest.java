@@ -2,22 +2,23 @@ package gg.modl.backend.storage.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.EvidenceItemRequest;
+import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.time.Instant;
@@ -45,9 +46,6 @@ class EvidenceUploadServiceTest {
     private ServerService serverService;
 
     @Mock
-    private StorageQuotaService quotaService;
-
-    @Mock
     private MediaValidationService validationService;
 
     @Mock
@@ -55,6 +53,9 @@ class EvidenceUploadServiceTest {
 
     @Mock
     private StorageMetadataService storageMetadataService;
+
+    @Mock
+    private UploadOrchestrationService uploadOrchestrationService;
 
     private EvidenceUploadService evidenceUploadService;
 
@@ -65,17 +66,15 @@ class EvidenceUploadServiceTest {
             s3StorageService,
             playerRepository,
             serverService,
-            quotaService,
             validationService,
             punishmentEvidenceService,
             storageMetadataService,
-            new DefaultServerLimitPolicy()
+            uploadOrchestrationService
         );
     }
 
-    @Test
-    void submitEvidenceDelegatesPunishmentMutationAndInvalidatesToken() {
-        EvidenceUploadTokenService.UploadToken uploadToken = new EvidenceUploadTokenService.UploadToken(
+    private EvidenceUploadTokenService.UploadToken uploadToken() {
+        return new EvidenceUploadTokenService.UploadToken(
             "token-1",
             "db",
             "PUN-1",
@@ -83,9 +82,13 @@ class EvidenceUploadServiceTest {
             "Moderator",
             Instant.now()
         );
+    }
+
+    @Test
+    void submitEvidenceDelegatesPunishmentMutationAndInvalidatesToken() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
-        when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
         when(s3StorageService.getCdnDomain()).thenReturn("cdn.example.com");
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
         when(storageMetadataService.findConfirmedFile(server, "db/evidence/PUN-1/file.png"))
@@ -116,24 +119,16 @@ class EvidenceUploadServiceTest {
     }
 
     @Test
-    void confirmUploadDeletesS3ObjectWhenQuotaExceeded() {
+    void confirmUploadMapsQuotaExceededOutcomeFromOrchestration() {
         String key = "db/evidence/PUN-1/file.png";
-        EvidenceUploadTokenService.UploadToken uploadToken = new EvidenceUploadTokenService.UploadToken(
-            "token-1",
-            "db",
-            "PUN-1",
-            "player-1",
-            "Moderator",
-            Instant.now()
-        );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        UploadResponse uploadDetails = new UploadResponse(key, "https://cdn.example.com/" + key, "file.png", 42L, "image/png");
 
-        when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
-        when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
+        when(validationService.isKeyOwnedByServer(key, "db")).thenReturn(true);
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 42L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
-        when(s3StorageService.deleteFile(key)).thenReturn(true);
+        when(uploadOrchestrationService.confirm(server, key, false))
+            .thenReturn(new UploadOrchestrationService.ConfirmOutcome(
+                UploadOrchestrationService.ConfirmStatus.QUOTA_EXCEEDED, null));
 
         EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(
             "token-1",
@@ -141,71 +136,62 @@ class EvidenceUploadServiceTest {
         );
 
         assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
-        verify(s3StorageService).deleteFile(key);
-        verify(storageMetadataService, org.mockito.Mockito.never()).recordReservedFile(any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
     }
 
     @Test
-    void confirmUploadRecordsMetadataWhenS3DeleteFailsAfterQuotaExceeded() {
-        String key = "db/evidence/PUN-1/orphan.png";
-        EvidenceUploadTokenService.UploadToken uploadToken = new EvidenceUploadTokenService.UploadToken(
-            "token-1",
-            "db",
-            "PUN-1",
-            "player-1",
-            "Moderator",
-            Instant.now()
-        );
+    void confirmUploadReturnsSuccessWithDetailsFromOrchestration() {
+        String key = "db/evidence/PUN-1/file.png";
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        UploadResponse uploadDetails = new UploadResponse(key, "https://cdn.example.com/" + key, "orphan.png", 99L, "image/png");
+        UploadResponse details = new UploadResponse(key, "https://cdn.example.com/" + key, "file.png", 42L, "image/png");
 
-        when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
-        when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
+        when(validationService.isKeyOwnedByServer(key, "db")).thenReturn(true);
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
-        when(s3StorageService.deleteFile(key)).thenReturn(false);
-        when(storageMetadataService.recordReservedFile(server, key, 99L, "image/png"))
-            .thenReturn(StorageMetadataService.RecordFileResult.INSERTED);
+        when(uploadOrchestrationService.confirm(server, key, false))
+            .thenReturn(new UploadOrchestrationService.ConfirmOutcome(
+                UploadOrchestrationService.ConfirmStatus.SUCCESS, details));
 
         EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(
             "token-1",
             new EvidenceConfirmUploadRequest(key)
         );
 
-        assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
-        verify(s3StorageService).deleteFile(key);
-        verify(storageMetadataService).recordReservedFile(server, key, 99L, "image/png");
+        assertEquals(EvidenceUploadService.ConfirmUploadStatus.SUCCESS, result.status());
+        assertEquals(details, result.upload());
     }
 
     @Test
-    void confirmUploadStillReturnsQuotaExceededWhenMetadataWriteFails() {
-        String key = "db/evidence/PUN-1/orphan.png";
-        EvidenceUploadTokenService.UploadToken uploadToken = new EvidenceUploadTokenService.UploadToken(
-            "token-1",
-            "db",
-            "PUN-1",
-            "player-1",
-            "Moderator",
-            Instant.now()
-        );
-        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        UploadResponse uploadDetails = new UploadResponse(key, "https://cdn.example.com/" + key, "orphan.png", 99L, "image/png");
+    void confirmUploadRejectsKeyOutsidePunishmentScopeWithoutOrchestrating() {
+        String key = "db/evidence/OTHER-PUN/file.png";
 
-        when(tokenService.validateToken("token-1")).thenReturn(uploadToken);
-        when(s3StorageService.getUploadDetails(key)).thenReturn(uploadDetails);
-        when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(quotaService.confirmAndRecordFile(server, key, 99L, "image/png")).thenReturn(StorageQuotaService.ConfirmResult.QUOTA_EXCEEDED);
-        when(s3StorageService.deleteFile(key)).thenReturn(false);
-        when(storageMetadataService.recordReservedFile(server, key, 99L, "image/png"))
-            .thenReturn(StorageMetadataService.RecordFileResult.FAILED);
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
+        when(validationService.isKeyOwnedByServer(key, "db")).thenReturn(true);
 
         EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(
             "token-1",
             new EvidenceConfirmUploadRequest(key)
         );
 
-        assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
-        verify(s3StorageService).deleteFile(key);
-        verify(storageMetadataService).recordReservedFile(server, key, 99L, "image/png");
+        assertEquals(EvidenceUploadService.ConfirmUploadStatus.INVALID_KEY, result.status());
+        verify(uploadOrchestrationService, never()).confirm(any(), any(), anyBoolean());
+    }
+
+    @Test
+    void presignUploadMapsQuotaExceededOutcomeFromOrchestration() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
+        when(s3StorageService.isConfigured()).thenReturn(true);
+        when(serverService.getServerByDatabaseName("db")).thenReturn(server);
+        when(uploadOrchestrationService.presign(eq(server), any()))
+            .thenReturn(new UploadOrchestrationService.PresignOutcome(
+                UploadOrchestrationService.PresignStatus.QUOTA_EXCEEDED, "Storage quota exceeded", null));
+
+        EvidenceUploadService.PresignUploadResult result = evidenceUploadService.presignUpload(
+            "token-1",
+            new EvidencePresignUploadRequest("file.png", "image/png", 42L)
+        );
+
+        assertEquals(EvidenceUploadService.PresignUploadStatus.QUOTA_EXCEEDED, result.status());
     }
 }

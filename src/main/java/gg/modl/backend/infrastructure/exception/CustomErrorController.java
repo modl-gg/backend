@@ -37,7 +37,7 @@ public class CustomErrorController implements ErrorController {
         String errorMessage;
         if (resolved != null) {
             error = resolved.getReasonPhrase();
-            errorMessage = messageForStatus(resolved);
+            errorMessage = HttpErrorMapping.defaultMessage(resolved);
         } else {
             error = "Error";
             errorMessage = statusCode >= 500
@@ -46,7 +46,7 @@ public class CustomErrorController implements ErrorController {
         }
 
         String machineCode = resolved != null
-            ? machineCodeForStatus(resolved)
+            ? HttpErrorMapping.machineCode(resolved)
             : (statusCode >= 500 ? "INTERNAL" : "UNKNOWN");
 
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
@@ -65,26 +65,6 @@ public class CustomErrorController implements ErrorController {
             errorMessage);
 
         return ResponseEntity.status(statusCode).body(errorResponse);
-    }
-
-    private String messageForStatus(HttpStatus status) {
-        return switch (status) {
-            case NOT_FOUND -> "The requested resource was not found.";
-            case FORBIDDEN -> "You do not have permission to access this resource.";
-            case UNAUTHORIZED -> "Authentication is required to access this resource.";
-            case INTERNAL_SERVER_ERROR -> "An internal server error occurred.";
-            default -> status.getReasonPhrase();
-        };
-    }
-
-    private String machineCodeForStatus(HttpStatus status) {
-        return switch (status) {
-            case NOT_FOUND -> "NOT_FOUND";
-            case FORBIDDEN -> "PERMISSION_DENIED";
-            case UNAUTHORIZED -> "UNAUTHENTICATED";
-            case INTERNAL_SERVER_ERROR -> "INTERNAL";
-            default -> status.name();
-        };
     }
 
     @Setter

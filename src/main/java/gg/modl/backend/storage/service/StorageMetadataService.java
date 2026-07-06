@@ -5,6 +5,7 @@ import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +29,10 @@ public class StorageMetadataService {
 
     public Optional<StorageFileDocument> findConfirmedFile(Server server, String key) {
         return storageFileRepository.findByKey(server, key);
+    }
+
+    public long sumTempUploadBytes(Server server, Date createdAfter) {
+        return storageFileRepository.sumSizeByKeyPrefixesSince(server, TempUploadKeys.prefixes(server), createdAfter);
     }
 
     public void cleanupOrphanedUpload(Server server, String key, long size, String contentType) {

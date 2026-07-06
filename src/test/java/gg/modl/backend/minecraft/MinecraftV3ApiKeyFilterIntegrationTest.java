@@ -23,9 +23,9 @@ import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.settings.service.ApiKeySettingsService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.MinecraftDashboardResponse;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,18 +38,18 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
     private static final String VALID_API_KEY = "valid-api-key";
     private static final String INVALID_API_KEY = "invalid-api-key";
 
-    private ApiKeySettingsService apiKeySettingsService;
+    private ServerService serverService;
     private DashboardService dashboardService;
     private MockMvc mockMvc;
     private Server server;
 
     @BeforeEach
     void setUp() {
-        apiKeySettingsService = mock(ApiKeySettingsService.class);
+        serverService = mock(ServerService.class);
         dashboardService = mock(DashboardService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
+        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(serverService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftDashboardV3Controller(dashboardService))
             .addFilters(apiKeyFilter)
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
@@ -68,12 +68,12 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
         ApiError error = ApiError.parseFrom(result.getResponse().getContentAsByteArray());
         assertEquals(401, error.getStatusCode());
         assertEquals("UNAUTHENTICATED", error.getCode());
-        verifyNoInteractions(apiKeySettingsService, dashboardService);
+        verifyNoInteractions(serverService, dashboardService);
     }
 
     @Test
     void v3MinecraftRouteWithInvalidApiKeyReturnsBinaryUnauthorized() throws Exception {
-        when(apiKeySettingsService.findServerByApiKey(INVALID_API_KEY)).thenReturn(null);
+        when(serverService.getServerByApiKey(INVALID_API_KEY)).thenReturn(null);
 
         MvcResult result = mockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/dashboard/stats")
                 .header(RequestHeader.API_KEY, INVALID_API_KEY)
@@ -85,7 +85,7 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
         ApiError error = ApiError.parseFrom(result.getResponse().getContentAsByteArray());
         assertEquals(401, error.getStatusCode());
         assertEquals("UNAUTHENTICATED", error.getCode());
-        verify(apiKeySettingsService).findServerByApiKey(INVALID_API_KEY);
+        verify(serverService).getServerByApiKey(INVALID_API_KEY);
         verifyNoInteractions(dashboardService);
     }
 
@@ -101,7 +101,7 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
             31,
             99
         );
-        when(apiKeySettingsService.findServerByApiKey(VALID_API_KEY)).thenReturn(server);
+        when(serverService.getServerByApiKey(VALID_API_KEY)).thenReturn(server);
         when(dashboardService.getMinecraftStats(server)).thenReturn(stats);
 
         MvcResult result = mockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/dashboard/stats")
@@ -114,7 +114,7 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
         MinecraftDashboardResponse response = MinecraftDashboardResponse.parseFrom(result.getResponse().getContentAsByteArray());
         assertEquals(200, response.getStatus());
         assertEquals(99, response.getStats().getTotalPlayers());
-        verify(apiKeySettingsService).findServerByApiKey(VALID_API_KEY);
+        verify(serverService).getServerByApiKey(VALID_API_KEY);
         verify(dashboardService).getMinecraftStats(same(server));
     }
 }

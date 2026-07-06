@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class StorageQuotaService {
     private final StorageMetadataService storageMetadataService;
-    private final S3StorageService s3StorageService;
     private final UsageTrackingService usageTrackingService;
     private final ServerMongoRepository serverRepository;
     private final StorageSyncService storageSyncService;
@@ -56,11 +55,8 @@ public class StorageQuotaService {
         if (tracked != null) {
             return tracked;
         }
-        // Never synced: kick off an async sync so the counter self-heals, and fall back to a
-        // one-time live read for this presign decision. The confirm-time atomic increment is the
-        // true enforcement gate, so this best-effort number is acceptable.
         storageSyncService.triggerAsyncSync(server);
-        return s3StorageService.calculateStorageUsed(server);
+        return 0L;
     }
 
     public ConfirmResult confirmAndRecordFile(Server server, String key, long size, String contentType) {

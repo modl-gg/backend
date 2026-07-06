@@ -325,11 +325,14 @@ public class S3StorageService {
     }
 
     public List<S3ObjectInfo> listAllObjects(Server server) {
+        return listObjectInfosByPrefix(server.getDatabaseName() + "/");
+    }
+
+    public List<S3ObjectInfo> listObjectInfosByPrefix(String prefix) {
         if (s3Client == null) {
             return Collections.emptyList();
         }
 
-        String prefix = server.getDatabaseName() + "/";
         List<S3ObjectInfo> objects = new ArrayList<>();
 
         ListObjectsV2Request request = ListObjectsV2Request.builder()
@@ -469,7 +472,7 @@ public class S3StorageService {
     }
 
     public int bulkDelete(List<String> keys) {
-        if (s3Client == null || keys.isEmpty()) {
+        if (s3Client == null || keys == null || keys.isEmpty()) {
             return 0;
         }
 
@@ -491,6 +494,9 @@ public class S3StorageService {
                 .build();
 
             DeleteObjectsResponse response = s3Client.deleteObjects(request);
+            if (response.hasErrors()) {
+                log.warn("Failed to delete one or more S3 object versions: {}", describeDeleteErrors(response.errors()));
+            }
             totalDeleted += response.deleted().size();
         }
 

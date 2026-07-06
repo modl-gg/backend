@@ -4,6 +4,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.TicketFields;
+import gg.modl.backend.infrastructure.util.CanonicalAliasIndex;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
@@ -117,13 +118,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     private String normalizeTypeValue(String type) {
-        if (type == null) {
-            return "";
-        }
-        return type.trim()
-            .toLowerCase()
-            .replaceAll("[^a-z0-9]+", "_")
-            .replaceAll("^_+|_+$", "");
+        return CanonicalAliasIndex.normalize(type);
     }
 
     public List<Ticket> findRecentByCreator(Server server, String creatorUuid, int limit) {
@@ -365,14 +360,6 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         return find(server, query);
     }
 
-    public boolean existsAppealForPunishment(Server server, String punishmentId) {
-        Query query = Query.query(
-            Criteria.where(TicketFields.TYPE).is(TicketCategory.APPEAL.getId())
-                .and(TicketFields.DATA + ".punishmentId").is(punishmentId)
-        );
-        return exists(server, query);
-    }
-
     public Ticket saveAppeal(Server server, Ticket appeal) {
         return saveEntity(server, appeal);
     }
@@ -398,7 +385,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         Update update = new Update().set(TicketFields.UPDATED_AT, new Date());
 
         if (appealWorkflowStatus != null) {
-            update.set("appealWorkflowStatus", appealWorkflowStatus.getId());
+            update.set(TicketFields.APPEAL_WORKFLOW_STATUS, appealWorkflowStatus.getId());
         }
         if (status != null) {
             update.set(TicketFields.STATUS, status.getId());
@@ -407,7 +394,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
             update.set(TicketFields.LOCKED, locked);
         }
         if (data != null) {
-            update.set("data", data);
+            update.set(TicketFields.DATA, data);
         }
         if (systemReplies != null) {
             for (TicketReply reply : systemReplies) {

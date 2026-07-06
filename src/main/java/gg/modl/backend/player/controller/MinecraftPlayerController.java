@@ -1,5 +1,6 @@
 package gg.modl.backend.player.controller;
 
+import gg.modl.backend.player.dto.request.CreateNoteRequest;
 import gg.modl.backend.player.service.MinecraftPlayerService;
 import gg.modl.backend.player.service.PlayerLookupService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -83,7 +84,7 @@ public class MinecraftPlayerController {
 
     @GetMapping("/{uuid}")
     public ResponseEntity<Map<String, Object>> getPlayerByUuid(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestParam(required = false) Integer punishmentLimit,
         @RequestParam(required = false) Integer noteLimit,
         HttpServletRequest httpRequest
@@ -95,7 +96,7 @@ public class MinecraftPlayerController {
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getPlayerByQuery(
-        @RequestParam(required = false) String minecraftUuid,
+        @RequestParam(required = false) @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
         @RequestParam(defaultValue = "true") boolean queryMojang,
         HttpServletRequest httpRequest
     ) {
@@ -140,7 +141,7 @@ public class MinecraftPlayerController {
 
     @PostMapping("/{uuid}/notes")
     public ResponseEntity<Map<String, Object>> createPlayerNote(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestBody @Valid CreateNoteRequest request,
         HttpServletRequest httpRequest
     ) {
@@ -152,7 +153,7 @@ public class MinecraftPlayerController {
 
     @GetMapping("/{uuid}/linked-accounts")
     public ResponseEntity<Map<String, Object>> getLinkedAccounts(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestParam(required = false) @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) Integer page,
         @RequestParam(required = false) @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) Integer limit,
         HttpServletRequest httpRequest
@@ -164,7 +165,7 @@ public class MinecraftPlayerController {
 
     @GetMapping("/{uuid}/punishments")
     public ResponseEntity<Map<String, Object>> getPlayerPunishments(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
         @RequestParam(defaultValue = "7") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
@@ -176,7 +177,7 @@ public class MinecraftPlayerController {
 
     @GetMapping("/{uuid}/notes")
     public ResponseEntity<Map<String, Object>> getPlayerNotes(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
         @RequestParam(defaultValue = "7") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
@@ -188,7 +189,7 @@ public class MinecraftPlayerController {
 
     @GetMapping("/{uuid}/reports")
     public ResponseEntity<Map<String, Object>> getPlayerReports(
-        @PathVariable String uuid,
+        @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
@@ -277,13 +278,6 @@ public class MinecraftPlayerController {
         public boolean shouldQueryMojang() {
             return queryMojang == null || queryMojang;
         }
-    }
-
-    public record CreateNoteRequest(
-        @NotBlank @Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String text,
-        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
-        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId
-    ) {
     }
 
     public record PardonPlayerRequest(

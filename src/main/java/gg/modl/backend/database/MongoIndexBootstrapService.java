@@ -1,7 +1,7 @@
 package gg.modl.backend.database;
 
 import gg.modl.backend.database.mongo.TenantMongoAccess;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import jakarta.annotation.PostConstruct;
@@ -9,6 +9,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -21,6 +27,8 @@ import org.springframework.data.mongodb.core.index.IndexField;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.data.mongodb.core.index.PartialIndexFilter;
+import org.springframework.data.mongodb.core.query.Collation;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -48,8 +56,9 @@ public class MongoIndexBootstrapService {
         Map.entry("maxKey", 127)
     );
 
+    private static final int BOOTSTRAP_PARALLELISM = 4;
+
     private final TenantMongoAccess tenantMongoAccess;
-    private final ServerMongoRepository serverRepository;
     private final TenantMigrationService tenantMigrationService;
 
     @PostConstruct
@@ -63,38 +72,73 @@ public class MongoIndexBootstrapService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapExistingTenants() {
-        List<Server> servers;
+        List<Server> targets;
         try {
-            servers = serverRepository.findAll();
+            targets = loadBootstrapTargets();
         } catch (Exception e) {
             log.error("Failed to list servers for tenant bootstrap", e);
             return;
         }
 
-        List<Server> targets = servers.stream()
+        if (targets.isEmpty()) {
+            log.info("Bootstrapping schema for 0 existing tenants");
+            return;
+        }
+
+        dispatchTenantBootstrap(targets);
+    }
+
+    private List<Server> loadBootstrapTargets() {
+        Query query = new Query();
+        query.fields().include(ServerFields.ID).include(ServerFields.DATABASE_NAME);
+        return tenantMongoAccess.global()
+            .find(query, Server.class, CollectionName.MODL_SERVERS)
+            .stream()
             .filter(server -> server != null
                 && server.getDatabaseName() != null
                 && !server.getDatabaseName().isBlank())
             .toList();
+    }
 
+    private void dispatchTenantBootstrap(List<Server> targets) {
         log.info("Bootstrapping schema for {} existing tenants", targets.size());
-        int succeeded = 0;
-        int failed = 0;
-        for (Server server : targets) {
-            try {
-                log.debug("Bootstrapping schema for server id={} database={}",
-                    server.getId(), server.getDatabaseName());
-                MongoTemplate template = tenantMongoAccess.forServer(server);
-                tenantMigrationService.applyMigrationsForTenant(template);
-                createTenantIndexes(template);
-                succeeded++;
-            } catch (Exception e) {
-                failed++;
-                log.warn("Failed to bootstrap schema for server id={} database={}",
-                    server.getId(), server.getDatabaseName(), e);
-            }
+        int parallelism = Math.min(BOOTSTRAP_PARALLELISM, targets.size());
+        ExecutorService executor = Executors.newFixedThreadPool(parallelism, bootstrapThreadFactory());
+        AtomicInteger succeeded = new AtomicInteger();
+        AtomicInteger failed = new AtomicInteger();
+
+        CompletableFuture<?>[] tasks = targets.stream()
+            .map(server -> CompletableFuture.runAsync(() -> bootstrapTenant(server, succeeded, failed), executor))
+            .toArray(CompletableFuture[]::new);
+
+        CompletableFuture.allOf(tasks).whenComplete((ignored, throwable) -> {
+            log.info("Tenant schema bootstrap complete succeeded={} failed={}", succeeded.get(), failed.get());
+            executor.shutdown();
+        });
+    }
+
+    private void bootstrapTenant(Server server, AtomicInteger succeeded, AtomicInteger failed) {
+        try {
+            log.debug("Bootstrapping schema for server id={} database={}",
+                server.getId(), server.getDatabaseName());
+            MongoTemplate template = tenantMongoAccess.forServer(server);
+            tenantMigrationService.applyMigrationsForTenant(template);
+            createTenantIndexes(template);
+            succeeded.incrementAndGet();
+        } catch (Exception e) {
+            failed.incrementAndGet();
+            log.warn("Failed to bootstrap schema for server id={} database={}",
+                server.getId(), server.getDatabaseName(), e);
         }
-        log.info("Tenant schema bootstrap complete succeeded={} failed={}", succeeded, failed);
+    }
+
+    private ThreadFactory bootstrapThreadFactory() {
+        AtomicInteger threadNumber = new AtomicInteger();
+        return runnable -> {
+            Thread thread = new Thread(runnable, "tenant-bootstrap-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 
     private void createGlobalIndexes(MongoTemplate template) {
@@ -203,6 +247,8 @@ public class MongoIndexBootstrapService {
             ),
             IndexSpec.standard("idx_players_ipAddresses_ipAddress", doc("ipAddresses.ipAddress", 1), false, false),
             IndexSpec.standard("idx_players_usernames_username", doc("usernames.username", 1), false, false),
+            IndexSpec.collated("idx_players_usernames_username_ci", doc("usernames.username", 1),
+                Collation.of("en").strength(2)),
             IndexSpec.standard("idx_players_punishments_id", doc("punishments.id", 1), false, true),
             IndexSpec.standard("idx_players_data_isOnline", doc("data.isOnline", 1), false, true),
             IndexSpec.standard("idx_players_ipAddresses_firstLogin", doc("ipAddresses.firstLogin", -1), false, false)
@@ -247,6 +293,11 @@ public class MongoIndexBootstrapService {
         ensureIndexes(template, CollectionName.REPLAYS, List.of(
             IndexSpec.standard("idx_replays_targetUuid_createdAt", doc("targetUuid", 1).append("createdAt", -1), false, true),
             IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1), false, false)
+        ));
+
+        ensureIndexes(template, CollectionName.STORAGE_FILES, List.of(
+            IndexSpec.standard("uidx_storage_files_key", doc("key", 1), true, false),
+            IndexSpec.standard("idx_storage_files_key_createdAt", doc("key", 1).append("createdAt", -1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.KNOWLEDGEBASE_CATEGORIES, List.of(
@@ -365,6 +416,9 @@ public class MongoIndexBootstrapService {
         if (spec.partialFilter() != null) {
             index.partial(PartialIndexFilter.of(spec.partialFilter()));
         }
+        if (spec.collation() != null) {
+            index.collation(spec.collation());
+        }
 
         indexOps.createIndex(index);
     }
@@ -395,6 +449,10 @@ public class MongoIndexBootstrapService {
                 continue;
             }
 
+            if (!hasEquivalentCollation(existingIndex, spec)) {
+                continue;
+            }
+
             String existingPartialJson = existingIndex.getPartialFilterExpression();
             Document specPartial = spec.partialFilter();
             if (existingPartialJson == null && specPartial == null) {
@@ -411,6 +469,30 @@ public class MongoIndexBootstrapService {
             return true;
         }
         return false;
+    }
+
+    private boolean hasEquivalentCollation(IndexInfo existingIndex, IndexSpec spec) {
+        Document existingCollation = existingIndex.getCollation().orElse(null);
+        if (spec.collation() == null) {
+            return existingCollation == null;
+        }
+        if (existingCollation == null) {
+            return false;
+        }
+        Document specCollation = spec.collation().toDocument();
+        for (Map.Entry<String, Object> entry : specCollation.entrySet()) {
+            if (!collationValueEquals(entry.getValue(), existingCollation.get(entry.getKey()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean collationValueEquals(Object specValue, Object existingValue) {
+        if (specValue instanceof Number specNumber && existingValue instanceof Number existingNumber) {
+            return specNumber.doubleValue() == existingNumber.doubleValue();
+        }
+        return Objects.equals(specValue, existingValue);
     }
 
     private Document canonicalPartialFilter(Document filter) {
@@ -474,18 +556,23 @@ public class MongoIndexBootstrapService {
         boolean unique,
         boolean sparse,
         Long ttlSeconds,
-        Document partialFilter
+        Document partialFilter,
+        Collation collation
     ) {
         static IndexSpec standard(String name, Document keys, boolean unique, boolean sparse) {
-            return new IndexSpec(name, keys, unique, sparse, null, null);
+            return new IndexSpec(name, keys, unique, sparse, null, null, null);
         }
 
         static IndexSpec ttl(String name, Document keys, long ttlSeconds) {
-            return new IndexSpec(name, keys, false, false, ttlSeconds, null);
+            return new IndexSpec(name, keys, false, false, ttlSeconds, null, null);
         }
 
         static IndexSpec partialUnique(String name, Document keys, Document partialFilter) {
-            return new IndexSpec(name, keys, true, false, null, partialFilter);
+            return new IndexSpec(name, keys, true, false, null, partialFilter, null);
+        }
+
+        static IndexSpec collated(String name, Document keys, Collation collation) {
+            return new IndexSpec(name, keys, false, false, null, null, collation);
         }
     }
 }

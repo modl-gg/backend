@@ -215,4 +215,23 @@ public class MigrationService {
             throw new ExternalServiceException("Failed to save migration file", e);
         }
     }
+
+    public void requireActiveMigrationForUpload(Server server) {
+        if (!migrationRepository.existsActiveMigration(server)) {
+            throw new ResourceNotFoundException("No active migration found for upload");
+        }
+    }
+
+    public void discardUpload(Server server, Path filePath, String reason) {
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.warn("Failed to delete orphaned migration upload {}", filePath, e);
+        }
+        try {
+            updateProgress(server, new UpdateProgressRequest("failed", reason, 0, 0, null));
+        } catch (Exception e) {
+            log.warn("Failed to mark migration failed after discarding upload {}", filePath, e);
+        }
+    }
 }

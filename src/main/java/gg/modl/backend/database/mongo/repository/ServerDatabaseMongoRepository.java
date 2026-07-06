@@ -1,5 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractLong;
+
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.server.data.Server;
@@ -32,11 +34,6 @@ public class ServerDatabaseMongoRepository {
             log.warn("Failed to read stats for server database {}", server.getDatabaseName(), e);
             return Optional.empty();
         }
-    }
-
-    private long extractLong(Document document, String fieldName) {
-        Object value = document.get(fieldName);
-        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     public Optional<UsageCounts> readUsageCounts(Server server) {

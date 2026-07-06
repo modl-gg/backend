@@ -1,10 +1,10 @@
 package gg.modl.backend.infrastructure.ratelimit;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RateLimitConfig {
 
-    private final Map<String, Map<String, Bucket>> buckets = new ConcurrentHashMap<>();
+    private final Map<RateLimitTier, Cache<String, Bucket>> buckets = new ConcurrentHashMap<>();
     private static final int MAX_BUCKETS_PER_TIER = 50_000;
     private static final Set<String> HEAVY_PANEL_WRITE_PATTERNS = Set.of(
         "/staff/invite", "/settings", "/find-linked"
@@ -46,17 +46,11 @@ public class RateLimitConfig {
     );
 
     public Bucket resolveBucket(String clientKey, RateLimitTier tier) {
-        String tierName = tier.name();
         return buckets
-            .computeIfAbsent(tierName, k -> Collections.synchronizedMap(
-                new LinkedHashMap<>(64, 0.75f, true) {
-                    @Override
-                    protected boolean removeEldestEntry(Map.Entry<String, Bucket> eldest) {
-                        return size() > MAX_BUCKETS_PER_TIER;
-                    }
-                }
-            ))
-            .computeIfAbsent(clientKey, k -> createBucket(tier));
+            .computeIfAbsent(tier, t -> Caffeine.newBuilder()
+                .maximumSize(MAX_BUCKETS_PER_TIER)
+                .<String, Bucket>build())
+            .get(clientKey, k -> createBucket(tier));
     }
 
     private Bucket createBucket(RateLimitTier tier) {

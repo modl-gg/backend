@@ -29,9 +29,11 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +65,35 @@ public class PunishmentLifecycleService {
     private final WebhookSettingsService webhookSettingsService;
     private final PunishmentRealtimePublisher realtimePublisher;
     private final LogService logService;
+
+    private static final Set<String> CLIENT_SETTABLE_PUNISHMENT_DATA_KEYS = Set.of(
+        "altBlocking",
+        "wipeAfterExpiry",
+        "banLinkedAccounts",
+        "kickSameIP",
+        "silent",
+        "linkedBanId",
+        "severity",
+        "status",
+        "duration",
+        "reason",
+        "aiGenerated",
+        "pendingAcknowledgement"
+    );
+
+    private Map<String, Object> filterClientSettableData(Map<String, Object> requestData) {
+        Map<String, Object> data = new HashMap<>();
+        if (requestData == null) {
+            return data;
+        }
+        Map<String, Object> sanitized = MongoKeyUtils.sanitizeKeys(new HashMap<>(requestData));
+        for (String key : CLIENT_SETTABLE_PUNISHMENT_DATA_KEYS) {
+            if (sanitized.containsKey(key)) {
+                data.put(key, sanitized.get(key));
+            }
+        }
+        return data;
+    }
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
         if (email == null) {
@@ -123,8 +154,7 @@ public class PunishmentLifecycleService {
             throw new ResourceNotFoundException("Player not found");
         }
         Date now = new Date();
-        Map<String, Object> data = request.data() != null ? MongoKeyUtils.sanitizeKeys(new HashMap<>(request.data())) : new HashMap<>();
-        data.remove("enforcementCategory");
+        Map<String, Object> data = filterClientSettableData(request.data());
 
         if (request.severity() != null) {
             data.put("severity", request.severity());
@@ -284,7 +314,7 @@ public class PunishmentLifecycleService {
         );
 
         player.getPunishments().add(punishment);
-        persistPlayerPunishments(server, player);
+        punishmentRepository.appendPunishment(server, player.getMinecraftUuid().toString(), punishment);
 
         String playerName = PlayerDataUtils.extractLatestUsername(player.getUsernames());
         String typeName = newPunishmentType != null ? newPunishmentType.getName() : "Unknown";
@@ -348,10 +378,6 @@ public class PunishmentLifecycleService {
         return true;
     }
 
-    private void persistPlayerPunishments(Server server, Player player) {
-        punishmentRepository.replacePunishments(server, player);
-    }
-
     public PunishmentOperationResult acknowledgePunishment(Server server, UUID playerUuid, String punishmentId) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
         if (player == null) {
@@ -364,15 +390,11 @@ public class PunishmentLifecycleService {
                 "Punishment not found: " + punishmentId + " for player: " + playerUuid, false, 0);
         }
 
-        if (punishment.getStarted() != null) {
+        boolean acknowledged = punishmentRepository.acknowledgePunishmentStart(
+            server, player.getMinecraftUuid().toString(), punishmentId, new Date());
+        if (!acknowledged) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NO_OP, "Punishment already acknowledged", true, 0);
         }
-
-        punishment.setStarted(new Date());
-        if (punishment.getData() != null) {
-            punishment.getData().remove("status");
-        }
-        persistPlayerPunishments(server, player);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment acknowledged", true, 1);
     }
@@ -393,42 +415,7 @@ public class PunishmentLifecycleService {
                 "Punishment has already been pardoned", false, 0);
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
-
-        Date now = new Date();
-
-        punishment.getModifications().add(new PunishmentModification(
-            IdGenerator.generateShortId(),
-            PunishmentModificationType.MANUAL_PARDON.name(),
-            now,
-            resolvedIssuerName,
-            issuerId,
-            reason != null ? reason : "",
-            null,
-            null,
-            null
-        ));
-
-        punishment.getNotes().add(new PunishmentNote(
-            IdGenerator.generateShortId(),
-            "pardoned punishment",
-            now,
-            resolvedIssuerName,
-            issuerId
-        ));
-        if (reason != null && !reason.isBlank()) {
-            punishment.getNotes().add(new PunishmentNote(
-                IdGenerator.generateShortId(),
-                reason,
-                now,
-                resolvedIssuerName,
-                issuerId
-            ));
-        }
-
-        punishment.getData().put("status", PunishmentStatus.PARDONED);
-        persistPlayerPunishments(server, context.player());
-
+        applyManualPardon(server, context.player(), punishment, issuerName, issuerId, reason);
         realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         if (PunishmentData.isAltBlocking(punishment.getData())) {
@@ -438,40 +425,71 @@ public class PunishmentLifecycleService {
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Punishment pardoned", true, 1);
     }
 
+    public int pardonPunishments(Server server, Player player, List<Punishment> targets,
+                                 String issuerName, String issuerId, String reason) {
+        List<PunishmentRealtimePublisher.PlayerPunishment> modified = new ArrayList<>();
+        Set<String> altBlockingParents = new LinkedHashSet<>();
+
+        for (Punishment punishment : targets) {
+            applyManualPardon(server, player, punishment, issuerName, issuerId, reason);
+            modified.add(new PunishmentRealtimePublisher.PlayerPunishment(player, punishment));
+            if (PunishmentData.isAltBlocking(punishment.getData())) {
+                altBlockingParents.add(punishment.getId());
+            }
+        }
+
+        realtimePublisher.punishmentsModified(server, modified);
+
+        for (String parentPunishmentId : altBlockingParents) {
+            cascadePardonLinkedBans(server, parentPunishmentId);
+        }
+
+        return targets.size();
+    }
+
+    private void applyManualPardon(Server server, Player player, Punishment punishment,
+                                   String issuerName, String issuerId, String reason) {
+        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        Date now = new Date();
+
+        PunishmentModification modification = new PunishmentModification(
+            IdGenerator.generateShortId(),
+            PunishmentModificationType.MANUAL_PARDON.name(),
+            now,
+            resolvedIssuerName,
+            issuerId,
+            reason != null ? reason : "",
+            null,
+            null,
+            null
+        );
+
+        List<PunishmentNote> notes = new ArrayList<>();
+        notes.add(new PunishmentNote(IdGenerator.generateShortId(), "pardoned punishment", now, resolvedIssuerName, issuerId));
+        if (reason != null && !reason.isBlank()) {
+            notes.add(new PunishmentNote(IdGenerator.generateShortId(), reason, now, resolvedIssuerName, issuerId));
+        }
+
+        punishment.getModifications().add(modification);
+        punishment.getNotes().addAll(notes);
+        punishment.getData().put("status", PunishmentStatus.PARDONED);
+
+        punishmentRepository.appendPardon(server, player.getMinecraftUuid().toString(), punishment.getId(),
+            modification, notes, PunishmentStatus.PARDONED);
+    }
+
     public int cascadePardonLinkedBans(Server server, String parentPunishmentId) {
         List<PunishmentRealtimePublisher.PlayerPunishment> modified = new ArrayList<>();
-        int count = cascadePardonLinkedBansInternal(
-            punishmentRepository.findByLinkedBanId(server, parentPunishmentId),
-            parentPunishmentId,
-            player -> persistPlayerPunishments(server, player),
-            modified
-        );
+        int count = 0;
+        for (Player player : punishmentRepository.findByLinkedBanId(server, parentPunishmentId)) {
+            count += applyLinkedBanSystemPardon(server, player, parentPunishmentId, modified);
+        }
         realtimePublisher.punishmentsModified(server, modified);
         return count;
     }
 
-    private int cascadePardonLinkedBansInternal(
-        List<Player> players,
-        String parentPunishmentId,
-        LinkedBanSaveAction saveAction,
-        List<PunishmentRealtimePublisher.PlayerPunishment> modified
-    ) {
-        int count = 0;
-
-        for (Player player : players) {
-            int pardonedPunishments = applyLinkedBanSystemPardon(player, parentPunishmentId, modified);
-            if (pardonedPunishments <= 0) {
-                continue;
-            }
-
-            saveAction.save(player);
-            count += pardonedPunishments;
-        }
-
-        return count;
-    }
-
     private int applyLinkedBanSystemPardon(
+        Server server,
         Player player,
         String parentPunishmentId,
         List<PunishmentRealtimePublisher.PlayerPunishment> modified
@@ -486,7 +504,8 @@ public class PunishmentLifecycleService {
                 continue;
             }
 
-            addSystemPardon(punishment, "Auto-pardoned: parent ban was pardoned", new Date());
+            applySystemPardon(server, player.getMinecraftUuid().toString(), punishment,
+                "Auto-pardoned: parent ban was pardoned", new Date());
             modified.add(new PunishmentRealtimePublisher.PlayerPunishment(player, punishment));
             count++;
         }
@@ -494,8 +513,8 @@ public class PunishmentLifecycleService {
         return count;
     }
 
-    private void addSystemPardon(Punishment punishment, String reason, Date now) {
-        punishment.getModifications().add(new PunishmentModification(
+    private void applySystemPardon(Server server, String playerUuid, Punishment punishment, String reason, Date now) {
+        PunishmentModification modification = new PunishmentModification(
             IdGenerator.generateShortId(),
             PunishmentModificationType.SYSTEM_PARDON.name(),
             now,
@@ -505,17 +524,23 @@ public class PunishmentLifecycleService {
             null,
             null,
             null
-        ));
-        punishment.getNotes().add(new PunishmentNote(
+        );
+        PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
             reason,
             now,
             "System",
             null
-        ));
+        );
+
+        punishment.getModifications().add(modification);
+        punishment.getNotes().add(note);
         if (punishment.getData() != null) {
             punishment.getData().put("status", PunishmentStatus.PARDONED);
         }
+
+        punishmentRepository.appendPardon(server, playerUuid, punishment.getId(),
+            modification, List.of(note), PunishmentStatus.PARDONED);
     }
 
     private boolean isPardoned(Punishment punishment) {
@@ -530,13 +555,7 @@ public class PunishmentLifecycleService {
         List<PunishmentRealtimePublisher.PlayerPunishment> modified = new ArrayList<>();
 
         for (Player player : punishmentRepository.findByLinkedBanId(server, parentPunishmentId)) {
-            int updatedPunishments = applyLinkedBanDurationChange(player, parentPunishmentId, newDuration, modified);
-            if (updatedPunishments <= 0) {
-                continue;
-            }
-
-            persistPlayerPunishments(server, player);
-            count += updatedPunishments;
+            count += applyLinkedBanDurationChange(server, player, parentPunishmentId, newDuration, modified);
         }
 
         realtimePublisher.punishmentsModified(server, modified);
@@ -544,6 +563,7 @@ public class PunishmentLifecycleService {
     }
 
     private int applyLinkedBanDurationChange(
+        Server server,
         Player player,
         String parentPunishmentId,
         Long newDuration,
@@ -560,12 +580,8 @@ public class PunishmentLifecycleService {
             }
 
             Date now = new Date();
-            // Normalize make-permanent intent (null) to -1L so data.duration stays coherent for the
-            // many readers of data.duration (audit reconstruct, plugin display); the read side treats
-            // null/0/negative identically as permanent.
             Long effective = (newDuration == null) ? -1L : newDuration;
-            punishment.getData().put("duration", effective);
-            punishment.getModifications().add(new PunishmentModification(
+            PunishmentModification modification = new PunishmentModification(
                 IdGenerator.generateShortId(),
                 PunishmentModificationType.MANUAL_DURATION_CHANGE.name(),
                 now,
@@ -575,16 +591,24 @@ public class PunishmentLifecycleService {
                 effective,
                 null,
                 null
-            ));
-            punishment.getNotes().add(new PunishmentNote(
+            );
+            PunishmentNote note = new PunishmentNote(
                 IdGenerator.generateShortId(),
                 "Duration changed (cascaded from parent ban)",
                 now,
                 "System",
                 null
-            ));
+            );
+
+            punishment.getData().put("duration", effective);
+            punishment.getModifications().add(modification);
+            punishment.getNotes().add(note);
+            String linkedPlayerUuid = player.getMinecraftUuid().toString();
+            punishmentRepository.appendDurationChange(server, linkedPlayerUuid, punishment.getId(), modification, note, effective);
+
             if (punishment.getStarted() == null) {
                 punishment.setStarted(now);
+                punishmentRepository.setPunishmentStartedIfUnset(server, linkedPlayerUuid, punishment.getId(), now);
             }
             modified.add(new PunishmentRealtimePublisher.PlayerPunishment(player, punishment));
             count++;
@@ -749,7 +773,7 @@ public class PunishmentLifecycleService {
         );
 
         player.getPunishments().add(punishment);
-        persistPlayerPunishments(server, player);
+        punishmentRepository.appendPunishment(server, player.getMinecraftUuid().toString(), punishment);
 
         return punishmentId;
     }
@@ -821,14 +845,7 @@ public class PunishmentLifecycleService {
             return;
         }
 
-        addSystemPardon(punishment, reason, new Date());
-        persistPlayerPunishments(server, player);
-
+        applySystemPardon(server, player.getMinecraftUuid().toString(), punishment, reason, new Date());
         realtimePublisher.punishmentModified(server, player, punishment);
-    }
-
-    @FunctionalInterface
-    private interface LinkedBanSaveAction {
-        void save(Player player);
     }
 }

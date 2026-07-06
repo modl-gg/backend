@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.same;
 import static org.mockito.Mockito.verify;
@@ -28,8 +27,8 @@ import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.role.controller.MinecraftRolesController;
 import gg.modl.backend.role.controller.MinecraftRolesV3Controller;
 import gg.modl.backend.role.dto.response.RoleResponse;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.role.service.RoleService;
-import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.ApiError;
@@ -49,7 +48,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MinecraftRolesV3ControllerTest {
     private RoleService roleService;
-    private StaffService staffService;
+    private RoleAuthorization roleAuthorization;
     private MockMvc v3MockMvc;
     private MockMvc v1MockMvc;
     private Server server;
@@ -57,18 +56,18 @@ class MinecraftRolesV3ControllerTest {
     @BeforeEach
     void setUp() {
         roleService = mock(RoleService.class);
-        staffService = mock(StaffService.class);
-        when(staffService.resolveMinecraftPerformer(any(), any()))
-            .thenReturn(new StaffService.MinecraftPerformer(null, false));
+        roleAuthorization = mock(RoleAuthorization.class);
+        when(roleAuthorization.minecraftPerformer(any(), any()))
+            .thenReturn(RoleAuthorization.PerformerAuthority.unidentified());
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftRolesV3Controller(roleService, staffService))
+        v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftRolesV3Controller(roleService, roleAuthorization))
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
 
-        v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftRolesController(roleService, staffService))
+        v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftRolesController(roleService, roleAuthorization))
             .setControllerAdvice(new GlobalExceptionHandler())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
@@ -179,7 +178,7 @@ class MinecraftRolesV3ControllerTest {
 
     @Test
     void v3UpdateRolePermissionsCallsServiceAndReturnsBinarySuccess() throws Exception {
-        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of("first", "second")), any(), anyBoolean(), anyBoolean())).thenReturn(true);
+        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of("first", "second")), any())).thenReturn(true);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder()
             .addAllPermissions(List.of("first", "second"))
             .build();
@@ -196,12 +195,12 @@ class MinecraftRolesV3ControllerTest {
         assertEquals(200, response.getStatus());
         assertTrue(response.getSuccess());
         assertEquals("", response.getMessage());
-        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of("first", "second")), any(), anyBoolean(), anyBoolean());
+        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of("first", "second")), any());
     }
 
     @Test
     void v3UpdateRolePermissionsMissingRoleReturnsBinaryNotFound() throws Exception {
-        when(roleService.updateRolePermissions(eq(server), eq("missing"), eq(List.of("first")), any(), anyBoolean(), anyBoolean())).thenReturn(false);
+        when(roleService.updateRolePermissions(eq(server), eq("missing"), eq(List.of("first")), any())).thenReturn(false);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder()
             .addPermissions("first")
             .build();
@@ -218,12 +217,12 @@ class MinecraftRolesV3ControllerTest {
         assertEquals(404, response.getStatus());
         assertFalse(response.getSuccess());
         assertEquals("Role not found", response.getMessage());
-        verify(roleService).updateRolePermissions(same(server), eq("missing"), eq(List.of("first")), any(), anyBoolean(), anyBoolean());
+        verify(roleService).updateRolePermissions(same(server), eq("missing"), eq(List.of("first")), any());
     }
 
     @Test
     void v3UpdateRolePermissionsEmptyPermissionListCallsServiceAndReturnsBinarySuccess() throws Exception {
-        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of()), any(), anyBoolean(), anyBoolean())).thenReturn(true);
+        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of()), any())).thenReturn(true);
         UpdateRolePermissionsRequest request = UpdateRolePermissionsRequest.newBuilder().build();
 
         MvcResult result = v3MockMvc.perform(patch(RESTMappingV3.PREFIX_MINECRAFT + "/roles/admin/permissions")
@@ -238,7 +237,7 @@ class MinecraftRolesV3ControllerTest {
         assertEquals(200, response.getStatus());
         assertTrue(response.getSuccess());
         assertEquals("", response.getMessage());
-        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of()), any(), anyBoolean(), anyBoolean());
+        verify(roleService).updateRolePermissions(same(server), eq("admin"), eq(List.of()), any());
     }
 
     @Test
@@ -365,7 +364,7 @@ class MinecraftRolesV3ControllerTest {
 
     @Test
     void v1UpdateRolePermissionsStillReturnsJsonEnvelope() throws Exception {
-        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of("first")), any(), anyBoolean(), anyBoolean())).thenReturn(true);
+        when(roleService.updateRolePermissions(eq(server), eq("admin"), eq(List.of("first")), any())).thenReturn(true);
 
         MvcResult result = v1MockMvc.perform(patch(RESTMappingV1.MINECRAFT_ROLES + "/admin/permissions")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -381,6 +380,6 @@ class MinecraftRolesV3ControllerTest {
         assertEquals(200, json.get("status").asInt());
         assertTrue(json.get("success").asBoolean());
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
-        verify(roleService).updateRolePermissions(eq(server), eq("admin"), eq(List.of("first")), any(), anyBoolean(), anyBoolean());
+        verify(roleService).updateRolePermissions(eq(server), eq("admin"), eq(List.of("first")), any());
     }
 }

@@ -2,6 +2,7 @@ package gg.modl.backend.staff.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftStaffController {
     private final StaffService staffService;
+    private final RoleAuthorization roleAuthorization;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllStaff(HttpServletRequest request) {
@@ -63,12 +65,9 @@ public class MinecraftStaffController {
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
-        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
-        boolean hasIdentity = actingStaffId != null;
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.minecraftPerformer(server, actingStaffId);
 
-        if (!staffService.updateMinecraftStaffRole(
-                server, id, request.role(), actingStaffId,
-                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
+        if (!staffService.updateMinecraftStaffRole(server, id, request.role(), performer)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Staff member not found"

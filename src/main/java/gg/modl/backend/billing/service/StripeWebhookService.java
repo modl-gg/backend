@@ -11,7 +11,6 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.Date;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -64,20 +63,11 @@ public class StripeWebhookService {
             return;
         }
 
-        // Persist linkage + entitlement unconditionally first so the subscription id is set even if
-        // the (fragile) retrieve below throws; period dates are applied separately and null-safely.
         serverMutationHelper.mutate(server, current -> {
             current.setStripeSubscriptionId(session.getSubscription());
             current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
             current.setPlan(ServerPlan.PREMIUM);
         });
-
-        try {
-            Subscription subscription = stripeService.retrieveSubscription(session.getSubscription());
-            serverMutationHelper.mutate(server, current -> applyPeriodDates(current, subscription));
-        } catch (Exception exception) {
-            log.error("Error retrieving subscription details", exception);
-        }
     }
 
     private void applyPeriodDates(Server current, Subscription subscription) {
@@ -119,6 +109,10 @@ public class StripeWebhookService {
             return;
         }
 
+        if (subscription.getCustomer() == null) {
+            return;
+        }
+
         Server server = findServerByCustomerId(subscription.getCustomer());
         if (server == null) {
             return;
@@ -126,7 +120,7 @@ public class StripeWebhookService {
 
         serverMutationHelper.mutate(server, current -> {
             current.setStripeSubscriptionId(subscription.getId());
-            current.setSubscriptionStatus(parseSubscriptionStatus(subscription.getStatus()));
+            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(subscription.getStatus()));
             current.setPlan(planForSubscriptionStatus(subscription.getStatus()));
             applyPeriodDates(current, subscription);
         });
@@ -143,15 +137,6 @@ public class StripeWebhookService {
                || "incomplete_expired".equals(status);
     }
 
-    private SubscriptionStatus parseSubscriptionStatus(String status) {
-        try {
-            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
-            return SubscriptionStatus.INACTIVE;
-        }
-    }
-
     private void handleSubscriptionUpdated(Event event) {
         StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
         if (!(stripeObject instanceof Subscription subscription)) {
@@ -166,7 +151,7 @@ public class StripeWebhookService {
 
         String effectiveStatus = stripeService.getEffectiveStatus(subscription);
         serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(parseSubscriptionStatus(effectiveStatus));
+            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(effectiveStatus));
             if (isPremiumStatus(effectiveStatus)) {
                 current.setPlan(ServerPlan.PREMIUM);
             } else if (isFreeStatus(effectiveStatus)) {
@@ -238,30 +223,29 @@ public class StripeWebhookService {
         }
 
         if (subscriptionId == null) {
-            // No subscription context (e.g. a one-off invoice): preserve original behavior and only
-            // un-stick a PAST_DUE server. Never downgrade on a payment-success event.
             unstickPastDue(server);
+            return;
+        }
+
+        boolean alreadyActive = server.getSubscriptionStatus() == SubscriptionStatus.ACTIVE
+                                && server.getPlan() == ServerPlan.PREMIUM;
+        if (alreadyActive) {
             return;
         }
 
         try {
             Subscription subscription = stripeService.retrieveSubscription(subscriptionId);
             String effectiveStatus = stripeService.getEffectiveStatus(subscription);
-            boolean alreadyActive = server.getSubscriptionStatus() == SubscriptionStatus.ACTIVE
-                                    && server.getPlan() == ServerPlan.PREMIUM;
             if (isPremiumStatus(effectiveStatus)) {
-                if (!alreadyActive) {
-                    serverMutationHelper.mutate(server, current -> {
-                        current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-                        current.setPlan(ServerPlan.PREMIUM);
-                        applyPeriodDates(current, subscription);
-                        if (current.getStripeSubscriptionId() == null) {
-                            current.setStripeSubscriptionId(subscription.getId());
-                        }
-                    });
-                }
+                serverMutationHelper.mutate(server, current -> {
+                    current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+                    current.setPlan(ServerPlan.PREMIUM);
+                    applyPeriodDates(current, subscription);
+                    if (current.getStripeSubscriptionId() == null) {
+                        current.setStripeSubscriptionId(subscription.getId());
+                    }
+                });
             } else {
-                // Live status is not premium: never downgrade here; only un-stick a PAST_DUE server.
                 unstickPastDue(server);
             }
         } catch (Exception exception) {

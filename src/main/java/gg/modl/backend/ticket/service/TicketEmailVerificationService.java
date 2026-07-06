@@ -4,19 +4,14 @@ import gg.modl.backend.database.mongo.repository.TicketVerificationMongoReposito
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeCodec;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketVerification;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.nio.charset.StandardCharsets;
 import java.util.Date;
-import java.util.HexFormat;
 import java.util.UUID;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import gg.modl.backend.ticket.config.TicketEmailVerificationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +24,10 @@ public class TicketEmailVerificationService {
     private final TicketVerificationMongoRepository ticketVerificationRepository;
     private final EmailService emailService;
     private final TicketEmailVerificationConfiguration verificationConfig;
-    private static final SecureRandom RANDOM = new SecureRandom();
+    private final OneTimeCodeCodec oneTimeCodeCodec;
+    private static final int CODE_LENGTH = 6;
+    private static final String CREATOR_EMAIL_KEY = "creatorEmail";
+    private static final String CONTACT_EMAIL_KEY = "contactEmail";
 
     public String sendVerificationCode(Server server, Ticket ticket) {
         String email = getCreatorEmail(ticket);
@@ -37,8 +35,8 @@ public class TicketEmailVerificationService {
             throw new ValidationException("No valid email associated with this ticket");
         }
 
-        String code = String.format("%06d", RANDOM.nextInt(1000000));
-        String codeHash = hashCode(code);
+        String code = oneTimeCodeCodec.generateNumericCode(CODE_LENGTH);
+        String codeHash = hash(code);
 
         TicketVerification verification = TicketVerification.builder()
             .id(UUID.randomUUID().toString())
@@ -62,41 +60,40 @@ public class TicketEmailVerificationService {
     }
 
     private String getCreatorEmail(Ticket ticket) {
-        if (ticket.getData() == null) {
-            return null;
-        }
-
-        Object email = ticket.getData().get("creatorEmail");
+        String email = resolveContactEmail(ticket);
         if (email == null) {
             return null;
         }
 
-        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email.toString());
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(email);
         if (normalizedEmail == null) {
-            log.warn("Skipping ticket verification email for {} due to invalid creator email: {}", ticket.getId(), email);
+            log.warn("Skipping ticket verification email for {} due to invalid contact email: {}", ticket.getId(), email);
         }
 
         return normalizedEmail;
     }
 
-    private String hashCode(String code) {
-        try {
-            String secret = verificationConfig.getCodeHashSecret();
-            if (secret != null && !secret.isBlank()) {
-                Mac mac = Mac.getInstance("HmacSHA256");
-                mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-                return HexFormat.of().formatHex(mac.doFinal(code.getBytes(StandardCharsets.UTF_8)));
-            }
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(code.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (Exception e) {
-            throw new ExternalServiceException("Failed to hash code", e);
+    public static String resolveContactEmail(Ticket ticket) {
+        if (ticket.getData() == null) {
+            return null;
         }
+        Object email = ticket.getData().get(CREATOR_EMAIL_KEY);
+        if (email == null) {
+            email = ticket.getData().get(CONTACT_EMAIL_KEY);
+        }
+        if (email == null) {
+            return null;
+        }
+        String value = email.toString();
+        return value.isBlank() ? null : value;
+    }
+
+    private String hash(String code) {
+        return oneTimeCodeCodec.hash(code, verificationConfig.getCodeHashSecret());
     }
 
     public String verifyCode(Server server, String ticketId, String code) {
-        String codeHash = hashCode(code);
+        String codeHash = hash(code);
         Date now = new Date();
         TicketVerification verification = ticketVerificationRepository.consumeMatchingCode(server, ticketId, codeHash, now)
             .orElse(null);
@@ -122,5 +119,13 @@ public class TicketEmailVerificationService {
             return false;
         }
         return ticketVerificationRepository.existsActiveToken(server, ticketId, token, new Date());
+    }
+
+    public boolean validateAppealCreateToken(Server server, String punishmentId, String playerUuid, String token) {
+        return validateToken(server, appealCreateSubject(punishmentId, playerUuid), token);
+    }
+
+    private static String appealCreateSubject(String punishmentId, String playerUuid) {
+        return "appeal-create:" + punishmentId + ":" + (playerUuid == null ? "" : playerUuid);
     }
 }

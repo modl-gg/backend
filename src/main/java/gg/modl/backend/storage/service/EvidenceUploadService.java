@@ -1,9 +1,6 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.infrastructure.util.ByteFormatUtil;
-import gg.modl.backend.limits.ServerLimitPolicy;
-import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
@@ -35,11 +32,10 @@ public class EvidenceUploadService {
     private final S3StorageService s3StorageService;
     private final PlayerMongoRepository playerRepository;
     private final ServerService serverService;
-    private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
     private final PunishmentEvidenceService punishmentEvidenceService;
     private final StorageMetadataService storageMetadataService;
-    private final ServerLimitPolicy serverLimitPolicy;
+    private final UploadOrchestrationService uploadOrchestrationService;
 
     public TokenValidationResult validateToken(String token) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
@@ -47,8 +43,10 @@ public class EvidenceUploadService {
             return TokenValidationResult.invalid();
         }
 
-        Player player = playerRepository.findByMinecraftUuid(uploadToken.serverDatabaseName(), normalizeUuid(uploadToken.playerUuid()))
-            .orElse(null);
+        Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
+        Player player = server == null
+            ? null
+            : playerRepository.findByMinecraftUuid(server, normalizeUuid(uploadToken.playerUuid())).orElse(null);
         String playerName = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : "Unknown";
 
         return TokenValidationResult.valid(new TokenInfo(
@@ -73,40 +71,24 @@ public class EvidenceUploadService {
             return PresignUploadResult.of(PresignUploadStatus.SERVER_NOT_FOUND, null, null);
         }
 
-        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
-        MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-            request.fileName(),
-            request.contentType(),
-            request.fileSize(),
-            "evidence",
-            isPremium
-        );
-        if (!validation.valid()) {
-            return PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED, validation.error(), null);
-        }
+        UploadOrchestrationService.PresignOutcome outcome = uploadOrchestrationService.presign(server,
+            new UploadOrchestrationService.UploadPresignRequest(
+                "evidence",
+                request.fileName(),
+                request.contentType(),
+                request.fileSize(),
+                uploadToken.punishmentId(),
+                server.getPlan() == ServerPlan.PREMIUM,
+                false
+            ));
 
-        ServerLimits limits = serverLimitPolicy.resolve(server);
-        if (limits.exceedsUploadLimit(request.fileSize())) {
-            return PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED,
-                "File exceeds maximum size of " + ByteFormatUtil.formatCompact(limits.getMaxUploadBytes()), null);
-        }
-
-        if (!quotaService.canUpload(server, request.fileSize())) {
-            return PresignUploadResult.of(PresignUploadStatus.QUOTA_EXCEEDED,
-                "Storage quota exceeded. Please contact the server administrator.",
-                null);
-        }
-
-        PresignUploadResponse presignedUpload = s3StorageService.createPresignedUploadUrl(
-            server,
-            "evidence",
-            request.fileName(),
-            request.contentType(),
-            request.fileSize(),
-            uploadToken.punishmentId()
-        );
-
-        return PresignUploadResult.of(PresignUploadStatus.SUCCESS, null, presignedUpload);
+        return switch (outcome.status()) {
+            case SUCCESS -> PresignUploadResult.of(PresignUploadStatus.SUCCESS, null, outcome.upload());
+            case QUOTA_EXCEEDED -> PresignUploadResult.of(PresignUploadStatus.QUOTA_EXCEEDED,
+                "Storage quota exceeded. Please contact the server administrator.", null);
+            case VALIDATION_FAILED, TEMP_LIMIT_EXCEEDED ->
+                PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED, outcome.message(), null);
+        };
     }
 
     public ConfirmUploadResult confirmUpload(String token, EvidenceConfirmUploadRequest request) {
@@ -115,38 +97,33 @@ public class EvidenceUploadService {
             return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_TOKEN, null);
         }
 
+        if (!validationService.isKeyOwnedByServer(request.key(), uploadToken.serverDatabaseName())) {
+            return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_KEY, null);
+        }
+
         String expectedKeyPrefix = uploadToken.serverDatabaseName() + "/evidence/" + uploadToken.punishmentId() + "/";
         if (!request.key().startsWith(expectedKeyPrefix)) {
             return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_KEY, null);
         }
 
-        UploadResponse uploadDetails = s3StorageService.getUploadDetails(request.key());
-        if (uploadDetails == null) {
-            return ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
-        }
-
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
-        if (server != null) {
-            StorageQuotaService.ConfirmResult confirmResult =
-                quotaService.confirmAndRecordFile(server, request.key(), uploadDetails.size(), uploadDetails.contentType());
-            switch (confirmResult) {
-                case QUOTA_EXCEEDED -> {
-                    cleanupOrphanedEvidence(server, request.key(), uploadToken.serverDatabaseName(), uploadDetails);
-                    return ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
-                }
-                case RECORD_FAILED -> {
-                    cleanupOrphanedEvidence(server, request.key(), uploadToken.serverDatabaseName(), uploadDetails);
-                    return ConfirmUploadResult.of(ConfirmUploadStatus.RECORD_FAILED, null);
-                }
-                default -> {
-                    // SUCCESS
-                }
+        if (server == null) {
+            UploadResponse uploadDetails = s3StorageService.getUploadDetails(request.key());
+            if (uploadDetails == null) {
+                return ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
             }
-        } else {
             log.warn("Could not record storage metadata: server not found for database {}", uploadToken.serverDatabaseName());
+            return ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, uploadDetails);
         }
 
-        return ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, uploadDetails);
+        UploadOrchestrationService.ConfirmOutcome outcome =
+            uploadOrchestrationService.confirm(server, request.key(), false);
+        return switch (outcome.status()) {
+            case SUCCESS -> ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, outcome.upload());
+            case UPLOAD_NOT_FOUND -> ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
+            case QUOTA_EXCEEDED -> ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
+            case RECORD_FAILED, TEMP_LIMIT_EXCEEDED -> ConfirmUploadResult.of(ConfirmUploadStatus.RECORD_FAILED, null);
+        };
     }
 
     public SubmitEvidenceResult submitEvidence(String token, SubmitEvidenceRequest request) {
@@ -209,18 +186,6 @@ public class EvidenceUploadService {
             return path.startsWith("/") ? path.substring(1) : path;
         } catch (IllegalArgumentException exception) {
             return null;
-        }
-    }
-
-    private void cleanupOrphanedEvidence(Server server, String key, String serverDatabaseName, UploadResponse uploadDetails) {
-        if (!s3StorageService.deleteFile(key)) {
-            StorageMetadataService.RecordFileResult recordResult =
-                storageMetadataService.recordReservedFile(server, key, uploadDetails.size(), uploadDetails.contentType());
-            if (recordResult == StorageMetadataService.RecordFileResult.FAILED) {
-                log.error("Orphaned evidence object: S3 delete failed and metadata write failed key={} serverDb={} size={} contentType={}; next StorageSyncService run (triggered on storage list/aggregate calls) will reconcile, manual cleanup may be needed sooner", key, serverDatabaseName, uploadDetails.size(), uploadDetails.contentType());
-            } else {
-                log.warn("Failed to delete orphaned evidence object key={}, recorded metadata to keep it trackable result={}", key, recordResult);
-            }
         }
     }
 

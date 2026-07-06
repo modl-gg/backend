@@ -8,8 +8,10 @@ import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.PunishmentFields;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.bson.Document;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
@@ -41,10 +44,6 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
         return find(server, linkedBanQuery(parentPunishmentId));
     }
 
-    public List<Player> findByLinkedBanId(String databaseName, String parentPunishmentId) {
-        return find(databaseName, linkedBanQuery(parentPunishmentId));
-    }
-
     private Query linkedBanQuery(String parentPunishmentId) {
         return Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
             Criteria.where(PunishmentFields.TYPE_ORDINAL).is(4)
@@ -52,16 +51,91 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
         ));
     }
 
-    public void replacePunishments(Server server, Player player) {
-        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
-        Update update = new Update().set(PlayerFields.PUNISHMENTS, player.getPunishments());
+    public void appendPunishment(Server server, String playerUuid, Punishment punishment) {
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(playerUuid));
+        Update update = new Update().push(PlayerFields.PUNISHMENTS, punishment);
         updateFirst(server, query, update);
     }
 
-    public void replacePunishments(String databaseName, Player player) {
-        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(player.getMinecraftUuid().toString()));
-        Update update = new Update().set(PlayerFields.PUNISHMENTS, player.getPunishments());
-        updateFirst(databaseName, query, update);
+    public void appendPardon(Server server, String playerUuid, String punishmentId,
+                             PunishmentModification modification, List<PunishmentNote> notes, String status) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update()
+            .push("punishments.$.modifications", modification)
+            .set("punishments.$.data.status", status);
+        if (!notes.isEmpty()) {
+            update.push("punishments.$.notes").each(notes.toArray());
+        }
+        updateFirst(server, query, update);
+    }
+
+    public void appendDurationChange(Server server, String playerUuid, String punishmentId,
+                                     PunishmentModification modification, PunishmentNote note, long effectiveDuration) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update()
+            .push("punishments.$.modifications", modification)
+            .push("punishments.$.notes", note)
+            .set("punishments.$.data.duration", effectiveDuration);
+        updateFirst(server, query, update);
+    }
+
+    public void appendModification(Server server, String playerUuid, String punishmentId,
+                                   PunishmentModification modification) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update().push("punishments.$.modifications", modification);
+        updateFirst(server, query, update);
+    }
+
+    public boolean setPunishmentStartedIfUnset(Server server, String playerUuid, String punishmentId, Date started) {
+        Update update = new Update().set("punishments.$.started", started);
+        return updateFirst(server, startedUnsetQuery(playerUuid, punishmentId), update).getModifiedCount() > 0;
+    }
+
+    public void appendEvidence(Server server, String playerUuid, String punishmentId,
+                               List<PunishmentEvidence> evidence, @Nullable PunishmentNote note) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update().push("punishments.$.evidence").each(evidence.toArray());
+        if (note != null) {
+            update.push("punishments.$.notes", note);
+        }
+        updateFirst(server, query, update);
+    }
+
+    public void setPunishmentData(Server server, String playerUuid, String punishmentId,
+                                  Map<String, Object> dataUpdates, @Nullable PunishmentNote note) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update();
+        for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
+            MongoKeyUtils.validateUpdatePath(entry.getKey());
+            update.set("punishments.$.data." + entry.getKey(), MongoKeyUtils.sanitizeValue(entry.getValue()));
+        }
+        if (note != null) {
+            update.push("punishments.$.notes", note);
+        }
+        updateFirst(server, query, update);
+    }
+
+    public void setPunishmentTickets(Server server, String playerUuid, String punishmentId, List<String> ticketIds) {
+        Query query = punishmentQuery(playerUuid, punishmentId);
+        Update update = new Update().set("punishments.$.attachedTicketIds", ticketIds);
+        updateFirst(server, query, update);
+    }
+
+    public boolean acknowledgePunishmentStart(Server server, String playerUuid, String punishmentId, Date started) {
+        Update update = new Update()
+            .set("punishments.$.started", started)
+            .unset("punishments.$.data.status");
+        return updateFirst(server, startedUnsetQuery(playerUuid, punishmentId), update).getModifiedCount() > 0;
+    }
+
+    private Query startedUnsetQuery(String playerUuid, String punishmentId) {
+        return Query.query(
+            Criteria.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)
+                .and(PlayerFields.PUNISHMENTS).elemMatch(
+                    Criteria.where(PunishmentFields.ID).is(punishmentId)
+                        .and(PunishmentFields.STARTED).is(null)
+                )
+        );
     }
 
     public void linkAppealToPunishment(Server server, String playerUuid, String punishmentId,
@@ -201,19 +275,23 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     }
 
     public List<Player> findWithPunishmentsProjected(Server server) {
-        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).exists(true));
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
+            Criteria.where(PunishmentFields.TYPE_ORDINAL).ne(0)
+                .and(PunishmentFields.DATA_STATUS).ne(PunishmentStatus.UNSTARTED)
+        ));
         query.fields().include(PlayerFields.PUNISHMENTS);
         return find(server, query);
     }
 
-    public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff) {
-        return find(server, Query.query(Criteria.where(PlayerFields.PUNISHMENT_ISSUED).gte(cutoff)));
-    }
-
     public List<Player> findWithPunishmentsIssuedAfter(Server server, Date cutoff, int limit) {
         Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENTS).elemMatch(
-            Criteria.where("issued").gte(cutoff)
+            Criteria.where(PunishmentFields.ISSUED).gte(cutoff)
         ));
+        query.fields()
+            .include(PlayerFields.MINECRAFT_UUID)
+            .include(PlayerFields.USERNAMES)
+            .include(PlayerFields.PUNISHMENTS);
+        query.with(Sort.by(Sort.Direction.DESC, PlayerFields.PUNISHMENT_ISSUED));
         query.limit(limit);
         return find(server, query);
     }

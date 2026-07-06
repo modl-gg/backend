@@ -1,6 +1,6 @@
 package gg.modl.backend.punishment.controller;
 
-import gg.modl.backend.player.controller.MinecraftPlayerProtoMapper;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.proto.modl.v1.PublicPunishmentAppealInfoResponse;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -36,10 +36,10 @@ final class PublicPunishmentProtoMapper {
             builder.setExpires(expires);
         }
         if (appealInfo.get("existingAppeal") instanceof Map<?, ?> existingAppeal) {
-            builder.setExistingAppeal(MinecraftPlayerProtoMapper.toStruct(normalizeDates(existingAppeal)));
+            builder.setExistingAppeal(ProtoMapperSupport.legacyStruct(normalizeDates(existingAppeal)));
         }
         if (appealInfo.get("appealForm") instanceof Map<?, ?> appealForm) {
-            builder.setAppealForm(MinecraftPlayerProtoMapper.toStruct(normalizeDates(appealForm)));
+            builder.setAppealForm(ProtoMapperSupport.legacyStruct(normalizeDates(appealForm)));
         }
         return builder.build();
     }

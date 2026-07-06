@@ -1,7 +1,6 @@
 package gg.modl.backend.replaylite.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +28,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -229,19 +229,21 @@ class ReplayLiteServiceTest {
     }
 
     @Test
-    void publicReplayDownloadStreamsObjectForConfirmedReplay() {
+    void publicReplayDownloadPresignsObjectForConfirmedReplay() {
         ReplayLiteDocument document = confirmedDocument(NOW.minusSeconds(60), 2048);
         when(repository.findByReplayId(document.getId())).thenReturn(Optional.of(document));
-        byte[] replayBytes = new byte[] {1, 2, 3};
-        when(storageService.downloadObject(document.getObjectKey(), MAX_SIZE))
-            .thenReturn(Optional.of(new ReplayLiteStorageService.DownloadedObject(replayBytes, "application/octet-stream")));
+        Instant presignExpiry = NOW.plusSeconds(300);
+        when(storageService.createPresignedDownload(
+            eq(document.getObjectKey()),
+            eq(document.getId() + ".modlreplay"),
+            eq(Duration.ofMinutes(5))
+        )).thenReturn(new ReplayLiteStorageService.PresignedDownload("https://cdn.example/download", presignExpiry));
 
         Optional<ReplayLiteService.ReplayLiteDownload> download = service.getPublicReplayDownload(document.getId(), "203.0.113.10");
 
         assertTrue(download.isPresent());
-        assertArrayEquals(replayBytes, download.get().bytes());
-        assertEquals("application/octet-stream", download.get().contentType());
-        assertEquals(document.getExpiresAt(), download.get().expiresAt());
+        assertEquals("https://cdn.example/download", download.get().url());
+        assertEquals(presignExpiry, download.get().expiresAt());
         verify(storageService, never()).getPublicUrl(any());
     }
 
@@ -257,7 +259,7 @@ class ReplayLiteServiceTest {
 
         assertTrue(service.getPublicReplayDownload("pending", "203.0.113.10").isEmpty());
         assertTrue(service.getPublicReplayDownload("expired", "203.0.113.10").isEmpty());
-        verify(storageService, never()).downloadObject(any(), eq(MAX_SIZE));
+        verify(storageService, never()).createPresignedDownload(any(), any(), any());
     }
 
     @Test

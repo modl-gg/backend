@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
@@ -17,6 +18,7 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
@@ -142,6 +144,8 @@ class PunishmentServiceTest {
             .build();
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
+        when(punishmentRepository.acknowledgePunishmentStart(eq(server), eq(playerUuid.toString()), eq("punish-1"), any(Date.class)))
+            .thenReturn(true);
 
         PunishmentOperationResult result = punishmentLifecycleService.acknowledgePunishment(
             server,
@@ -151,10 +155,43 @@ class PunishmentServiceTest {
 
         assertEquals(PunishmentOperationStatus.SUCCESS, result.status());
         assertEquals("Punishment acknowledged", result.message());
-        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
-        Punishment updatedPunishment = player.getPunishments().get(0);
-        assertNotNull(updatedPunishment.getStarted());
-        assertNull(updatedPunishment.getData().get("status"));
+        verify(punishmentRepository).acknowledgePunishmentStart(eq(server), eq(playerUuid.toString()), eq("punish-1"), any(Date.class));
+    }
+
+    @Test
+    void acknowledgePunishmentReturnsNoOpWhenRepositoryReportsNoChange() {
+        UUID playerUuid = UUID.randomUUID();
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Punishment punishment = new Punishment(
+            "punish-1",
+            1,
+            "Mod",
+            null,
+            new Date(),
+            new Date(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            new HashMap<>()
+        );
+        Player player = Player.builder()
+            .minecraftUuid(playerUuid)
+            .punishments(new ArrayList<>(List.of(punishment)))
+            .build();
+
+        when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
+        when(punishmentRepository.acknowledgePunishmentStart(eq(server), eq(playerUuid.toString()), eq("punish-1"), any(Date.class)))
+            .thenReturn(false);
+
+        PunishmentOperationResult result = punishmentLifecycleService.acknowledgePunishment(
+            server,
+            playerUuid,
+            "punish-1"
+        );
+
+        assertEquals(PunishmentOperationStatus.NO_OP, result.status());
+        assertEquals("Punishment already acknowledged", result.message());
     }
 
     @Test
@@ -205,7 +242,7 @@ class PunishmentServiceTest {
         String punishmentId = punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         assertNotNull(punishmentId);
-        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).appendPunishment(eq(server), eq(playerUuid.toString()), any(Punishment.class));
         assertEquals(1, player.getPunishments().size());
         Punishment createdPunishment = player.getPunishments().get(0);
         assertEquals(punishmentId, createdPunishment.getId());
@@ -296,7 +333,7 @@ class PunishmentServiceTest {
 
         punishmentLifecycleService.systemPardonPunishment(server, playerUuid, "punish-1", "Auto-pardoned");
 
-        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).appendPardon(eq(server), eq(playerUuid.toString()), eq("punish-1"), any(PunishmentModification.class), anyList(), eq(PunishmentStatus.PARDONED));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals(1, updatedPunishment.getModifications().size());
         PunishmentModification modification = updatedPunishment.getModifications().get(0);
@@ -334,7 +371,7 @@ class PunishmentServiceTest {
         int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans(server, "parent-1");
 
         assertEquals(1, updatedCount);
-        verify(punishmentRepository).replacePunishments(eq(server), eq(player));
+        verify(punishmentRepository).appendPardon(eq(server), eq(playerUuid.toString()), eq("linked-1"), any(PunishmentModification.class), anyList(), eq(PunishmentStatus.PARDONED));
         Punishment updatedPunishment = player.getPunishments().get(0);
         assertEquals("SYSTEM_PARDON", updatedPunishment.getModifications().get(0).type());
     }
@@ -367,6 +404,6 @@ class PunishmentServiceTest {
         int updatedCount = punishmentLifecycleService.cascadePardonLinkedBans(server, "parent-1");
 
         assertEquals(0, updatedCount);
-        verify(punishmentRepository, never()).replacePunishments(eq(server), any(Player.class));
+        verify(punishmentRepository, never()).appendPardon(any(), any(), any(), any(), any(), any());
     }
 }

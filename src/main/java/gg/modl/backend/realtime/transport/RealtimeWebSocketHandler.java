@@ -147,6 +147,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         }
 
         state.authenticate(principal, requestedProtocolVersion);
+        connectionRegistry.onAuthenticated(session);
         for (Topic topic : hello.getSupportedTopicsList()) {
             if (topicAuthorizer.canSubscribe(principal, topic)) {
                 state.subscribe(topic);

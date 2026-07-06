@@ -52,6 +52,9 @@ public class PlayerService {
     private static final int RANK_CONTAINS_CURRENT_USERNAME = 4;
     private static final int RANK_CONTAINS_PAST_USERNAME = 5;
     private static final int RANK_NO_MATCH = Integer.MAX_VALUE;
+    private static final int DETAIL_PUNISHMENT_CAP = 100;
+    private static final int DETAIL_NOTE_CAP = 100;
+    private static final int DETAIL_LOGIN_CAP = 50;
 
     public List<PlayerSearchResult> searchPlayers(Server server, String searchTerm) {
         String normalizedSearch = searchTerm == null ? "" : searchTerm.trim();
@@ -268,7 +271,8 @@ public class PlayerService {
         List<Punishment> punishments = player.getPunishments();
         PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, punishments);
 
-        List<PunishmentResponse> punishmentResponses = punishmentQueryService.getPlayerPunishmentResponses(server, player);
+        List<PunishmentResponse> punishmentResponses = capPunishments(
+            punishmentQueryService.getPlayerPunishmentResponses(server, player));
 
         List<IPEntry> sanitizedIps = (player.getIpAddresses() != null ? player.getIpAddresses() : List.<IPEntry>of()).stream()
             .map(ip -> IPEntry.builder()
@@ -279,7 +283,7 @@ public class PlayerService {
                 .proxy(ip.isProxy())
                 .hosting(ip.isHosting())
                 .firstLogin(ip.getFirstLogin())
-                .logins(ip.getLogins())
+                .logins(capLogins(ip.getLogins()))
                 .build())
             .toList();
 
@@ -298,7 +302,7 @@ public class PlayerService {
             player.getId(),
             player.getMinecraftUuid().toString(),
             player.getUsernames(),
-            player.getNotes(),
+            capNotes(player.getNotes()),
             sanitizedIps,
             punishmentResponses,
             player.getData(),
@@ -312,6 +316,42 @@ public class PlayerService {
         );
     }
 
+    private List<PunishmentResponse> capPunishments(List<PunishmentResponse> punishments) {
+        if (punishments.size() <= DETAIL_PUNISHMENT_CAP) {
+            return punishments;
+        }
+        List<PunishmentResponse> active = new ArrayList<>();
+        List<PunishmentResponse> inactive = new ArrayList<>();
+        for (PunishmentResponse punishment : punishments) {
+            (punishment.active() ? active : inactive).add(punishment);
+        }
+        inactive.sort(Comparator.comparing(PunishmentResponse::issued, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<PunishmentResponse> capped = new ArrayList<>(active);
+        for (PunishmentResponse punishment : inactive) {
+            if (capped.size() >= DETAIL_PUNISHMENT_CAP) {
+                break;
+            }
+            capped.add(punishment);
+        }
+        return capped;
+    }
+
+    private List<NoteEntry> capNotes(List<NoteEntry> notes) {
+        if (notes == null || notes.size() <= DETAIL_NOTE_CAP) {
+            return notes;
+        }
+        return notes.stream()
+            .sorted(Comparator.comparing(NoteEntry::getDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+            .limit(DETAIL_NOTE_CAP)
+            .toList();
+    }
+
+    private List<Date> capLogins(List<Date> logins) {
+        if (logins == null || logins.size() <= DETAIL_LOGIN_CAP) {
+            return logins;
+        }
+        return new ArrayList<>(logins.subList(logins.size() - DETAIL_LOGIN_CAP, logins.size()));
+    }
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
         Player player;

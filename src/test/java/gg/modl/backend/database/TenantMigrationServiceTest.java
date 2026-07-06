@@ -12,11 +12,11 @@ import static org.mockito.Mockito.when;
 
 import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.DeleteOneModel;
-import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
-import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.player.service.DuplicatePlayerMerger;
@@ -41,7 +41,7 @@ class TenantMigrationServiceTest {
         mockRoleCollections(template, List.of());
         mockEmptyDedupeCollections(template);
 
-        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class));
+        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
@@ -76,7 +76,7 @@ class TenantMigrationServiceTest {
         MongoCollection<Document> migrations = mockMigrationsCollection(template, existingMarker);
         MongoCollection<Document> tickets = mockTicketsCollection(template, 0L, 0L);
 
-        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class));
+        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
         verify(tickets, never()).updateMany(any(Bson.class), anyList());
@@ -94,7 +94,7 @@ class TenantMigrationServiceTest {
         ));
         mockEmptyDedupeCollections(template);
 
-        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class));
+        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
@@ -122,7 +122,7 @@ class TenantMigrationServiceTest {
         ));
         mockEmptyDedupeCollections(template);
 
-        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class));
+        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
@@ -144,7 +144,7 @@ class TenantMigrationServiceTest {
         ));
         mockEmptyDedupeCollections(template);
 
-        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class));
+        TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
         // "Admin" -> "admin" is safe; the colliding "admin" name is skipped so already-migrated docs are never clobbered.
@@ -179,7 +179,7 @@ class TenantMigrationServiceTest {
             return sink;
         });
 
-        new TenantMigrationService(mock(DuplicatePlayerMerger.class)).applyMigrationsForTenant(template);
+        new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class)).applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> deleteCaptor = ArgumentCaptor.forClass(Bson.class);
         verify(settings, times(2)).deleteMany(deleteCaptor.capture());
@@ -228,7 +228,7 @@ class TenantMigrationServiceTest {
         when(players.updateOne(any(Bson.class), any(Bson.class))).thenReturn(UpdateResult.acknowledged(1L, 1L, null));
         when(players.deleteMany(any(Bson.class))).thenReturn(DeleteResult.acknowledged(1));
 
-        new TenantMigrationService(new DuplicatePlayerMerger()).applyMigrationsForTenant(template);
+        new TenantMigrationService(new DuplicatePlayerMerger(), mock(MongoClient.class)).applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> updateFilterCaptor = ArgumentCaptor.forClass(Bson.class);
         ArgumentCaptor<Bson> updateCaptor = ArgumentCaptor.forClass(Bson.class);
@@ -283,7 +283,7 @@ class TenantMigrationServiceTest {
         when(players.updateOne(any(Bson.class), any(Bson.class))).thenReturn(UpdateResult.acknowledged(1L, 1L, null));
         when(players.deleteMany(any(Bson.class))).thenReturn(DeleteResult.acknowledged(1));
 
-        new TenantMigrationService(new DuplicatePlayerMerger()).applyMigrationsForTenant(template);
+        new TenantMigrationService(new DuplicatePlayerMerger(), mock(MongoClient.class)).applyMigrationsForTenant(template);
 
         ArgumentCaptor<Bson> updateFilterCaptor = ArgumentCaptor.forClass(Bson.class);
         verify(players).updateOne(updateFilterCaptor.capture(), any(Bson.class));
@@ -322,23 +322,24 @@ class TenantMigrationServiceTest {
             return sink;
         });
 
-        new TenantMigrationService(mock(DuplicatePlayerMerger.class)).applyMigrationsForTenant(template);
+        MongoClient mongoClient = mock(MongoClient.class);
+        MongoDatabase adminDatabase = mock(MongoDatabase.class);
+        when(mongoClient.getDatabase("admin")).thenReturn(adminDatabase);
+        when(adminDatabase.runCommand(any(Bson.class))).thenReturn(new Document());
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<WriteModel<Document>>> opsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(players).bulkWrite(opsCaptor.capture());
-        List<WriteModel<Document>> operations = opsCaptor.getValue();
-        assertThat(operations).hasSize(2);
-        assertThat(operations.get(0)).isInstanceOf(DeleteOneModel.class);
-        assertThat(operations.get(1)).isInstanceOf(InsertOneModel.class);
+        new TenantMigrationService(mock(DuplicatePlayerMerger.class), mongoClient).applyMigrationsForTenant(template);
 
-        DeleteOneModel<Document> delete = (DeleteOneModel<Document>) operations.get(0);
-        assertThat(toJson(delete.getFilter())).contains("$oid").contains(legacyId.toHexString());
+        ArgumentCaptor<Bson> deleteFilterCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(players).deleteOne(deleteFilterCaptor.capture());
+        assertThat(toJson(deleteFilterCaptor.getValue())).contains("$oid").contains(legacyId.toHexString());
 
-        InsertOneModel<Document> insert = (InsertOneModel<Document>) operations.get(1);
-        Document inserted = insert.getDocument();
-        assertThat(inserted.get("_id")).isInstanceOf(String.class).isEqualTo(legacyId.toHexString());
-        assertThat(inserted.getString("minecraftUuid")).isEqualTo(uuid);
+        ArgumentCaptor<Bson> replaceFilterCaptor = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<Document> replacementCaptor = ArgumentCaptor.forClass(Document.class);
+        verify(players).replaceOne(replaceFilterCaptor.capture(), replacementCaptor.capture(), any(ReplaceOptions.class));
+        assertThat(toJson(replaceFilterCaptor.getValue())).contains(legacyId.toHexString());
+        Document replacement = replacementCaptor.getValue();
+        assertThat(replacement.get("_id")).isInstanceOf(String.class).isEqualTo(legacyId.toHexString());
+        assertThat(replacement.getString("minecraftUuid")).isEqualTo(uuid);
     }
 
     private MappingMongoConverter playerConverter() {

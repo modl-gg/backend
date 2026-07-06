@@ -1,19 +1,13 @@
 package gg.modl.backend.storage.controller;
 
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.infrastructure.util.ByteFormatUtil;
-import gg.modl.backend.limits.ServerLimitPolicy;
-import gg.modl.backend.limits.ServerLimits;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.storage.dto.response.PresignUploadResponse;
-import gg.modl.backend.storage.dto.response.UploadResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
 import gg.modl.backend.storage.service.StorageMetadataService;
-import gg.modl.backend.storage.service.StorageQuotaService;
+import gg.modl.backend.storage.service.UploadOrchestrationService;
 import gg.modl.proto.modl.v1.ConfirmUploadRequest;
 import gg.modl.proto.modl.v1.MediaConfigResponse;
 import gg.modl.proto.modl.v1.PresignUploadRequest;
@@ -34,10 +28,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PanelMediaController {
     private final S3StorageService s3StorageService;
-    private final StorageQuotaService quotaService;
     private final MediaValidationService validationService;
     private final StorageMetadataService storageMetadataService;
-    private final ServerLimitPolicy serverLimitPolicy;
+    private final UploadOrchestrationService uploadOrchestrationService;
 
     @GetMapping("/config")
     public ResponseEntity<MediaConfigResponse> getMediaConfig(HttpServletRequest request) {
@@ -60,12 +53,8 @@ public class PanelMediaController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-
         String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
-
-        if (!validationService.isKeyOwnedByServer(normalizedKey, server.getDatabaseName())) {
-            throw new ForbiddenException("Access denied");
-        }
+        validationService.assertKeyOwnedByServer(server, normalizedKey);
 
         boolean deleted = s3StorageService.deleteFile(normalizedKey);
         if (deleted) {
@@ -81,39 +70,22 @@ public class PanelMediaController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        boolean isPremium = server.getPlan() == ServerPlan.PREMIUM;
+        UploadOrchestrationService.PresignOutcome outcome = uploadOrchestrationService.presign(server,
+            new UploadOrchestrationService.UploadPresignRequest(
+                presignRequest.getUploadType(),
+                presignRequest.getFileName(),
+                presignRequest.getContentType(),
+                presignRequest.getFileSize(),
+                presignRequest.hasEntityId() ? presignRequest.getEntityId() : null,
+                server.getPlan() == ServerPlan.PREMIUM,
+                false
+            ));
 
-        MediaValidationService.ValidationResult validation = validationService.validateMetadata(
-            presignRequest.getFileName(),
-            presignRequest.getContentType(),
-            presignRequest.getFileSize(),
-            presignRequest.getUploadType(),
-            isPremium
-        );
-
-        if (!validation.valid()) {
-            return ResponseEntity.badRequest().body(Map.of("error", validation.error()));
-        }
-
-        ServerLimits limits = serverLimitPolicy.resolve(server);
-        if (limits.exceedsUploadLimit(presignRequest.getFileSize())) {
-            return ResponseEntity.badRequest().body(Map.of(
-                "error", "File exceeds maximum size of " + ByteFormatUtil.formatCompact(limits.getMaxUploadBytes())));
-        }
-
-        if (!quotaService.canUpload(server, presignRequest.getFileSize())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
-        }
-
-        PresignUploadResponse response = s3StorageService.createPresignedUploadUrl(
-            server,
-            presignRequest.getUploadType(),
-            presignRequest.getFileName(),
-            presignRequest.getContentType(),
-            presignRequest.getFileSize(),
-            presignRequest.hasEntityId() ? presignRequest.getEntityId() : null
-        );
-        return ResponseEntity.ok(StorageProtoMapper.toPresignUploadResponse(response));
+        return switch (outcome.status()) {
+            case SUCCESS -> ResponseEntity.ok(StorageProtoMapper.toPresignUploadResponse(outcome.upload()));
+            case VALIDATION_FAILED, QUOTA_EXCEEDED, TEMP_LIMIT_EXCEEDED ->
+                ResponseEntity.badRequest().body(Map.of("error", outcome.message() != null ? outcome.message() : "Upload rejected"));
+        };
     }
 
     @PostMapping("/confirm")
@@ -122,36 +94,17 @@ public class PanelMediaController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        UploadOrchestrationService.ConfirmOutcome outcome =
+            uploadOrchestrationService.confirm(server, confirmRequest.getKey(), false);
 
-        String key = confirmRequest.getKey();
-
-        if (!validationService.isKeyOwnedByServer(key, server.getDatabaseName())) {
-            throw new ForbiddenException("Access denied");
-        }
-
-        UploadResponse uploadDetails = s3StorageService.getUploadDetails(key);
-        if (uploadDetails == null) {
-            return ResponseEntity.badRequest().body(Map.of(
+        return switch (outcome.status()) {
+            case SUCCESS -> ResponseEntity.ok(StorageProtoMapper.toUploadResponse(outcome.upload()));
+            case UPLOAD_NOT_FOUND -> ResponseEntity.badRequest().body(Map.of(
                 "error", "Upload not found",
                 "message", "The file was not uploaded or the presigned URL expired"
             ));
-        }
-        StorageQuotaService.ConfirmResult confirmResult =
-            quotaService.confirmAndRecordFile(server, key, uploadDetails.size(), uploadDetails.contentType());
-        switch (confirmResult) {
-            case QUOTA_EXCEEDED -> {
-                storageMetadataService.cleanupOrphanedUpload(server, key, uploadDetails.size(), uploadDetails.contentType());
-                return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
-            }
-            case RECORD_FAILED -> {
-                storageMetadataService.cleanupOrphanedUpload(server, key, uploadDetails.size(), uploadDetails.contentType());
-                return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
-            }
-            default -> {
-                // SUCCESS
-            }
-        }
-
-        return ResponseEntity.ok(StorageProtoMapper.toUploadResponse(uploadDetails));
+            case QUOTA_EXCEEDED, TEMP_LIMIT_EXCEEDED -> ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+            case RECORD_FAILED -> ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
+        };
     }
 }

@@ -3,8 +3,10 @@ package gg.modl.backend.database.mongo.repository;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.StorageFileDocumentFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -25,26 +27,26 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
     }
 
     public Optional<StorageFileDocument> findByKey(Server server, String key) {
-        return findOne(server, Query.query(Criteria.where("key").is(key)));
+        return findOne(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(key)));
     }
 
     public List<StorageFileDocument> findByKeyPrefix(Server server, String prefix, int limit) {
-        Query query = Query.query(Criteria.where("key").regex("^" + escapeRegex(prefix)))
-            .with(Sort.by(Sort.Direction.DESC, "createdAt"))
+        Query query = Query.query(Criteria.where(StorageFileDocumentFields.KEY).regex("^" + escapeRegex(prefix)))
+            .with(Sort.by(Sort.Direction.DESC, StorageFileDocumentFields.CREATED_AT))
             .limit(limit);
         return find(server, query);
     }
 
     public void deleteByKey(Server server, String key) {
-        remove(server, Query.query(Criteria.where("key").is(key)));
+        remove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(key)));
     }
 
     public void deleteByKeys(Server server, List<String> keys) {
-        remove(server, Query.query(Criteria.where("key").in(keys)));
+        remove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).in(keys)));
     }
 
     public List<StorageFileDocument> findByKeys(Server server, List<String> keys) {
-        return find(server, Query.query(Criteria.where("key").in(keys)));
+        return find(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).in(keys)));
     }
 
     public void deleteByKeyNotIn(Server server, List<String> keys) {
@@ -53,12 +55,38 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
         if (keys == null || keys.isEmpty()) {
             return;
         }
-        remove(server, Query.query(Criteria.where("key").nin(keys)));
+        remove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).nin(keys)));
+    }
+
+    public long sumSizeByKeyPrefixesSince(Server server, List<String> prefixes, Date createdAfter) {
+        if (prefixes == null || prefixes.isEmpty()) {
+            return 0L;
+        }
+
+        Criteria[] prefixCriteria = prefixes.stream()
+            .map(prefix -> Criteria.where(StorageFileDocumentFields.KEY).regex("^" + escapeRegex(prefix)))
+            .toArray(Criteria[]::new);
+
+        Criteria match = new Criteria().andOperator(
+            new Criteria().orOperator(prefixCriteria),
+            Criteria.where(StorageFileDocumentFields.CREATED_AT).gte(createdAfter)
+        );
+
+        Aggregation aggregation = Aggregation.newAggregation(
+            Aggregation.match(match),
+            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as("totalSize")
+        );
+
+        Document result = aggregate(server, aggregation, Document.class).getUniqueMappedResult();
+        if (result == null) {
+            return 0L;
+        }
+        return result.get("totalSize", Number.class).longValue();
     }
 
     public Map<String, Long> aggregateStorageByCategory(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.group("category").sum("size").as("totalSize")
+            Aggregation.group(StorageFileDocumentFields.CATEGORY).sum(StorageFileDocumentFields.SIZE).as("totalSize")
         );
 
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
@@ -82,7 +110,7 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
 
     public long sumTotalSize(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.group().sum("size").as("totalSize")
+            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as("totalSize")
         );
 
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);

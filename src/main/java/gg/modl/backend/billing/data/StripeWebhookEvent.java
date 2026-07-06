@@ -1,6 +1,7 @@
 package gg.modl.backend.billing.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.util.Date;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -13,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@GenerateMongoFields
 public class StripeWebhookEvent {
     @Id
     private String id;

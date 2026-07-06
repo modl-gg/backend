@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.same;
@@ -27,6 +26,7 @@ import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.controller.MinecraftStaffController;
@@ -51,6 +51,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MinecraftStaffV3ControllerTest {
     private StaffService staffService;
+    private RoleAuthorization roleAuthorization;
     private MockMvc v3MockMvc;
     private MockMvc v1MockMvc;
     private Server server;
@@ -58,17 +59,18 @@ class MinecraftStaffV3ControllerTest {
     @BeforeEach
     void setUp() {
         staffService = mock(StaffService.class);
-        when(staffService.resolveMinecraftPerformer(any(), any()))
-            .thenReturn(new StaffService.MinecraftPerformer(null, false));
+        roleAuthorization = mock(RoleAuthorization.class);
+        when(roleAuthorization.minecraftPerformer(any(), any()))
+            .thenReturn(RoleAuthorization.PerformerAuthority.unidentified());
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
-        v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffV3Controller(staffService))
+        v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffV3Controller(staffService, roleAuthorization))
             .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
 
-        v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffController(staffService))
+        v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffController(staffService, roleAuthorization))
             .setControllerAdvice(new GlobalExceptionHandler())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
@@ -172,7 +174,7 @@ class MinecraftStaffV3ControllerTest {
 
     @Test
     void v3UpdateStaffRoleCallsServiceAndReturnsBinarySuccess() throws Exception {
-        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean())).thenReturn(true);
+        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any())).thenReturn(true);
         UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
             .setRole("Admin")
             .build();
@@ -189,12 +191,12 @@ class MinecraftStaffV3ControllerTest {
         assertEquals(200, response.getStatus());
         assertTrue(response.getSuccess());
         assertFalse(response.hasMessage());
-        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("Admin"), any());
     }
 
     @Test
     void v3UpdateStaffRoleMissingStaffReturnsBinaryNotFound() throws Exception {
-        when(staffService.updateMinecraftStaffRole(eq(server), eq("missing-staff"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean())).thenReturn(false);
+        when(staffService.updateMinecraftStaffRole(eq(server), eq("missing-staff"), eq("Admin"), any())).thenReturn(false);
         UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
             .setRole("Admin")
             .build();
@@ -211,12 +213,12 @@ class MinecraftStaffV3ControllerTest {
         assertEquals(404, response.getStatus());
         assertFalse(response.getSuccess());
         assertEquals("Staff member not found", response.getMessage());
-        verify(staffService).updateMinecraftStaffRole(same(server), eq("missing-staff"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("missing-staff"), eq("Admin"), any());
     }
 
     @Test
     void v3UpdateStaffRoleUnknownRoleReturnsBinaryApiError() throws Exception {
-        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("MissingRole"), any(), any(), anyBoolean(), anyBoolean()))
+        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("MissingRole"), any()))
             .thenThrow(new ResourceNotFoundException("Role not found"));
         UpdateStaffRoleRequest request = UpdateStaffRoleRequest.newBuilder()
             .setRole("MissingRole")
@@ -234,7 +236,7 @@ class MinecraftStaffV3ControllerTest {
         assertEquals(404, error.getStatusCode());
         assertEquals("NOT_FOUND", error.getCode());
         assertEquals("Role not found", error.getMessage());
-        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("MissingRole"), any(), any(), anyBoolean(), anyBoolean());
+        verify(staffService).updateMinecraftStaffRole(same(server), eq("staff-1"), eq("MissingRole"), any());
     }
 
     @Test
@@ -359,7 +361,7 @@ class MinecraftStaffV3ControllerTest {
 
     @Test
     void v1UpdateStaffRoleStillReturnsJsonEnvelope() throws Exception {
-        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean())).thenReturn(true);
+        when(staffService.updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any())).thenReturn(true);
 
         MvcResult result = v1MockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/staff-1/role")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -375,7 +377,7 @@ class MinecraftStaffV3ControllerTest {
         assertEquals(200, json.get("status").asInt());
         assertTrue(json.get("success").asBoolean());
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
-        verify(staffService).updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any(), any(), anyBoolean(), anyBoolean());
+        verify(staffService).updateMinecraftStaffRole(eq(server), eq("staff-1"), eq("Admin"), any());
     }
 
     @Test

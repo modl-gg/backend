@@ -15,4 +15,12 @@ public final class SeverityLevel {
             default -> "regular";
         };
     }
+
+    public static <T> T select(String severity, T low, T regular, T severe) {
+        return switch (normalize(severity)) {
+            case "low" -> low;
+            case "severe" -> severe;
+            default -> regular;
+        };
+    }
 }

@@ -1,7 +1,6 @@
 package gg.modl.backend.staff.controller;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -12,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.service.StaffService;
@@ -23,18 +23,20 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MinecraftStaffControllerTest {
     private StaffService staffService;
+    private RoleAuthorization roleAuthorization;
     private MockMvc mockMvc;
     private Server server;
 
     @BeforeEach
     void setUp() {
         staffService = mock(StaffService.class);
+        roleAuthorization = mock(RoleAuthorization.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
-        when(staffService.resolveMinecraftPerformer(any(), any()))
-            .thenReturn(new StaffService.MinecraftPerformer(null, false));
+        when(roleAuthorization.minecraftPerformer(any(), any()))
+            .thenReturn(RoleAuthorization.PerformerAuthority.unidentified());
 
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new MinecraftStaffController(staffService))
+            .standaloneSetup(new MinecraftStaffController(staffService, roleAuthorization))
             .defaultRequest(patch("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }
@@ -42,7 +44,7 @@ class MinecraftStaffControllerTest {
     @Test
     void updateStaffRoleUsesMinecraftSyncService() throws Exception {
         when(staffService.updateMinecraftStaffRole(
-                eq(server), eq("staff-1"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean()))
+                eq(server), eq("staff-1"), eq("Moderator"), any()))
             .thenReturn(true);
 
         mockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/staff-1/role")
@@ -53,13 +55,13 @@ class MinecraftStaffControllerTest {
             .andExpect(jsonPath("$.success").value(true));
 
         verify(staffService).updateMinecraftStaffRole(
-            eq(server), eq("staff-1"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean());
+            eq(server), eq("staff-1"), eq("Moderator"), any());
     }
 
     @Test
     void updateStaffRoleReturnsNotFoundForMissingStaff() throws Exception {
         when(staffService.updateMinecraftStaffRole(
-                eq(server), eq("missing"), eq("Moderator"), any(), any(), anyBoolean(), anyBoolean()))
+                eq(server), eq("missing"), eq("Moderator"), any()))
             .thenReturn(false);
 
         mockMvc.perform(patch(RESTMappingV1.MINECRAFT_STAFF + "/missing/role")

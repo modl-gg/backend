@@ -68,23 +68,13 @@ public class MinecraftSyncController {
         ));
     }
 
-    //public record SyncRequest(
-    //    @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String lastSyncTimestamp,
-    //    @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<OnlinePlayer> onlinePlayers,
-    //    @Valid ServerStatus serverStatus,
-    //    @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
-    //    @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<ChatLogEntry> chatLogs,
-    //    @Valid @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<CommandLogEntry> commandLogs
-    //) {
-    //}
-
     public record SyncRequest(
-        String lastSyncTimestamp,
-        List<OnlinePlayer> onlinePlayers,
-        ServerStatus serverStatus,
-        String serverName,
-        List<ChatLogEntry> chatLogs,
-        List<CommandLogEntry> commandLogs,
+        @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String lastSyncTimestamp,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid OnlinePlayer> onlinePlayers,
+        @Valid ServerStatus serverStatus,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid ChatLogEntry> chatLogs,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid CommandLogEntry> commandLogs,
         String serverInstanceId
     ) {
     }

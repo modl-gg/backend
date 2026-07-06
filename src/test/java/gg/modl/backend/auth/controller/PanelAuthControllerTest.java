@@ -9,11 +9,16 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.AuthService;
+import gg.modl.backend.auth.EmailChangeService;
+import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
+import gg.modl.backend.billing.service.BillingService;
+import gg.modl.backend.email.EmailService;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
@@ -60,13 +65,24 @@ class PanelAuthControllerTest {
         SessionService sessionService = mock(SessionService.class);
         StaffService staffService = mock(StaffService.class);
         PermissionService permissionService = mock(PermissionService.class);
+        EmailChangeService emailChangeService = new EmailChangeService(
+            permissionService,
+            authService,
+            staffService,
+            mock(ServerService.class),
+            mock(WebAuthnService.class),
+            mock(BillingService.class),
+            sessionService,
+            mock(EmailService.class)
+        );
         PanelAuthController controller = new PanelAuthController(
             authService,
             sessionService,
             authConfiguration,
             staffService,
             permissionService,
-            new CookieUtil(authConfiguration)
+            new CookieUtil(authConfiguration),
+            emailChangeService
         );
         Server server = server();
         Staff staff = new Staff();
@@ -79,9 +95,9 @@ class PanelAuthControllerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         when(permissionService.isSuperAdmin(server, "old@example.com")).thenReturn(false);
-        when(permissionService.isAuthorizedEmail(server, "new@example.com")).thenReturn(true);
+        when(staffService.isStaffEmailInUse(server, "new@example.com", "old@example.com")).thenReturn(false);
         when(authService.verifyCode(server, "new@example.com", "123456")).thenReturn(true);
-        when(staffService.updateEmail(server, "old@example.com", "new@example.com", false)).thenReturn(Optional.of(staff));
+        when(staffService.applyStaffEmailChange(server, "old@example.com", "new@example.com")).thenReturn(Optional.of(staff));
         when(sessionService.createSession(server, "new@example.com", "127.0.0.1", null)).thenReturn(newSession);
 
         controller.updateEmail(request, response, PanelUpdateEmailWithCodeRequest.newBuilder()
@@ -100,7 +116,8 @@ class PanelAuthControllerTest {
             authConfiguration,
             mock(StaffService.class),
             mock(PermissionService.class),
-            new CookieUtil(authConfiguration)
+            new CookieUtil(authConfiguration),
+            mock(EmailChangeService.class)
         );
     }
 

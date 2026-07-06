@@ -1,9 +1,20 @@
 package gg.modl.backend.player.controller;
 
-import com.google.protobuf.ListValue;
-import com.google.protobuf.NullValue;
-import com.google.protobuf.Struct;
-import com.google.protobuf.Value;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.dateAwareString;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.legacyStruct;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalBoolean;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalInt;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalLong;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringObjectMap;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.proto.modl.v1.Account;
 import gg.modl.proto.modl.v1.IPEntry;
@@ -30,18 +41,8 @@ import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.SimpleResponse;
 import gg.modl.proto.modl.v1.SimplePunishment;
 import gg.modl.proto.modl.v1.UsernameEntry;
-import java.util.Base64;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.function.Consumer;
-import java.util.function.IntConsumer;
-import java.util.function.LongConsumer;
-import org.bson.types.Binary;
-import org.bson.types.ObjectId;
 
 public final class MinecraftPlayerProtoMapper {
     private MinecraftPlayerProtoMapper() {
@@ -56,7 +57,7 @@ public final class MinecraftPlayerProtoMapper {
             .forEach(response::addActivePunishments);
 
         listOfMaps(body.get("pendingNotifications")).stream()
-            .map(MinecraftPlayerProtoMapper::toStruct)
+            .map(ProtoMapperSupport::legacyStruct)
             .forEach(response::addPendingNotifications);
 
         list(body.get("pendingIpLookups")).stream()
@@ -68,12 +69,6 @@ public final class MinecraftPlayerProtoMapper {
             .forEach(response::addPendingStatWipes);
 
         return response.build();
-    }
-
-    static Map<String, Object> structToMap(Struct struct) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        struct.getFieldsMap().forEach((key, value) -> result.put(key, valueToObject(value)));
-        return result;
     }
 
     static SimpleResponse toSimpleResponse(Map<String, Object> body) {
@@ -254,12 +249,12 @@ public final class MinecraftPlayerProtoMapper {
             .forEach(builder::addPunishments);
 
         listOfMaps(account.get("pendingNotifications")).stream()
-            .map(MinecraftPlayerProtoMapper::toStruct)
+            .map(ProtoMapperSupport::legacyStruct)
             .forEach(builder::addPendingNotifications);
 
         Object data = account.get("data");
         if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(toStruct(stringObjectMap(dataMap)));
+            builder.setData(legacyStruct(stringObjectMap(dataMap)));
         }
 
         return builder.build();
@@ -294,7 +289,7 @@ public final class MinecraftPlayerProtoMapper {
         setOptionalString(builder::setAsn, ip.get("asn"));
 
         list(ip.get("logins")).stream()
-            .map(MinecraftPlayerProtoMapper::dateAwareString)
+            .map(ProtoMapperSupport::dateAwareString)
             .forEach(builder::addLogins);
 
         return builder.build();
@@ -356,13 +351,13 @@ public final class MinecraftPlayerProtoMapper {
 
         Object data = punishment.get("data");
         if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(toStruct(stringObjectMap(dataMap)));
+            builder.setData(legacyStruct(stringObjectMap(dataMap)));
         }
 
         return builder.build();
     }
 
-    private static PunishmentModification toPunishmentModification(Map<String, Object> modification) {
+    static PunishmentModification toPunishmentModification(Map<String, Object> modification) {
         PunishmentModification.Builder builder = PunishmentModification.newBuilder()
             .setId(stringValue(modification.get("id")))
             .setType(stringValue(modification.get("type")))
@@ -375,13 +370,13 @@ public final class MinecraftPlayerProtoMapper {
         setOptionalString(builder::setAppealTicketId, modification.get("appealTicketId"));
         Object data = modification.get("data");
         if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(toStruct(stringObjectMap(dataMap)));
+            builder.setData(legacyStruct(stringObjectMap(dataMap)));
         }
 
         return builder.build();
     }
 
-    private static PunishmentNote toPunishmentNote(Map<String, Object> note) {
+    static PunishmentNote toPunishmentNote(Map<String, Object> note) {
         PunishmentNote.Builder builder = PunishmentNote.newBuilder()
             .setId(stringValue(note.get("id")))
             .setText(stringValue(note.get("text")))
@@ -392,7 +387,7 @@ public final class MinecraftPlayerProtoMapper {
         return builder.build();
     }
 
-    private static PunishmentEvidence toPunishmentEvidence(Map<String, Object> evidence) {
+    static PunishmentEvidence toPunishmentEvidence(Map<String, Object> evidence) {
         PunishmentEvidence.Builder builder = PunishmentEvidence.newBuilder()
             .setType(stringValue(evidence.get("type")))
             .setUploadedAt(longValue(evidence.get("uploadedAt")));
@@ -427,7 +422,7 @@ public final class MinecraftPlayerProtoMapper {
             .forEach(builder::addAssignedTo);
 
         listOfMaps(report.get("chatMessages")).stream()
-            .map(MinecraftPlayerProtoMapper::toStruct)
+            .map(ProtoMapperSupport::legacyStruct)
             .forEach(builder::addChatMessages);
 
         setOptionalString(builder::setReplayUrl, report.get("replayUrl"));
@@ -499,165 +494,8 @@ public final class MinecraftPlayerProtoMapper {
             .build();
     }
 
-    public static Struct toStruct(Map<String, Object> map) {
-        Struct.Builder builder = Struct.newBuilder();
-        map.forEach((key, value) -> builder.putFields(key, objectToValue(value)));
-        return builder.build();
-    }
-
-    private static Object valueToObject(Value value) {
-        return switch (value.getKindCase()) {
-            case NULL_VALUE, KIND_NOT_SET -> null;
-            case NUMBER_VALUE -> value.getNumberValue();
-            case STRING_VALUE -> value.getStringValue();
-            case BOOL_VALUE -> value.getBoolValue();
-            case STRUCT_VALUE -> structToMap(value.getStructValue());
-            case LIST_VALUE -> value.getListValue().getValuesList().stream()
-                .map(MinecraftPlayerProtoMapper::valueToObject)
-                .toList();
-        };
-    }
-
-    private static Value objectToValue(Object object) {
-        Value.Builder builder = Value.newBuilder();
-        if (object == null) {
-            return builder.setNullValue(NullValue.NULL_VALUE).build();
-        }
-        if (object instanceof String string) {
-            return builder.setStringValue(string).build();
-        }
-        if (object instanceof Number number) {
-            return builder.setNumberValue(number.doubleValue()).build();
-        }
-        if (object instanceof Boolean bool) {
-            return builder.setBoolValue(bool).build();
-        }
-        if (object instanceof Map<?, ?> map) {
-            Struct.Builder struct = Struct.newBuilder();
-            map.forEach((key, value) -> struct.putFields(Objects.toString(key), objectToValue(value)));
-            return builder.setStructValue(struct).build();
-        }
-        if (object instanceof Iterable<?> iterable) {
-            ListValue.Builder list = ListValue.newBuilder();
-            iterable.forEach(item -> list.addValues(objectToValue(item)));
-            return builder.setListValue(list).build();
-        }
-        if (object instanceof Date date) {
-            return builder.setStringValue(date.toInstant().toString()).build();
-        }
-        if (object instanceof ObjectId objectId) {
-            return builder.setStringValue(objectId.toHexString()).build();
-        }
-        if (object instanceof UUID uuid) {
-            return builder.setStringValue(uuid.toString()).build();
-        }
-        if (object instanceof Binary binary) {
-            return builder.setStringValue(Base64.getEncoder().encodeToString(binary.getData())).build();
-        }
-        return builder.setStringValue(ProtoMapperSupport.coerceUnexpectedToString(object)).build();
-    }
-
-    private static List<?> list(Object object) {
-        if (object instanceof List<?> values) {
-            return values;
-        }
-        return List.of();
-    }
-
-    private static List<Map<String, Object>> listOfMaps(Object object) {
-        return list(object).stream()
-            .filter(Map.class::isInstance)
-            .map(value -> {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> map = (Map<String, Object>) value;
-                return map;
-            })
-            .toList();
-    }
-
-    private static Map<String, Object> map(Object object) {
-        if (object instanceof Map<?, ?> rawMap) {
-            return stringObjectMap(rawMap);
-        }
-        return Map.of();
-    }
-
-    private static Map<String, Object> stringObjectMap(Map<?, ?> rawMap) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        rawMap.forEach((key, value) -> map.put(Objects.toString(key), value));
-        return map;
-    }
-
     private static Object nestedOrTopLevel(Map<String, Object> nested, Map<String, Object> topLevel, String key) {
         return nested.containsKey(key) ? nested.get(key) : topLevel.get(key);
-    }
-
-    private static String stringValue(Object value) {
-        return value == null ? "" : Objects.toString(value);
-    }
-
-    private static String dateAwareString(Object value) {
-        if (value instanceof Date date) {
-            return date.toInstant().toString();
-        }
-        return value == null ? "" : Objects.toString(value);
-    }
-
-    private static int intValue(Object value) {
-        if (value instanceof Number number) {
-            return number.intValue();
-        }
-        if (value instanceof String string && !string.isBlank()) {
-            return Integer.parseInt(string);
-        }
-        return 0;
-    }
-
-    private static long longValue(Object value) {
-        if (value instanceof Date date) {
-            return date.getTime();
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String string && !string.isBlank()) {
-            return Long.parseLong(string);
-        }
-        return 0L;
-    }
-
-    private static boolean booleanValue(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        }
-        if (value instanceof String string) {
-            return Boolean.parseBoolean(string);
-        }
-        return false;
-    }
-
-    private static void setOptionalString(Consumer<String> setter, Object value) {
-        if (value != null) {
-            setter.accept(Objects.toString(value));
-        }
-    }
-
-    private static void setOptionalLong(LongConsumer setter, Object value) {
-        if (value != null) {
-            setter.accept(longValue(value));
-        }
-    }
-
-    private static void setOptionalInt(IntConsumer setter, Object value) {
-        if (value != null) {
-            setter.accept(intValue(value));
-        }
-    }
-
-    private static void setOptionalBoolean(Consumer<Boolean> setter, Object value) {
-        if (value != null) {
-            setter.accept(booleanValue(value));
-        }
     }
 
     private static void setStringIfPresent(Object target, String methodName, Object value) {

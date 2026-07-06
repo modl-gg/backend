@@ -125,16 +125,7 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
             .stream()
-            .map(ticket -> {
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("id", ticket.getId());
-                response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-                response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-                response.put("subject", ticket.getSubject());
-                response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-                response.put("createdAt", ticket.getCreated());
-                return response;
-            })
+            .map(minecraftTicketService::toPlayerTicketItem)
             .toList();
 
         return ResponseEntity.ok(Map.of(

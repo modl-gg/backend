@@ -460,7 +460,7 @@ public class MinecraftPlayerService {
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        int pardoned = 0;
+        List<Punishment> targets = new ArrayList<>();
 
         for (Punishment punishment : player.getPunishments()) {
             if (isAlreadyPardoned(punishment)) {
@@ -481,21 +481,14 @@ public class MinecraftPlayerService {
                                || ("mute".equals(requestedType) && EnforcementCategory.MUTE.name().equals(effectiveCategory) && (isActive || isUnstarted));
             }
 
-            if (!shouldPardon) {
-                continue;
-            }
-
-            PunishmentQueryService.PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
-                server,
-                punishment.getId(),
-                issuerName,
-                issuerId,
-                reason
-            );
-            if (result.status() == PunishmentQueryService.PunishmentOperationStatus.SUCCESS) {
-                pardoned++;
+            if (shouldPardon) {
+                targets.add(punishment);
             }
         }
+
+        int pardoned = targets.isEmpty()
+                       ? 0
+                       : punishmentLifecycleService.pardonPunishments(server, player, targets, issuerName, issuerId, reason);
 
         return Map.of(
             "status", 200,

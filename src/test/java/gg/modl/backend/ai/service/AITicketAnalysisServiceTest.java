@@ -18,6 +18,7 @@ import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.billing.service.UsageTrackingService;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.limits.DefaultServerLimitPolicy;
@@ -27,8 +28,10 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
@@ -70,6 +73,9 @@ class AITicketAnalysisServiceTest {
     @Mock
     private SystemPromptMongoRepository systemPromptRepository;
 
+    @Mock
+    private StaffMongoRepository staffRepository;
+
     private AITicketAnalysisService aiTicketAnalysisService;
 
     @BeforeEach
@@ -84,7 +90,8 @@ class AITicketAnalysisServiceTest {
             usageTrackingService,
             new DefaultServerLimitPolicy(),
             new ObjectMapper(),
-            systemPromptRepository
+            systemPromptRepository,
+            staffRepository
         );
     }
 
@@ -156,12 +163,14 @@ class AITicketAnalysisServiceTest {
             ))
             .build();
 
+        Staff actingStaff = Staff.builder().email("mod@example.com").username("ServerDerivedStaff").build();
         when(ticketRepository.findById(server, "REPORT-2")).thenReturn(Optional.of(ticket));
         when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
             .thenAnswer(invocation -> invocation.getArgument(1));
         when(punishmentTypeService.getPunishmentTypeName(server, 4)).thenReturn("Ban");
+        when(staffRepository.findByEmailIgnoreCase(server, "mod@example.com")).thenReturn(Optional.of(actingStaff));
 
-        var result = aiTicketAnalysisService.applyAISuggestion(server, "REPORT-2", "Moderator");
+        var result = aiTicketAnalysisService.applyAISuggestion(server, "REPORT-2", "mod@example.com");
 
         assertTrue(result.success());
 
@@ -174,6 +183,8 @@ class AITicketAnalysisServiceTest {
         assertFalse(updatedTicket.getAiAnalysis().isWasAppliedAutomatically());
         assertEquals(1, updatedTicket.getReplies().size());
         assertEquals(1, updatedTicket.getNotes().size());
+        TicketNote issuedNote = updatedTicket.getNotes().get(0);
+        assertEquals("ServerDerivedStaff", issuedNote.getIssuerName());
         verify(punishmentLifecycleService).createPunishment(any(Server.class), any(UUID.class), any());
     }
 
@@ -245,13 +256,22 @@ class AITicketAnalysisServiceTest {
         when(ticketRepository.findById(server, "REPORT-3")).thenReturn(Optional.of(ticket));
         when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
         when(punishmentTypeService.getPunishmentTypeName(server, 4)).thenReturn("Ban");
-        when(llmService.generate(any())).thenReturn("""
-            {"analysis":"violation","suggestedAction":{"punishmentTypeId":4,"severity":"severe"}}
+        when(llmService.generate(any(), any())).thenReturn("""
+            {"analysis":"violation","suggestedAction":{"punishmentTypeId":4,"severity":"severe"},"confidence":0.95}
             """);
 
         aiTicketAnalysisService.analyzeTicketAsync(server, "REPORT-3");
 
         verify(punishmentLifecycleService, times(1)).createPunishment(any(Server.class), any(UUID.class), any());
+
+        ArgumentCaptor<String> systemInstructionCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> userContentCaptor = ArgumentCaptor.forClass(String.class);
+        verify(llmService).generate(systemInstructionCaptor.capture(), userContentCaptor.capture());
+        String userContent = userContentCaptor.getValue();
+        assertTrue(userContent.contains("BEGIN_UNTRUSTED_CHAT_DATA"));
+        assertTrue(userContent.contains("END_UNTRUSTED_CHAT_DATA"));
+        assertTrue(userContent.contains("bad chat"));
+        assertFalse(systemInstructionCaptor.getValue().contains("bad chat"));
 
         ArgumentCaptor<Ticket> updatedCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).saveEntity(any(Server.class), updatedCaptor.capture());
@@ -277,7 +297,7 @@ class AITicketAnalysisServiceTest {
         when(serverRepository.findAIUsageSnapshotById("server-id")).thenReturn(Optional.empty());
         when(ticketRepository.findById(server, "REPORT-4")).thenReturn(Optional.of(ticket));
         when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
-        when(llmService.generate(any())).thenReturn("""
+        when(llmService.generate(any(), any())).thenReturn("""
             {"analysis":"violation","suggestedAction":{"punishmentTypeId":4,"severity":"severe"}}
             """);
 
@@ -305,7 +325,7 @@ class AITicketAnalysisServiceTest {
         when(serverRepository.findAIUsageSnapshotById("server-id")).thenReturn(Optional.empty());
         when(ticketRepository.findById(server, "REPORT-5")).thenReturn(Optional.of(ticket));
         when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
-        when(llmService.generate(any())).thenReturn("""
+        when(llmService.generate(any(), any())).thenReturn("""
             {"analysis":"violation","suggestedAction":{"punishmentTypeId":4,"severity":"severe"}}
             """);
 
@@ -333,7 +353,7 @@ class AITicketAnalysisServiceTest {
         when(serverRepository.findAIUsageSnapshotById("server-id")).thenReturn(Optional.empty());
         when(ticketRepository.findById(server, "REPORT-6")).thenReturn(Optional.of(ticket));
         when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
-        when(llmService.generate(any())).thenReturn("""
+        when(llmService.generate(any(), any())).thenReturn("""
             {"analysis":"x","suggestedAction":{"punishmentTypeId":4}}
             """);
 
@@ -363,7 +383,7 @@ class AITicketAnalysisServiceTest {
         when(ticketRepository.findById(server, "REPORT-7")).thenReturn(Optional.of(ticket));
         when(systemPromptRepository.findActive()).thenReturn(Optional.empty());
         // No "analysis" field -> parseResponse returns null
-        when(llmService.generate(any())).thenReturn("not json at all");
+        when(llmService.generate(any(), any())).thenReturn("not json at all");
 
         aiTicketAnalysisService.analyzeTicketAsync(server, "REPORT-7");
 

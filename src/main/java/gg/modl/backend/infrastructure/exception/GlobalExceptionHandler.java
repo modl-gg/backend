@@ -58,7 +58,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BaseApplicationException.class)
     public ResponseEntity<?> handleApplicationException(BaseApplicationException ex, HttpServletRequest request) {
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(ex.getStatus(), machineCodeForStatus(ex.getStatus()), ex.getMessage());
+            return protobufError(ex.getStatus(), HttpErrorMapping.machineCode(ex.getStatus()), ex.getMessage());
         }
         return ResponseEntity.status(ex.getStatus())
             .body(new ErrorResponseDTO(ex.getStatus().value(), ex.getMessage()));
@@ -229,7 +229,7 @@ public class GlobalExceptionHandler {
             } else {
                 log.error("Server error from framework exception", ex);
             }
-            String code = machineCodeForStatus(status);
+            String code = HttpErrorMapping.machineCode(status);
             String message = status.is4xxClientError() ? status.getReasonPhrase() : "An internal error occurred";
             if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
                 return protobufError(status, code, message);
@@ -257,19 +257,5 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status)
             .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
             .body(error);
-    }
-
-    private String machineCodeForStatus(HttpStatus status) {
-        return switch (status) {
-            case BAD_REQUEST -> "INVALID_ARGUMENT";
-            case UNAUTHORIZED -> "UNAUTHENTICATED";
-            case FORBIDDEN -> "PERMISSION_DENIED";
-            case NOT_FOUND -> "NOT_FOUND";
-            case CONFLICT -> "CONFLICT";
-            case TOO_MANY_REQUESTS -> "RATE_LIMITED";
-            case UNSUPPORTED_MEDIA_TYPE -> "UNSUPPORTED_MEDIA_TYPE";
-            case NOT_ACCEPTABLE -> "NOT_ACCEPTABLE";
-            default -> status.is5xxServerError() ? "INTERNAL" : status.name();
-        };
     }
 }

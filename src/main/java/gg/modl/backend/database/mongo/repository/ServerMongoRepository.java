@@ -1,5 +1,8 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractLong;
+
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
@@ -161,6 +164,9 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public Optional<Server> findByStripeCustomerId(String customerId) {
+        if (customerId == null) {
+            return Optional.empty();
+        }
         return findOne(Query.query(Criteria.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)));
     }
 
@@ -212,15 +218,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
         Document result = aggregate(aggregation, Document.class).getUniqueMappedResult();
         return extractLong(result, ALIAS_TOTAL);
-    }
-
-    private long extractLong(Document document, String fieldName) {
-        if (document == null) {
-            return 0L;
-        }
-
-        Object value = document.get(fieldName);
-        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     public UsageTotals getUsageTotals() {
@@ -1011,28 +1008,28 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         Document facet = new Document()
             .append("total", List.of(new Document("$count", "n")))
             .append("active", List.of(
-                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
-                    .append("emailVerified", true)),
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED.name())
+                    .append(ServerFields.EMAIL_VERIFIED, true)),
                 new Document("$count", "n")
             ))
             .append("withUsers", List.of(
-                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
-                    .append("userCount", new Document("$gt", 0))),
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED.name())
+                    .append(ServerFields.USER_COUNT, new Document("$gt", 0))),
                 new Document("$count", "n")
             ))
             .append("currentPeriod", List.of(
-                new Document("$match", new Document("createdAt", new Document("$gte", startDate))),
+                new Document("$match", new Document(ServerFields.CREATED_AT, new Document("$gte", startDate))),
                 new Document("$count", "n")
             ))
             .append("previousPeriod", List.of(
-                new Document("$match", new Document("createdAt",
+                new Document("$match", new Document(ServerFields.CREATED_AT,
                     new Document("$gte", previousStartDate).append("$lt", startDate))),
                 new Document("$count", "n")
             ))
             .append("usage", List.of(
                 new Document("$group", new Document("_id", null)
-                    .append("totalUsers", new Document("$sum", "$userCount"))
-                    .append("totalTickets", new Document("$sum", "$ticketCount")))
+                    .append("totalUsers", new Document("$sum", "$" + ServerFields.USER_COUNT))
+                    .append("totalTickets", new Document("$sum", "$" + ServerFields.TICKET_COUNT)))
             ));
 
         List<Document> pipeline = List.of(new Document("$facet", facet));
@@ -1060,19 +1057,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         }
 
         return new DashboardStats(total, active, withUsers, currentPeriod, previousPeriod, totalUsers, totalTickets);
-    }
-
-    private long extractFacetCount(Document facets, String key) {
-        List<?> list = facets.getList(key, Document.class, List.of());
-        if (list.isEmpty()) {
-            return 0;
-        }
-        Object first = list.getFirst();
-        if (first instanceof Document doc) {
-            Number n = doc.get("n", Number.class);
-            return n != null ? n.longValue() : 0;
-        }
-        return 0;
     }
 
     public MonitoringServerStats aggregateMonitoringServerStats(Date fiveMinutesAgo, Date oneWeekAgo) {

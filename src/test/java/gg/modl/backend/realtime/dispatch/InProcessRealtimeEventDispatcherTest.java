@@ -51,18 +51,22 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
 
         WebSocketSession matchingSession = openSession("matching");
         registry.register(matchingSession).authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(matchingSession);
         registry.get(matchingSession).orElseThrow().subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         WebSocketSession wrongTopicSession = openSession("wrong-topic");
         registry.register(wrongTopicSession).authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(wrongTopicSession);
 
         WebSocketSession wrongServerSession = openSession("wrong-server");
         registry.register(wrongServerSession).authenticate(RealtimePrincipal.panel(server("server-b"), "staff@example.com"), 1);
+        registry.onAuthenticated(wrongServerSession);
         registry.get(wrongServerSession).orElseThrow().subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
@@ -89,7 +93,8 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
         WebSocketSession session = openSession("slow-client");
         when(session.isOpen()).thenReturn(true, true, true, false);
@@ -97,18 +102,17 @@ class InProcessRealtimeEventDispatcherTest {
         doThrow(new java.io.IOException("stalled close")).when(session).close(CloseStatus.SERVER_ERROR);
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(session);
         state.subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
             .setTicketChanged(TicketChangedEvent.newBuilder().setTicketId("ticket-1").build())
             .build();
 
-        RealtimeDispatchResult result = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
-        assertEquals(1, result.matchedConnections());
-        assertEquals(0, result.deliveredConnections());
-        assertEquals(1, result.failedConnections());
         assertTrue(registry.get(session).isEmpty());
+        verify(session).sendMessage(any(BinaryMessage.class));
         verify(session).close(CloseStatus.SERVER_ERROR);
     }
 
@@ -125,34 +129,30 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
         WebSocketSession session = openSession("close-throws-open");
         doThrow(new java.io.IOException("stalled send")).when(session).sendMessage(any(BinaryMessage.class));
         doThrow(new java.io.IOException("stalled close")).when(session).close(CloseStatus.SERVER_ERROR);
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(session);
         state.subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
             .setTicketChanged(TicketChangedEvent.newBuilder().setTicketId("ticket-1").build())
             .build();
 
-        RealtimeDispatchResult failedCloseResult = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
-        assertEquals(1, failedCloseResult.matchedConnections());
-        assertEquals(0, failedCloseResult.deliveredConnections());
-        assertEquals(1, failedCloseResult.failedConnections());
         assertSame(state, registry.get(session).orElseThrow());
         assertTrue(state.isClosing());
         assertTrue(registry.isTerminal(session));
         verify(session).sendMessage(any(BinaryMessage.class));
 
-        RealtimeDispatchResult laterResult = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
-        assertEquals(0, laterResult.matchedConnections());
-        assertEquals(0, laterResult.deliveredConnections());
-        assertEquals(0, laterResult.failedConnections());
         assertSame(state, registry.get(session).orElseThrow());
         assertTrue(registry.isTerminal(session));
         assertFalse(registry.get(session).isEmpty());
@@ -172,27 +172,27 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
 
         WebSocketSession firstSession = openSession("first");
         RealtimeConnectionState firstState = registry.register(firstSession);
         firstState.authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(firstSession);
         firstState.subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         WebSocketSession secondSession = openSession("second");
         RealtimeConnectionState secondState = registry.register(secondSession);
         secondState.authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(secondSession);
         secondState.subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
             .setTicketChanged(TicketChangedEvent.newBuilder().setTicketId("ticket-1").build())
             .build();
 
-        RealtimeDispatchResult result = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
-
-        assertEquals(2, result.matchedConnections());
-        assertEquals(2, result.deliveredConnections());
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
         ArgumentCaptor<BinaryMessage> firstCaptor = ArgumentCaptor.forClass(BinaryMessage.class);
         ArgumentCaptor<BinaryMessage> secondCaptor = ArgumentCaptor.forClass(BinaryMessage.class);
@@ -220,29 +220,32 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
         WebSocketSession session = openSession("matching");
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.panel(server("server-a"), "staff@example.com"), 1);
+        registry.onAuthenticated(session);
         state.subscribe(Topic.TOPIC_PANEL_TICKETS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
             .setPermissionInvalidated(PermissionInvalidatedEvent.newBuilder().build())
             .build();
 
-        RealtimeDispatchResult result = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
-        assertEquals(0, result.matchedConnections());
-        assertEquals(0, result.deliveredConnections());
-        assertEquals(0, result.failedConnections());
         verify(session, never()).sendMessage(any(BinaryMessage.class));
         assertEquals(1.0, meterRegistry.counter(
             "modl.realtime.events",
             "event",
             "invalid_outbound_payload",
             "topic",
-            Topic.TOPIC_PANEL_TICKETS.name()
+            Topic.TOPIC_PANEL_TICKETS.name(),
+            "reason",
+            "none",
+            "phase",
+            "none"
         ).count());
     }
 
@@ -259,22 +262,31 @@ class InProcessRealtimeEventDispatcherTest {
             codec,
             metrics,
             new RealtimeSessionOperations(registry, cleanup, metrics),
-            new RealtimeTopicPayloadValidator()
+            new RealtimeTopicPayloadValidator(),
+            inlineExecutor()
         );
         WebSocketSession session = openSession("minecraft");
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.minecraft(server("server-a")), 1);
+        registry.onAuthenticated(session);
         state.subscribe(Topic.TOPIC_MINECRAFT_PERMISSIONS);
 
         RealtimeEnvelope envelope = RealtimeEnvelope.newBuilder()
             .setPermissionInvalidated(PermissionInvalidatedEvent.newBuilder().build())
             .build();
 
-        RealtimeDispatchResult result = dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_MINECRAFT_PERMISSIONS, envelope));
+        dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_MINECRAFT_PERMISSIONS, envelope));
 
-        assertEquals(1, result.matchedConnections());
-        assertEquals(1, result.deliveredConnections());
         verify(session).sendMessage(any(BinaryMessage.class));
+    }
+
+    private RealtimeDispatchExecutor inlineExecutor() {
+        return new RealtimeDispatchExecutor(new RealtimeProperties(), new SimpleMeterRegistry()) {
+            @Override
+            public void execute(String serverId, Runnable task) {
+                task.run();
+            }
+        };
     }
 
     private byte[] payload(BinaryMessage message) {

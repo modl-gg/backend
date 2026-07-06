@@ -141,7 +141,7 @@ public class TicketContentService {
 
             if (attachment instanceof String attachmentUrl) {
                 String trimmedUrl = attachmentUrl.trim();
-                if (trimmedUrl.isBlank()) {
+                if (trimmedUrl.isBlank() || !isHttpUrl(trimmedUrl)) {
                     continue;
                 }
                 normalized.add(createAttachmentFromUrl(trimmedUrl));
@@ -162,6 +162,9 @@ public class TicketContentService {
                 }
 
                 String url = urlValue.toString().trim();
+                if (!isHttpUrl(url)) {
+                    continue;
+                }
                 normalizedMap.put("url", url);
                 normalizedMap.putIfAbsent("fileName", extractFileName(url));
                 normalizedMap.putIfAbsent("fileType", inferFileType(url));
@@ -295,7 +298,9 @@ public class TicketContentService {
     }
 
     private boolean isHttpUrl(String value) {
-        return value.startsWith("https://") || value.startsWith("http://");
+        return value != null
+            && (value.regionMatches(true, 0, "https://", 0, 8)
+                || value.regionMatches(true, 0, "http://", 0, 7));
     }
 
     private Map<String, Object> createAttachmentFromUrl(String url) {

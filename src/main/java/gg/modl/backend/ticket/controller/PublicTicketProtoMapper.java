@@ -6,6 +6,7 @@ import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMa
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
+import gg.modl.backend.infrastructure.proto.PublicDataRedactor;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
@@ -17,20 +18,11 @@ import gg.modl.proto.modl.v1.PublicTicketVerificationRequestResponse;
 import gg.modl.proto.modl.v1.PublicTicketVerificationResponse;
 import gg.modl.proto.modl.v1.SubmitPublicTicketResponse;
 import gg.modl.proto.modl.v1.TicketVerificationRequiredResponse;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Maps the ticket domain to the public ticket proto messages. Carries the redaction rules the public
- * REST surface previously applied inline in {@code PublicTicketController}: contact/identity data is
- * stripped and only public-facing reply fields are exposed.
- */
 final class PublicTicketProtoMapper {
-    private static final Set<String> REDACTED_DATA_KEYS = Set.of(
-        "creatorEmail", "creatorIdentifier", "emailAuthEnabled", "contactEmail", "contact_email", "email", "playerUuid");
-
     private PublicTicketProtoMapper() {
     }
 
@@ -56,7 +48,7 @@ final class PublicTicketProtoMapper {
             .build();
     }
 
-    static PublicTicketResponse toPublicTicketResponse(TicketResponse ticket, Ticket rawTicket) {
+    static PublicTicketResponse toPublicTicketResponse(TicketResponse ticket, Ticket rawTicket, Set<String> formFieldAllowlist) {
         String creatorName = ticket.creatorName() != null ? ticket.creatorName() : "";
         List<gg.modl.proto.modl.v1.PublicTicketReply> publicReplies =
             (ticket.messages() == null ? List.<TicketReply>of() : ticket.messages()).stream()
@@ -78,8 +70,8 @@ final class PublicTicketProtoMapper {
             .setReportedPlayer(ticket.reportedPlayer() != null ? ticket.reportedPlayer() : "")
             .setReportedPlayerUuid("")
             .setEmailAuthEnabled(ticket.emailAuthEnabled())
-            .setData(toStruct(filterPublicData(ticket.data())))
-            .setFormData(toStruct(filterPublicData(ticket.formData())));
+            .setData(PublicDataRedactor.toPublicStruct(ticket.data(), PublicDataRedactor.SYSTEM_DATA_ALLOWLIST))
+            .setFormData(PublicDataRedactor.toPublicStruct(ticket.formData(), formFieldAllowlist));
 
         builder.addAllReplies(publicReplies);
         builder.addAllMessages(publicReplies);
@@ -176,13 +168,8 @@ final class PublicTicketProtoMapper {
         return Map.of();
     }
 
-    private static Map<String, Object> filterPublicData(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> filtered = new HashMap<>(data);
-        filtered.keySet().removeAll(REDACTED_DATA_KEYS);
-        return filtered;
+    static List<Object> attachmentsFromReply(gg.modl.proto.modl.v1.AddReplyRequest request) {
+        return structListToObjects(request.getAttachmentsList());
     }
 
     private static List<Object> structListToObjects(List<com.google.protobuf.Struct> structs) {

@@ -1,8 +1,6 @@
 package gg.modl.backend.replaylite.storage;
 
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,22 +9,23 @@ import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ContentDisposition;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
@@ -34,6 +33,7 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 @Slf4j
 public class ReplayLiteStorageService {
     private static final String CONTENT_TYPE = "application/octet-stream";
+    private static final String DOWNLOAD_CACHE_CONTROL = "private, no-store, max-age=0";
     private static final Duration PRESIGN_UPLOAD_DURATION = Duration.ofMinutes(15);
 
     private final S3Client s3Client;
@@ -152,55 +152,25 @@ public class ReplayLiteStorageService {
         return "https://" + cdnDomain + "/" + objectKey;
     }
 
-    public Optional<DownloadedObject> downloadObject(String objectKey, long maxSizeBytes) {
-        if (s3Client == null || !configuration.isConfigured()) {
+    public PresignedDownload createPresignedDownload(String objectKey, String downloadFilename, Duration duration) {
+        if (!isConfigured()) {
             throw new ExternalServiceException("Replay Lite storage is not configured");
         }
 
-        try (ResponseInputStream<GetObjectResponse> stream = s3Client.getObject(GetObjectRequest.builder()
+        GetObjectRequest getRequest = GetObjectRequest.builder()
             .bucket(configuration.getBucketName())
             .key(objectKey)
-            .build())) {
-            byte[] bytes = readBounded(stream, maxSizeBytes, stream.response().contentLength());
+            .responseCacheControl(DOWNLOAD_CACHE_CONTROL)
+            .responseContentDisposition(ContentDisposition.inline().filename(downloadFilename).build().toString())
+            .build();
 
-            String contentType = stream.response().contentType();
-            if (contentType == null || contentType.isBlank()) {
-                contentType = CONTENT_TYPE;
-            }
-            return Optional.of(new DownloadedObject(bytes, contentType));
-        } catch (NoSuchKeyException e) {
-            return Optional.empty();
-        } catch (S3Exception e) {
-            if (e.statusCode() == 404) {
-                return Optional.empty();
-            }
-            throw e;
-        } catch (IOException e) {
-            throw new ExternalServiceException("Failed to read Replay Lite object");
-        }
-    }
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+            .signatureDuration(duration)
+            .getObjectRequest(getRequest)
+            .build();
 
-    private static byte[] readBounded(ResponseInputStream<GetObjectResponse> stream, long maxSizeBytes, @Nullable Long contentLength) throws IOException {
-        if (contentLength != null && contentLength > maxSizeBytes) {
-            stream.abort();
-            throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
-        }
-        int initialCapacity = (contentLength != null && contentLength > 0 && contentLength <= maxSizeBytes)
-            ? (int) (long) contentLength
-            : 8192;
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream(initialCapacity);
-        byte[] chunk = new byte[8192];
-        long total = 0;
-        int read;
-        while ((read = stream.read(chunk)) != -1) {
-            total += read;
-            if (total > maxSizeBytes) {
-                stream.abort();
-                throw new ExternalServiceException("Replay Lite object exceeds 10 MB");
-            }
-            buffer.write(chunk, 0, read);
-        }
-        return buffer.toByteArray();
+        PresignedGetObjectRequest presignedRequest = s3Presigner.presignGetObject(presignRequest);
+        return new PresignedDownload(presignedRequest.url().toString(), Instant.now().plus(duration));
     }
 
     public boolean deleteObject(String objectKey) {
@@ -229,5 +199,5 @@ public class ReplayLiteStorageService {
 
     public record ObjectMetadata(long size, Instant lastModified) {}
 
-    public record DownloadedObject(byte[] bytes, String contentType) {}
+    public record PresignedDownload(String url, Instant expiresAt) {}
 }

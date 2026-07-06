@@ -4,6 +4,7 @@ import gg.modl.backend.billing.data.StripeWebhookEvent;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.StripeWebhookEventFields;
 import java.util.Date;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -27,20 +28,20 @@ public class StripeWebhookEventMongoRepository extends AbstractGlobalMongoReposi
         try {
             Date staleBefore = new Date(processingAt.getTime() - PROCESSING_STALE_MS);
             Query query = Query.query(new Criteria().andOperator(
-                Criteria.where("_id").is(eventId),
+                Criteria.where(StripeWebhookEventFields.ID).is(eventId),
                 new Criteria().orOperator(
-                    Criteria.where("status").exists(false),
-                    Criteria.where("status").is(STATUS_FAILED),
-                    Criteria.where("status").is(STATUS_PROCESSING).and("processingAt").lt(staleBefore)
+                    Criteria.where(StripeWebhookEventFields.STATUS).exists(false),
+                    Criteria.where(StripeWebhookEventFields.STATUS).is(STATUS_FAILED),
+                    Criteria.where(StripeWebhookEventFields.STATUS).is(STATUS_PROCESSING).and(StripeWebhookEventFields.PROCESSING_AT).lt(staleBefore)
                 )
             ));
             Update update = new Update()
-                .setOnInsert("_id", eventId)
-                .set("type", eventType)
-                .set("status", STATUS_PROCESSING)
-                .set("processingAt", processingAt)
-                .unset("failedAt")
-                .unset("error");
+                .setOnInsert(StripeWebhookEventFields.ID, eventId)
+                .set(StripeWebhookEventFields.TYPE, eventType)
+                .set(StripeWebhookEventFields.STATUS, STATUS_PROCESSING)
+                .set(StripeWebhookEventFields.PROCESSING_AT, processingAt)
+                .unset(StripeWebhookEventFields.FAILED_AT)
+                .unset(StripeWebhookEventFields.ERROR);
             StripeWebhookEvent claimed = findAndModify(
                 query,
                 update,
@@ -54,22 +55,22 @@ public class StripeWebhookEventMongoRepository extends AbstractGlobalMongoReposi
 
     public void markProcessed(String eventId, Date processedAt) {
         updateFirst(
-            Query.query(Criteria.where("_id").is(eventId)),
+            Query.query(Criteria.where(StripeWebhookEventFields.ID).is(eventId)),
             new Update()
-                .set("status", STATUS_PROCESSED)
-                .set("processedAt", processedAt)
-                .unset("failedAt")
-                .unset("error")
+                .set(StripeWebhookEventFields.STATUS, STATUS_PROCESSED)
+                .set(StripeWebhookEventFields.PROCESSED_AT, processedAt)
+                .unset(StripeWebhookEventFields.FAILED_AT)
+                .unset(StripeWebhookEventFields.ERROR)
         );
     }
 
     public void markFailed(String eventId, Date failedAt, String error) {
         updateFirst(
-            Query.query(Criteria.where("_id").is(eventId)),
+            Query.query(Criteria.where(StripeWebhookEventFields.ID).is(eventId)),
             new Update()
-                .set("status", STATUS_FAILED)
-                .set("failedAt", failedAt)
-                .set("error", error != null ? error : "unknown")
+                .set(StripeWebhookEventFields.STATUS, STATUS_FAILED)
+                .set(StripeWebhookEventFields.FAILED_AT, failedAt)
+                .set(StripeWebhookEventFields.ERROR, error != null ? error : "unknown")
         );
     }
 }

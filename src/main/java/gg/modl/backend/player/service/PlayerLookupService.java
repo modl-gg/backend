@@ -185,6 +185,11 @@ public class PlayerLookupService {
     }
 
     Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes, Integer punishmentLimit, Integer noteLimit) {
+        return toPlayerProfile(server, player, punishmentTypes, punishmentLimit, noteLimit,
+            resolveIssuersForPunishments(server, safePunishments(player)));
+    }
+
+    Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes, Integer punishmentLimit, Integer noteLimit, Map<String, String> resolvedIssuers) {
         List<Map<String, Object>> usernames = safeUsernames(player).stream()
             .map(username -> {
                 Map<String, Object> entry = new LinkedHashMap<>();
@@ -224,7 +229,6 @@ public class PlayerLookupService {
             .toList();
 
         List<Punishment> allPunishments = safePunishments(player);
-        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, allPunishments);
         List<Punishment> limitedPunishments = limitNewestFirst(allPunishments, punishmentLimit,
             Comparator.comparing(Punishment::getIssued, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
         List<Map<String, Object>> punishments = limitedPunishments.stream()
@@ -353,8 +357,14 @@ public class PlayerLookupService {
         return playerService.findBestByUsername(server, username);
     }
 
-    private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
-        return resolveIssuersForPunishments(server, safePunishments(player));
+    private Map<String, String> resolveIssuersForPlayers(Server server, List<Player> players) {
+        Set<String> ids = new HashSet<>();
+        for (Player player : players) {
+            for (Punishment punishment : safePunishments(player)) {
+                ids.addAll(PunishmentQueryService.collectIssuerIds(punishment));
+            }
+        }
+        return ids.isEmpty() ? Map.of() : issuerNameResolver.batchResolve(ids, server);
     }
 
     private Map<String, String> resolveIssuersForPunishments(Server server, List<Punishment> punishments) {
@@ -453,12 +463,11 @@ public class PlayerLookupService {
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         Set<String> addedUuids = new HashSet<>();
-        List<Map<String, Object>> linkedAccounts = new ArrayList<>();
+        List<Player> linkedPlayers = new ArrayList<>();
 
         if (!ips.isEmpty()) {
-            List<Player> relatedPlayers = playerRepository.findByIpAddressesExcludingUuid(server, ips, normalizeUuid(uuid), 20);
-            for (Player related : relatedPlayers) {
-                linkedAccounts.add(toPlayerProfile(server, related, types));
+            for (Player related : playerRepository.findByIpAddressesExcludingUuid(server, ips, normalizeUuid(uuid), 20)) {
+                linkedPlayers.add(related);
                 addedUuids.add(related.getMinecraftUuid().toString());
             }
         }
@@ -473,12 +482,14 @@ public class PlayerLookupService {
                 .filter(linkedUuid -> !addedUuids.contains(linkedUuid))
                 .toList();
             if (!missingUuids.isEmpty()) {
-                List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, missingUuids);
-                for (Player linkedPlayer : linkedPlayers) {
-                    linkedAccounts.add(toPlayerProfile(server, linkedPlayer, types));
-                }
+                linkedPlayers.addAll(playerRepository.findByMinecraftUuids(server, missingUuids));
             }
         }
+
+        Map<String, String> resolvedIssuers = resolveIssuersForPlayers(server, linkedPlayers);
+        List<Map<String, Object>> linkedAccounts = linkedPlayers.stream()
+            .map(linked -> toPlayerProfile(server, linked, types, null, null, resolvedIssuers))
+            .toList();
 
         return ok(Map.of("status", 200, "linkedAccounts", linkedAccounts));
     }

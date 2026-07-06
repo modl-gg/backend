@@ -2,9 +2,7 @@ package gg.modl.backend.ticket.data;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import java.util.LinkedHashMap;
-import java.util.Locale;
-import java.util.Map;
+import gg.modl.backend.infrastructure.util.CanonicalAliasIndex;
 
 public enum AppealWorkflowStatus {
     OPEN("open", "Open"),
@@ -15,23 +13,18 @@ public enum AppealWorkflowStatus {
 
     private final String id;
     private final String displayName;
-    private static final Map<String, AppealWorkflowStatus> BY_CANONICAL_ID = new LinkedHashMap<>();
-
-    static {
-        for (AppealWorkflowStatus workflowStatus : values()) {
-            BY_CANONICAL_ID.put(workflowStatus.id, workflowStatus);
-        }
-        registerAlias(UNDER_REVIEW, "underreview");
-        registerAlias(PENDING_PLAYER_RESPONSE, "pendingplayerresponse");
-        registerAlias(APPROVED, "approve");
-        registerAlias(APPROVED, "accepted");
-        registerAlias(APPROVED, "accept");
-        registerAlias(REJECTED, "reject");
-        registerAlias(REJECTED, "dismiss");
-        registerAlias(REJECTED, "dismissed");
-        registerAlias(REJECTED, "denied");
-        registerAlias(REJECTED, "deny");
-    }
+    private static final CanonicalAliasIndex<AppealWorkflowStatus> INDEX = CanonicalAliasIndex
+        .of("appeal workflow status", values(), AppealWorkflowStatus::getId)
+        .alias(UNDER_REVIEW, "underreview")
+        .alias(PENDING_PLAYER_RESPONSE, "pendingplayerresponse")
+        .alias(APPROVED, "approve")
+        .alias(APPROVED, "accepted")
+        .alias(APPROVED, "accept")
+        .alias(REJECTED, "reject")
+        .alias(REJECTED, "dismiss")
+        .alias(REJECTED, "dismissed")
+        .alias(REJECTED, "denied")
+        .alias(REJECTED, "deny");
 
     AppealWorkflowStatus(String id, String displayName) {
         this.id = id;
@@ -44,25 +37,7 @@ public enum AppealWorkflowStatus {
     }
 
     public static AppealWorkflowStatus fromCanonicalId(String value) {
-        AppealWorkflowStatus status = BY_CANONICAL_ID.get(normalize(value));
-        if (status == null) {
-            throw new IllegalArgumentException("Unknown appeal workflow status: " + value);
-        }
-        return status;
-    }
-
-    private static String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.trim()
-            .toLowerCase(Locale.ROOT)
-            .replaceAll("[^a-z0-9]+", "_")
-            .replaceAll("^_+|_+$", "");
-    }
-
-    private static void registerAlias(AppealWorkflowStatus status, String alias) {
-        BY_CANONICAL_ID.put(normalize(alias), status);
+        return INDEX.resolve(value);
     }
 
     @JsonValue

@@ -51,6 +51,9 @@ import gg.modl.proto.modl.v1.UpdateAIModerationSettingsRequest;
 import gg.modl.proto.modl.v1.UpdateWebhookSettingsRequest;
 import gg.modl.proto.modl.v1.WebhookTestResponse;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Validator;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -81,6 +84,7 @@ public class PanelSettingsController {
     private final PermissionService permissionService;
     private final ReplayRetentionSettingsService replayRetentionSettingsService;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final Validator validator;
 
     @GetMapping("/general")
     public GeneralSettingsEnvelope getGeneralSettings(HttpServletRequest request) {
@@ -325,10 +329,13 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        UpdateQuickResponsesRequest quickResponses = new UpdateQuickResponsesRequest(
+            PanelSettingsProtoMapper.fromPatchQuickResponsesRequest(body));
+        validate(quickResponses);
         VersionedSettings<QuickResponseSettings> updated = quickResponseSettingsService.patchQuickResponseSettings(
             server,
             body.getExpectedVersion(),
-            new UpdateQuickResponsesRequest(PanelSettingsProtoMapper.fromPatchQuickResponsesRequest(body))
+            quickResponses
         );
         invalidateSettings(server);
         return PanelSettingsProtoMapper.toQuickResponseSettingsEnvelope(updated);
@@ -355,9 +362,9 @@ public class PanelSettingsController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffName = body.hasStaffName() ? body.getStaffName() : "Staff";
+        String email = RequestUtil.getSessionEmail(request);
 
-        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, staffName);
+        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, email);
         return toAISuggestionResponse(result);
     }
 
@@ -384,6 +391,13 @@ public class PanelSettingsController {
         String email = RequestUtil.getSessionEmail(request);
         if (!permissionService.isSuperAdmin(server, email)) {
             throw new ForbiddenException("Only super admins can manage API keys");
+        }
+    }
+
+    private <T> void validate(T target) {
+        Set<ConstraintViolation<T>> violations = validator.validate(target);
+        if (!violations.isEmpty()) {
+            throw new ValidationException(violations.iterator().next().getMessage());
         }
     }
 

@@ -17,9 +17,9 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitResponse;
 import gg.modl.backend.replaylite.service.ReplayLiteService;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.settings.service.ApiKeySettingsService;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,19 +32,19 @@ class ReplayLiteApiKeyFilterIntegrationTest {
     private static final String VALID_API_KEY = "valid-api-key";
     private static final String INVALID_API_KEY = "invalid-api-key";
 
-    private ApiKeySettingsService apiKeySettingsService;
+    private ServerService serverService;
     private ReplayLiteService replayLiteService;
     private MockMvc mockMvc;
     private Server server;
 
     @BeforeEach
     void setUp() {
-        apiKeySettingsService = mock(ApiKeySettingsService.class);
+        serverService = mock(ServerService.class);
         replayLiteService = mock(ReplayLiteService.class);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
         server.setId("507f1f77bcf86cd799439011");
 
-        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(apiKeySettingsService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
+        ApiKeyFilter apiKeyFilter = new ApiKeyFilter(serverService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
         mockMvc = MockMvcBuilders.standaloneSetup(new ReplayLiteController(replayLiteService))
             .addFilters(apiKeyFilter)
             .build();
@@ -57,12 +57,12 @@ class ReplayLiteApiKeyFilterIntegrationTest {
                 .content(uploadBody()))
             .andExpect(status().isUnauthorized());
 
-        verifyNoInteractions(apiKeySettingsService, replayLiteService);
+        verifyNoInteractions(serverService, replayLiteService);
     }
 
     @Test
     void replayLiteUploadWithInvalidApiKeyReturnsUnauthorized() throws Exception {
-        when(apiKeySettingsService.findServerByApiKey(INVALID_API_KEY)).thenReturn(null);
+        when(serverService.getServerByApiKey(INVALID_API_KEY)).thenReturn(null);
 
         mockMvc.perform(post(RESTMappingV1.REPLAY_LITE_REPLAYS + "/upload")
                 .header(RequestHeader.API_KEY, INVALID_API_KEY)
@@ -70,13 +70,13 @@ class ReplayLiteApiKeyFilterIntegrationTest {
                 .content(uploadBody()))
             .andExpect(status().isUnauthorized());
 
-        verify(apiKeySettingsService).findServerByApiKey(INVALID_API_KEY);
+        verify(serverService).getServerByApiKey(INVALID_API_KEY);
         verifyNoInteractions(replayLiteService);
     }
 
     @Test
     void replayLiteUploadWithValidApiKeyUsesAuthenticatedServer() throws Exception {
-        when(apiKeySettingsService.findServerByApiKey(VALID_API_KEY)).thenReturn(server);
+        when(serverService.getServerByApiKey(VALID_API_KEY)).thenReturn(server);
         when(replayLiteService.initUpload(same(server), any(), any()))
             .thenReturn(new ReplayLiteUploadInitResponse(
                 "75f4b741-67df-414c-957b-a8a08222fc30",
@@ -93,7 +93,7 @@ class ReplayLiteApiKeyFilterIntegrationTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.replayId").value("75f4b741-67df-414c-957b-a8a08222fc30"));
 
-        verify(apiKeySettingsService).findServerByApiKey(VALID_API_KEY);
+        verify(serverService).getServerByApiKey(VALID_API_KEY);
         verify(replayLiteService).initUpload(same(server), any(), any());
     }
 

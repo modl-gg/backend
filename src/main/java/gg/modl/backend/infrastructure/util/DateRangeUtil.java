@@ -1,5 +1,6 @@
 package gg.modl.backend.infrastructure.util;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import java.util.Date;
 import lombok.experimental.UtilityClass;
 
@@ -26,7 +27,14 @@ public class DateRangeUtil {
     }
 
     public Date parseEpochMillis(String value) {
-        return value == null ? null : new Date(Long.parseLong(value));
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new Date(Long.parseLong(value.trim()));
+        } catch (NumberFormatException exception) {
+            throw new ValidationException("Invalid date parameter; expected epoch milliseconds.");
+        }
     }
 
     public int resolveRangeDays(String range) {

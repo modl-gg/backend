@@ -1,5 +1,8 @@
 package gg.modl.backend.migration.service;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
@@ -50,8 +53,11 @@ public class MigrationProcessor {
     private static final int MAX_JSON_NESTING_DEPTH = 100;
     private static final int MAX_JSON_STRING_LENGTH = 1_000_000;
     private static final int MAX_FAILURE_MESSAGE_LENGTH = 900;
+    private static final String PLAYERS_FIELD = "players";
+    private static final String METADATA_FIELD = "metadata";
+    private static final String PLAYER_COUNT_FIELD = "playerCount";
 
-    @Async
+    @Async("migrationTaskExecutor")
     public void processFileAsync(Server server, Path filePath) {
         try {
             processFile(server, filePath);
@@ -61,8 +67,7 @@ public class MigrationProcessor {
     }
 
     public void processFile(Server server, Path filePath) {
-        int recordsProcessed = 0;
-        int recordsSkipped = 0;
+        ProgressCounters counters = new ProgressCounters();
 
         try {
             migrationService.updateProgress(server, new UpdateProgressRequest(
@@ -76,83 +81,26 @@ public class MigrationProcessor {
                 .maxNestingDepth(MAX_JSON_NESTING_DEPTH)
                 .maxStringLength(MAX_JSON_STRING_LENGTH)
                 .build());
-            Map<String, Object> migrationData = constrainedMapper.readValue(filePath.toFile(), Map.class);
 
-            MigrationValidator.ValidationResult validation = validator.validateMigrationData(migrationData);
-            if (!validation.valid()) {
-                migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "failed",
-                    validation.error(),
-                    0, 0, null
-                ));
+            if (streamMigrationFile(server, filePath, constrainedMapper, counters)) {
                 return;
-            }
-
-            int totalRecords = validation.playerCount();
-            List<?> players = (List<?>) migrationData.get("players");
-
-            migrationService.updateProgress(server, new UpdateProgressRequest(
-                "processing_data",
-                "Processing " + totalRecords + " player records...",
-                0, 0, totalRecords
-            ));
-
-            List<Map<?, ?>> batch = new ArrayList<>();
-
-            for (int i = 0; i < players.size(); i++) {
-                Object playerObj = players.get(i);
-
-                if (!(playerObj instanceof Map<?, ?>)) {
-                    recordsSkipped++;
-                    continue;
-                }
-
-                Map<?, ?> playerMap = (Map<?, ?>) playerObj;
-                batch.add(playerMap);
-
-                if (batch.size() >= BATCH_SIZE || i == players.size() - 1) {
-                    int[] results = processBatch(server, batch);
-                    recordsProcessed += results[0];
-                    recordsSkipped += results[1];
-                    batch.clear();
-
-                    if (recordsProcessed % PROGRESS_UPDATE_INTERVAL == 0 || i == players.size() - 1) {
-                        migrationService.updateProgress(server, new UpdateProgressRequest(
-                            "processing_data",
-                            "Processing player records... (" + recordsProcessed + "/" + totalRecords + ")",
-                            recordsProcessed, recordsSkipped, totalRecords
-                        ));
-                    }
-
-                    if (!migrationService.isActiveMigrationPresent(server)) {
-                        log.info("Migration cancelled or no longer active; stopping processing after {} records",
-                            recordsProcessed);
-                        return;
-                    }
-                }
             }
 
             try {
                 migrationService.updateProgress(server, new UpdateProgressRequest(
                     "completed",
                     "Migration completed successfully",
-                    recordsProcessed, recordsSkipped, totalRecords
+                    counters.processed(), counters.skipped(), counters.total()
                 ));
             } catch (Exception e) {
                 log.error("Failed to persist terminal migration state (completed)", e);
             }
 
+        } catch (MigrationDataException e) {
+            failMigration(server, e.getMessage(), counters);
         } catch (Exception e) {
             log.error("Error processing migration file", e);
-            try {
-                migrationService.updateProgress(server, new UpdateProgressRequest(
-                    "failed",
-                    boundFailureMessage("Migration failed: ", e.getMessage()),
-                    recordsProcessed, recordsSkipped, null
-                ));
-            } catch (Exception ex) {
-                log.error("Failed to persist terminal migration state (failed)", ex);
-            }
+            failMigration(server, boundFailureMessage("Migration failed: ", e.getMessage()), counters);
         } finally {
             try {
                 Files.deleteIfExists(filePath);
@@ -160,6 +108,138 @@ public class MigrationProcessor {
                 log.warn("Failed to delete migration file: {}", filePath, e);
             }
         }
+    }
+
+    private void failMigration(Server server, String message, ProgressCounters counters) {
+        try {
+            migrationService.updateProgress(server, new UpdateProgressRequest(
+                "failed", message, counters.processed(), counters.skipped(), null
+            ));
+        } catch (Exception e) {
+            log.error("Failed to persist terminal migration state (failed)", e);
+        }
+    }
+
+    private boolean streamMigrationFile(Server server, Path filePath, ObjectMapper mapper,
+                                        ProgressCounters counters) throws IOException {
+        JsonFactory factory = mapper.getFactory();
+        try (JsonParser parser = factory.createParser(filePath.toFile())) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                throw new MigrationDataException("Migration data must be a JSON object");
+            }
+
+            boolean playersStreamed = false;
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                String field = parser.currentName();
+                parser.nextToken();
+
+                if (PLAYERS_FIELD.equals(field)) {
+                    MigrationValidator.ValidationResult header = validator.validateHeader(
+                        true, parser.currentToken() == JsonToken.START_ARRAY, counters.total());
+                    if (!header.valid()) {
+                        throw new MigrationDataException(header.error());
+                    }
+                    announceProcessingProgress(server, counters);
+                    if (streamPlayers(server, parser, mapper, counters)) {
+                        return true;
+                    }
+                    playersStreamed = true;
+                } else if (METADATA_FIELD.equals(field)) {
+                    counters.total(readDeclaredPlayerCount(parser));
+                } else {
+                    parser.skipChildren();
+                }
+            }
+
+            if (!playersStreamed) {
+                throw new MigrationDataException(
+                    validator.validateHeader(false, false, counters.total()).error());
+            }
+
+            return false;
+        }
+    }
+
+    private boolean streamPlayers(Server server, JsonParser parser, ObjectMapper mapper,
+                                  ProgressCounters counters) throws IOException {
+        long seen = 0;
+        List<Map<?, ?>> batch = new ArrayList<>(BATCH_SIZE);
+
+        while (parser.nextToken() != JsonToken.END_ARRAY) {
+            seen++;
+            if (seen > MigrationValidator.MAX_PLAYER_RECORDS) {
+                throw new MigrationDataException("Players array exceeds maximum length of 1,000,000");
+            }
+
+            if (parser.currentToken() == JsonToken.START_OBJECT) {
+                batch.add(mapper.readValue(parser, Map.class));
+            } else {
+                parser.skipChildren();
+                counters.skipOne();
+            }
+
+            if (batch.size() >= BATCH_SIZE && drainBatch(server, batch, counters)) {
+                return true;
+            }
+        }
+
+        if (seen == 0) {
+            throw new MigrationDataException("Players array cannot be empty");
+        }
+
+        return !batch.isEmpty() && drainBatch(server, batch, counters);
+    }
+
+    private boolean drainBatch(Server server, List<Map<?, ?>> batch, ProgressCounters counters) {
+        int[] results = processBatch(server, batch);
+        counters.addProcessed(results[0]);
+        counters.addSkipped(results[1]);
+        batch.clear();
+
+        if (counters.dueForAnnounce(PROGRESS_UPDATE_INTERVAL)) {
+            announceProcessingProgress(server, counters);
+        }
+
+        if (!migrationService.isActiveMigrationPresent(server)) {
+            log.info("Migration cancelled or no longer active; stopping processing after {} records",
+                counters.processed());
+            return true;
+        }
+        return false;
+    }
+
+    private void announceProcessingProgress(Server server, ProgressCounters counters) {
+        migrationService.updateProgress(server, new UpdateProgressRequest(
+            "processing_data",
+            processingMessage(counters.processed(), counters.total()),
+            counters.processed(), counters.skipped(), counters.total()
+        ));
+    }
+
+    private Integer readDeclaredPlayerCount(JsonParser parser) throws IOException {
+        if (parser.currentToken() != JsonToken.START_OBJECT) {
+            parser.skipChildren();
+            return null;
+        }
+        Integer playerCount = null;
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            String field = parser.currentName();
+            parser.nextToken();
+            if (PLAYER_COUNT_FIELD.equals(field) && parser.currentToken().isNumeric()) {
+                long value = parser.getValueAsLong(-1L);
+                playerCount = (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, value));
+            } else {
+                parser.skipChildren();
+            }
+        }
+        return playerCount;
+    }
+
+    private static String processingMessage(int processed, Integer total) {
+        if (total == null) {
+            return "Processing player records... (" + processed + ")";
+        }
+        return "Processing player records... (" + processed + "/" + total + ")";
     }
 
     private static String boundFailureMessage(String prefix, String detail) {
@@ -717,5 +797,54 @@ public class MigrationProcessor {
         }
 
         return result;
+    }
+
+    private static final class ProgressCounters {
+        private int processed;
+        private int skipped;
+        private int lastAnnounced;
+        private Integer total;
+
+        private boolean dueForAnnounce(int interval) {
+            if (processed - lastAnnounced >= interval) {
+                lastAnnounced = processed;
+                return true;
+            }
+            return false;
+        }
+
+        private void addProcessed(int value) {
+            processed += value;
+        }
+
+        private void addSkipped(int value) {
+            skipped += value;
+        }
+
+        private void skipOne() {
+            skipped++;
+        }
+
+        private int processed() {
+            return processed;
+        }
+
+        private int skipped() {
+            return skipped;
+        }
+
+        private Integer total() {
+            return total;
+        }
+
+        private void total(Integer value) {
+            total = value;
+        }
+    }
+
+    private static final class MigrationDataException extends RuntimeException {
+        private MigrationDataException(String message) {
+            super(message);
+        }
     }
 }

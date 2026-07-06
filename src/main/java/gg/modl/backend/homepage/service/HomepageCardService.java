@@ -127,9 +127,8 @@ public class HomepageCardService {
             .distinct()
             .toList();
 
-        Map<String, KnowledgebaseCategory> categoriesById = categoryIds.stream()
-            .map(id -> categoryService.getCategoryById(server, id).orElse(null))
-            .filter(cat -> cat != null)
+        Map<String, KnowledgebaseCategory> categoriesById = categoryService.getCategoriesByIds(server, categoryIds)
+            .stream()
             .collect(Collectors.toMap(KnowledgebaseCategory::getId, Function.identity()));
 
         return cards.stream()

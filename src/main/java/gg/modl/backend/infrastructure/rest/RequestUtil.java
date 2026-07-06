@@ -3,9 +3,12 @@ package gg.modl.backend.infrastructure.rest;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,6 +17,9 @@ public final class RequestUtil {
     private static volatile boolean warnedAboutProxy = false;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = resolveTrustProxyHeaders();
+    private static final String CLIENT_IP_HEADER = resolveClientIpHeaderName();
+    private static final int TRUSTED_PROXY_COUNT = resolveTrustedProxyCount();
+    private static final Pattern IPV6_LITERAL_CHARS = Pattern.compile("[0-9A-Fa-f:.%]+");
 
     private static boolean resolveTrustProxyHeaders() {
         String value = System.getProperty("modl.trust-proxy-headers");
@@ -24,6 +30,38 @@ public final class RequestUtil {
             value = System.getenv("MODL_TRUST_PROXY_HEADERS");
         }
         return Boolean.parseBoolean(value);
+    }
+
+    private static String resolveClientIpHeaderName() {
+        String value = System.getProperty("modl.client-ip-header");
+        if (value == null) {
+            value = System.getProperty("MODL_CLIENT_IP_HEADER");
+        }
+        if (value == null) {
+            value = System.getenv("MODL_CLIENT_IP_HEADER");
+        }
+        if (value == null || value.isBlank()) {
+            return "CF-Connecting-IP";
+        }
+        return value.trim();
+    }
+
+    private static int resolveTrustedProxyCount() {
+        String value = System.getProperty("modl.trusted-proxy-count");
+        if (value == null) {
+            value = System.getProperty("MODL_TRUSTED_PROXY_COUNT");
+        }
+        if (value == null) {
+            value = System.getenv("MODL_TRUSTED_PROXY_COUNT");
+        }
+        if (value == null || value.isBlank()) {
+            return 1;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(value.trim()));
+        } catch (NumberFormatException e) {
+            return 1;
+        }
     }
 
     @NotNull
@@ -63,29 +101,100 @@ public final class RequestUtil {
     }
 
     public static String getClientIp(HttpServletRequest request) {
-        if (TRUST_PROXY_HEADERS) {
-            String xForwardedFor = request.getHeader("X-Forwarded-For");
-            if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-                String firstHop = xForwardedFor.split(",")[0].trim();
-                if (!firstHop.isEmpty()) {
-                    return firstHop;
+        if (!TRUST_PROXY_HEADERS) {
+            warnAboutUntrustedForwardingHeaderOnce(request);
+            return request.getRemoteAddr();
+        }
+
+        String authoritative = request.getHeader(CLIENT_IP_HEADER);
+        if (authoritative != null && isValidIp(authoritative.trim())) {
+            return authoritative.trim();
+        }
+
+        String forwarded = firstValidIp(request.getHeader("X-Forwarded-For"), TRUSTED_PROXY_COUNT);
+        if (forwarded != null) {
+            return forwarded;
+        }
+
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && isValidIp(realIp.trim())) {
+            return realIp.trim();
+        }
+
+        return request.getRemoteAddr();
+    }
+
+    private static void warnAboutUntrustedForwardingHeaderOnce(HttpServletRequest request) {
+        if (warnedAboutProxy) {
+            return;
+        }
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor == null || xForwardedFor.isEmpty()) {
+            return;
+        }
+        log.warn("Request has X-Forwarded-For header ({}) but MODL_TRUST_PROXY_HEADERS is not set. "
+            + "Client IP will be reported as {}. Set MODL_TRUST_PROXY_HEADERS=true if running behind a proxy.",
+            xForwardedFor, request.getRemoteAddr());
+        warnedAboutProxy = true;
+    }
+
+    static String firstValidIp(String headerValue, int trustedProxyCount) {
+        if (headerValue == null || headerValue.isEmpty()) {
+            return null;
+        }
+        String[] entries = headerValue.split(",");
+        int index = entries.length - trustedProxyCount;
+        if (index < 0 || index >= entries.length) {
+            return null;
+        }
+        String candidate = entries[index].trim();
+        return isValidIp(candidate) ? candidate : null;
+    }
+
+    private static boolean isValidIp(String value) {
+        if (value == null) {
+            return false;
+        }
+        String candidate = value.trim();
+        if (candidate.isEmpty()) {
+            return false;
+        }
+        if (candidate.length() > 1 && candidate.charAt(0) == '[' && candidate.charAt(candidate.length() - 1) == ']') {
+            candidate = candidate.substring(1, candidate.length() - 1);
+        }
+        if (candidate.indexOf(':') < 0) {
+            return isIpv4Literal(candidate);
+        }
+        if (!IPV6_LITERAL_CHARS.matcher(candidate).matches()) {
+            return false;
+        }
+        try {
+            InetAddress.getByName(candidate);
+            return true;
+        } catch (UnknownHostException e) {
+            return false;
+        }
+    }
+
+    private static boolean isIpv4Literal(String value) {
+        String[] octets = value.split("\\.", -1);
+        if (octets.length != 4) {
+            return false;
+        }
+        for (String octet : octets) {
+            if (octet.isEmpty() || octet.length() > 3) {
+                return false;
+            }
+            for (int i = 0; i < octet.length(); i++) {
+                if (!Character.isDigit(octet.charAt(i))) {
+                    return false;
                 }
             }
-            String xRealIp = request.getHeader("X-Real-IP");
-            if (xRealIp != null && !xRealIp.isEmpty()) {
-                return xRealIp;
-            }
-        } else if (!warnedAboutProxy) {
-            String remoteAddr = request.getRemoteAddr();
-            String xForwardedFor = request.getHeader("X-Forwarded-For");
-            if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-                log.warn("Request has X-Forwarded-For header ({}) but MODL_TRUST_PROXY_HEADERS is not set. "
-                    + "Client IP will be reported as {}. Set MODL_TRUST_PROXY_HEADERS=true if running behind a proxy.",
-                    xForwardedFor, remoteAddr);
-                warnedAboutProxy = true;
+            if (Integer.parseInt(octet) > 255) {
+                return false;
             }
         }
-        return request.getRemoteAddr();
+        return true;
     }
 
     public static boolean trustsProxyHeaders() {

@@ -1,13 +1,20 @@
 package gg.modl.backend.settings.data;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DurationDetail(
+    @Min(MIN_DURATION_VALUE)
+    @Max(MAX_DURATION_VALUE)
     int value,
     String unit,
     String type
 ) {
+    private static final long MIN_DURATION_VALUE = 0L;
+    private static final long MAX_DURATION_VALUE = 100_000_000L;
+
     public long toMilliseconds() {
         // Handle permanent punishments
         if (isPermanent()) {

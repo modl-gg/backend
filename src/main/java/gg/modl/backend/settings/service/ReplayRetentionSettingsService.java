@@ -65,17 +65,16 @@ public class ReplayRetentionSettingsService {
             return ReplayRetentionSettings.defaults();
         }
 
-        try {
-            Map<String, Object> merged = new LinkedHashMap<>();
-            ReplayRetentionSettings defaults = ReplayRetentionSettings.defaults();
-            merged.put("enabled", defaults.isEnabled());
-            merged.put("days", defaults.getDays());
-            merged.putAll(data);
-            return normalizeForRead(objectMapper.convertValue(merged, ReplayRetentionSettings.class));
-        } catch (IllegalArgumentException exception) {
-            log.warn("Failed to map replay retention settings, using defaults: {}", exception.getMessage());
-            return ReplayRetentionSettings.defaults();
-        }
+        Map<String, Object> merged = new LinkedHashMap<>();
+        ReplayRetentionSettings defaults = ReplayRetentionSettings.defaults();
+        merged.put("enabled", defaults.isEnabled());
+        merged.put("days", defaults.getDays());
+        merged.putAll(data);
+        return normalizeForRead(codec().decode(merged));
+    }
+
+    private SettingsCodec<ReplayRetentionSettings> codec() {
+        return SettingsCodec.of(objectMapper, ReplayRetentionSettings.class, ReplayRetentionSettings::defaults);
     }
 
     private ReplayRetentionSettings normalizeForRead(ReplayRetentionSettings settings) {

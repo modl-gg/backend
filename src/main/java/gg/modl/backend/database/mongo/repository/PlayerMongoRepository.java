@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.query.Collation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -34,13 +35,9 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return findOne(server, Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)));
     }
 
-    public Optional<Player> findByMinecraftUuid(String databaseName, String minecraftUuid) {
-        return findOne(databaseName, Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)));
-    }
-
     public Optional<Player> findByUsernameIgnoreCase(Server server, String username) {
-        String escapedUsername = Pattern.quote(username.trim());
-        Query query = Query.query(Criteria.where(PlayerFields.USERNAME).regex("^" + escapedUsername + "$", "i"));
+        Query query = Query.query(Criteria.where(PlayerFields.USERNAME).is(username.trim()))
+            .collation(Collation.of("en").strength(2));
         return findOne(server, query);
     }
 

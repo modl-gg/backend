@@ -30,27 +30,22 @@ public class GeneralSettingsService {
     }
 
     private GeneralSettings mapToGeneralSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return defaultGeneralSettings();
-        }
+        GeneralSettings mapped = codec().decode(data);
+        return GeneralSettings.builder()
+            .serverDisplayName(sanitizeOrEmpty(mapped.getServerDisplayName(), MAX_SERVER_NAME_LENGTH))
+            .discordWebhookUrl(sanitizeOrEmpty(mapped.getDiscordWebhookUrl(), MAX_URL_LENGTH))
+            .homepageIconUrl(sanitizeOrEmpty(mapped.getHomepageIconUrl(), MAX_URL_LENGTH))
+            .panelIconUrl(sanitizeOrEmpty(mapped.getPanelIconUrl(), MAX_URL_LENGTH))
+            .build();
+    }
 
-        try {
-            GeneralSettings mapped = objectMapper.convertValue(data, GeneralSettings.class);
-            String serverDisplayName = sanitize(mapped.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
-            String discordWebhookUrl = sanitize(mapped.getDiscordWebhookUrl(), MAX_URL_LENGTH);
-            String homepageIconUrl = sanitize(mapped.getHomepageIconUrl(), MAX_URL_LENGTH);
-            String panelIconUrl = sanitize(mapped.getPanelIconUrl(), MAX_URL_LENGTH);
+    private SettingsCodec<GeneralSettings> codec() {
+        return SettingsCodec.of(objectMapper, GeneralSettings.class, this::defaultGeneralSettings);
+    }
 
-            return GeneralSettings.builder()
-                .serverDisplayName(serverDisplayName != null ? serverDisplayName : "")
-                .discordWebhookUrl(discordWebhookUrl != null ? discordWebhookUrl : "")
-                .homepageIconUrl(homepageIconUrl != null ? homepageIconUrl : "")
-                .panelIconUrl(panelIconUrl != null ? panelIconUrl : "")
-                .build();
-        } catch (IllegalArgumentException exception) {
-            log.warn("Failed to map general settings, using defaults: {}", exception.getMessage());
-            return defaultGeneralSettings();
-        }
+    private String sanitizeOrEmpty(String value, int maxLength) {
+        String sanitized = sanitize(value, maxLength);
+        return sanitized != null ? sanitized : "";
     }
 
     private GeneralSettings defaultGeneralSettings() {

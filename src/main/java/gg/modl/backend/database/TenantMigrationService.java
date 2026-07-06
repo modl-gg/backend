@@ -1,12 +1,14 @@
 package gg.modl.backend.database;
 
+import com.mongodb.ErrorCategory;
+import com.mongodb.MongoWriteException;
+import com.mongodb.client.ClientSession;
+import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
-import com.mongodb.client.model.DeleteOneModel;
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.InsertOneModel;
+import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
-import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.SettingsFields;
@@ -14,6 +16,7 @@ import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.DuplicatePlayerMerger;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -23,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +34,7 @@ import org.bson.BsonType;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.convert.MongoConverter;
 import org.springframework.stereotype.Service;
@@ -46,6 +51,14 @@ public class TenantMigrationService {
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
     private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
+    private static final String STATUS_FIELD = "status";
+    private static final String OWNER_FIELD = "owner";
+    private static final String LEASE_UNTIL_FIELD = "leaseUntil";
+    private static final String STARTED_AT_FIELD = "startedAt";
+    private static final String APPLIED_AT_FIELD = "appliedAt";
+    private static final String STATUS_IN_PROGRESS = "in_progress";
+    private static final String STATUS_COMPLETED = "completed";
+    private static final Duration MIGRATION_LEASE = Duration.ofMinutes(15);
 
     private static final Comparator<Document> SETTINGS_RECENCY = Comparator
         .comparing(TenantMigrationService::settingsVersion, Comparator.nullsFirst(Comparator.naturalOrder()))
@@ -54,6 +67,9 @@ public class TenantMigrationService {
         .reversed();
 
     private final DuplicatePlayerMerger duplicatePlayerMerger;
+    private final MongoClient mongoClient;
+    private final String migrationOwner = UUID.randomUUID().toString();
+    private volatile Boolean transactionsSupported;
 
     void applyMigrationsForTenant(MongoTemplate template) {
         runMigrationOnce(template, LOWERCASE_TICKET_UUIDS_MIGRATION_ID, this::lowercaseTicketUuids);
@@ -64,25 +80,68 @@ public class TenantMigrationService {
     }
 
     private void runMigrationOnce(MongoTemplate template, String migrationId, MigrationStep step) {
-        if (isMigrationApplied(template, migrationId)) {
+        if (isMigrationCompleted(template, migrationId)) {
             return;
         }
-        step.run(template);
-        markMigrationApplied(template, migrationId);
+        if (!tryClaimMigration(template, migrationId)) {
+            return;
+        }
+        try {
+            step.run(template);
+            completeMigration(template, migrationId);
+        } catch (RuntimeException e) {
+            log.error("Tenant migration {} failed in database={}; claim left to expire for re-claim on a later startup",
+                migrationId, template.getDb().getName(), e);
+        }
     }
 
-    private boolean isMigrationApplied(MongoTemplate template, String migrationId) {
+    private boolean isMigrationCompleted(MongoTemplate template, String migrationId) {
         Document marker = template.getCollection(CollectionName.TENANT_MIGRATIONS)
-            .find(Filters.eq("_id", migrationId))
+            .find(Filters.eq(ID_FIELD, migrationId))
             .first();
-        return marker != null;
+        if (marker == null) {
+            return false;
+        }
+        String status = marker.getString(STATUS_FIELD);
+        return STATUS_COMPLETED.equals(status) || status == null;
     }
 
-    private void markMigrationApplied(MongoTemplate template, String migrationId) {
+    private boolean tryClaimMigration(MongoTemplate template, String migrationId) {
+        Date now = new Date();
+        Date leaseUntil = new Date(now.getTime() + MIGRATION_LEASE.toMillis());
+        Bson filter = Filters.and(
+            Filters.eq(ID_FIELD, migrationId),
+            Filters.ne(STATUS_FIELD, STATUS_COMPLETED),
+            Filters.or(
+                Filters.exists(STATUS_FIELD, false),
+                Filters.lt(LEASE_UNTIL_FIELD, now)
+            )
+        );
+        Bson update = Updates.combine(
+            Updates.set(STATUS_FIELD, STATUS_IN_PROGRESS),
+            Updates.set(OWNER_FIELD, migrationOwner),
+            Updates.set(LEASE_UNTIL_FIELD, leaseUntil),
+            Updates.set(STARTED_AT_FIELD, now)
+        );
+        try {
+            UpdateResult result = template.getCollection(CollectionName.TENANT_MIGRATIONS)
+                .updateOne(filter, update, new UpdateOptions().upsert(true));
+            return result.getUpsertedId() != null || result.getModifiedCount() > 0;
+        } catch (MongoWriteException e) {
+            if (e.getError().getCategory() == ErrorCategory.DUPLICATE_KEY) {
+                return false;
+            }
+            throw e;
+        }
+    }
+
+    private void completeMigration(MongoTemplate template, String migrationId) {
         template.getCollection(CollectionName.TENANT_MIGRATIONS).updateOne(
-            Filters.eq("_id", migrationId),
-            Updates.set("appliedAt", new Date()),
-            new UpdateOptions().upsert(true)
+            Filters.and(Filters.eq(ID_FIELD, migrationId), Filters.eq(OWNER_FIELD, migrationOwner)),
+            Updates.combine(
+                Updates.set(STATUS_FIELD, STATUS_COMPLETED),
+                Updates.set(APPLIED_AT_FIELD, new Date())
+            )
         );
     }
 
@@ -237,21 +296,54 @@ public class TenantMigrationService {
         List<Document> legacyPlayers = players
             .find(Filters.type(PlayerFields.ID, BsonType.OBJECT_ID))
             .into(new ArrayList<>());
-
-        List<WriteModel<Document>> operations = new ArrayList<>(legacyPlayers.size() * 2);
-        for (Document legacyPlayer : legacyPlayers) {
-            Object legacyId = legacyPlayer.get(PlayerFields.ID);
-            Document reKeyedPlayer = new Document(legacyPlayer);
-            reKeyedPlayer.put(PlayerFields.ID, legacyId.toString());
-            operations.add(new DeleteOneModel<>(Filters.eq(PlayerFields.ID, legacyId)));
-            operations.add(new InsertOneModel<>(reKeyedPlayer));
+        if (legacyPlayers.isEmpty()) {
+            return;
         }
 
-        if (!operations.isEmpty()) {
-            players.bulkWrite(operations);
+        boolean transactional = transactionsSupported();
+        for (Document legacyPlayer : legacyPlayers) {
+            Object legacyId = legacyPlayer.get(PlayerFields.ID);
+            String reKeyedId = legacyId.toString();
+            Document reKeyedPlayer = new Document(legacyPlayer);
+            reKeyedPlayer.put(PlayerFields.ID, reKeyedId);
+            if (transactional) {
+                try (ClientSession session = mongoClient.startSession()) {
+                    session.withTransaction(() -> {
+                        reKeyLegacyPlayer(players, legacyId, reKeyedId, reKeyedPlayer, session);
+                        return null;
+                    });
+                }
+            } else {
+                reKeyLegacyPlayer(players, legacyId, reKeyedId, reKeyedPlayer, null);
+            }
         }
         log.info("Normalized player ids in database={} reKeyed={}",
             template.getDb().getName(), legacyPlayers.size());
+    }
+
+    private void reKeyLegacyPlayer(MongoCollection<Document> players, Object legacyId, String reKeyedId,
+                                   Document reKeyedPlayer, @Nullable ClientSession session) {
+        ReplaceOptions upsert = new ReplaceOptions().upsert(true);
+        if (session != null) {
+            players.deleteOne(session, Filters.eq(PlayerFields.ID, legacyId));
+            players.replaceOne(session, Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
+        } else {
+            players.deleteOne(Filters.eq(PlayerFields.ID, legacyId));
+            players.replaceOne(Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
+        }
+    }
+
+    private boolean transactionsSupported() {
+        Boolean cached = transactionsSupported;
+        if (cached != null) {
+            return cached;
+        }
+        Document hello = mongoClient.getDatabase("admin").runCommand(new Document("hello", 1));
+        boolean replicaSet = hello.getString("setName") != null;
+        boolean mongos = "isdbgrid".equals(hello.getString("msg"));
+        boolean supported = replicaSet || mongos;
+        transactionsSupported = supported;
+        return supported;
     }
 
     private List<String> findDuplicateMinecraftUuids(MongoTemplate template) {

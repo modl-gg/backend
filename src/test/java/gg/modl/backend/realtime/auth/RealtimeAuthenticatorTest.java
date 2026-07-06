@@ -9,8 +9,6 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.infrastructure.config.ModlDevProperties;
-import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.server.ServerService;
@@ -36,8 +34,6 @@ class RealtimeAuthenticatorTest {
             mock(SessionService.class),
             mock(ServerService.class),
             mock(AuthConfiguration.class),
-            new ModlProperties(),
-            new ModlDevProperties(),
             mock(RealtimeOriginValidator.class),
             mock(StagingEnvironment.class)
         );
@@ -71,8 +67,6 @@ class RealtimeAuthenticatorTest {
             sessionService,
             serverService,
             authConfiguration,
-            new ModlProperties(),
-            new ModlDevProperties(),
             originValidator,
             mock(StagingEnvironment.class)
         );
@@ -99,8 +93,6 @@ class RealtimeAuthenticatorTest {
             mock(SessionService.class),
             mock(ServerService.class),
             new AuthConfiguration(),
-            new ModlProperties(),
-            new ModlDevProperties(),
             mock(RealtimeOriginValidator.class),
             mock(StagingEnvironment.class)
         );

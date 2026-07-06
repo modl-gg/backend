@@ -1,5 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
+
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
@@ -76,21 +78,6 @@ public class AnalyticsMongoRepository {
         final long totalStaff = template.getCollection(CollectionName.STAFF).countDocuments();
 
         return new OverviewStats(totalTickets, totalPlayers, totalStaff, activeTickets, recentTickets, previousTickets);
-    }
-
-    private long extractFacetCount(Document facets, String key) {
-        final List<?> list = facets.getList(key, Document.class, List.of());
-        if (list.isEmpty()) {
-            return 0;
-        }
-
-        final Object first = list.getFirst();
-        if (first instanceof final Document doc) {
-            final Number n = doc.get(ALIAS_N, Number.class);
-            return n != null ? n.longValue() : 0;
-        }
-
-        return 0;
     }
 
     public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {

@@ -1,5 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
+
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 
@@ -265,19 +267,6 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
             extractFacetCount(doc, "unresolvedCritical"),
             extractFacetCount(doc, "unresolvedError")
         );
-    }
-
-    private long extractFacetCount(Document facets, String key) {
-        List<?> list = facets.getList(key, Document.class, List.of());
-        if (list.isEmpty()) {
-            return 0;
-        }
-        Object first = list.getFirst();
-        if (first instanceof Document doc) {
-            Number n = doc.get("n", Number.class);
-            return n != null ? n.longValue() : 0;
-        }
-        return 0;
     }
 
     public record MonitoringLogStats(long critical24h, long error24h, long warning24h,

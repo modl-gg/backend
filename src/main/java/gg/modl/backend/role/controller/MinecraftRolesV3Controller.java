@@ -4,9 +4,9 @@ import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.dto.response.RoleResponse;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.staff.service.StaffService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.MinecraftRoleDetailResponse;
 import gg.modl.proto.modl.v1.MinecraftRoleListResponse;
@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftRolesV3Controller {
     private final RoleService roleService;
-    private final StaffService staffService;
+    private final RoleAuthorization roleAuthorization;
 
     @GetMapping(produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE)
     public ResponseEntity<MinecraftRoleListResponse> getAllRoles(HttpServletRequest request) {
@@ -73,12 +73,9 @@ public class MinecraftRolesV3Controller {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<String> permissions = request != null ? request.getPermissionsList() : List.of();
         String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
-        StaffService.MinecraftPerformer performer = staffService.resolveMinecraftPerformer(server, actingStaffId);
-        boolean hasIdentity = actingStaffId != null;
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.minecraftPerformer(server, actingStaffId);
 
-        if (!roleService.updateRolePermissions(
-                server, id, permissions,
-                performer.roleId(), performer.isSuperAdmin(), hasIdentity)) {
+        if (!roleService.updateRolePermissions(server, id, permissions, performer)) {
             return mutationResponse(HttpStatus.NOT_FOUND, false, "Role not found");
         }
 

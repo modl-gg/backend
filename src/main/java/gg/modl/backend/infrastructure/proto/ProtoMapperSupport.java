@@ -29,14 +29,6 @@ import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Shared value-coercion toolkit for panel/admin/public proto mappers. Mirrors the conversions used by the
- * minecraft V3 {@code MinecraftPlayerProtoMapper}: null-safe scalars, epoch-millis longs from {@link Date},
- * free-form {@code Map<String,Object>} to {@link Struct}, and {@code List} to repeated helpers.
- *
- * <p>Timestamp policy: backend DTOs carry {@link Date}, mapped to {@code int64} epoch millis ({@link #longValue}).
- * Use {@link #toTimestamp} only for the rare proto field actually typed {@code google.protobuf.Timestamp}.
- */
 public final class ProtoMapperSupport {
 
     // 2^53 is the largest integer a double represents exactly; integral values beyond it must travel as
@@ -49,8 +41,20 @@ public final class ProtoMapperSupport {
     private ProtoMapperSupport() {
     }
 
+    public enum StructEncoding {
+        CANONICAL,
+        LEGACY_DOUBLE_ISO
+    }
+
     public static String stringValue(Object value) {
         return value == null ? "" : Objects.toString(value);
+    }
+
+    public static String dateAwareString(Object value) {
+        if (value instanceof Date date) {
+            return date.toInstant().toString();
+        }
+        return stringValue(value);
     }
 
     public static int intValue(Object value) {
@@ -61,6 +65,14 @@ public final class ProtoMapperSupport {
             return Integer.parseInt(string.trim());
         }
         return 0;
+    }
+
+    public static int intValueOrZero(Object value) {
+        try {
+            return intValue(value);
+        } catch (NumberFormatException ignored) {
+            return 0;
+        }
     }
 
     public static long longValue(Object value) {
@@ -130,11 +142,19 @@ public final class ProtoMapperSupport {
     }
 
     public static Struct toStruct(Map<String, Object> map) {
+        return toStruct(map, StructEncoding.CANONICAL);
+    }
+
+    public static Struct toStruct(Map<String, Object> map, StructEncoding encoding) {
         Struct.Builder builder = Struct.newBuilder();
         if (map != null) {
-            map.forEach((key, value) -> builder.putFields(Objects.toString(key), objectToValue(value)));
+            map.forEach((key, value) -> builder.putFields(Objects.toString(key), objectToValue(value, encoding)));
         }
         return builder.build();
+    }
+
+    public static Struct legacyStruct(Map<String, Object> map) {
+        return toStruct(map, StructEncoding.LEGACY_DOUBLE_ISO);
     }
 
     public static Map<String, Object> structToMap(Struct struct) {
@@ -204,7 +224,7 @@ public final class ProtoMapperSupport {
         source.forEach((key, value) -> putter.accept(key, converter.apply(value)));
     }
 
-    private static Value objectToValue(Object object) {
+    private static Value objectToValue(Object object, StructEncoding encoding) {
         Value.Builder builder = Value.newBuilder();
         if (object == null) {
             return builder.setNullValue(NullValue.NULL_VALUE).build();
@@ -213,23 +233,28 @@ public final class ProtoMapperSupport {
             return builder.setStringValue(string).build();
         }
         if (object instanceof Number number) {
-            return numberValue(builder, number);
+            return numberValue(builder, number, encoding);
         }
         if (object instanceof Boolean bool) {
             return builder.setBoolValue(bool).build();
         }
         if (object instanceof Map<?, ?> rawMap) {
             Struct.Builder struct = Struct.newBuilder();
-            rawMap.forEach((key, value) -> struct.putFields(Objects.toString(key), objectToValue(value)));
+            rawMap.forEach((key, value) -> struct.putFields(Objects.toString(key), objectToValue(value, encoding)));
             return builder.setStructValue(struct).build();
         }
         if (object instanceof Iterable<?> iterable) {
             ListValue.Builder listValue = ListValue.newBuilder();
-            iterable.forEach(item -> listValue.addValues(objectToValue(item)));
+            iterable.forEach(item -> listValue.addValues(objectToValue(item, encoding)));
             return builder.setListValue(listValue).build();
         }
         if (object instanceof Date date) {
-            return integralValue(builder, BigInteger.valueOf(date.getTime()));
+            return encoding == StructEncoding.LEGACY_DOUBLE_ISO
+                ? builder.setStringValue(date.toInstant().toString()).build()
+                : integralValue(builder, BigInteger.valueOf(date.getTime()));
+        }
+        if (encoding == StructEncoding.LEGACY_DOUBLE_ISO && object instanceof Instant instant) {
+            return builder.setStringValue(instant.toString()).build();
         }
         if (object instanceof ObjectId objectId) {
             return builder.setStringValue(objectId.toHexString()).build();
@@ -262,7 +287,10 @@ public final class ProtoMapperSupport {
     // snowflake-style IDs) above 2^53 loses precision once coerced to double. Emit those as a string so
     // the panel's fromJson rehydration preserves the exact value; genuine floating-point and
     // small integers stay number values.
-    private static Value numberValue(Value.Builder builder, Number number) {
+    private static Value numberValue(Value.Builder builder, Number number, StructEncoding encoding) {
+        if (encoding == StructEncoding.LEGACY_DOUBLE_ISO) {
+            return builder.setNumberValue(number.doubleValue()).build();
+        }
         if (number instanceof Double || number instanceof Float) {
             return builder.setNumberValue(number.doubleValue()).build();
         }

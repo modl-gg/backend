@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class EmailService {
-    private final EmailSender emailSender;
+    private final AsyncEmailDispatcher dispatcher;
 
     public void sendStaffInviteEmail(String toEmail, String serverName, String role, String invitationLink) {
         try {
@@ -25,6 +25,6 @@ public class EmailService {
     }
 
     public void send(String toEmail, String subject, String htmlBody) throws MessagingException, UnsupportedEncodingException {
-        emailSender.send(toEmail, subject, htmlBody);
+        dispatcher.dispatch(toEmail, subject, htmlBody);
     }
 }
