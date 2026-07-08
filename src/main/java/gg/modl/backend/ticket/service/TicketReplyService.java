@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
@@ -27,7 +28,7 @@ public class TicketReplyService {
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         if (ticket.isLocked()) {
-            throw new IllegalStateException("Ticket is locked and cannot accept new replies");
+            throw new ConflictException("Ticket is locked and cannot accept new replies");
         }
 
         TicketReply newReply = TicketReply.builder()
@@ -58,7 +59,7 @@ public class TicketReplyService {
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
 
         if (ticket.isLocked()) {
-            throw new IllegalStateException("Ticket is locked and cannot accept new replies");
+            throw new ConflictException("Ticket is locked and cannot accept new replies");
         }
 
         TicketReply newReply = TicketReply.builder()

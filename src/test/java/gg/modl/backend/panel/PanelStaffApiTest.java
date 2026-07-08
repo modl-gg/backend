@@ -140,9 +140,9 @@ class PanelStaffApiTest {
         if (arr.isEmpty()) {
             return;
         }
-        String username = arr.get(0).getAsJsonObject().get("username").getAsString();
+        String email = arr.get(0).getAsJsonObject().get("email").getAsString();
 
-        var response = api.panelPatch("/v1/panel/staff/" + username + "/minecraft-player", Map.of());
+        var response = api.panelPatch("/v1/panel/staff/" + email + "/minecraft-player", Map.of());
         JsonHelper.assertStatus(response, 200);
     }
 

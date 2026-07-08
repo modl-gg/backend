@@ -14,10 +14,7 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.proto.modl.v1.CreateTicketResponse;
 import gg.modl.proto.modl.v1.PublicTicketResponse;
 import gg.modl.proto.modl.v1.PublicTicketStatusResponse;
-import gg.modl.proto.modl.v1.PublicTicketVerificationRequestResponse;
-import gg.modl.proto.modl.v1.PublicTicketVerificationResponse;
 import gg.modl.proto.modl.v1.SubmitPublicTicketResponse;
-import gg.modl.proto.modl.v1.TicketVerificationRequiredResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,14 +37,6 @@ final class PublicTicketProtoMapper {
             .build();
     }
 
-    static TicketVerificationRequiredResponse toVerificationRequiredResponse(String ticketId, String emailHint) {
-        return TicketVerificationRequiredResponse.newBuilder()
-            .setRequiresVerification(true)
-            .setEmailHint(stringValue(emailHint))
-            .setTicketId(stringValue(ticketId))
-            .build();
-    }
-
     static PublicTicketResponse toPublicTicketResponse(TicketResponse ticket, Ticket rawTicket, Set<String> formFieldAllowlist) {
         String creatorName = ticket.creatorName() != null ? ticket.creatorName() : "";
         List<gg.modl.proto.modl.v1.PublicTicketReply> publicReplies =
@@ -63,7 +52,7 @@ final class PublicTicketProtoMapper {
             .setStatus(stringValue(ticket.status()))
             .setCreatorName(creatorName)
             .setCreator(creatorName)
-            .setCreatorUuid("")
+            .setCreatorUuid(stringValue(ticket.creatorUuid()))
             .setReportedBy(ticket.reportedBy() != null ? ticket.reportedBy() : "")
             .setCategory(stringValue(ticket.category()))
             .setLocked(ticket.locked())
@@ -114,22 +103,6 @@ final class PublicTicketProtoMapper {
                 .setId(stringValue(ticket.id()))
                 .setSubject(stringValue(ticket.subject()))
                 .setStatus(stringValue(ticket.status())))
-            .build();
-    }
-
-    static PublicTicketVerificationRequestResponse toRequestVerificationResponse(String emailHint) {
-        return PublicTicketVerificationRequestResponse.newBuilder()
-            .setSuccess(true)
-            .setMessage("Verification code sent")
-            .setEmailHint(stringValue(emailHint))
-            .build();
-    }
-
-    static PublicTicketVerificationResponse toVerifyResponse(String token) {
-        return PublicTicketVerificationResponse.newBuilder()
-            .setSuccess(true)
-            .setToken(stringValue(token))
-            .setMessage("Verification successful")
             .build();
     }
 

@@ -10,9 +10,8 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import gg.modl.backend.database.MongoIndexBootstrapService.BootstrapTarget;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
-import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
@@ -217,21 +216,21 @@ class MongoIndexBootstrapServiceTest {
         when(firstReplays.getIndexInfo()).thenReturn(List.of());
         when(secondReplays.getIndexInfo()).thenReturn(List.of());
 
-        Server configured = new Server("alpha", "alpha", "server_alpha", "alpha@example.com", true, ServerPlan.FREE);
-        Server alsoConfigured = new Server("beta", "beta", "server_beta", "beta@example.com", true, ServerPlan.FREE);
-        Server unprovisioned = new Server("gamma", "gamma", null, "gamma@example.com", false, ServerPlan.FREE);
+        BootstrapTarget configured = new BootstrapTarget("alpha", "server_alpha");
+        BootstrapTarget alsoConfigured = new BootstrapTarget("beta", "server_beta");
+        BootstrapTarget unprovisioned = new BootstrapTarget("gamma", null);
         when(tenantMongoAccess.global()).thenReturn(globalTemplate);
-        when(globalTemplate.find(any(Query.class), eq(Server.class), eq(CollectionName.MODL_SERVERS)))
+        when(globalTemplate.find(any(Query.class), eq(BootstrapTarget.class), eq(CollectionName.MODL_SERVERS)))
             .thenReturn(List.of(configured, alsoConfigured, unprovisioned));
-        when(tenantMongoAccess.forServer(configured)).thenReturn(firstTemplate);
-        when(tenantMongoAccess.forServer(alsoConfigured)).thenReturn(secondTemplate);
+        when(tenantMongoAccess.forDatabase("server_alpha")).thenReturn(firstTemplate);
+        when(tenantMongoAccess.forDatabase("server_beta")).thenReturn(secondTemplate);
 
         MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.bootstrapExistingTenants();
 
         verify(firstReplays, timeout(5000).atLeastOnce()).createIndex(any());
         verify(secondReplays, timeout(5000).atLeastOnce()).createIndex(any());
-        verify(tenantMongoAccess, never()).forServer(unprovisioned);
+        verify(tenantMongoAccess, never()).forDatabase(null);
     }
 
     @Test
@@ -244,13 +243,13 @@ class MongoIndexBootstrapServiceTest {
         when(goodTemplate.indexOps(CollectionName.REPLAYS)).thenReturn(goodReplays);
         when(goodReplays.getIndexInfo()).thenReturn(List.of());
 
-        Server broken = new Server("broken", "broken", "server_broken", "broken@example.com", true, ServerPlan.FREE);
-        Server healthy = new Server("healthy", "healthy", "server_healthy", "healthy@example.com", true, ServerPlan.FREE);
+        BootstrapTarget broken = new BootstrapTarget("broken", "server_broken");
+        BootstrapTarget healthy = new BootstrapTarget("healthy", "server_healthy");
         when(tenantMongoAccess.global()).thenReturn(globalTemplate);
-        when(globalTemplate.find(any(Query.class), eq(Server.class), eq(CollectionName.MODL_SERVERS)))
+        when(globalTemplate.find(any(Query.class), eq(BootstrapTarget.class), eq(CollectionName.MODL_SERVERS)))
             .thenReturn(List.of(broken, healthy));
-        when(tenantMongoAccess.forServer(broken)).thenThrow(new IllegalStateException("boom"));
-        when(tenantMongoAccess.forServer(healthy)).thenReturn(goodTemplate);
+        when(tenantMongoAccess.forDatabase("server_broken")).thenThrow(new IllegalStateException("boom"));
+        when(tenantMongoAccess.forDatabase("server_healthy")).thenReturn(goodTemplate);
 
         MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
         service.bootstrapExistingTenants();

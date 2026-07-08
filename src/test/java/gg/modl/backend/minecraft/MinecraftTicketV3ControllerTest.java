@@ -265,10 +265,10 @@ class MinecraftTicketV3ControllerTest {
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
-        ClaimTicketResponse response = ClaimTicketResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(404, response.getStatus());
-        assertFalse(response.getSuccess());
-        assertEquals("Ticket not found", response.getMessage());
+        ApiError error = ApiError.parseFrom(result.getResponse().getContentAsByteArray());
+        assertEquals(404, error.getStatusCode());
+        assertEquals("NOT_FOUND", error.getCode());
+        assertEquals("Ticket not found", error.getMessage());
     }
 
     @Test
@@ -295,10 +295,10 @@ class MinecraftTicketV3ControllerTest {
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
-        ClaimTicketResponse response = ClaimTicketResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(409, response.getStatus());
-        assertFalse(response.getSuccess());
-        assertEquals("Ticket is already linked to a Minecraft account", response.getMessage());
+        ApiError error = ApiError.parseFrom(result.getResponse().getContentAsByteArray());
+        assertEquals(409, error.getStatusCode());
+        assertEquals("ALREADY_LINKED", error.getCode());
+        assertEquals("Ticket is already linked to a Minecraft account", error.getMessage());
     }
 
     @Test
@@ -436,6 +436,7 @@ class MinecraftTicketV3ControllerTest {
         ticket.setPriority(null);
         ticket.setAssignedTo(List.of("staff-ignored"));
         when(ticketService.getMinecraftTicketsByCreator(server, PLAYER_UUID, 50)).thenReturn(List.of(ticket));
+        when(ticketService.toPlayerTicketItem(ticket)).thenReturn(playerTicketItem(ticket));
 
         MvcResult result = mockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/tickets/player/" + PLAYER_UUID)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
@@ -602,6 +603,17 @@ class MinecraftTicketV3ControllerTest {
         item.put("replies", List.of(reply));
         item.put("chatMessages", ticket.getChatMessages());
         item.put("replayUrl", "https://cdn.example/replay.modl");
+        return item;
+    }
+
+    private static Map<String, Object> playerTicketItem(Ticket ticket) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", ticket.getId());
+        item.put("type", "support");
+        item.put("category", "support");
+        item.put("subject", "Need help");
+        item.put("status", "open");
+        item.put("createdAt", new Date(1_700_000_000_000L));
         return item;
     }
 

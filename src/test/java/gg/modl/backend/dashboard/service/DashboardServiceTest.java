@@ -16,6 +16,7 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.service.StaffService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -43,6 +44,9 @@ class DashboardServiceTest {
     private StaffMongoRepository staffRepository;
 
     @Mock
+    private StaffService staffService;
+
+    @Mock
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
@@ -60,6 +64,7 @@ class DashboardServiceTest {
             playerRepository,
             punishmentRepository,
             staffRepository,
+            staffService,
             punishmentTypeService,
             statusCalculator
         );
@@ -134,7 +139,7 @@ class DashboardServiceTest {
         when(ticketRepository.countAll(server)).thenReturn(40L);
         when(ticketRepository.countByStatus(eq(server), any())).thenReturn(5L);
         when(playerRepository.countAll(server)).thenReturn(100L);
-        when(staffRepository.countAll(server)).thenReturn(8L);
+        when(staffService.countStaffIncludingSuperAdmin(server)).thenReturn(8L);
         when(ticketRepository.countCreatedAfter(eq(server), any(Date.class))).thenReturn(12L);
         when(ticketRepository.countCreatedBetween(eq(server), any(Date.class), any(Date.class))).thenReturn(10L);
         when(punishmentRepository.countAllPunishments(server)).thenReturn(77L);

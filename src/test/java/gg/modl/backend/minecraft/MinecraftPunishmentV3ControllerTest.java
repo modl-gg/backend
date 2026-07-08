@@ -1050,7 +1050,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentLifecycleService);
     }
@@ -2607,7 +2607,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentLifecycleService);
     }
@@ -2646,7 +2646,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentMutationService);
     }
@@ -2670,7 +2670,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentMutationService);
     }
@@ -2695,7 +2695,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentEvidenceService);
     }
@@ -2720,7 +2720,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentEvidenceService);
     }
@@ -2745,7 +2745,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentMutationService);
     }
@@ -2769,7 +2769,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentQueryService);
     }
@@ -2793,7 +2793,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentMutationService);
     }
@@ -2817,7 +2817,7 @@ class MinecraftPunishmentV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
         verifyNoInteractions(punishmentLifecycleService);
     }

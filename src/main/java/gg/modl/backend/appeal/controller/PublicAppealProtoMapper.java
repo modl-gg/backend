@@ -11,7 +11,6 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.proto.modl.v1.AddPublicAppealReplyResponse;
 import gg.modl.proto.modl.v1.CreatePublicAppealResponse;
 import gg.modl.proto.modl.v1.PublicAppealResponse;
-import gg.modl.proto.modl.v1.TicketVerificationRequiredResponse;
 import java.util.List;
 
 final class PublicAppealProtoMapper {
@@ -19,16 +18,12 @@ final class PublicAppealProtoMapper {
     }
 
     static PublicAppealResponse toPublicAppealResponse(TicketResponse appeal) {
-        String workflowStatus = appeal.appealWorkflowStatus() != null
-            ? appeal.appealWorkflowStatus()
-            : appeal.status();
-
         PublicAppealResponse.Builder builder = PublicAppealResponse.newBuilder()
             .setId(stringValue(appeal.id()))
             .setType(stringValue(appeal.type()))
             .setSubject(stringValue(appeal.subject()))
-            .setStatus(stringValue(workflowStatus))
-            .setAppealWorkflowStatus(stringValue(workflowStatus))
+            .setStatus(stringValue(appeal.status()))
+            .setAppealWorkflowStatus(stringValue(appeal.appealWorkflowStatus()))
             .setCreatorName(stringValue(appeal.creatorName()))
             .setCreatorUuid("")
             .setLocked(appeal.locked())
@@ -75,11 +70,4 @@ final class PublicAppealProtoMapper {
             .build();
     }
 
-    static TicketVerificationRequiredResponse toVerificationRequiredResponse(String recordId, String emailHint) {
-        return TicketVerificationRequiredResponse.newBuilder()
-            .setRequiresVerification(true)
-            .setEmailHint(stringValue(emailHint))
-            .setTicketId(stringValue(recordId))
-            .build();
-    }
 }

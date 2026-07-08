@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
@@ -441,7 +442,7 @@ public class TicketService {
         Ticket ticket = ticketRepository.findById(server, ticketId)
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
         if (ticket.isLocked() || (ticket.getStatus() != null && ticket.getStatus().isTerminal())) {
-            throw new IllegalStateException("Ticket is locked and cannot be resubmitted");
+            throw new ConflictException("Ticket is locked and cannot be resubmitted");
         }
         Object existingCreatorEmail = ticket.getData() != null ? ticket.getData().get("creatorEmail") : null;
         if (ticket.getStatus() != TicketStatus.OPEN) {

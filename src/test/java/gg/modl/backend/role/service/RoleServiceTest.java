@@ -27,7 +27,7 @@ import org.mockito.ArgumentCaptor;
 class RoleServiceTest {
 
     private static final RoleAuthorization.PerformerAuthority SUPER_ADMIN =
-        new RoleAuthorization.PerformerAuthority(null, true, true);
+        new RoleAuthorization.PerformerAuthority("owner@example.com", null, true, true);
 
     @Test
     void defaultTicketRolesIncludeAppealModifyPermission() {
@@ -131,7 +131,7 @@ class RoleServiceTest {
         when(roleRepository.saveEntity(eq(server), any())).thenAnswer(inv -> inv.getArgument(1));
 
         RoleAuthorization.PerformerAuthority performer =
-            new RoleAuthorization.PerformerAuthority("custom-performer", false, true);
+            new RoleAuthorization.PerformerAuthority("performer@example.com", "custom-performer", false, true);
         boolean result = roleService.updateRolePermissions(
             server, "custom-target", List.of("ticket.reply.all", "punishment.modify"), performer);
 

@@ -441,7 +441,7 @@ class MinecraftPlayerV3ControllerTest {
         // records), so a malformed UUID is rejected by bean validation -> generic invalid-data message,
         // rather than propagating to UUID.fromString. The point of this test is the JSON (non-protobuf)
         // error envelope on the v1 path, which is unchanged.
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
     }
 

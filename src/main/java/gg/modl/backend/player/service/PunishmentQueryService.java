@@ -29,6 +29,7 @@ import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -497,11 +498,11 @@ public class PunishmentQueryService {
             Map<String, Object> existingAppeal = new HashMap<>();
             existingAppeal.put("id", latestAppeal.getId());
             existingAppeal.put("submittedDate", latestAppeal.getCreated());
-            String workflowStatus = latestAppeal.getAppealWorkflowStatus() != null
-                                    ? latestAppeal.getAppealWorkflowStatus().getId()
-                                    : latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : "open";
-            existingAppeal.put("status", workflowStatus);
-            existingAppeal.put("appealWorkflowStatus", workflowStatus);
+            existingAppeal.put("status", latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : TicketStatus.OPEN.getId());
+            if (latestAppeal.getAppealWorkflowStatus() != null) {
+                existingAppeal.put("appealWorkflowStatus", latestAppeal.getAppealWorkflowStatus().getId());
+            }
+            existingAppeal.put("locked", latestAppeal.isLocked());
             response.put("existingAppeal", existingAppeal);
         }
 

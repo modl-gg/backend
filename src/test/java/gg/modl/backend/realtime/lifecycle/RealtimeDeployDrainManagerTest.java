@@ -1,5 +1,6 @@
 package gg.modl.backend.realtime.lifecycle;
 
+import static gg.modl.backend.realtime.support.RealtimeEventCounters.realtimeEventCount;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +66,7 @@ class RealtimeDeployDrainManagerTest {
         }));
         verify(session).close(new CloseStatus(1012, "Realtime deploy drain"));
         assertTrue(registry.get(session).isEmpty());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reconnect_close", "reason", "deploy_drain").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "reconnect_close", "reason", "deploy_drain"));
     }
 
     @Test

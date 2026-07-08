@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import java.time.Instant;
@@ -27,9 +28,10 @@ public class SyncActiveStaffService {
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Staff staff : staffWithMinecraft) {
-            StaffRole role = staff.getRoleId() != null ? rolesById.get(staff.getRoleId()) : null;
+            String roleId = RoleAuthorization.effectiveRoleId(server, staff);
+            StaffRole role = roleId != null ? rolesById.get(roleId) : null;
             List<String> permissions = role != null && role.getPermissions() != null ? role.getPermissions() : List.of();
-            String roleName = role != null ? role.getName() : (staff.getRoleId() != null ? staff.getRoleId() : "");
+            String roleName = role != null ? role.getName() : (roleId != null ? roleId : "");
 
             String currentIp = onlinePlayerIps.get(staff.getAssignedMinecraftUuid());
             boolean sessionValid = staff.getTwoFactorSessionExpiresAt() != null

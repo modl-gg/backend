@@ -11,11 +11,11 @@ import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.IdCountResult;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
@@ -50,7 +50,7 @@ public class AnalyticsService {
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final IssuerNameResolver issuerNameResolver;
-    private final StaffMongoRepository staffRepository;
+    private final StaffService staffService;
 
     private final Cache<String, OverviewResponse> overviewCache = analyticsResultCache();
     private final Cache<String, TicketAnalyticsResponse> ticketAnalyticsCache = analyticsResultCache();
@@ -87,7 +87,7 @@ public class AnalyticsService {
         return new OverviewResponse(
             stats.totalTickets(),
             stats.totalPlayers(),
-            stats.totalStaff(),
+            staffService.countStaffIncludingSuperAdmin(server),
             stats.activeTickets(),
             ticketChange,
             playerChange

@@ -1,8 +1,12 @@
 package gg.modl.backend.player.data.punishment;
 
+import gg.modl.backend.ticket.data.AppealWorkflowStatus;
+
 public enum PunishmentModificationType {
     MANUAL_PARDON,
     APPEAL_ACCEPT,
+    APPEAL_REJECT,
+    APPEAL_DURATION_CHANGE,
     SYSTEM_PARDON,
     MANUAL_DURATION_CHANGE,
     ROLLBACK,
@@ -21,6 +25,25 @@ public enum PunishmentModificationType {
 
     public static boolean isDurationChange(String type) {
         return MANUAL_DURATION_CHANGE.name().equals(type)
-            || "APPEAL_DURATION_CHANGE".equals(type);
+            || APPEAL_DURATION_CHANGE.name().equals(type);
+    }
+
+    public AppealWorkflowStatus appealOutcome() {
+        return switch (this) {
+            case APPEAL_ACCEPT, APPEAL_DURATION_CHANGE -> AppealWorkflowStatus.APPROVED;
+            case APPEAL_REJECT -> AppealWorkflowStatus.REJECTED;
+            default -> null;
+        };
+    }
+
+    public static PunishmentModificationType fromName(String type) {
+        if (type == null) {
+            return null;
+        }
+        try {
+            return valueOf(type);
+        } catch (IllegalArgumentException invalidType) {
+            return null;
+        }
     }
 }

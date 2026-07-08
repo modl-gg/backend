@@ -35,6 +35,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import gg.modl.backend.infrastructure.validation.SafeUrls;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -776,7 +777,8 @@ public class MigrationProcessor {
             } else if (item instanceof Map<?, ?>) {
                 Map<?, ?> m = (Map<?, ?>) item;
                 String text = validator.sanitizeString((String) m.get("text"), 5000);
-                String url = validator.sanitizeString((String) m.get("url"), 2000);
+                String sanitizedUrl = validator.sanitizeString((String) m.get("url"), 2000);
+                String url = SafeUrls.isSafe(sanitizedUrl) ? sanitizedUrl : null;
                 String type = validator.sanitizeString((String) m.get("type"), 100);
                 if (type == null || type.isBlank()) {
                     type = "link";

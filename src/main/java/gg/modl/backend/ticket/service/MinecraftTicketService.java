@@ -15,8 +15,8 @@ import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.time.LocalTime;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
@@ -126,12 +127,15 @@ public class MinecraftTicketService {
         }
 
         Ticket ticket = existingTicket.get();
+        String claimerUuid = normalizeUuid(request.playerUuid());
         if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
-            return new MinecraftTicketClaimResult(MinecraftTicketClaimStatus.ALREADY_LINKED, ticket);
+            MinecraftTicketClaimStatus status = Objects.equals(normalizeUuid(ticket.getCreatorUuid()), claimerUuid)
+                ? MinecraftTicketClaimStatus.SUCCESS
+                : MinecraftTicketClaimStatus.ALREADY_LINKED;
+            return new MinecraftTicketClaimResult(status, ticket);
         }
         String oldCreatorName = ticket.getCreatorName();
         String originalCreatorIdentifier = resolveOriginalCreatorIdentifier(ticket);
-        String claimerUuid = normalizeUuid(request.playerUuid());
         ticket.setCreatorUuid(claimerUuid);
         ticket.setCreatorName(request.playerName());
         ticket.setUpdatedAt(new Date());
@@ -460,14 +464,14 @@ public class MinecraftTicketService {
             .build();
     }
 
-    private static Date reconstructTimestamp(String timeOfDay, Date reportTime) {
+    static Date reconstructTimestamp(String timeOfDay, Date reportTime) {
         if (timeOfDay == null) {
             return reportTime;
         }
         try {
             LocalTime messageTime = LocalTime.parse(timeOfDay, CHAT_TIME_FORMAT);
-            ZonedDateTime report = reportTime.toInstant().atZone(ZoneId.systemDefault());
-            ZonedDateTime messageMoment = report.with(messageTime);
+            OffsetDateTime report = reportTime.toInstant().atOffset(ZoneOffset.UTC);
+            OffsetDateTime messageMoment = report.with(messageTime);
             if (messageMoment.isAfter(report)) {
                 messageMoment = messageMoment.minusDays(1);
             }

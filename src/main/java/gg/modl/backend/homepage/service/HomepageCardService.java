@@ -6,6 +6,7 @@ import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.backend.knowledgebase.service.KnowledgebaseArticleService;
 import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
+import gg.modl.backend.infrastructure.validation.SafeUrls;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.CreateCardRequest;
 import gg.modl.proto.modl.v1.UpdateCardRequest;
@@ -73,13 +74,15 @@ public class HomepageCardService {
     }
 
     public HomepageCard createCard(Server server, CreateCardRequest request) {
+        String actionUrl = request.hasActionUrl() ? request.getActionUrl() : null;
+        SafeUrls.requireSafe(actionUrl, "Invalid card URL");
         HomepageCard card = HomepageCard.builder()
             .title(request.getTitle())
             .description(request.hasDescription() ? request.getDescription() : null)
             .icon(request.hasIcon() ? request.getIcon() : null)
             .iconColor(request.hasIconColor() ? request.getIconColor() : null)
             .actionType(request.hasActionType() ? request.getActionType() : null)
-            .actionUrl(request.hasActionUrl() ? request.getActionUrl() : null)
+            .actionUrl(actionUrl)
             .actionButtonText(request.hasActionButtonText() ? request.getActionButtonText() : null)
             .categoryId(request.hasCategoryId() ? request.getCategoryId() : null)
             .backgroundColor(request.hasBackgroundColor() ? request.getBackgroundColor() : null)
@@ -93,6 +96,8 @@ public class HomepageCardService {
     }
 
     public Optional<HomepageCard> updateCard(Server server, String id, UpdateCardRequest request) {
+        String actionUrl = request.hasActionUrl() ? request.getActionUrl() : null;
+        SafeUrls.requireSafe(actionUrl, "Invalid card URL");
         return homepageCardRepository.updateCard(
             server,
             id,
@@ -101,7 +106,7 @@ public class HomepageCardService {
             request.hasIcon() ? request.getIcon() : null,
             request.hasIconColor() ? request.getIconColor() : null,
             request.hasActionType() ? request.getActionType() : null,
-            request.hasActionUrl() ? request.getActionUrl() : null,
+            actionUrl,
             request.hasActionButtonText() ? request.getActionButtonText() : null,
             request.hasCategoryId() ? request.getCategoryId() : null,
             request.hasBackgroundColor() ? request.getBackgroundColor() : null,

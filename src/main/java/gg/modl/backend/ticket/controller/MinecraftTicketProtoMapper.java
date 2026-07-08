@@ -102,16 +102,10 @@ final class MinecraftTicketProtoMapper {
             .build();
     }
 
-    static ClaimTicketResponse toClaimTicketResponse(
-        int status,
-        boolean success,
-        String message,
-        String ticketId,
-        String subject
-    ) {
+    static ClaimTicketResponse toClaimTicketSuccess(String message, String ticketId, String subject) {
         return ClaimTicketResponse.newBuilder()
-            .setStatus(status)
-            .setSuccess(success)
+            .setStatus(200)
+            .setSuccess(true)
             .setMessage(message)
             .setTicketId(stringValue(ticketId))
             .setSubject(stringValue(subject))

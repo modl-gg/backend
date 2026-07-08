@@ -42,7 +42,7 @@ public class PunishmentRealtimePublisher {
         // Building the push payload (type lookups, issuer resolution) can fail, but realtime is
         // best-effort acceleration on top of the HTTP baseline sync, so it must never fail the mutation.
         guard(() -> {
-            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS, punishment.getId());
+            invalidatePanelViews(server, player, List.of(punishment));
             publisher.pushPunishments(server, List.of(toPending(server, player, punishment)), List.of());
         });
     }
@@ -56,13 +56,14 @@ public class PunishmentRealtimePublisher {
             for (Punishment punishment : promoted) {
                 pending.add(toPending(server, player, punishment));
             }
+            invalidatePanelViews(server, player, promoted);
             publisher.pushPunishments(server, pending, List.of());
         });
     }
 
     public void punishmentModified(Server server, Player player, Punishment punishment) {
         guard(() -> {
-            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS, punishment.getId());
+            invalidatePanelViews(server, player, List.of(punishment));
             publisher.pushPunishments(server, List.of(), List.of(toModified(server, player, punishment)));
         });
     }
@@ -76,6 +77,7 @@ public class PunishmentRealtimePublisher {
             for (PlayerPunishment change : changes) {
                 modified.add(toModified(server, change.player(), change.punishment()));
             }
+            invalidateAllPanelViews(server);
             publisher.pushPunishments(server, List.of(), modified);
         });
     }
@@ -97,13 +99,24 @@ public class PunishmentRealtimePublisher {
                 modified.add(syncProtoFactory.toModifiedPunishment(toEntry(server, change)));
             }
             publisher.pushPunishments(server, List.of(), modified);
-            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS);
-            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS);
+            invalidateAllPanelViews(server);
         });
     }
 
-    public void invalidatePunishments(Server server, String punishmentId) {
-        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS, punishmentId);
+    public void punishmentDetailsChanged(Server server, Player player, Punishment punishment) {
+        guard(() -> invalidatePanelViews(server, player, List.of(punishment)));
+    }
+
+    private void invalidatePanelViews(Server server, Player player, List<Punishment> punishments) {
+        for (Punishment punishment : punishments) {
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS, punishment.getId());
+        }
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, player.getMinecraftUuid().toString());
+    }
+
+    private void invalidateAllPanelViews(Server server) {
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PUNISHMENTS);
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS);
     }
 
     private void guard(Runnable action) {

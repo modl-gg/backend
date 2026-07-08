@@ -5,12 +5,14 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.controller.PublicVerificationProtoMapper;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.PublicRecordAccessService;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.Access;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.AccessResult;
+import gg.modl.backend.ticket.service.PublicRecordVerificationService;
 import gg.modl.proto.modl.v1.CreatePublicAppealResponse;
 import gg.modl.proto.modl.v1.PanelResource;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PublicAppealController {
     private final AppealService appealService;
     private final PublicRecordAccessService recordAccessService;
+    private final PublicRecordVerificationService recordVerificationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping("/{id}")
@@ -49,7 +52,7 @@ public class PublicAppealController {
         }
         if (access.access() == Access.TOKEN_REQUIRED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(PublicAppealProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
+                .body(PublicVerificationProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
         }
 
         TicketResponse appealResponse = appealService.toResponse(appeal);
@@ -85,12 +88,41 @@ public class PublicAppealController {
         }
         if (access.access() == Access.TOKEN_REQUIRED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(PublicAppealProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
+                .body(PublicVerificationProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
         }
 
         List<Object> attachments = PanelAppealProtoMapper.valueListToObjects(replyRequest.getAttachmentsList());
         TicketReply reply = appealService.addPublicReply(server, id, replyRequest.getContent(), attachments);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_APPEALS, id);
         return ResponseEntity.status(HttpStatus.CREATED).body(PublicAppealProtoMapper.toAddReplyResponse(reply));
+    }
+
+    @PostMapping("/{id}/request-verification")
+    public ResponseEntity<?> requestVerification(@PathVariable String id, HttpServletRequest request) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        Ticket appeal = appealService.getAppealRaw(server, id).filter(a -> !a.isHidden()).orElse(null);
+        if (appeal == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String emailHint = recordVerificationService.sendVerificationCode(server, appeal);
+        return ResponseEntity.ok(PublicVerificationProtoMapper.toRequestVerificationResponse(emailHint));
+    }
+
+    @PostMapping("/{id}/verify")
+    public ResponseEntity<?> verifyCode(
+        @PathVariable String id,
+        @RequestBody gg.modl.proto.modl.v1.VerifyTicketCodeRequest body,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+
+        if (appealService.getAppealRaw(server, id).filter(a -> !a.isHidden()).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String token = recordVerificationService.verifyCode(server, id, body.getCode());
+        return ResponseEntity.ok(PublicVerificationProtoMapper.toVerifyResponse(token));
     }
 }

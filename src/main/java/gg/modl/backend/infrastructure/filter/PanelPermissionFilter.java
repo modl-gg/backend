@@ -4,6 +4,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
@@ -101,7 +102,7 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         }
 
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
-        String roleId = staffOpt.map(Staff::getRoleId).orElse(null);
+        String roleId = staffOpt.map(staff -> RoleAuthorization.effectiveRoleId(server, staff)).orElse(null);
 
         boolean authorized;
         if (PLAYER_READ.equals(requiredPermission)) {

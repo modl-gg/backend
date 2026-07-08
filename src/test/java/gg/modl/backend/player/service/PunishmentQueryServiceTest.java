@@ -97,8 +97,9 @@ class PunishmentQueryServiceTest {
         Map<?, ?> existingAppeal = (Map<?, ?>) response.get("existingAppeal");
         assertEquals("APPEAL-222222", existingAppeal.get("id"));
         assertEquals(latestAppeal.getCreated(), existingAppeal.get("submittedDate"));
-        assertEquals("rejected", existingAppeal.get("status"));
+        assertEquals("open", existingAppeal.get("status"));
         assertEquals("rejected", existingAppeal.get("appealWorkflowStatus"));
+        assertEquals(false, existingAppeal.get("locked"));
     }
 
     @Test

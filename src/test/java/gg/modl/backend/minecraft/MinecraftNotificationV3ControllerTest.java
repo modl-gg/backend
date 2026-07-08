@@ -250,7 +250,7 @@ class MinecraftNotificationV3ControllerTest {
         ErrorResponseDTO error = new ObjectMapper()
             .readValue(result.getResponse().getContentAsByteArray(), ErrorResponseDTO.class);
         assertEquals(400, error.status());
-        assertEquals("Invalid data provided.", error.error());
+        assertTrue(error.error().startsWith("Invalid data provided"));
         assertFalse(result.getResponse().getContentType().contains(ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE));
     }
 

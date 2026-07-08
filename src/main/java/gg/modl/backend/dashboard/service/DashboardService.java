@@ -20,6 +20,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
@@ -47,6 +48,7 @@ public class DashboardService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final StaffMongoRepository staffRepository;
+    private final StaffService staffService;
     private final PunishmentTypeService punishmentTypeService;
     private final PlayerStatusCalculator statusCalculator;
 
@@ -151,7 +153,7 @@ public class DashboardService {
         long totalTickets = ticketRepository.countAll(server);
         long openTickets = ticketRepository.countByStatus(server, TicketStatus.OPEN);
         long totalPlayers = playerRepository.countAll(server);
-        long totalStaff = staffRepository.countAll(server);
+        long totalStaff = staffService.countStaffIncludingSuperAdmin(server);
 
         long activePunishments = countActivePunishments(server).total();
         long totalPunishments = punishmentRepository.countAllPunishments(server);

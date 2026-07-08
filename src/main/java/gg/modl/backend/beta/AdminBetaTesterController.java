@@ -3,6 +3,12 @@ package gg.modl.backend.beta;
 import gg.modl.backend.admin.service.AdminAuthService;
 import gg.modl.backend.infrastructure.filter.AdminAuthFilter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.proto.modl.v1.BetaAuditResponse;
+import gg.modl.proto.modl.v1.BetaTesterCreateRequest;
+import gg.modl.proto.modl.v1.BetaTesterListResponse;
+import gg.modl.proto.modl.v1.BetaTesterRecord;
+import gg.modl.proto.modl.v1.BetaTesterResetAllResponse;
+import gg.modl.proto.modl.v1.BetaTesterResetResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.concurrent.CompletableFuture;
 import lombok.RequiredArgsConstructor;
@@ -10,7 +16,6 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,58 +34,52 @@ public class AdminBetaTesterController {
     private final AdminBetaTesterService betaTesterService;
 
     @GetMapping
-    public ResponseEntity<BetaApiResponse<BetaTesterListResponse>> list(
+    public ResponseEntity<BetaTesterListResponse> list(
         @RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "20") int limit,
         @RequestParam(required = false) String search) {
-        return ResponseEntity.ok(BetaApiResponse.ok(betaTesterService.list(page, limit, search)));
+        return ResponseEntity.ok(BetaProtoMapper.toListResponse(betaTesterService.list(page, limit, search)));
     }
 
     @PostMapping
-    public ResponseEntity<BetaApiResponse<BetaTesterRecord>> create(
+    public ResponseEntity<BetaTesterRecord> create(
         @RequestBody BetaTesterCreateRequest request,
         HttpServletRequest httpRequest) {
-        BetaTesterCreateRequest body = request != null ? request : new BetaTesterCreateRequest(null, null, null);
-        BetaTesterRecord record = betaTesterService.create(
-            body.serverName(), body.customDomain(), body.adminEmail(), actingAdminEmail(httpRequest));
-        return ResponseEntity.status(201).body(BetaApiResponse.ok(record));
+        BetaTesterDetails created = betaTesterService.create(
+            BetaProtoMapper.fromCreateRequest(request), actingAdminEmail(httpRequest));
+        return ResponseEntity.status(HttpStatus.CREATED).body(BetaProtoMapper.toRecord(created));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<BetaApiResponse<BetaTesterRecord>> revoke(
+    public ResponseEntity<BetaTesterRecord> revoke(
         @PathVariable String id,
         HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(BetaApiResponse.ok(betaTesterService.revoke(id, actingAdminEmail(httpRequest))));
+        return ResponseEntity.ok(BetaProtoMapper.toRecord(betaTesterService.revoke(id, actingAdminEmail(httpRequest))));
     }
 
     @PostMapping("/{id}/reset")
-    public ResponseEntity<BetaApiResponse<BetaResetResponse>> reset(
+    public ResponseEntity<BetaTesterResetResponse> reset(
         @PathVariable String id,
         HttpServletRequest httpRequest) {
-        return ResponseEntity.ok(BetaApiResponse.ok(betaTesterService.reset(id, actingAdminEmail(httpRequest))));
+        return ResponseEntity.ok(BetaProtoMapper.toResetResponse(betaTesterService.reset(id, actingAdminEmail(httpRequest))));
     }
 
     @PostMapping("/reset-all")
-    public CompletableFuture<ResponseEntity<BetaApiResponse<BetaResetAllResponse>>> resetAll(HttpServletRequest httpRequest) {
+    public CompletableFuture<ResponseEntity<BetaTesterResetAllResponse>> resetAll(HttpServletRequest httpRequest) {
         return betaTesterService.resetAll(actingAdminEmail(httpRequest))
-            .thenApply(results -> ResponseEntity.ok(BetaApiResponse.ok(new BetaResetAllResponse(results))));
+            .thenApply(results -> ResponseEntity.ok(BetaProtoMapper.toResetAllResponse(results)));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<BetaApiResponse<BetaTesterRecord>> get(@PathVariable String id) {
-        return ResponseEntity.ok(BetaApiResponse.ok(betaTesterService.get(id)));
+    public ResponseEntity<BetaTesterRecord> get(@PathVariable String id) {
+        return ResponseEntity.ok(BetaProtoMapper.toRecord(betaTesterService.get(id)));
     }
 
     @GetMapping("/{id}/audit")
-    public ResponseEntity<BetaApiResponse<BetaAuditResponse>> audit(
+    public ResponseEntity<BetaAuditResponse> audit(
         @PathVariable String id,
         @RequestParam(defaultValue = "" + DEFAULT_AUDIT_LIMIT) int limit) {
-        return ResponseEntity.ok(BetaApiResponse.ok(betaTesterService.audit(id, limit)));
-    }
-
-    @ExceptionHandler(BetaRequestException.class)
-    public ResponseEntity<BetaApiResponse<Object>> handleBetaRequest(BetaRequestException ex) {
-        return ResponseEntity.status(ex.getStatus()).body(BetaApiResponse.error(ex.getMessage()));
+        return ResponseEntity.ok(BetaProtoMapper.toAuditResponse(betaTesterService.audit(id, limit)));
     }
 
     private String actingAdminEmail(HttpServletRequest request) {

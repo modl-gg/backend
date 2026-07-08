@@ -9,6 +9,7 @@ import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerProvisioningService;
+import gg.modl.backend.staff.service.StaffService;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -29,6 +30,7 @@ public class AdminServerService {
     private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerProvisioningService provisioningService;
     private final ServerService serverService;
+    private final StaffService staffService;
     private static final long USAGE_STATS_TTL_MILLIS = 10 * 60 * 1000L;
     private static final int MAX_USAGE_BATCH_SIZE = 50;
 
@@ -132,7 +134,12 @@ public class AdminServerService {
         if (serverService.isAdminEmailInUse(normalizedEmail, server.getId())) {
             throw new ValidationException("Admin email is already in use by another server");
         }
+        String previousAdminEmail = server.getAdminEmail();
         serverService.changeAdminEmail(server, normalizedEmail);
+        if (previousAdminEmail != null && !previousAdminEmail.equalsIgnoreCase(normalizedEmail)
+            && server.getDatabaseName() != null && !server.getDatabaseName().isBlank()) {
+            staffService.offboardPreviousAdminEmail(server, previousAdminEmail);
+        }
     }
 
     public String exportServersCsv(String plan, String status) {

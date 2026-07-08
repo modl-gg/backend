@@ -1,7 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
-import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -12,6 +11,7 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.PublicRecordAccessService;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.Access;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.AccessResult;
+import gg.modl.backend.ticket.service.PublicRecordVerificationService;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
@@ -41,6 +41,7 @@ public class PublicTicketController {
     private final TicketReplyService ticketReplyService;
     private final TicketEmailVerificationService verificationService;
     private final PublicRecordAccessService recordAccessService;
+    private final PublicRecordVerificationService recordVerificationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @PostMapping
@@ -83,7 +84,7 @@ public class PublicTicketController {
         }
         if (access.access() == Access.TOKEN_REQUIRED) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(PublicTicketProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
+                .body(PublicVerificationProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
         }
 
         TicketResponse ticketResponse = ticketService.toResponse(server, ticket);
@@ -179,18 +180,13 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
-        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+        Ticket ticket = ticketService.getTicketRaw(server, id).filter(t -> !t.isHidden()).orElse(null);
+        if (ticket == null) {
             return ResponseEntity.notFound().build();
         }
 
-        Ticket ticket = rawTicket.get();
-        if (ticketService.getEmailHint(ticket) == null) {
-            throw new ValidationException("No email associated with this ticket");
-        }
-
-        String emailHint = verificationService.sendVerificationCode(server, ticket);
-        return ResponseEntity.ok(PublicTicketProtoMapper.toRequestVerificationResponse(emailHint));
+        String emailHint = recordVerificationService.sendVerificationCode(server, ticket);
+        return ResponseEntity.ok(PublicVerificationProtoMapper.toRequestVerificationResponse(emailHint));
     }
 
     @PostMapping("/{id}/verify")
@@ -201,11 +197,11 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        String token = verificationService.verifyCode(server, id, body.getCode());
-        if (token == null) {
-            throw new ForbiddenException("Invalid or expired code");
+        if (ticketService.getTicketRaw(server, id).filter(t -> !t.isHidden()).isEmpty()) {
+            return ResponseEntity.notFound().build();
         }
 
-        return ResponseEntity.ok(PublicTicketProtoMapper.toVerifyResponse(token));
+        String token = recordVerificationService.verifyCode(server, id, body.getCode());
+        return ResponseEntity.ok(PublicVerificationProtoMapper.toVerifyResponse(token));
     }
 }

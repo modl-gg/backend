@@ -23,6 +23,7 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.backend.ticket.service.AppealWorkflowTransitionService;
 import gg.modl.backend.ticket.service.PublicAccessProperties;
 import gg.modl.backend.ticket.service.TicketContentService;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
@@ -49,6 +50,7 @@ public class AppealService {
     private final PunishmentMutationService punishmentMutationService;
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final TicketIdGenerator ticketIdGenerator;
+    private final AppealWorkflowTransitionService workflowTransitionService;
     private final TicketContentService contentService;
     private final TicketEmailVerificationService verificationService;
     private final PublicAccessProperties publicAccessProperties;
@@ -109,14 +111,14 @@ public class AppealService {
         String playerUuid = normalizeUuid(request.playerUuid());
         Player player = findPlayerWithPunishment(server, playerUuid, request.punishmentId());
         if (player == null) {
-            throw new IllegalArgumentException("Punishment not found for the specified player");
+            throw new ResourceNotFoundException("Punishment not found for the specified player");
         }
 
         player.getPunishments()
             .stream()
             .filter(p -> p.getId().equals(request.punishmentId()))
             .findFirst()
-            .orElseThrow(() -> new IllegalArgumentException("Punishment details not found"));
+            .orElseThrow(() -> new ResourceNotFoundException("Punishment details not found"));
 
         boolean tokenValid = presentedToken != null && !presentedToken.isBlank()
             && verificationService.validateAppealCreateToken(server, request.punishmentId(), playerUuid, presentedToken);
@@ -228,7 +230,7 @@ public class AppealService {
             .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
 
         if (appeal.isLocked()) {
-            throw new IllegalStateException("Appeal is locked and cannot accept new replies");
+            throw new ConflictException("Appeal is locked and cannot accept new replies");
         }
 
         TicketReply newReply = TicketReply.builder()
@@ -254,7 +256,7 @@ public class AppealService {
             .orElseThrow(() -> new ResourceNotFoundException("Appeal not found"));
 
         if (appeal.isLocked()) {
-            throw new IllegalStateException("Appeal is locked and cannot accept new replies");
+            throw new ConflictException("Appeal is locked and cannot accept new replies");
         }
 
         TicketReply newReply = TicketReply.builder()
@@ -285,27 +287,16 @@ public class AppealService {
             requestedWorkflowStatus = AppealWorkflowStatus.fromCanonicalId(request.status());
         }
 
-        AppealWorkflowStatus previousWorkflowStatus = appeal.getAppealWorkflowStatus();
-        if (requestedWorkflowStatus != null && previousWorkflowStatus != null
-            && previousWorkflowStatus.isTerminal() && requestedWorkflowStatus.isTerminal()
-            && requestedWorkflowStatus != previousWorkflowStatus) {
-            throw new ConflictException("Appeal is already " + previousWorkflowStatus.getDisplayName()
-                + " and cannot be changed directly to " + requestedWorkflowStatus.getDisplayName()
-                + "; reopen the appeal first.");
-        }
+        workflowTransitionService.requireReopenBeforeChangingTerminalStatus(appeal.getAppealWorkflowStatus(), requestedWorkflowStatus);
 
         if (requestedWorkflowStatus != null && requestedWorkflowStatus != appeal.getAppealWorkflowStatus()) {
-            TicketStatus lifecycleStatus = requestedWorkflowStatus.isTerminal() ? TicketStatus.CLOSED : TicketStatus.OPEN;
+            TicketStatus lifecycleStatus = requestedWorkflowStatus.toTicketStatus();
             appeal.setAppealWorkflowStatus(requestedWorkflowStatus);
             appeal.setStatus(lifecycleStatus);
             appeal.setLocked(lifecycleStatus.isTerminal());
             statusChanged = true;
 
-            systemReplies.add(createSystemReply(
-                request.staffUsername(),
-                "Appeal status changed to " + requestedWorkflowStatus.getDisplayName() + ".",
-                "APPEAL_STATUS_" + requestedWorkflowStatus.name()
-            ));
+            systemReplies.add(workflowTransitionService.statusChangeReply(request.staffUsername(), requestedWorkflowStatus));
         }
 
         if (request.resolution() != null) {

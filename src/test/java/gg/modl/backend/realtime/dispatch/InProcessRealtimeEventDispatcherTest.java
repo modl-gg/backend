@@ -1,5 +1,6 @@
 package gg.modl.backend.realtime.dispatch;
 
+import static gg.modl.backend.realtime.support.RealtimeEventCounters.realtimeEventCount;
 import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -236,17 +237,7 @@ class InProcessRealtimeEventDispatcherTest {
         dispatcher.publish(new RealtimeOutboundEvent("server-a", Topic.TOPIC_PANEL_TICKETS, envelope));
 
         verify(session, never()).sendMessage(any(BinaryMessage.class));
-        assertEquals(1.0, meterRegistry.counter(
-            "modl.realtime.events",
-            "event",
-            "invalid_outbound_payload",
-            "topic",
-            Topic.TOPIC_PANEL_TICKETS.name(),
-            "reason",
-            "none",
-            "phase",
-            "none"
-        ).count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "invalid_outbound_payload", "topic", Topic.TOPIC_PANEL_TICKETS.name()));
     }
 
     @Test

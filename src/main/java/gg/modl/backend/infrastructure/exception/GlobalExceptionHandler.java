@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -117,10 +118,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleValidationException(MethodArgumentNotValidException ex, HttpServletRequest request) {
+        String message = fieldErrorMessage(ex);
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
+            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", message);
         }
-        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, INVALID_DATA_MESSAGE));
+        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, message));
+    }
+
+    private static String fieldErrorMessage(MethodArgumentNotValidException ex) {
+        String details = ex.getBindingResult().getFieldErrors().stream()
+            .map(error -> error.getField() + " " + error.getDefaultMessage())
+            .sorted()
+            .collect(Collectors.joining("; "));
+        return details.isEmpty() ? INVALID_DATA_MESSAGE : "Invalid data provided: " + details + ".";
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)

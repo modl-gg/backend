@@ -75,9 +75,8 @@ public class AnalyticsMongoRepository {
         }
 
         final long totalPlayers = template.getCollection(CollectionName.PLAYERS).countDocuments();
-        final long totalStaff = template.getCollection(CollectionName.STAFF).countDocuments();
 
-        return new OverviewStats(totalTickets, totalPlayers, totalStaff, activeTickets, recentTickets, previousTickets);
+        return new OverviewStats(totalTickets, totalPlayers, activeTickets, recentTickets, previousTickets);
     }
 
     public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {
@@ -293,7 +292,6 @@ public class AnalyticsMongoRepository {
     public record OverviewStats(
         long totalTickets,
         long totalPlayers,
-        long totalStaff,
         long activeTickets,
         long recentTickets,
         long previousTickets

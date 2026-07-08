@@ -40,6 +40,8 @@ import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.infrastructure.validation.SafeUrls;
 import gg.modl.backend.log.service.LogService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.staff.data.Staff;
@@ -95,6 +97,20 @@ public class PunishmentLifecycleService {
         return data;
     }
 
+    private void validateReasonLength(CreatePunishmentRequest request) {
+        requireReasonWithinLimit(request.reason());
+        if (request.data() != null) {
+            requireReasonWithinLimit(request.data().get("reason"));
+        }
+    }
+
+    private void requireReasonWithinLimit(Object reason) {
+        if (reason instanceof String text && text.length() > RequestValidationLimits.PLAYER_PUNISHMENT_REASON_MAX_LENGTH) {
+            throw new ValidationException("reason must be at most "
+                + RequestValidationLimits.PLAYER_PUNISHMENT_REASON_MAX_LENGTH + " characters");
+        }
+    }
+
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
         if (email == null) {
             throw new ForbiddenException("No authenticated user found for permission check");
@@ -148,6 +164,7 @@ public class PunishmentLifecycleService {
     }
 
     public String createPunishment(Server server, UUID playerUuid, CreatePunishmentRequest request) {
+        validateReasonLength(request);
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
 
         if (player == null) {
@@ -274,6 +291,7 @@ public class PunishmentLifecycleService {
                 String evIssuerId = evidenceRequest.issuerId() != null ? evidenceRequest.issuerId() : reqIssuerId;
                 String evIssuerName = evIssuerId != null ? null : (evidenceRequest.issuerName() != null ? evidenceRequest.issuerName() : request.issuerName());
                 String type = evidenceRequest.type() != null ? evidenceRequest.type() : "text";
+                SafeUrls.requireSafe(evidenceRequest.fileUrl(), "Invalid evidence URL");
                 evidence.add(new PunishmentEvidence(
                     evidenceRequest.text(),
                     evidenceRequest.fileUrl(),

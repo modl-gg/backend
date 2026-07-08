@@ -116,6 +116,10 @@ public class RateLimitConfig {
         if (path.startsWith("/v1/public/media/") && isWriteMethod(method)) {
             return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
         }
+        if (path.startsWith("/v1/public/appeals") && isWriteMethod(method)
+            && (path.contains("/verify") || path.contains("/request-verification"))) {
+            return RateLimitTier.PUBLIC_TICKET_VERIFY;
+        }
         if (path.startsWith("/v1/public/tickets") && isWriteMethod(method)) {
             if (path.contains("/verify") || path.contains("/request-verification")) {
                 return RateLimitTier.PUBLIC_TICKET_VERIFY;

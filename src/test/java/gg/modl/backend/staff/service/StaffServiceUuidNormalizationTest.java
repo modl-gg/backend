@@ -10,6 +10,7 @@ import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.auth.WebAuthnService;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
@@ -58,14 +59,15 @@ class StaffServiceUuidNormalizationTest {
             .usernames(new ArrayList<>(List.of(new UsernameEntry("PlayerOne", new java.util.Date()))))
             .build();
 
-        when(staffRepository.findByUsername(server, "target")).thenReturn(Optional.of(staff));
+        when(staffRepository.findByEmailIgnoreCase(server, "target@example.com")).thenReturn(Optional.of(staff));
         when(playerRepository.findByMinecraftUuid(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")))
             .thenReturn(Optional.of(player));
         when(staffRepository.findByAssignedMinecraftUuidExcludingId(any(), any(), any())).thenReturn(Optional.empty());
         when(staffRepository.saveEntity(any(Server.class), any(Staff.class))).thenAnswer(invocation -> invocation.getArgument(1));
 
-        service.assignMinecraftPlayer(server, "target",
-            new AssignMinecraftPlayerRequest("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", null));
+        service.assignMinecraftPlayer(server, "target@example.com",
+            new AssignMinecraftPlayerRequest("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", null),
+            new RoleAuthorization.PerformerAuthority("owner@example.com", null, true, true));
 
         verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
@@ -84,7 +86,8 @@ class StaffServiceUuidNormalizationTest {
             mock(PermissionService.class),
             mock(RoleAuthorization.class),
             mock(ServerTimestampService.class),
-            mock(WebAuthnService.class)
+            mock(WebAuthnService.class),
+            mock(SessionService.class)
         );
     }
 

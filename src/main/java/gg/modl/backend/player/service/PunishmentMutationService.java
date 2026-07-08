@@ -16,6 +16,8 @@ import gg.modl.backend.player.service.PunishmentQueryService.PunishmentContext;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.data.AppealWorkflowStatus;
+import gg.modl.backend.ticket.service.AppealWorkflowTransitionService;
 import gg.modl.backend.ticket.service.TicketService;
 import java.util.ArrayList;
 import java.util.Date;
@@ -35,6 +37,7 @@ public class PunishmentMutationService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final TicketService ticketService;
+    private final AppealWorkflowTransitionService appealWorkflowTransitionService;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
@@ -66,6 +69,8 @@ public class PunishmentMutationService {
             throw new ResourceNotFoundException("Punishment not found");
         }
 
+        syncLinkedAppealOutcome(server, punishmentId, request);
+
         punishment.getModifications().add(modification);
         punishmentRepository.appendModification(server, playerUuid.toString(), punishmentId, modification);
         if (request.effectiveDuration() != null && punishment.getStarted() == null) {
@@ -74,6 +79,19 @@ public class PunishmentMutationService {
         }
         realtimePublisher.punishmentModified(server, player, punishment);
         return player;
+    }
+
+    private void syncLinkedAppealOutcome(Server server, String punishmentId, AddModificationRequest request) {
+        if (request.appealTicketId() == null) {
+            return;
+        }
+        PunishmentModificationType modificationType = PunishmentModificationType.fromName(request.type());
+        AppealWorkflowStatus outcome = modificationType != null ? modificationType.appealOutcome() : null;
+        if (outcome == null) {
+            return;
+        }
+        String issuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
+        appealWorkflowTransitionService.applyOutcomeForPunishment(server, request.appealTicketId(), punishmentId, outcome, issuerName);
     }
 
     private Punishment findPunishment(Player player, String punishmentId) {
@@ -237,7 +255,7 @@ public class PunishmentMutationService {
             .orElseThrow(() -> new ResourceNotFoundException("Punishment not found"));
 
         applyPunishmentTicketModifications(server, player, punishment, request);
-        realtimePublisher.invalidatePunishments(server, punishmentId);
+        realtimePublisher.punishmentDetailsChanged(server, player, punishment);
         return player;
     }
 

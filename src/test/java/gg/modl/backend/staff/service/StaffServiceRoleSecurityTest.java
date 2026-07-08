@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.auth.WebAuthnService;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
@@ -39,7 +40,8 @@ class StaffServiceRoleSecurityTest {
         permissionService,
         roleAuthorization,
         mock(ServerTimestampService.class),
-        mock(WebAuthnService.class)
+        mock(WebAuthnService.class),
+        mock(SessionService.class)
     );
 
     @Test

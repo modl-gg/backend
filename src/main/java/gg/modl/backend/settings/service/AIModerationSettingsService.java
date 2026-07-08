@@ -19,28 +19,18 @@ public class AIModerationSettingsService {
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
         SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION);
-        AIModerationSettings existing = codec().decode(current.data());
-
-        Map<String, AIModerationSettings.AIPunishmentConfig> incoming = newSettings.getAiPunishmentConfigs();
-        Map<String, AIModerationSettings.AIPunishmentConfig> existingConfigs = existing.getAiPunishmentConfigs() != null
-            ? existing.getAiPunishmentConfigs()
-            : new HashMap<>();
-        Map<String, AIModerationSettings.AIPunishmentConfig> mergedConfigs;
-        if (incoming == null || incoming.isEmpty()) {
-            mergedConfigs = existingConfigs;
-        } else {
-            mergedConfigs = new HashMap<>(existingConfigs);
-            mergedConfigs.putAll(incoming);
-        }
 
         AIModerationSettings toPersist = AIModerationSettings.builder()
             .enableAIReview(newSettings.isEnableAIReview())
             .enableAutomatedActions(newSettings.isEnableAutomatedActions())
-            .aiPunishmentConfigs(mergedConfigs)
+            .aiPunishmentConfigs(newSettings.getAiPunishmentConfigs() != null
+                ? newSettings.getAiPunishmentConfigs()
+                : new HashMap<>())
             .build();
 
-        settingsDocumentService.saveRawState(server, SETTINGS_TYPE_AI_MODERATION, current.version(), codec().encode(toPersist));
-        return getAIModerationSettings(server);
+        SettingsDocumentService.RawSettingsState saved =
+            settingsDocumentService.saveRawState(server, SETTINGS_TYPE_AI_MODERATION, current.version(), codec().encode(toPersist));
+        return codec().decode(saved.data());
     }
 
     public AIModerationSettings getAIModerationSettings(Server server) {

@@ -40,7 +40,7 @@ public class AdminBetaTesterService {
     private final SubdomainValidator subdomainValidator;
     private final EmailService emailService;
 
-    public BetaTesterListResponse list(int page, int limit, String search) {
+    public BetaTesterPage list(int page, int limit, String search) {
         int normalizedPage = PaginationHelper.normalizePage(page);
         int normalizedLimit = PaginationHelper.normalizeLimit(limit, DEFAULT_PAGE_LIMIT);
         int skip = PaginationHelper.calculateSkip(page, normalizedLimit);
@@ -49,30 +49,29 @@ public class AdminBetaTesterService {
         long total = serverRepository.countBetaTesters(search);
         int pages = PaginationHelper.calculateTotalPages(total, normalizedLimit);
 
-        List<BetaTesterRecord> records = servers.stream().map(this::toRecord).toList();
-        return new BetaTesterListResponse(records,
-            new BetaTesterListResponse.Pagination(normalizedPage, normalizedLimit, total, pages));
+        List<BetaTesterDetails> items = servers.stream().map(this::details).toList();
+        return new BetaTesterPage(items, normalizedPage, normalizedLimit, total, pages);
     }
 
-    public BetaTesterRecord get(String id) {
+    public BetaTesterDetails get(String id) {
         Server server = serverRepository.findById(id)
             .filter(candidate -> candidate.getBetaTesterCreatedAt() != null)
             .orElseThrow(() -> new BetaRequestException("Beta tester not found.", HttpStatus.NOT_FOUND));
-        return toRecord(server);
+        return details(server);
     }
 
-    public BetaTesterRecord create(String serverName, String customDomain, String adminEmail, String actingAdminEmail) {
-        String trimmedName = serverName == null ? null : serverName.trim();
+    public BetaTesterDetails create(BetaTesterCreation creation, String actingAdminEmail) {
+        String trimmedName = creation.serverName() == null ? null : creation.serverName().trim();
         if (trimmedName == null || trimmedName.isEmpty()) {
             throw new BetaRequestException("Server name is required.", HttpStatus.BAD_REQUEST);
         }
 
-        String normalizedEmail = EmailAddressUtil.normalizeIfValid(adminEmail);
+        String normalizedEmail = EmailAddressUtil.normalizeIfValid(creation.adminEmail());
         if (normalizedEmail == null) {
             throw new BetaRequestException("A valid admin email is required.", HttpStatus.BAD_REQUEST);
         }
 
-        String subdomain = subdomainValidator.normalize(customDomain);
+        String subdomain = subdomainValidator.normalize(creation.customDomain());
         registrationService.validateIdentity(normalizedEmail, trimmedName, subdomain)
             .ifPresent(rejection -> {
                 throw new BetaRequestException(rejection.message(), rejection.status());
@@ -97,7 +96,7 @@ public class AdminBetaTesterService {
         betaAuditService.record(BetaAuditAction.CREATE, reloaded.getId(), actingAdminEmail,
             "Created beta tester panel " + subdomain);
         sendBetaReadyEmail(reloaded);
-        return toRecord(reloaded);
+        return details(reloaded);
     }
 
     private void sendBetaReadyEmail(Server server) {
@@ -126,7 +125,7 @@ public class AdminBetaTesterService {
         return saved;
     }
 
-    public BetaTesterRecord revoke(String id, String actingAdminEmail) {
+    public BetaTesterDetails revoke(String id, String actingAdminEmail) {
         requireActiveBetaTester(id);
 
         Server updated = serverRepository.updateBetaState(id, ServerPlan.FREE, SubscriptionStatus.INACTIVE, false)
@@ -135,7 +134,7 @@ public class AdminBetaTesterService {
         serverService.evictAllServerCaches();
 
         betaAuditService.record(BetaAuditAction.REVOKE, id, actingAdminEmail, "Revoked beta access");
-        return toRecord(updated);
+        return details(updated);
     }
 
     public BetaResetResponse reset(String id, String actingAdminEmail) {
@@ -156,16 +155,8 @@ public class AdminBetaTesterService {
         });
     }
 
-    public BetaAuditResponse audit(String id, int limit) {
-        List<BetaAudit> entries = betaAuditService.findRecent(id, limit);
-        List<BetaAuditResponse.Entry> mapped = entries.stream()
-            .map(entry -> new BetaAuditResponse.Entry(
-                entry.getAction(),
-                entry.getAdminEmail(),
-                entry.getTimestamp() != null ? entry.getTimestamp().toInstant() : null,
-                entry.getDetails()))
-            .toList();
-        return new BetaAuditResponse(mapped);
+    public List<BetaAudit> audit(String id, int limit) {
+        return betaAuditService.findRecent(id, limit);
     }
 
     private Server requireActiveBetaTester(String id) {
@@ -177,7 +168,7 @@ public class AdminBetaTesterService {
         return server;
     }
 
-    private BetaTesterRecord toRecord(Server server) {
-        return BetaTesterRecord.from(server, limitPolicy.resolve(server));
+    private BetaTesterDetails details(Server server) {
+        return new BetaTesterDetails(server, limitPolicy.resolve(server));
     }
 }

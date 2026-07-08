@@ -3,6 +3,7 @@ package gg.modl.backend.staff.service;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.auth.WebAuthnService;
+import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
@@ -55,8 +56,9 @@ public class StaffService {
     private final RoleAuthorization roleAuthorization;
     private final ServerTimestampService serverTimestampService;
     private final WebAuthnService webAuthnService;
+    private final SessionService sessionService;
 
-    private static final String SUPER_ADMIN_ROLE_ID = "super-admin";
+    private static final String SUPER_ADMIN_USERNAME = "Admin";
 
     private final Cache<String, Optional<Staff>> staffByEmailCache = Caffeine.newBuilder()
         .maximumSize(1000)
@@ -70,7 +72,7 @@ public class StaffService {
         Set<String> roleIds = new HashSet<>();
         staffMembers.forEach(staff -> roleIds.add(staff.getRoleId()));
         pendingInvitations.forEach(invitation -> roleIds.add(invitation.getRoleId()));
-        roleIds.add(SUPER_ADMIN_ROLE_ID);
+        roleIds.add(RoleAuthorization.SUPER_ADMIN_ROLE_ID);
         Map<String, String> roleNamesById = permissionService.resolveRoleNames(server, roleIds);
 
         List<StaffResponse> result = new ArrayList<>();
@@ -88,14 +90,8 @@ public class StaffService {
 
         // Expose the owner in listings without creating a privileged staff document implicitly.
         if (!superAdminFound && adminEmail != null) {
-            Staff superAdmin = Staff.builder()
-                .email(adminEmail)
-                .username("Admin")
-                .roleId(SUPER_ADMIN_ROLE_ID)
-                .createdAt(server.getCreatedAt())
-                .updatedAt(new Date())
-                .build();
-            result.add(0, toStaffResponse(superAdmin, "Active", fallbackRoleName(roleNamesById, SUPER_ADMIN_ROLE_ID)));
+            result.add(0, toStaffResponse(buildSuperAdminStaff(server, adminEmail), "Active",
+                fallbackRoleName(roleNamesById, RoleAuthorization.SUPER_ADMIN_ROLE_ID)));
         }
 
         for (Invitation invitation : pendingInvitations) {
@@ -112,6 +108,15 @@ public class StaffService {
         }
 
         return result;
+    }
+
+    public long countStaffIncludingSuperAdmin(Server server) {
+        long staffCount = staffRepository.countAll(server);
+        String adminEmail = server.getAdminEmail();
+        if (adminEmail != null && !staffRepository.existsByEmailEqualsIgnoreCase(server, adminEmail)) {
+            staffCount++;
+        }
+        return staffCount;
     }
 
     private StaffResponse toStaffResponse(Staff staff, String status, String roleName) {
@@ -257,17 +262,19 @@ public class StaffService {
                     punishmentsIssuedCount += punishmentCounts.getOrDefault(k, 0);
                 }
 
+                String assignedUuid = staff.getAssignedMinecraftUuid();
+                String roleId = RoleAuthorization.effectiveRoleId(server, staff);
                 return new MinecraftStaffSummaryResponse(
                     staff.getId(),
                     staff.getUsername(),
                     staff.getEmail(),
-                    roleNameOrFallback(rolesById, staff.getRoleId()),
-                    staff.getAssignedMinecraftUuid(),
+                    roleNameOrFallback(rolesById, roleId),
+                    assignedUuid,
                     staff.getAssignedMinecraftUsername(),
-                    rolePermissions(rolesById, staff.getRoleId()),
+                    rolePermissions(rolesById, roleId),
                     staff.getLastSeen(),
-                    playerStaffData.playtimeMap().getOrDefault(staff.getAssignedMinecraftUuid(), 0L),
-                    playerStaffData.lastServerMap().get(staff.getAssignedMinecraftUuid()),
+                    playerStaffData.playtimeMsFor(assignedUuid),
+                    playerStaffData.lastServerFor(assignedUuid),
                     punishmentsIssuedCount,
                     staff.getCreatedAt(),
                     staff.getUpdatedAt()
@@ -276,7 +283,15 @@ public class StaffService {
             .toList();
     }
 
-    private record PlayerStaffData(Map<String, Long> playtimeMap, Map<String, String> lastServerMap) {}
+    private record PlayerStaffData(Map<String, Long> playtimeMap, Map<String, String> lastServerMap) {
+        long playtimeMsFor(String minecraftUuid) {
+            return minecraftUuid == null ? 0L : playtimeMap.getOrDefault(minecraftUuid, 0L);
+        }
+
+        String lastServerFor(String minecraftUuid) {
+            return minecraftUuid == null ? null : lastServerMap.get(minecraftUuid);
+        }
+    }
 
     private PlayerStaffData loadPlayerStaffData(Server server, List<Staff> allStaff) {
         List<String> assignedUuids = allStaff.stream()
@@ -349,15 +364,18 @@ public class StaffService {
         Map<String, StaffRole> rolesById = loadRolesByStaffRoleId(server, staffWithMinecraft);
 
         return staffWithMinecraft.stream()
-            .map(staff -> new MinecraftStaffPermissionsResponse(
-                staff.getAssignedMinecraftUuid(),
-                staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
-                staff.getUsername() != null ? staff.getUsername() : "",
-                staff.getId(),
-                roleNameOrFallback(rolesById, staff.getRoleId()),
-                rolePermissions(rolesById, staff.getRoleId()),
-                staff.getEmail() != null ? staff.getEmail() : ""
-            ))
+            .map(staff -> {
+                String roleId = RoleAuthorization.effectiveRoleId(server, staff);
+                return new MinecraftStaffPermissionsResponse(
+                    staff.getAssignedMinecraftUuid(),
+                    staff.getAssignedMinecraftUsername() != null ? staff.getAssignedMinecraftUsername() : "",
+                    staff.getUsername() != null ? staff.getUsername() : "",
+                    staff.getId(),
+                    roleNameOrFallback(rolesById, roleId),
+                    rolePermissions(rolesById, roleId),
+                    staff.getEmail() != null ? staff.getEmail() : ""
+                );
+            })
             .toList();
     }
 
@@ -385,15 +403,25 @@ public class StaffService {
         return staffRepository.updateLastSeenByAssignedMinecraftUuid(server, normalizeUuid(minecraftUuid));
     }
 
-    public Optional<StaffResponse> assignMinecraftPlayer(Server server, String username, AssignMinecraftPlayerRequest request) {
-        Staff staff = staffRepository.findByUsername(server, username).orElse(null);
+    public Optional<StaffResponse> assignMinecraftPlayer(Server server, String email,
+                                                         AssignMinecraftPlayerRequest request,
+                                                         RoleAuthorization.PerformerAuthority performer) {
+        roleAuthorization.requireStaffManage(server, performer, RoleAuthorization.MANAGE_MEMBERS_PERMISSION);
+
+        Staff staff = staffRepository.findByEmailIgnoreCase(server, email)
+            .orElseGet(() -> findUnsavedSuperAdmin(server, email));
 
         if (staff == null) {
             return Optional.empty();
         }
 
+        roleAuthorization.assertCanAssignMinecraftPlayer(performer, staff);
+
         if ((request.minecraftUuid() == null || request.minecraftUuid().isEmpty()) &&
             (request.minecraftUsername() == null || request.minecraftUsername().isEmpty())) {
+            if (staff.getId() == null) {
+                return Optional.of(toStaffResponse(server, staff, "Active"));
+            }
             staff.setAssignedMinecraftUuid(null);
             staff.setAssignedMinecraftUsername(null);
             staff.setUpdatedAt(new Date());
@@ -426,6 +454,39 @@ public class StaffService {
         evictStaffByEmailCache(server, staff.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return Optional.of(toStaffResponse(server, staff, "Active"));
+    }
+
+    private Staff buildSuperAdminStaff(Server server, String adminEmail) {
+        return Staff.builder()
+            .email(EmailAddressUtil.normalize(adminEmail))
+            .username(SUPER_ADMIN_USERNAME)
+            .roleId(RoleAuthorization.SUPER_ADMIN_ROLE_ID)
+            .createdAt(server.getCreatedAt())
+            .updatedAt(new Date())
+            .build();
+    }
+
+    private Staff findUnsavedSuperAdmin(Server server, String email) {
+        String adminEmail = server.getAdminEmail();
+        if (adminEmail == null || !adminEmail.equalsIgnoreCase(email)) {
+            return null;
+        }
+        return buildSuperAdminStaff(server, adminEmail);
+    }
+
+    public void offboardPreviousAdminEmail(Server server, String email) {
+        if (email == null) {
+            return;
+        }
+        staffRepository.findByEmailIgnoreCase(server, email)
+            .filter(staff -> RoleAuthorization.SUPER_ADMIN_ROLE_ID.equals(staff.getRoleId()))
+            .ifPresent(staff -> {
+                staffRepository.deleteById(server, staff.getId());
+                serverTimestampService.updateStaffPermissionsTimestamp(server);
+            });
+        evictStaffByEmailCache(server, email);
+        webAuthnService.deleteCredentialsForEmail(server, email);
+        sessionService.invalidateAllSessionsForEmail(server, email);
     }
 
     public List<AvailablePlayerResponse> getAvailablePlayers(Server server) {

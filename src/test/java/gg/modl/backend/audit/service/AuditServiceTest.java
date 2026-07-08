@@ -82,6 +82,7 @@ class AuditServiceTest {
             .append("usernames", List.of(new Document("username", "TargetPlayer")))
             .append("punishments", List.of(punishmentDoc));
 
+        when(server.getId()).thenReturn("server-1");
         when(auditRepository.findPlayersForBulkAction(server, List.of(typeOrdinal)))
             .thenReturn(List.of(playerDoc));
         when(punishmentTypeService.getPunishmentTypeName(server, typeOrdinal)).thenReturn("Ban");

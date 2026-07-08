@@ -27,9 +27,9 @@ public class RoleAuthorization {
     private final PermissionService permissionService;
     private final StaffMongoRepository staffRepository;
 
-    public record PerformerAuthority(String roleId, boolean superAdmin, boolean identified) {
+    public record PerformerAuthority(String email, String roleId, boolean superAdmin, boolean identified) {
         public static PerformerAuthority unidentified() {
-            return new PerformerAuthority(null, false, false);
+            return new PerformerAuthority(null, null, false, false);
         }
     }
 
@@ -38,12 +38,12 @@ public class RoleAuthorization {
             return PerformerAuthority.unidentified();
         }
         if (isSuperAdminEmail(server, sessionEmail)) {
-            return new PerformerAuthority(null, true, true);
+            return new PerformerAuthority(sessionEmail, null, true, true);
         }
         String roleId = staffRepository.findByEmailIgnoreCase(server, sessionEmail)
-            .map(Staff::getRoleId)
+            .map(staff -> effectiveRoleId(server, staff))
             .orElse(null);
-        return new PerformerAuthority(roleId, false, true);
+        return new PerformerAuthority(sessionEmail, roleId, false, true);
     }
 
     public PerformerAuthority minecraftPerformer(Server server, @Nullable String actingStaffId) {
@@ -51,7 +51,8 @@ public class RoleAuthorization {
             return PerformerAuthority.unidentified();
         }
         return staffRepository.findById(server, actingStaffId)
-            .map(staff -> new PerformerAuthority(staff.getRoleId(), isSuperAdminEmail(server, staff.getEmail()), true))
+            .map(staff -> new PerformerAuthority(staff.getEmail(), effectiveRoleId(server, staff),
+                isSuperAdminEmail(server, staff.getEmail()), true))
             .orElseGet(PerformerAuthority::unidentified);
     }
 
@@ -64,6 +65,15 @@ public class RoleAuthorization {
         }
         if (performer.roleId() == null
             || !permissionService.hasPermission(server, performer.roleId(), requiredManagePermission)) {
+            throw new ForbiddenException(NO_AUTHORITY_MESSAGE);
+        }
+    }
+
+    public void assertCanAssignMinecraftPlayer(PerformerAuthority performer, Staff target) {
+        if (performer.superAdmin()) {
+            return;
+        }
+        if (performer.email() == null || !performer.email().equalsIgnoreCase(target.getEmail())) {
             throw new ForbiddenException(NO_AUTHORITY_MESSAGE);
         }
     }
@@ -136,5 +146,13 @@ public class RoleAuthorization {
 
     public static boolean isSuperAdminEmail(Server server, String email) {
         return server.getAdminEmail() != null && server.getAdminEmail().equalsIgnoreCase(email);
+    }
+
+    public static String effectiveRoleId(Server server, Staff staff) {
+        String roleId = staff.getRoleId();
+        if (SUPER_ADMIN_ROLE_ID.equals(roleId) && !isSuperAdminEmail(server, staff.getEmail())) {
+            return null;
+        }
+        return roleId;
     }
 }

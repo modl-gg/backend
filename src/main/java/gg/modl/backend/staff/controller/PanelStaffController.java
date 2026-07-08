@@ -190,17 +190,19 @@ public class PanelStaffController {
         return ResponseEntity.notFound().build();
     }
 
-    @PatchMapping("/{username}/minecraft-player")
+    @PatchMapping("/{email}/minecraft-player")
     public ResponseEntity<StaffMutationResponse> assignMinecraftPlayer(
-        @PathVariable String username,
+        @PathVariable String email,
         @RequestBody gg.modl.proto.modl.v1.AssignMinecraftPlayerRequest assignRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
+        RoleAuthorization.PerformerAuthority performer =
+            roleAuthorization.panelPerformer(server, RequestUtil.getSessionEmail(request));
 
         boolean clearing = !assignRequest.hasMinecraftUuid() && !assignRequest.hasMinecraftUsername();
         AssignMinecraftPlayerRequest mappedRequest = PanelStaffProtoMapper.toAssignMinecraftPlayerRequest(assignRequest);
-        return staffService.assignMinecraftPlayer(server, username, mappedRequest)
+        return staffService.assignMinecraftPlayer(server, email, mappedRequest, performer)
             .map(staff -> {
                 invalidateStaff(server);
                 String message = clearing

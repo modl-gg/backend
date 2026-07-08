@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.ticket.service.AppealWorkflowTransitionService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
@@ -53,6 +54,9 @@ class PunishmentServiceTest {
 
     @Mock
     private TicketService ticketService;
+
+    @Mock
+    private AppealWorkflowTransitionService appealWorkflowTransitionService;
 
     @Mock
     private PlayerStatusCalculator statusCalculator;
@@ -113,6 +117,7 @@ class PunishmentServiceTest {
             playerRepository,
             punishmentRepository,
             ticketService,
+            appealWorkflowTransitionService,
             issuerNameResolver,
             staffRepository,
             punishmentQueryService,

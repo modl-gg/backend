@@ -24,6 +24,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.service.PublicAccessProperties;
 import gg.modl.backend.ticket.service.PublicRecordAccessService;
+import gg.modl.backend.ticket.service.PublicRecordVerificationService;
 import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
@@ -53,10 +54,12 @@ class PublicTicketControllerTest {
         RealtimeEventPublisher realtimeEventPublisher = mock(RealtimeEventPublisher.class);
         PublicRecordAccessService recordAccessService =
             new PublicRecordAccessService(verificationService, new PublicAccessProperties());
+        PublicRecordVerificationService recordVerificationService =
+            new PublicRecordVerificationService(verificationService);
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, recordAccessService, realtimeEventPublisher))
+            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, recordAccessService, recordVerificationService, realtimeEventPublisher))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
@@ -197,7 +200,7 @@ class PublicTicketControllerTest {
             .andExpect(jsonPath("$.data.contact_email").doesNotExist())
             .andExpect(jsonPath("$.data.playerUuid").doesNotExist())
             .andExpect(jsonPath("$.replies[0].creatorIdentifier").value(""))
-            .andExpect(jsonPath("$.creatorUuid").value(""))
+            .andExpect(jsonPath("$.creatorUuid").value("uuid-1"))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
             .andExpect(jsonPath("$.chatMessages[0].content").value("message"));
@@ -240,7 +243,7 @@ class PublicTicketControllerTest {
 
         mockMvc.perform(get(RESTMappingV1.PUBLIC_TICKETS + "/TICKET-1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.creatorUuid").value(""))
+            .andExpect(jsonPath("$.creatorUuid").value("uuid-1"))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
             .andExpect(jsonPath("$.chatMessages[0]").doesNotExist());

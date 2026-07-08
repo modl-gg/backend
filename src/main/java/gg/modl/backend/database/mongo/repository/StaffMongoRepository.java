@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
@@ -55,6 +56,11 @@ public class StaffMongoRepository extends AbstractServerMongoRepository<Staff> {
 
     public boolean existsByEmailExact(Server server, String email) {
         return exists(server, Query.query(Criteria.where(StaffFields.EMAIL).is(email)));
+    }
+
+    public boolean existsByEmailEqualsIgnoreCase(Server server, String email) {
+        return exists(server, Query.query(Criteria.where(StaffFields.EMAIL)
+            .regex("^" + Pattern.quote(email) + "$", "i")));
     }
 
     public boolean existsByEmailIgnoreCaseOrUsername(Server server, String normalizedEmail, String username) {

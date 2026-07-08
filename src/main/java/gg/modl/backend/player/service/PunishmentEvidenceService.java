@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.validation.SafeUrls;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentEvidence;
@@ -30,6 +31,7 @@ public class PunishmentEvidenceService {
     private final PunishmentRealtimePublisher realtimePublisher;
 
     public PunishmentOperationResult addEvidence(Server server, String punishmentId, String evidenceUrl, String issuerName, String issuerId) {
+        SafeUrls.requireSafe(evidenceUrl, "Invalid evidence URL");
         PunishmentContext context = punishmentQueryService.findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
@@ -64,6 +66,7 @@ public class PunishmentEvidenceService {
     }
 
     public Player addEvidence(Server server, UUID playerUuid, String punishmentId, AddEvidenceRequest request) {
+        SafeUrls.requireSafe(request.url(), "Invalid evidence URL");
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
@@ -88,7 +91,7 @@ public class PunishmentEvidenceService {
         );
         punishment.getEvidence().add(evidence);
         punishmentRepository.appendEvidence(server, player.getMinecraftUuid().toString(), punishmentId, List.of(evidence), null);
-        realtimePublisher.invalidatePunishments(server, punishmentId);
+        realtimePublisher.punishmentDetailsChanged(server, player, punishment);
         return player;
     }
 
@@ -160,7 +163,7 @@ public class PunishmentEvidenceService {
         PunishmentNote note = new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId);
         punishment.getNotes().add(note);
         punishmentRepository.addPunishmentNote(server, player.getMinecraftUuid().toString(), punishmentId, note, null);
-        realtimePublisher.invalidatePunishments(server, punishmentId);
+        realtimePublisher.punishmentDetailsChanged(server, player, punishment);
         return player;
     }
 }

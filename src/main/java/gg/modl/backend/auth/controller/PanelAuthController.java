@@ -10,6 +10,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
@@ -269,7 +270,7 @@ public class PanelAuthController {
             return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of()));
         }
 
-        String roleId = staffOpt.get().getRoleId();
+        String roleId = RoleAuthorization.effectiveRoleId(server, staffOpt.get());
         Optional<StaffRole> roleOpt = permissionService.getRoleById(server, roleId);
 
         return roleOpt.map(staffRole -> ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(staffRole.getPermissions())))

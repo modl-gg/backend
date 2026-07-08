@@ -3,7 +3,6 @@ package gg.modl.backend.database;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.infrastructure.exception.ValidationException;
-import gg.modl.backend.server.data.Server;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -20,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.index.Index;
@@ -72,7 +72,7 @@ public class MongoIndexBootstrapService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapExistingTenants() {
-        List<Server> targets;
+        List<BootstrapTarget> targets;
         try {
             targets = loadBootstrapTargets();
         } catch (Exception e) {
@@ -88,19 +88,17 @@ public class MongoIndexBootstrapService {
         dispatchTenantBootstrap(targets);
     }
 
-    private List<Server> loadBootstrapTargets() {
+    private List<BootstrapTarget> loadBootstrapTargets() {
         Query query = new Query();
         query.fields().include(ServerFields.ID).include(ServerFields.DATABASE_NAME);
         return tenantMongoAccess.global()
-            .find(query, Server.class, CollectionName.MODL_SERVERS)
+            .find(query, BootstrapTarget.class, CollectionName.MODL_SERVERS)
             .stream()
-            .filter(server -> server != null
-                && server.getDatabaseName() != null
-                && !server.getDatabaseName().isBlank())
+            .filter(target -> target.databaseName() != null && !target.databaseName().isBlank())
             .toList();
     }
 
-    private void dispatchTenantBootstrap(List<Server> targets) {
+    private void dispatchTenantBootstrap(List<BootstrapTarget> targets) {
         log.info("Bootstrapping schema for {} existing tenants", targets.size());
         int parallelism = Math.min(BOOTSTRAP_PARALLELISM, targets.size());
         ExecutorService executor = Executors.newFixedThreadPool(parallelism, bootstrapThreadFactory());
@@ -108,7 +106,7 @@ public class MongoIndexBootstrapService {
         AtomicInteger failed = new AtomicInteger();
 
         CompletableFuture<?>[] tasks = targets.stream()
-            .map(server -> CompletableFuture.runAsync(() -> bootstrapTenant(server, succeeded, failed), executor))
+            .map(target -> CompletableFuture.runAsync(() -> bootstrapTenant(target, succeeded, failed), executor))
             .toArray(CompletableFuture[]::new);
 
         CompletableFuture.allOf(tasks).whenComplete((ignored, throwable) -> {
@@ -117,18 +115,18 @@ public class MongoIndexBootstrapService {
         });
     }
 
-    private void bootstrapTenant(Server server, AtomicInteger succeeded, AtomicInteger failed) {
+    private void bootstrapTenant(BootstrapTarget target, AtomicInteger succeeded, AtomicInteger failed) {
         try {
             log.debug("Bootstrapping schema for server id={} database={}",
-                server.getId(), server.getDatabaseName());
-            MongoTemplate template = tenantMongoAccess.forServer(server);
+                target.id(), target.databaseName());
+            MongoTemplate template = tenantMongoAccess.forDatabase(target.databaseName());
             tenantMigrationService.applyMigrationsForTenant(template);
             createTenantIndexes(template);
             succeeded.incrementAndGet();
         } catch (Exception e) {
             failed.incrementAndGet();
             log.warn("Failed to bootstrap schema for server id={} database={}",
-                server.getId(), server.getDatabaseName(), e);
+                target.id(), target.databaseName(), e);
         }
     }
 
@@ -548,6 +546,9 @@ public class MongoIndexBootstrapService {
 
     private Document doc(String field, int direction) {
         return new Document(field, direction);
+    }
+
+    record BootstrapTarget(@Id String id, String databaseName) {
     }
 
     private record IndexSpec(

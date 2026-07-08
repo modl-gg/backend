@@ -186,23 +186,10 @@ public class MinecraftTicketsV3Controller {
         );
 
         return switch (result.status()) {
-            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(MinecraftTicketProtoMapper.toClaimTicketResponse(
-                404,
-                false,
-                "Ticket not found",
-                null,
-                null
-            ));
-            case ALREADY_LINKED -> ResponseEntity.status(HttpStatus.CONFLICT).body(MinecraftTicketProtoMapper.toClaimTicketResponse(
-                409,
-                false,
-                "Ticket is already linked to a Minecraft account",
-                null,
-                null
-            ));
-            case SUCCESS -> ResponseEntity.ok(MinecraftTicketProtoMapper.toClaimTicketResponse(
-                200,
-                true,
+            case NOT_FOUND -> error(HttpStatus.NOT_FOUND, "NOT_FOUND", "Ticket not found");
+            case ALREADY_LINKED -> error(HttpStatus.CONFLICT, "ALREADY_LINKED",
+                "Ticket is already linked to a Minecraft account");
+            case SUCCESS -> ResponseEntity.ok(MinecraftTicketProtoMapper.toClaimTicketSuccess(
                 "Ticket successfully linked to your account",
                 id,
                 result.ticket() != null ? result.ticket().getSubject() : null

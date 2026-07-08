@@ -1,5 +1,6 @@
 package gg.modl.backend.realtime.schedule;
 
+import static gg.modl.backend.realtime.support.RealtimeEventCounters.realtimeEventCount;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
@@ -75,9 +76,9 @@ class RealtimeHeartbeatSweeperTest {
 
         verify(session).close(new CloseStatus(1001, "Realtime heartbeat timed out"));
         assertTrue(registry.get(session).isEmpty());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "timeout_close").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reconnect_close", "reason", "heartbeat_timeout").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "timeout_close"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "disconnect"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "reconnect_close", "reason", "heartbeat_timeout"));
     }
 
     @Test
@@ -106,9 +107,9 @@ class RealtimeHeartbeatSweeperTest {
 
         verify(session).close(new CloseStatus(1008, "Realtime ClientHello timed out"));
         assertTrue(registry.get(session).isEmpty());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reject", "reason", "handshake_timeout").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reconnect_close", "reason", "handshake_timeout").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "reject", "reason", "handshake_timeout"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "disconnect"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "reconnect_close", "reason", "handshake_timeout"));
     }
 
     @Test
@@ -216,7 +217,7 @@ class RealtimeHeartbeatSweeperTest {
 
         assertTrue(registry.get(session).isEmpty());
         assertTrue(rateLimiter.tryAcquire(state));
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "reject", "reason", "terminal_force_evict").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "reject", "reason", "terminal_force_evict"));
     }
 
     @Test

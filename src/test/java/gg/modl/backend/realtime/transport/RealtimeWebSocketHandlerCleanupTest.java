@@ -1,5 +1,6 @@
 package gg.modl.backend.realtime.transport;
 
+import static gg.modl.backend.realtime.support.RealtimeEventCounters.realtimeEventCount;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -64,8 +65,8 @@ class RealtimeWebSocketHandlerCleanupTest {
 
         verify(session).close(CloseStatus.SERVER_ERROR);
         assertTrue(rateLimiter.tryAcquire(state));
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "transport_error").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "transport_error"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "disconnect"));
     }
 
     @Test
@@ -99,8 +100,8 @@ class RealtimeWebSocketHandlerCleanupTest {
 
         assertTrue(registry.get(session).isEmpty());
         assertTrue(rateLimiter.tryAcquire(state));
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "transport_error").count());
-        assertEquals(1.0, meterRegistry.counter("modl.realtime.events", "event", "disconnect").count());
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "transport_error"));
+        assertEquals(1.0, realtimeEventCount(meterRegistry, "disconnect"));
     }
 
     @Test
