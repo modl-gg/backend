@@ -68,7 +68,7 @@ dependencies {
     implementation 'gg.modl.minecraft.replay:replay-format:1.1.0'
 
     // Shared protobuf types
-    implementation 'gg.modl:proto:1.6.0'
+    implementation 'gg.modl:proto:1.6.1'
     // proto's gencode is stamped at protobuf-java 4.35.1 by the buf generator, but the proto POM
     // declares 4.35.0; pin the runtime up so it is not older than the linked gencode version.
     implementation 'com.google.protobuf:protobuf-java:4.35.1'

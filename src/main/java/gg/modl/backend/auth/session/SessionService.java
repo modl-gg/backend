@@ -62,6 +62,15 @@ public class SessionService {
         return sessionRepository.findActiveByEmail(server, email, new Date());
     }
 
+    public Optional<AuthSessionData> findSessionByPublicId(Server server, String email, String publicId) {
+        if (publicId == null || publicId.isBlank()) {
+            return Optional.empty();
+        }
+        return findAllSessionsForEmail(server, email).stream()
+            .filter(session -> publicId.equals(SessionPublicId.of(session.getId())))
+            .findFirst();
+    }
+
     private static final long REFRESH_SKIP_THRESHOLD_MS = 10L * 60 * 1000;
 
     public Optional<AuthSessionData> findAndRefreshSession(Server server, String sessionId) {

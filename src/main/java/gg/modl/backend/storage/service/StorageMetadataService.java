@@ -5,10 +5,14 @@ import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -29,6 +33,19 @@ public class StorageMetadataService {
 
     public Optional<StorageFileDocument> findConfirmedFile(Server server, String key) {
         return storageFileRepository.findByKey(server, key);
+    }
+
+    public Set<String> existingKeys(Server server, Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return Set.of();
+        }
+        return storageFileRepository.findByKeys(server, new ArrayList<>(keys)).stream()
+            .map(StorageFileDocument::getKey)
+            .collect(Collectors.toSet());
+    }
+
+    public boolean isMetadataAuthoritative(Server server) {
+        return isServerSynced(server);
     }
 
     public long sumTempUploadBytes(Server server, Date createdAfter) {

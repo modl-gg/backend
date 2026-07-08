@@ -14,6 +14,7 @@ import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.staff.data.Invitation;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
@@ -39,6 +40,7 @@ public class InvitationService {
     private final PermissionService permissionService;
     private final RoleAuthorization roleAuthorization;
     private final ServerLimitPolicy serverLimitPolicy;
+    private final GeneralSettingsService generalSettingsService;
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
@@ -253,6 +255,7 @@ public class InvitationService {
             .email(invitation.getEmail())
             .username(uniqueUsername)
             .roleId(invitation.getRoleId())
+            .language(generalSettingsService.getGeneralSettings(server).getDefaultLanguage())
             .createdAt(now)
             .updatedAt(now)
             .build();

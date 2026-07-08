@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -26,6 +27,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -203,5 +205,72 @@ class ReplayServiceTest {
         assertEquals(PlayerReplayResponse.MatchSource.TICKET_FALLBACK, replays.get(1).matchSource());
         assertEquals("replay-2", replays.get(1).replayId());
         assertEquals("replay-2", replays.get(1).replayUrl());
+    }
+
+    @Test
+    void listPlayerReplaysHidesCompleteReplayWhoseFileNoLongerExists() {
+        String playerUuid = "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f";
+        ReplayDocument orphaned = completeReplay("replay-gone", playerUuid, "db/replays/replay-gone.modlreplay");
+
+        when(storageMetadataService.isMetadataAuthoritative(server)).thenReturn(true);
+        when(replayRepository.findByTargetUuid(server, playerUuid, 100)).thenReturn(List.of(orphaned));
+        when(storageMetadataService.existingKeys(eq(server), any())).thenReturn(Set.of());
+        when(ticketRepository.findPlayerTicketsWithReplayUrl(server, playerUuid, 100)).thenReturn(List.of());
+
+        List<PlayerReplayResponse> replays = replayService.listPlayerReplays(server, playerUuid);
+
+        assertEquals(0, replays.size());
+    }
+
+    @Test
+    void listPlayerReplaysKeepsCompleteReplayWhenStorageMetadataIsNotAuthoritative() {
+        String playerUuid = "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f";
+        ReplayDocument replay = completeReplay("replay-1", playerUuid, "db/replays/replay-1.modlreplay");
+
+        when(storageMetadataService.isMetadataAuthoritative(server)).thenReturn(false);
+        when(replayRepository.findByTargetUuid(server, playerUuid, 100)).thenReturn(List.of(replay));
+        when(s3StorageService.getCdnUrl("db/replays/replay-1.modlreplay")).thenReturn("https://cdn.example/replay-1");
+        when(ticketRepository.findPlayerTicketsWithReplayUrl(server, playerUuid, 100)).thenReturn(List.of());
+
+        List<PlayerReplayResponse> replays = replayService.listPlayerReplays(server, playerUuid);
+
+        assertEquals(1, replays.size());
+        assertEquals("replay-1", replays.get(0).replayId());
+        verify(storageMetadataService, never()).existingKeys(any(), any());
+    }
+
+    @Test
+    void listPlayerReplaysSkipsTicketFallbackWhenReferencedReplayFileIsGone() {
+        String playerUuid = "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f";
+        ReplayDocument orphaned = completeReplay("replay-1", playerUuid, "db/replays/replay-1.modlreplay");
+        Ticket ticket = Ticket.builder()
+            .id("ticket-1")
+            .creatorUuid(playerUuid)
+            .creatorName("Player")
+            .created(new Date(2000L))
+            .replayUrl("https://replays.example/?id=replay-1")
+            .build();
+
+        when(storageMetadataService.isMetadataAuthoritative(server)).thenReturn(true);
+        when(replayRepository.findByTargetUuid(server, playerUuid, 100)).thenReturn(List.of(orphaned));
+        when(storageMetadataService.existingKeys(eq(server), any())).thenReturn(Set.of());
+        when(ticketRepository.findPlayerTicketsWithReplayUrl(server, playerUuid, 100)).thenReturn(List.of(ticket));
+
+        List<PlayerReplayResponse> replays = replayService.listPlayerReplays(server, playerUuid);
+
+        assertEquals(0, replays.size());
+    }
+
+    private ReplayDocument completeReplay(String id, String targetUuid, String storageKey) {
+        ReplayDocument replay = new ReplayDocument();
+        replay.setId(id);
+        replay.setTargetUuid(targetUuid);
+        replay.setTargetName("Player");
+        replay.setMcVersion("1.21.4");
+        replay.setFileSize(4096L);
+        replay.setCreatedAt(new Date(1000L));
+        replay.setStatus(ReplayDocument.STATUS_COMPLETE);
+        replay.setStorageKey(storageKey);
+        return replay;
     }
 }

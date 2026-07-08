@@ -7,8 +7,6 @@ import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.ReplayRetentionSettings;
 import gg.modl.backend.settings.service.ReplayRetentionSettingsService;
-import gg.modl.backend.storage.service.S3StorageService;
-import gg.modl.backend.storage.service.StorageMetadataService;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,8 +26,7 @@ public class LegacyReplayCleanupService {
     private final ServerMongoRepository serverRepository;
     private final ReplayMongoRepository replayRepository;
     private final ReplayRetentionSettingsService replayRetentionSettingsService;
-    private final S3StorageService s3StorageService;
-    private final StorageMetadataService storageMetadataService;
+    private final ReplayDeletionService replayDeletionService;
     private final Clock clock;
 
     private static final int MAX_PAGES_PER_RUN = 1000;
@@ -105,16 +102,11 @@ public class LegacyReplayCleanupService {
 
             for (ReplayDocument replay : page) {
                 stats.scanned++;
-                if (!s3StorageService.deleteFile(replay.getStorageKey())) {
-                    stats.storageDeleteFailures++;
-                    continue;
-                }
-                if (!storageMetadataService.removeFile(server, replay.getStorageKey())) {
-                    stats.metadataRemoveFailures++;
-                    continue;
-                }
-                if (replayRepository.deleteByReplayId(server, replay.getId())) {
-                    stats.deleted++;
+                switch (replayDeletionService.deleteReplayWithStorage(server, replay)) {
+                    case DELETED -> stats.deleted++;
+                    case STORAGE_DELETE_FAILED -> stats.storageDeleteFailures++;
+                    case METADATA_REMOVE_FAILED -> stats.metadataRemoveFailures++;
+                    case ALREADY_ABSENT -> { }
                 }
             }
 

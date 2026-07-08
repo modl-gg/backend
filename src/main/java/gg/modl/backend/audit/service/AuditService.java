@@ -325,44 +325,64 @@ public class AuditService {
 
     public boolean rollbackPunishment(
         Server server, String punishmentId, String reason, String performerUsername) {
-        AuditLog punishment = auditRepository.findAuditLogById(server, punishmentId);
+        Document player = auditRepository.findPlayerByPunishmentId(server, punishmentId);
+        if (player == null) {
+            return false;
+        }
+        Document punishment = findPunishmentSubdocument(player, punishmentId);
         if (punishment == null) {
             return false;
         }
 
-        Map<String, Object> metadata = punishment.getMetadata();
-        if (metadata != null && Boolean.FALSE.equals(metadata.get("canRollback"))) {
-            throw new ValidationException("This punishment cannot be rolled back");
-        }
+        saveRollbackAuditLog(
+            server, player.getString("_id"),
+            AuditDocumentUtil.extractPlayerNameFromDoc(player), punishment,
+            reason, performerUsername, new Date(),
+            false, Objects.toString(punishment.getString("issuerName"), ""));
+        return true;
+    }
 
-        // Map.getOrDefault returns a PRESENT-but-null value as-is, and Map.of forbids nulls -> NPE/500.
-        // Coalesce explicitly so present-null playerName/reason/source render as "" instead of throwing.
-        String playerName = metadata != null ? Objects.toString(metadata.get("playerName"), "") : "";
-        String originalReason = metadata != null ? Objects.toString(metadata.get("reason"), "") : "";
+    private Document findPunishmentSubdocument(Document player, String punishmentId) {
+        List<Document> punishments = player.getList("punishments", Document.class);
+        if (punishments == null) {
+            return null;
+        }
+        for (Document punishment : punishments) {
+            if (punishmentId.equals(punishment.getString("id"))) {
+                return punishment;
+            }
+        }
+        return null;
+    }
+
+    private void saveRollbackAuditLog(
+        Server server, String playerId, String playerName, Document punishment,
+        String reason, String performerUsername, Date now, boolean bulk, String issuerUsername) {
+        int typeOrdinal = punishment.getInteger("typeOrdinal", 0);
+        String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
+        String punishmentId = punishment.getString("id");
+
+        String description = bulk
+            ? "Bulk rollback: " + typeName + " for " + playerName + " (issued by " + issuerUsername + ")"
+            : "Rolled back " + typeName + " for " + (playerName.isEmpty() ? "unknown player" : playerName);
 
         AuditLog rollbackLog = AuditLog.builder()
-            .created(new Date())
+            .created(now)
             .level("moderation")
             .source(performerUsername)
-            .description("Rolled back " + extractPunishmentType(punishment.getDescription())
-                         + " for "
-                         + (playerName.isEmpty() ? "unknown player" : playerName))
+            .description(description)
             .metadata(Map.of(
-                "originalPunishmentId", punishmentId,
-                "rollbackReason", reason != null ? reason : "Admin rollback",
-                "originalPunishment", Map.of(
-                    "type", extractPunishmentType(punishment.getDescription()),
-                    "player", playerName,
-                    "staff", Objects.toString(punishment.getSource(), ""),
-                    "originalReason", originalReason
-                )
+                "punishmentId", punishmentId != null ? punishmentId : "",
+                "playerId", playerId != null ? playerId : "",
+                "playerName", playerName,
+                "staffUsername", issuerUsername,
+                "rollbackReason", reason != null ? reason : (bulk ? "Bulk rollback" : "Admin rollback"),
+                "punishmentType", typeName,
+                "bulkRollback", bulk
             ))
             .build();
 
         auditRepository.saveAuditLog(server, rollbackLog);
-        auditRepository.markAuditLogRolledBack(
-            server, punishmentId, performerUsername, new Date());
-        return true;
     }
 
     public Map<String, Object> getDatabaseTable(
@@ -449,9 +469,6 @@ public class AuditService {
         String playerName = AuditDocumentUtil.extractPlayerNameFromDoc(player);
         int count = 0;
 
-        // Bulk rollback is audit-only (ROLLBACK is not a pardon and never mutated the punishment),
-        // matching single rollbackPunishment. It is intentionally repeatable and writes per-punishment
-        // AuditLogs only; the misleading malformed ROLLBACK modification write has been removed.
         for (Document punishment : punishments) {
             if (!matchesIssuer(punishment, staffUsername, staffId)) {
                 continue;
@@ -460,31 +477,9 @@ public class AuditService {
                 continue;
             }
 
-            // Embedded punishment subdocs key their short id under the native "id" field, not "_id".
-            String punishmentId = punishment.getString("id");
-
-            int typeOrdinal = punishment.getInteger("typeOrdinal", 0);
-            String typeName =
-                punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
-
-            AuditLog rollbackLog = AuditLog.builder()
-                .created(now)
-                .level("moderation")
-                .source(performerUsername)
-                .description("Bulk rollback: " + typeName + " for " + playerName
-                             + " (issued by " + staffUsername + ")")
-                .metadata(Map.of(
-                    "punishmentId", punishmentId != null ? punishmentId : "",
-                    "playerId", playerId != null ? playerId : "",
-                    "playerName", playerName,
-                    "staffUsername", staffUsername,
-                    "rollbackReason", reason != null ? reason : "Bulk rollback",
-                    "punishmentType", typeName,
-                    "bulkRollback", true
-                ))
-                .build();
-
-            auditRepository.saveAuditLog(server, rollbackLog);
+            saveRollbackAuditLog(
+                server, playerId, playerName, punishment,
+                reason, performerUsername, now, true, staffUsername);
             count++;
         }
 

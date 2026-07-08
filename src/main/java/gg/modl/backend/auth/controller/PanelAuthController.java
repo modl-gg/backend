@@ -36,8 +36,10 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -110,9 +112,7 @@ public class PanelAuthController {
             sessionService.invalidateSession(server, sessionId);
         }
 
-        for (Cookie cookie : cookieUtil.createExpiredSessionCookies()) {
-            response.addCookie(cookie);
-        }
+        expireSessionCookies(response);
 
         return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
     }
@@ -248,6 +248,57 @@ public class PanelAuthController {
         List<AuthSessionData> sessions = sessionService.findAllSessionsForEmail(server, email);
 
         return ResponseEntity.ok(PanelAuthProtoMapper.toSessionsResponse(sessions, currentSessionId));
+    }
+
+    @DeleteMapping("/sessions/{publicId}")
+    public ResponseEntity<PanelAuthResponse> revokeSession(
+        HttpServletRequest request,
+        HttpServletResponse response,
+        @PathVariable String publicId) {
+
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+        Optional<AuthSessionData> target = sessionService.findSessionByPublicId(server, email, publicId);
+        if (target.isEmpty()) {
+            return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Session not found"));
+        }
+
+        String sessionId = target.get().getId();
+        sessionService.invalidateSession(server, sessionId);
+        expireCookiesIfCurrentSession(request, response, sessionId);
+
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
+    }
+
+    @DeleteMapping("/sessions")
+    public ResponseEntity<PanelAuthResponse> revokeAllSessions(HttpServletRequest request, HttpServletResponse response) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            return ResponseEntity.status(401).body(PanelAuthProtoMapper.toAuthResponse(false, "Not authenticated"));
+        }
+
+        Server server = RequestUtil.getRequestServer(request);
+        sessionService.invalidateAllSessionsForEmail(server, email);
+        expireSessionCookies(response);
+
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.LOGOUT_SUCCESS));
+    }
+
+    private void expireCookiesIfCurrentSession(HttpServletRequest request, HttpServletResponse response, String sessionId) {
+        AuthSessionData currentSession = RequestUtil.getSession(request);
+        if (currentSession != null && sessionId.equals(currentSession.getId())) {
+            expireSessionCookies(response);
+        }
+    }
+
+    private void expireSessionCookies(HttpServletResponse response) {
+        for (Cookie cookie : cookieUtil.createExpiredSessionCookies()) {
+            response.addCookie(cookie);
+        }
     }
 
     @GetMapping("/permissions")

@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ReplayDocumentFields;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import gg.modl.backend.replay.data.ReplayLabel;
@@ -91,5 +92,19 @@ public class ReplayMongoRepository extends AbstractServerMongoRepository<ReplayD
 
     public boolean deleteByReplayId(Server server, String replayId) {
         return remove(server, Query.query(Criteria.where(ReplayDocumentFields.ID).is(replayId))).getDeletedCount() > 0;
+    }
+
+    public List<ReplayDocument> findByStorageKeys(Server server, Collection<String> storageKeys) {
+        if (storageKeys == null || storageKeys.isEmpty()) {
+            return List.of();
+        }
+        return find(server, Query.query(Criteria.where(ReplayDocumentFields.STORAGE_KEY).in(storageKeys)));
+    }
+
+    public long deleteByReplayIds(Server server, Collection<String> replayIds) {
+        if (replayIds == null || replayIds.isEmpty()) {
+            return 0L;
+        }
+        return remove(server, Query.query(Criteria.where(ReplayDocumentFields.ID).in(replayIds))).getDeletedCount();
     }
 }

@@ -1,6 +1,9 @@
 package gg.modl.backend.auth.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -107,6 +110,87 @@ class PanelAuthControllerTest {
 
         verify(sessionService).invalidateAllSessionsForEmail(server, "old@example.com");
         verify(sessionService).createSession(server, "new@example.com", "127.0.0.1", null);
+    }
+
+    @Test
+    void revokeSessionReturnsNotFoundWhenPublicIdUnknown() {
+        AuthConfiguration authConfiguration = new AuthConfiguration();
+        authConfiguration.setSessionCookieName("MODL_SESSION");
+        SessionService sessionService = mock(SessionService.class);
+        PanelAuthController controller = createController(authConfiguration, sessionService);
+        Server server = server();
+        AuthSessionData currentSession = new AuthSessionData("session-1", "staff@example.com", new Date(), new Date(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/v1/panel/auth/sessions/pub-unknown");
+        request.setAttribute(RequestAttribute.SERVER, server);
+        request.setAttribute(RequestAttribute.SESSION, currentSession);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(sessionService.findSessionByPublicId(server, "staff@example.com", "pub-unknown")).thenReturn(Optional.empty());
+
+        assertEquals(404, controller.revokeSession(request, response, "pub-unknown").getStatusCode().value());
+        verify(sessionService, never()).invalidateSession(any(Server.class), anyString());
+    }
+
+    @Test
+    void revokeSessionInvalidatesResolvedSessionWithoutClearingCookieForOtherDevice() {
+        AuthConfiguration authConfiguration = new AuthConfiguration();
+        authConfiguration.setSessionCookieName("MODL_SESSION");
+        SessionService sessionService = mock(SessionService.class);
+        PanelAuthController controller = createController(authConfiguration, sessionService);
+        Server server = server();
+        AuthSessionData currentSession = new AuthSessionData("session-1", "staff@example.com", new Date(), new Date(), null, null);
+        AuthSessionData otherDevice = new AuthSessionData("session-2", "staff@example.com", new Date(), new Date(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/v1/panel/auth/sessions/pub-2");
+        request.setAttribute(RequestAttribute.SERVER, server);
+        request.setAttribute(RequestAttribute.SESSION, currentSession);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(sessionService.findSessionByPublicId(server, "staff@example.com", "pub-2")).thenReturn(Optional.of(otherDevice));
+
+        assertEquals(200, controller.revokeSession(request, response, "pub-2").getStatusCode().value());
+        verify(sessionService).invalidateSession(server, "session-2");
+        assertEquals(0, response.getCookies().length);
+    }
+
+    @Test
+    void revokeCurrentSessionClearsCookie() {
+        AuthConfiguration authConfiguration = new AuthConfiguration();
+        authConfiguration.setSessionCookieName("MODL_SESSION");
+        SessionService sessionService = mock(SessionService.class);
+        PanelAuthController controller = createController(authConfiguration, sessionService);
+        Server server = server();
+        AuthSessionData currentSession = new AuthSessionData("session-1", "staff@example.com", new Date(), new Date(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/v1/panel/auth/sessions/pub-1");
+        request.setAttribute(RequestAttribute.SERVER, server);
+        request.setAttribute(RequestAttribute.SESSION, currentSession);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(sessionService.findSessionByPublicId(server, "staff@example.com", "pub-1")).thenReturn(Optional.of(currentSession));
+
+        assertEquals(200, controller.revokeSession(request, response, "pub-1").getStatusCode().value());
+        verify(sessionService).invalidateSession(server, "session-1");
+        assertTrue(response.getCookies().length > 0);
+        for (Cookie cookie : response.getCookies()) {
+            assertEquals(0, cookie.getMaxAge());
+        }
+    }
+
+    @Test
+    void revokeAllSessionsClearsEveryEmailSessionAndCookie() {
+        AuthConfiguration authConfiguration = new AuthConfiguration();
+        authConfiguration.setSessionCookieName("MODL_SESSION");
+        SessionService sessionService = mock(SessionService.class);
+        PanelAuthController controller = createController(authConfiguration, sessionService);
+        Server server = server();
+        AuthSessionData currentSession = new AuthSessionData("session-1", "staff@example.com", new Date(), new Date(), null, null);
+        MockHttpServletRequest request = new MockHttpServletRequest("DELETE", "/v1/panel/auth/sessions");
+        request.setAttribute(RequestAttribute.SERVER, server);
+        request.setAttribute(RequestAttribute.SESSION, currentSession);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertEquals(200, controller.revokeAllSessions(request, response).getStatusCode().value());
+        verify(sessionService).invalidateAllSessionsForEmail(server, "staff@example.com");
+        assertTrue(response.getCookies().length > 0);
     }
 
     private PanelAuthController createController(AuthConfiguration authConfiguration, SessionService sessionService) {

@@ -21,6 +21,8 @@ import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
+import gg.modl.backend.settings.data.SupportedLanguages;
+import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.staff.data.Invitation;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
@@ -57,6 +59,7 @@ public class StaffService {
     private final ServerTimestampService serverTimestampService;
     private final WebAuthnService webAuthnService;
     private final SessionService sessionService;
+    private final GeneralSettingsService generalSettingsService;
 
     private static final String SUPER_ADMIN_USERNAME = "Admin";
 
@@ -170,6 +173,7 @@ public class StaffService {
             .email(email)
             .username(request.username())
             .roleId(grantedRole.getId())
+            .language(generalSettingsService.getGeneralSettings(server).getDefaultLanguage())
             .createdAt(new Date())
             .updatedAt(new Date())
             .build();
@@ -524,7 +528,7 @@ public class StaffService {
             hasChanges = true;
         }
 
-        if (newLanguage != null && List.of("en", "de", "es").contains(newLanguage)) {
+        if (SupportedLanguages.isSupported(newLanguage)) {
             staff.setLanguage(newLanguage);
             hasChanges = true;
         }

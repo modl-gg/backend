@@ -124,6 +124,7 @@ final class PanelSettingsProtoMapper {
             .setDiscordWebhookUrl(stringValue(settings.getDiscordWebhookUrl()))
             .setHomepageIconUrl(stringValue(settings.getHomepageIconUrl()))
             .setPanelIconUrl(stringValue(settings.getPanelIconUrl()))
+            .setDefaultLanguage(stringValue(settings.getDefaultLanguage()))
             .build();
     }
 
@@ -588,7 +589,8 @@ final class PanelSettingsProtoMapper {
                 .setPanelIconUrl(stringValue(response.panelIconUrl()))
                 .setHomepageIconUrl(stringValue(response.homepageIconUrl()))
                 .setMaintenanceMode(response.maintenanceMode())
-                .setMaintenanceMessage(stringValue(response.maintenanceMessage()));
+                .setMaintenanceMessage(stringValue(response.maintenanceMessage()))
+                .setDefaultLanguage(stringValue(response.defaultLanguage()));
         if (response.ticketForms() != null) {
             builder.setTicketForms(toStruct(response.ticketForms()));
         }
@@ -611,6 +613,9 @@ final class PanelSettingsProtoMapper {
         }
         if (request.hasPanelIconUrl()) {
             builder.panelIconUrl(request.getPanelIconUrl());
+        }
+        if (request.hasDefaultLanguage()) {
+            builder.defaultLanguage(request.getDefaultLanguage());
         }
         return builder.build();
     }

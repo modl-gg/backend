@@ -2,6 +2,7 @@ package gg.modl.backend.storage.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.replay.service.ReplayDeletionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.MediaValidationService;
@@ -12,6 +13,7 @@ import gg.modl.proto.modl.v1.ConfirmUploadRequest;
 import gg.modl.proto.modl.v1.MediaConfigResponse;
 import gg.modl.proto.modl.v1.PresignUploadRequest;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,7 @@ public class PanelMediaController {
     private final MediaValidationService validationService;
     private final StorageMetadataService storageMetadataService;
     private final UploadOrchestrationService uploadOrchestrationService;
+    private final ReplayDeletionService replayDeletionService;
 
     @GetMapping("/config")
     public ResponseEntity<MediaConfigResponse> getMediaConfig(HttpServletRequest request) {
@@ -59,6 +62,7 @@ public class PanelMediaController {
         boolean deleted = s3StorageService.deleteFile(normalizedKey);
         if (deleted) {
             storageMetadataService.removeFile(server, normalizedKey);
+            replayDeletionService.reconcileDeletedStorageKeys(server, List.of(normalizedKey));
             return ResponseEntity.ok(Map.of("message", "File deleted"));
         }
         return ResponseEntity.notFound().build();

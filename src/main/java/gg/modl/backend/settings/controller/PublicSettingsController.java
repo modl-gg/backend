@@ -6,6 +6,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
+import gg.modl.backend.settings.data.SupportedLanguages;
 import gg.modl.backend.settings.data.TicketFormSettings;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.settings.service.TicketFormSettingsService;
@@ -44,7 +45,8 @@ public class PublicSettingsController {
             generalSettings.getHomepageIconUrl(),
             ticketFormSettingsService.buildTicketFormsResponse(ticketForms),
             globalConfig.isMaintenanceMode(),
-            globalConfig.getMaintenanceMessage()
+            globalConfig.getMaintenanceMessage(),
+            generalSettings.getDefaultLanguage()
         ));
     }
 
@@ -57,7 +59,8 @@ public class PublicSettingsController {
             null,
             Map.of(),
             globalConfig.isMaintenanceMode(),
-            globalConfig.getMaintenanceMessage()
+            globalConfig.getMaintenanceMessage(),
+            SupportedLanguages.DEFAULT
         ));
     }
 

@@ -1,6 +1,7 @@
 package gg.modl.backend.auth.controller;
 
 import gg.modl.backend.auth.session.AuthSessionData;
+import gg.modl.backend.auth.session.SessionPublicId;
 import gg.modl.proto.modl.v1.PanelAuthResponse;
 import gg.modl.proto.modl.v1.PanelPermissionsResponse;
 import gg.modl.proto.modl.v1.PanelProfileResponse;
@@ -60,7 +61,7 @@ final class PanelAuthProtoMapper {
     private static PanelSessionInfoResponse toSessionInfo(AuthSessionData session, String currentSessionId,
                                                           SimpleDateFormat isoFormat) {
         PanelSessionInfoResponse.Builder builder = PanelSessionInfoResponse.newBuilder()
-            .setId(stringValue(session.getId()))
+            .setId(stringValue(SessionPublicId.of(session.getId())))
             .setIpAddress(stringValue(session.getIpAddress()))
             .setUserAgent(stringValue(session.getUserAgent()))
             .setIsCurrent(session.getId().equals(currentSessionId));

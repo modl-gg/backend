@@ -290,7 +290,8 @@ public class MongoIndexBootstrapService {
 
         ensureIndexes(template, CollectionName.REPLAYS, List.of(
             IndexSpec.standard("idx_replays_targetUuid_createdAt", doc("targetUuid", 1).append("createdAt", -1), false, true),
-            IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1), false, false)
+            IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1), false, false),
+            IndexSpec.standard("idx_replays_storageKey", doc("storageKey", 1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.STORAGE_FILES, List.of(

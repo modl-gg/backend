@@ -22,7 +22,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -189,7 +191,11 @@ public class ReplayService {
         Map<String, PlayerReplayResponse> responses = new LinkedHashMap<>();
 
         List<ReplayDocument> directReplays = replayRepository.findByTargetUuid(server, normalizedPlayerUuid, 100);
+        Set<String> orphanedReplayIds = orphanedCompleteReplayIds(server, directReplays);
         for (ReplayDocument replay : directReplays) {
+            if (orphanedReplayIds.contains(replay.getId())) {
+                continue;
+            }
             PlayerReplayResponse response = toPlayerReplayResponse(replay, PlayerReplayResponse.MatchSource.DIRECT_METADATA);
             responses.put(response.deduplicationKey(), response);
         }
@@ -201,6 +207,9 @@ public class ReplayService {
                 continue;
             }
             String replayId = extractReplayId(replayUrl);
+            if (replayId != null && orphanedReplayIds.contains(replayId)) {
+                continue;
+            }
             if (hasReplayReference(responses, replayUrl, replayId)) {
                 continue;
             }
@@ -212,6 +221,38 @@ public class ReplayService {
         }
 
         return List.copyOf(responses.values());
+    }
+
+    private Set<String> orphanedCompleteReplayIds(Server server, List<ReplayDocument> replays) {
+        if (!storageMetadataService.isMetadataAuthoritative(server)) {
+            return Set.of();
+        }
+        List<String> completeStorageKeys = new ArrayList<>();
+        for (ReplayDocument replay : replays) {
+            if (isCompleteWithStorageKey(replay)) {
+                completeStorageKeys.add(replay.getStorageKey());
+            }
+        }
+        if (completeStorageKeys.isEmpty()) {
+            return Set.of();
+        }
+
+        Set<String> existingStorageKeys = storageMetadataService.existingKeys(server, completeStorageKeys);
+        if (existingStorageKeys.size() == completeStorageKeys.size()) {
+            return Set.of();
+        }
+
+        Set<String> orphanedReplayIds = new HashSet<>();
+        for (ReplayDocument replay : replays) {
+            if (isCompleteWithStorageKey(replay) && !existingStorageKeys.contains(replay.getStorageKey())) {
+                orphanedReplayIds.add(replay.getId());
+            }
+        }
+        return orphanedReplayIds;
+    }
+
+    private boolean isCompleteWithStorageKey(ReplayDocument replay) {
+        return ReplayDocument.STATUS_COMPLETE.equals(replay.getStatus()) && replay.getStorageKey() != null;
     }
 
     private PlayerReplayResponse toPlayerReplayResponse(ReplayDocument replay, PlayerReplayResponse.MatchSource matchSource) {

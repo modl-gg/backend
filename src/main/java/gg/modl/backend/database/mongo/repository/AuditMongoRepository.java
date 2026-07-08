@@ -193,26 +193,8 @@ public class AuditMongoRepository {
             .getMappedResults();
     }
 
-    public AuditLog findAuditLogById(Server server, String logId) {
-        return tenantMongoAccess.forServer(server)
-            .findOne(Query.query(Criteria.where(AuditLogFields.ID).is(logId)), AuditLog.class, CollectionName.LOGS);
-    }
-
     public void saveAuditLog(Server server, AuditLog auditLog) {
         tenantMongoAccess.forServer(server).save(auditLog, CollectionName.LOGS);
-    }
-
-    public void markAuditLogRolledBack(Server server, String logId, String performerUsername, Date rollbackDate) {
-        Update update = new Update()
-            .set(AuditLogFields.METADATA_ROLLED_BACK, true)
-            .set(AuditLogFields.METADATA_ROLLBACK_DATE, rollbackDate)
-            .set(AuditLogFields.METADATA_ROLLBACK_BY, performerUsername);
-        tenantMongoAccess.forServer(server).updateFirst(
-            Query.query(Criteria.where(AuditLogFields.ID).is(logId)),
-            update,
-            AuditLog.class,
-            CollectionName.LOGS
-        );
     }
 
     public List<Document> readTable(Server server, String collectionName, int limit, int skip) {
@@ -240,6 +222,13 @@ public class AuditMongoRepository {
         query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID, PlayerFields.PUNISHMENTS);
 
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
+    }
+
+    public Document findPlayerByPunishmentId(Server server, String punishmentId) {
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENT_ID).is(punishmentId));
+        query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID,
+            PlayerFields.USERNAMES, PlayerFields.PUNISHMENTS);
+        return tenantMongoAccess.forServer(server).findOne(query, Document.class, CollectionName.PLAYERS);
     }
 
     public List<Document> findPlayersForBulkAction(Server server, List<Integer> typeOrdinals) {

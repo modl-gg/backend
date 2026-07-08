@@ -14,6 +14,7 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,25 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
         query.limit(Math.min(limit, 100));
         return find(server, query);
+    }
+
+    public long clearReplayReferences(Server server, Collection<String> replayIds) {
+        if (replayIds == null || replayIds.isEmpty()) {
+            return 0L;
+        }
+        List<Criteria> replayMatchers = new ArrayList<>();
+        for (String replayId : replayIds) {
+            if (replayId == null || replayId.isBlank()) {
+                continue;
+            }
+            replayMatchers.add(Criteria.where(TicketFields.REPLAY_URL).regex(Pattern.quote(replayId)));
+        }
+        if (replayMatchers.isEmpty()) {
+            return 0L;
+        }
+        Query query = Query.query(new Criteria().orOperator(replayMatchers.toArray(new Criteria[0])));
+        Update update = new Update().unset(TicketFields.REPLAY_URL);
+        return updateMulti(server, query, update).getModifiedCount();
     }
 
     public List<Ticket> findReports(Server server, String status, String playerUuid, int limit, boolean sortByCreatedDesc) {

@@ -4,6 +4,7 @@ import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.replay.service.ReplayDeletionService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
@@ -42,6 +43,7 @@ public class PanelStorageController {
     private final StorageSyncService storageSyncService;
     private final PermissionService permissionService;
     private final MediaValidationService validationService;
+    private final ReplayDeletionService replayDeletionService;
 
     @GetMapping("/quota")
     public ResponseEntity<StorageQuotaResponse> getQuota(HttpServletRequest request) {
@@ -76,6 +78,7 @@ public class PanelStorageController {
 
         int deleted = s3StorageService.bulkDelete(keys);
         storageMetadataService.removeFiles(server, keys);
+        replayDeletionService.reconcileDeletedStorageKeys(server, keys);
         return ResponseEntity.ok(StorageProtoMapper.toStorageBulkDeleteResponse(deleted));
     }
 
