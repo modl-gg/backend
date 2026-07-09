@@ -103,10 +103,8 @@ public class StorageMetadataService {
 
     public boolean removeFile(Server server, String key) {
         try {
-            storageFileRepository.findByKey(server, key).ifPresent(doc -> {
-                storageFileRepository.deleteByKey(server, key);
-                serverRepository.decrementStorageUsed(server.getId(), doc.getSize());
-            });
+            storageFileRepository.findAndRemoveByKey(server, key)
+                .ifPresent(doc -> serverRepository.decrementStorageUsed(server.getId(), doc.getSize()));
             return true;
         } catch (Exception e) {
             log.warn("Failed to remove file metadata for key: {}", key, e);
@@ -116,9 +114,8 @@ public class StorageMetadataService {
 
     public void removeFiles(Server server, List<String> keys) {
         try {
-            List<StorageFileDocument> docs = storageFileRepository.findByKeys(server, keys);
-            long totalSize = docs.stream().mapToLong(StorageFileDocument::getSize).sum();
-            storageFileRepository.deleteByKeys(server, keys);
+            List<StorageFileDocument> removed = storageFileRepository.findAndRemoveByKeys(server, keys);
+            long totalSize = removed.stream().mapToLong(StorageFileDocument::getSize).sum();
             if (totalSize > 0) {
                 serverRepository.decrementStorageUsed(server.getId(), totalSize);
             }

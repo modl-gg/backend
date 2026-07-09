@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.replay.util.ReplayReferenceUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
@@ -83,6 +84,7 @@ public class MinecraftTicketService {
             .data(ticketData.isEmpty() ? null : ticketData)
             .priority(TicketPriority.resolveOrDefault(request.priority()))
             .replayUrl(request.replayUrl())
+            .replayId(ReplayReferenceUtil.extractReplayId(request.replayUrl()))
             .locked(false)
             .created(now)
             .updatedAt(now)

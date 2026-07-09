@@ -9,6 +9,7 @@ import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.backend.replay.dto.InitReplayUploadResponse;
 import gg.modl.backend.replay.dto.PlayerReplayResponse;
 import gg.modl.backend.replay.dto.PublicReplayResponse;
+import gg.modl.backend.replay.util.ReplayReferenceUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.service.S3StorageService;
@@ -18,10 +19,6 @@ import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
@@ -123,8 +120,6 @@ public class ReplayService {
             switch (confirmResult) {
                 case SUCCESS -> log.debug("Replay {} confirmed for server {}", replayId, server.getDatabaseName());
                 case QUOTA_EXCEEDED -> {
-                    // The object was PUT to the bucket but is over quota; replay objects are intentionally
-                    // retained for the storage sync reconciler rather than deleted here.
                     doc.setStatus(ReplayDocument.STATUS_FAILED);
                     replayRepository.saveEntity(server, doc);
                     throw new ValidationException("Storage quota exceeded");
@@ -142,24 +137,16 @@ public class ReplayService {
         return exists;
     }
 
-    public enum SubmitLabelsResult { OK, NOT_FOUND, ALREADY_LABELED }
+    public enum SubmitLabelsResult { OK, NOT_FOUND }
 
     public SubmitLabelsResult submitLabels(Server server, String replayId, List<ReplayLabel> labels) {
-        // Enforce the per-label bean constraints that the proto request path does not apply.
-        for (ReplayLabel label : labels) {
-            Set<ConstraintViolation<ReplayLabel>> violations = validator.validate(label);
-            if (!violations.isEmpty()) {
-                throw new ValidationException(violations.iterator().next().getMessage());
-            }
-        }
+        validateLabels(labels);
 
-        // Only COMPLETE replays may be labeled; a missing or non-complete replay is NOT_FOUND.
         Optional<ReplayDocument> existing = replayRepository.findByReplayId(server, replayId);
         if (existing.isEmpty() || !ReplayDocument.STATUS_COMPLETE.equals(existing.get().getStatus())) {
             return SubmitLabelsResult.NOT_FOUND;
         }
 
-        // Authenticated staff path: last authoritative write wins (override prior labels).
         Optional<ReplayDocument> replaced = replayRepository.replaceLabels(server, replayId, labels);
         if (replaced.isEmpty()) {
             return SubmitLabelsResult.NOT_FOUND;
@@ -170,6 +157,15 @@ public class ReplayService {
         trainingDataService.generateSegmentsAsync(server, doc, labels);
 
         return SubmitLabelsResult.OK;
+    }
+
+    private void validateLabels(List<ReplayLabel> labels) {
+        for (ReplayLabel label : labels) {
+            Set<ConstraintViolation<ReplayLabel>> violations = validator.validate(label);
+            if (!violations.isEmpty()) {
+                throw new ValidationException(violations.iterator().next().getMessage());
+            }
+        }
     }
 
     public Optional<PublicReplayResponse> getPublicReplay(Server server, String replayId) {
@@ -206,7 +202,7 @@ public class ReplayService {
             if (replayUrl == null) {
                 continue;
             }
-            String replayId = extractReplayId(replayUrl);
+            String replayId = ReplayReferenceUtil.extractReplayId(replayUrl);
             if (replayId != null && orphanedReplayIds.contains(replayId)) {
                 continue;
             }
@@ -317,41 +313,5 @@ public class ReplayService {
                 replayUrl.equals(response.replayUrl())
                 || (replayId != null && replayId.equals(response.replayId()))
             );
-    }
-
-    private String extractReplayId(String replayReference) {
-        String normalized = normalizeOptional(replayReference);
-        if (normalized == null) {
-            return null;
-        }
-        if (isRawReplayId(normalized)) {
-            return normalized;
-        }
-        try {
-            URI uri = new URI(normalized);
-            String query = uri.getRawQuery();
-            if (query == null || query.isBlank()) {
-                return null;
-            }
-            for (String pair : query.split("&")) {
-                int separator = pair.indexOf('=');
-                String key = separator >= 0 ? pair.substring(0, separator) : pair;
-                if (!"id".equals(URLDecoder.decode(key, StandardCharsets.UTF_8))) {
-                    continue;
-                }
-                String value = separator >= 0 ? pair.substring(separator + 1) : "";
-                return normalizeOptional(URLDecoder.decode(value, StandardCharsets.UTF_8));
-            }
-            return null;
-        } catch (IllegalArgumentException | URISyntaxException exception) {
-            return null;
-        }
-    }
-
-    private boolean isRawReplayId(String replayReference) {
-        return !replayReference.contains("://")
-               && !replayReference.contains("/")
-               && !replayReference.contains("?")
-               && !replayReference.contains("#");
     }
 }

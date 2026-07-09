@@ -96,6 +96,9 @@ public class Ticket {
     @Nullable
     private String replayUrl;
 
+    @Nullable
+    private String replayId;
+
     private boolean emailAuthEnabled;
     private boolean hidden;
 

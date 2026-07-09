@@ -2,6 +2,7 @@ package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.database.mongo.repository.TrainingSegmentRepository;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.service.S3StorageService;
@@ -23,24 +24,35 @@ public class ReplayDeletionService {
     private final S3StorageService s3StorageService;
     private final StorageMetadataService storageMetadataService;
     private final TicketMongoRepository ticketRepository;
+    private final TrainingSegmentRepository trainingSegmentRepository;
 
-    public enum ReplayDeletionOutcome {
-        DELETED,
-        STORAGE_DELETE_FAILED,
-        METADATA_REMOVE_FAILED,
-        ALREADY_ABSENT
-    }
+    public ReplayBatchDeletionResult deleteReplaysWithStorage(Server server, List<ReplayDocument> replays) {
+        if (replays == null || replays.isEmpty()) {
+            return ReplayBatchDeletionResult.empty();
+        }
 
-    public ReplayDeletionOutcome deleteReplayWithStorage(Server server, ReplayDocument replay) {
-        if (!s3StorageService.deleteFile(replay.getStorageKey())) {
-            return ReplayDeletionOutcome.STORAGE_DELETE_FAILED;
+        List<String> replayIds = new ArrayList<>(replays.size());
+        List<String> storageKeys = new ArrayList<>(replays.size());
+        for (ReplayDocument replay : replays) {
+            if (replay.getId() == null) {
+                continue;
+            }
+            replayIds.add(replay.getId());
+            String storageKey = replay.getStorageKey();
+            if (storageKey != null && !storageKey.isBlank()) {
+                storageKeys.add(storageKey);
+            }
         }
-        if (!storageMetadataService.removeFile(server, replay.getStorageKey())) {
-            return ReplayDeletionOutcome.METADATA_REMOVE_FAILED;
+        if (replayIds.isEmpty()) {
+            return ReplayBatchDeletionResult.empty();
         }
-        boolean removed = replayRepository.deleteByReplayId(server, replay.getId());
-        ticketRepository.clearReplayReferences(server, List.of(replay.getId()));
-        return removed ? ReplayDeletionOutcome.DELETED : ReplayDeletionOutcome.ALREADY_ABSENT;
+
+        if (!storageKeys.isEmpty()) {
+            s3StorageService.bulkDelete(storageKeys);
+            storageMetadataService.removeFiles(server, storageKeys);
+        }
+        long removedRecords = purgeReplayRecords(server, replayIds);
+        return new ReplayBatchDeletionResult(replayIds.size(), removedRecords);
     }
 
     public int reconcileDeletedStorageKeys(Server server, Collection<String> deletedKeys) {
@@ -56,21 +68,26 @@ public class ReplayDeletionService {
             }
 
             List<String> replayIds = orphaned.stream().map(ReplayDocument::getId).toList();
-            long removedRecords = replayRepository.deleteByReplayIds(server, replayIds);
-            long clearedTicketReferences = ticketRepository.clearReplayReferences(server, replayIds);
+            long removedRecords = purgeReplayRecords(server, replayIds);
 
             log.info(
-                "Reconciled deleted replay storage server={} matchedKeys={} removedRecords={} clearedTicketReferences={}",
+                "Reconciled deleted replay storage server={} matchedKeys={} removedRecords={}",
                 server.getDatabaseName(),
                 replayKeys.size(),
-                removedRecords,
-                clearedTicketReferences
+                removedRecords
             );
             return (int) removedRecords;
         } catch (Exception e) {
             log.warn("Failed to reconcile deleted replay storage for server {}", server.getDatabaseName(), e);
             return 0;
         }
+    }
+
+    private long purgeReplayRecords(Server server, List<String> replayIds) {
+        long removedRecords = replayRepository.deleteByReplayIds(server, replayIds);
+        trainingSegmentRepository.deleteByReplayIds(server.getDatabaseName(), replayIds);
+        ticketRepository.clearReplayReferences(server, replayIds);
+        return removedRecords;
     }
 
     private List<String> replayStorageKeys(Collection<String> keys) {
@@ -84,5 +101,15 @@ public class ReplayDeletionService {
             }
         }
         return replayKeys;
+    }
+
+    public record ReplayBatchDeletionResult(int requested, long deleted) {
+        static ReplayBatchDeletionResult empty() {
+            return new ReplayBatchDeletionResult(0, 0L);
+        }
+
+        public long alreadyAbsent() {
+            return Math.max(0L, requested - deleted);
+        }
     }
 }

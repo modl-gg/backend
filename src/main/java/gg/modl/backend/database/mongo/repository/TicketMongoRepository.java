@@ -18,8 +18,11 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -149,22 +152,42 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     public long clearReplayReferences(Server server, Collection<String> replayIds) {
-        if (replayIds == null || replayIds.isEmpty()) {
+        List<String> ids = sanitizeReplayIds(replayIds);
+        if (ids.isEmpty()) {
             return 0L;
         }
-        List<Criteria> replayMatchers = new ArrayList<>();
-        for (String replayId : replayIds) {
-            if (replayId == null || replayId.isBlank()) {
-                continue;
-            }
-            replayMatchers.add(Criteria.where(TicketFields.REPLAY_URL).regex(Pattern.quote(replayId)));
-        }
-        if (replayMatchers.isEmpty()) {
-            return 0L;
-        }
-        Query query = Query.query(new Criteria().orOperator(replayMatchers.toArray(new Criteria[0])));
-        Update update = new Update().unset(TicketFields.REPLAY_URL);
+        Query query = Query.query(Criteria.where(TicketFields.REPLAY_ID).in(ids));
+        Update update = new Update().unset(TicketFields.REPLAY_URL).unset(TicketFields.REPLAY_ID);
         return updateMulti(server, query, update).getModifiedCount();
+    }
+
+    public Set<String> findReplayIdsReferencedByUnresolvedTicket(Server server, Collection<String> replayIds) {
+        List<String> ids = sanitizeReplayIds(replayIds);
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(TicketFields.REPLAY_ID).in(ids),
+            Criteria.where(TicketFields.STATUS).ne(TicketStatus.CLOSED.getId())
+        ));
+        query.fields().include(TicketFields.REPLAY_ID);
+        return find(server, query).stream()
+            .map(Ticket::getReplayId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+    }
+
+    private List<String> sanitizeReplayIds(Collection<String> replayIds) {
+        if (replayIds == null || replayIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>(replayIds.size());
+        for (String replayId : replayIds) {
+            if (replayId != null && !replayId.isBlank()) {
+                ids.add(replayId);
+            }
+        }
+        return ids;
     }
 
     public List<Ticket> findReports(Server server, String status, String playerUuid, int limit, boolean sortByCreatedDesc) {

@@ -6,6 +6,7 @@ import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.Projections;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
@@ -16,6 +17,7 @@ import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.service.DuplicatePlayerMerger;
+import gg.modl.backend.replay.util.ReplayReferenceUtil;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -48,6 +50,7 @@ public class TenantMigrationService {
     static final String DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID = "dedupe-settings-by-type";
     static final String DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID = "dedupe-players-by-minecraft-uuid-v2";
     static final String NORMALIZE_PLAYER_IDS_MIGRATION_ID = "normalize-player-ids";
+    static final String BACKFILL_TICKET_REPLAY_ID_MIGRATION_ID = "backfill-ticket-replay-id";
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
     private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
@@ -77,6 +80,33 @@ public class TenantMigrationService {
         runMigrationOnce(template, DEDUPE_SETTINGS_BY_TYPE_MIGRATION_ID, this::dedupeSettingsByType);
         runMigrationOnce(template, DEDUPE_PLAYERS_BY_MINECRAFT_UUID_MIGRATION_ID, this::dedupePlayersByMinecraftUuid);
         runMigrationOnce(template, NORMALIZE_PLAYER_IDS_MIGRATION_ID, this::normalizePlayerIds);
+        runMigrationOnce(template, BACKFILL_TICKET_REPLAY_ID_MIGRATION_ID, this::backfillTicketReplayIds);
+    }
+
+    private void backfillTicketReplayIds(MongoTemplate template) {
+        MongoCollection<Document> tickets = template.getCollection(CollectionName.TICKETS);
+        Bson filter = Filters.and(
+            Filters.type(TicketFields.REPLAY_URL, BsonType.STRING),
+            Filters.ne(TicketFields.REPLAY_URL, ""),
+            Filters.eq(TicketFields.REPLAY_ID, null)
+        );
+        List<Document> candidates = tickets.find(filter)
+            .projection(Projections.include(TicketFields.REPLAY_URL))
+            .into(new ArrayList<>());
+
+        long updated = 0;
+        for (Document ticket : candidates) {
+            String replayId = ReplayReferenceUtil.extractReplayId(ticket.getString(TicketFields.REPLAY_URL));
+            if (replayId == null) {
+                continue;
+            }
+            updated += tickets.updateOne(
+                Filters.eq(ID_FIELD, ticket.get(ID_FIELD)),
+                Updates.set(TicketFields.REPLAY_ID, replayId)
+            ).getModifiedCount();
+        }
+        log.info("Backfilled ticket replayId in database={} candidates={} updated={}",
+            template.getDb().getName(), candidates.size(), updated);
     }
 
     private void runMigrationOnce(MongoTemplate template, String migrationId, MigrationStep step) {

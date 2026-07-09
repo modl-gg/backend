@@ -28,8 +28,11 @@ import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationExpression;
+import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
 import org.springframework.data.mongodb.core.aggregation.DateOperators;
 import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
+import org.springframework.data.mongodb.core.aggregation.SetOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -573,8 +576,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         if (bytes < 0 || maxCurrentBytes < 0) {
             return false;
         }
-        // Treat a missing/null storageUsedBytes as 0 ($lte does not match missing/null fields).
-        // $inc on a missing/null field initializes it to bytes, giving a race-safe null->size seed.
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where(ServerFields.ID).is(serverId),
             new Criteria().orOperator(
@@ -584,16 +585,24 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             )
         ));
         UpdateResult result = updateFirst(query, new Update().inc(ServerFields.STORAGE_USED_BYTES, bytes));
-        // Decide on matchedCount so a zero-byte file (which leaves the value unchanged, so
-        // modifiedCount==0) within quota is correctly accepted.
         return result.getMatchedCount() == 1;
     }
 
     public void decrementStorageUsed(String serverId, long bytes) {
-        updateFirst(
-            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
-            new Update().inc(ServerFields.STORAGE_USED_BYTES, -bytes)
+        AggregationUpdate update = AggregationUpdate.update().set(
+            SetOperation.set(ServerFields.STORAGE_USED_BYTES).toValueOf(flooredStorageAfterDecrement(bytes))
         );
+        globalTemplate().updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            entityType(),
+            collectionName()
+        );
+    }
+
+    private AggregationExpression flooredStorageAfterDecrement(long bytes) {
+        return context -> new Document("$max", List.of(0L, new Document("$subtract",
+            List.of("$" + ServerFields.STORAGE_USED_BYTES, bytes))));
     }
 
     public void setStorageUsed(String serverId, long bytes) {
@@ -603,10 +612,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
-    /**
-     * Atomically raises the storage counter to {@code bytes} only when the stored value is below
-     * it or absent, so a background reconcile cannot clobber an in-flight confirm-time reservation.
-     */
     public boolean setStorageUsedIfBelow(String serverId, long bytes) {
         Query query = Query.query(new Criteria().andOperator(
             Criteria.where(ServerFields.ID).is(serverId),
@@ -839,8 +844,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public long bulkActivate(List<String> serverIds, Date updatedAt) {
-        // Do NOT pre-set COMPLETED here; provision() owns the terminal state and flips each row to
-        // COMPLETED on success or FAILED on error.
         Update update = new Update()
             .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.IN_PROGRESS)
             .set(ServerFields.EMAIL_VERIFIED, true)
@@ -921,8 +924,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public void updateStaffPermissionsTimestamp(String serverId, Date timestamp) {
-        // Decouple the generic updatedAt marker from the authoritative sync cursor so a stale
-        // full-document save() of a cached snapshot cannot revert the cursor via updatedAt aliasing.
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()

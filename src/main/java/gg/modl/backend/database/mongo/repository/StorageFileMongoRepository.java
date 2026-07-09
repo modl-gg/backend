@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.StorageFileDocumentFields;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -37,12 +38,22 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
         return find(server, query);
     }
 
-    public void deleteByKey(Server server, String key) {
-        remove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(key)));
+    public Optional<StorageFileDocument> findAndRemoveByKey(Server server, String key) {
+        return Optional.ofNullable(findAndRemove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(key))));
     }
 
-    public void deleteByKeys(Server server, List<String> keys) {
-        remove(server, Query.query(Criteria.where(StorageFileDocumentFields.KEY).in(keys)));
+    public List<StorageFileDocument> findAndRemoveByKeys(Server server, List<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return List.of();
+        }
+        List<StorageFileDocument> removed = new ArrayList<>(keys.size());
+        for (String key : keys) {
+            if (key == null) {
+                continue;
+            }
+            findAndRemoveByKey(server, key).ifPresent(removed::add);
+        }
+        return removed;
     }
 
     public List<StorageFileDocument> findByKeys(Server server, List<String> keys) {

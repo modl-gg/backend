@@ -7,6 +7,7 @@ public final class CollectionName {
     public static final String SERVER_INSTANCE_SNAPSHOTS = "server_instance_snapshots";
     public static final String STRIPE_WEBHOOK_EVENTS = "stripe_webhook_events";
     public static final String BETA_AUDIT = "beta_audit";
+    public static final String SCHEDULER_LEASES = "scheduler_leases";
 
     // Core
     public static final String PLAYERS = "players";
@@ -50,6 +51,7 @@ public final class CollectionName {
     public static final String REPLAY_LITE_DAILY_QUOTAS = "replay_lite_daily_quotas";
 
     // Training
+    public static final String TRAINING_DATABASE = "training_data";
     public static final String TRAINING_SEGMENTS = "training_segments";
 
     // Storage

@@ -96,6 +96,9 @@ public class ReplayRetentionSettingsService {
             normalized.setDays(MIN_DAYS);
         }
         if (normalized.getDays() > MAX_DAYS) {
+            if (normalized.isEnabled()) {
+                throw new ValidationException("Replay retention days must be at most 365");
+            }
             normalized.setDays(MAX_DAYS);
         }
         return normalized;

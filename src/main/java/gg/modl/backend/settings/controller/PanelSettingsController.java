@@ -52,6 +52,7 @@ import gg.modl.proto.modl.v1.UpdateWebhookSettingsRequest;
 import gg.modl.proto.modl.v1.WebhookTestResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
+import jakarta.validation.Valid;
 import jakarta.validation.Validator;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -160,7 +161,7 @@ public class PanelSettingsController {
 
     @PatchMapping("/replay-retention")
     public ReplayRetentionSettingsEnvelope patchReplayRetentionSettings(
-        @RequestBody @jakarta.validation.Valid PatchReplayRetentionSettingsRequest body,
+        @RequestBody @Valid PatchReplayRetentionSettingsRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

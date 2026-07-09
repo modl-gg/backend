@@ -130,7 +130,7 @@ class MongoIndexBootstrapServiceTest {
         });
         assertThat(replayIndexCaptor.getAllValues()).anySatisfy(index -> {
             assertThat(index.getIndexOptions().getString("name")).isEqualTo("idx_replays_status_createdAt");
-            assertThat(index.getIndexKeys()).isEqualTo(new Document("status", 1).append("createdAt", 1));
+            assertThat(index.getIndexKeys()).isEqualTo(new Document("status", 1).append("createdAt", 1).append("_id", 1));
         });
     }
 

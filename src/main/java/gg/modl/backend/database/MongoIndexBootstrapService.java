@@ -68,6 +68,22 @@ public class MongoIndexBootstrapService {
         } catch (Exception e) {
             log.error("Failed to create global database indexes", e);
         }
+        try {
+            createTrainingDataIndexes(tenantMongoAccess.forDatabase(CollectionName.TRAINING_DATABASE));
+        } catch (Exception e) {
+            log.error("Failed to create training data indexes", e);
+        }
+    }
+
+    private void createTrainingDataIndexes(MongoTemplate template) {
+        ensureIndexes(template, CollectionName.TRAINING_SEGMENTS, List.of(
+            IndexSpec.standard(
+                "idx_training_segments_serverDatabaseName_replayId",
+                doc("serverDatabaseName", 1).append("replayId", 1),
+                false,
+                false
+            )
+        ));
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -186,7 +202,8 @@ public class MongoIndexBootstrapService {
                 false,
                 false
             ),
-            IndexSpec.standard("idx_replay_lite_status_createdAt", doc("status", 1).append("createdAt", 1), false, false)
+            IndexSpec.standard("idx_replay_lite_status_createdAt", doc("status", 1).append("createdAt", 1).append("_id", 1), false, false),
+            IndexSpec.standard("idx_replay_lite_status_expiresAt", doc("status", 1).append("expiresAt", 1).append("_id", 1), false, false)
         ));
 
         ensureIndexes(template, CollectionName.REPLAY_LITE_DAILY_QUOTAS, List.of(
@@ -285,12 +302,13 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_tickets_creatorName_created", doc("creatorName", 1).append("created", -1), false, false),
             IndexSpec.standard("idx_tickets_replies_name_created", doc("replies.name", 1).append("replies.created", -1), false, false),
             IndexSpec.standard("idx_tickets_tags", doc("tags", 1), false, false),
-            IndexSpec.standard("idx_tickets_replayUrl", doc("replayUrl", 1), false, true)
+            IndexSpec.standard("idx_tickets_replayUrl", doc("replayUrl", 1), false, true),
+            IndexSpec.standard("idx_tickets_replayId", doc("replayId", 1), false, true)
         ));
 
         ensureIndexes(template, CollectionName.REPLAYS, List.of(
             IndexSpec.standard("idx_replays_targetUuid_createdAt", doc("targetUuid", 1).append("createdAt", -1), false, true),
-            IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1), false, false),
+            IndexSpec.standard("idx_replays_status_createdAt", doc("status", 1).append("createdAt", 1).append("_id", 1), false, false),
             IndexSpec.standard("idx_replays_storageKey", doc("storageKey", 1), false, false)
         ));
 

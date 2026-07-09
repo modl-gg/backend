@@ -63,10 +63,11 @@ class TenantMigrationServiceTest {
         assertThat(pipelineJson).contains("$reportedPlayerUuid");
 
         ArgumentCaptor<Bson> markerFilter = ArgumentCaptor.forClass(Bson.class);
-        verify(migrations, times(5)).updateOne(markerFilter.capture(), any(Bson.class), any(UpdateOptions.class));
+        verify(migrations, times(6)).updateOne(markerFilter.capture(), any(Bson.class), any(UpdateOptions.class));
         List<String> markerJsons = markerFilter.getAllValues().stream().map(TenantMigrationServiceTest::toJson).toList();
         assertThat(markerJsons).anyMatch(json -> json.contains(TenantMigrationService.LOWERCASE_TICKET_UUIDS_MIGRATION_ID));
         assertThat(markerJsons).anyMatch(json -> json.contains(TenantMigrationService.BACKFILL_STAFF_ROLE_IDS_MIGRATION_ID));
+        assertThat(markerJsons).anyMatch(json -> json.contains(TenantMigrationService.BACKFILL_TICKET_REPLAY_ID_MIGRATION_ID));
     }
 
     @Test

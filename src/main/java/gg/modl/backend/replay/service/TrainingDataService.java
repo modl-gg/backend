@@ -84,6 +84,7 @@ public class TrainingDataService {
 
         EventIndex index = indexEvents(allEvents);
         List<SegmentSpec> specs = collectSpecs(labels, index.maxTimestampMs());
+        trainingSegmentRepository.deleteByReplayId(server.getDatabaseName(), doc.getId());
         for (SegmentSpec spec : specs) {
             trainingSegmentRepository.save(buildSegment(header, snapshot, allEvents, index, server, doc, spec));
         }
