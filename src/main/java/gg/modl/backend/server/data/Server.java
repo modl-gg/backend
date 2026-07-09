@@ -96,10 +96,6 @@ public class Server {
     private String stripeSubscriptionId;
 
     @Nullable
-    @Field(name = "cdnUsageCurrentPeriod", targetType = FieldType.DOUBLE)
-    private Double cdnUsageCurrentPeriod; // GB used in current billing period
-
-    @Nullable
     @Field(name = "aiRequestsCurrentPeriod", targetType = FieldType.INT64)
     private Long aiRequestsCurrentPeriod; // AI requests used in current billing period
 

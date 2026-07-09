@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class DefaultServerLimitPolicy implements ServerLimitPolicy {
     private static final long BYTES_PER_GB = 1024L * 1024 * 1024;
-    private static final double BYTES_PER_GB_DOUBLE = 1024.0 * 1024 * 1024;
     private static final long FREE_STORAGE_BYTES = BYTES_PER_GB;
     private static final long FREE_STAFF_SEATS = 5;
     private static final long PREMIUM_STAFF_SEATS = 100_000;
@@ -33,8 +32,6 @@ public class DefaultServerLimitPolicy implements ServerLimitPolicy {
             .maxStorageBytes(BetaLimits.MAX_STORAGE_BYTES)
             .aiModerationEnabled(BetaLimits.AI_MODERATION_ENABLED)
             .aiRequestLimit(BetaLimits.AI_REQUEST_LIMIT)
-            .cdnLimitGb(BetaLimits.CDN_LIMIT_GB)
-            .cdnOverageThresholdGb(BetaLimits.CDN_OVERAGE_THRESHOLD_GB)
             .customDomainAllowed(BetaLimits.CUSTOM_DOMAIN_ALLOWED)
             .migrationFileSizeLimit(BetaLimits.MIGRATION_FILE_SIZE_LIMIT)
             .maxUploadBytes(BetaLimits.MAX_UPLOAD_BYTES)
@@ -53,8 +50,6 @@ public class DefaultServerLimitPolicy implements ServerLimitPolicy {
             .maxStorageBytes(maxStorageBytes)
             .aiModerationEnabled(premium)
             .aiRequestLimit(UsageTrackingService.AI_BASE_LIMIT_REQUESTS + aiOverageRequests(server))
-            .cdnLimitGb(maxStorageBytes / BYTES_PER_GB_DOUBLE)
-            .cdnOverageThresholdGb(planBaseStorageBytes / BYTES_PER_GB_DOUBLE)
             .customDomainAllowed(premium || Boolean.TRUE.equals(server.getCustomDomainGrandfathered()))
             .migrationFileSizeLimit(migrationFileSizeLimit(server))
             .maxUploadBytes(Long.MAX_VALUE)

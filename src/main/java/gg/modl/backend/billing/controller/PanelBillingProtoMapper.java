@@ -82,9 +82,6 @@ final class PanelBillingProtoMapper {
         if (model.period() != null) {
             builder.setPeriod(toPeriod(model.period()));
         }
-        if (model.cdn() != null) {
-            builder.setCdn(toUsageMetric(model.cdn()));
-        }
         if (model.ai() != null) {
             builder.setAi(toUsageMetric(model.ai()));
         }

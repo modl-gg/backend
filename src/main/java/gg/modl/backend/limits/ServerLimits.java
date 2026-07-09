@@ -10,8 +10,6 @@ public class ServerLimits {
     long maxStorageBytes;
     boolean aiModerationEnabled;
     long aiRequestLimit;
-    double cdnLimitGb;
-    double cdnOverageThresholdGb;
     boolean customDomainAllowed;
     long migrationFileSizeLimit;
     long maxUploadBytes;

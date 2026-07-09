@@ -30,8 +30,6 @@ class DefaultServerLimitPolicyTest {
         assertEquals(FREE_STORAGE_BYTES, limits.getMaxStorageBytes());
         assertFalse(limits.isAiModerationEnabled());
         assertEquals(AI_BASE_REQUESTS, limits.getAiRequestLimit());
-        assertEquals(1.0, limits.getCdnLimitGb());
-        assertEquals(1.0, limits.getCdnOverageThresholdGb());
         assertFalse(limits.isCustomDomainAllowed());
         assertEquals(DEFAULT_MIGRATION_BYTES, limits.getMigrationFileSizeLimit());
         assertEquals(Long.MAX_VALUE, limits.getMaxUploadBytes());
@@ -45,8 +43,6 @@ class DefaultServerLimitPolicyTest {
         assertEquals(PREMIUM_DEFAULT_STORAGE_BYTES, limits.getMaxStorageBytes());
         assertTrue(limits.isAiModerationEnabled());
         assertEquals(AI_BASE_REQUESTS, limits.getAiRequestLimit());
-        assertEquals(200.0, limits.getCdnLimitGb());
-        assertEquals(200.0, limits.getCdnOverageThresholdGb());
         assertTrue(limits.isCustomDomainAllowed());
         assertEquals(DEFAULT_MIGRATION_BYTES, limits.getMigrationFileSizeLimit());
         assertEquals(Long.MAX_VALUE, limits.getMaxUploadBytes());
@@ -77,8 +73,6 @@ class DefaultServerLimitPolicyTest {
         ServerLimits limits = policy.resolve(server);
 
         assertEquals(500L * GB, limits.getMaxStorageBytes());
-        assertEquals(500.0, limits.getCdnLimitGb());
-        assertEquals(200.0, limits.getCdnOverageThresholdGb());
         assertEquals(AI_BASE_REQUESTS + 2000L, limits.getAiRequestLimit());
     }
 
@@ -90,7 +84,6 @@ class DefaultServerLimitPolicyTest {
         ServerLimits limits = policy.resolve(server);
 
         assertEquals(FREE_STORAGE_BYTES, limits.getMaxStorageBytes());
-        assertEquals(1.0, limits.getCdnLimitGb());
     }
 
     @Test
@@ -127,8 +120,6 @@ class DefaultServerLimitPolicyTest {
         assertEquals(100L * MB, limits.getMaxStorageBytes());
         assertTrue(limits.isAiModerationEnabled());
         assertEquals(50, limits.getAiRequestLimit());
-        assertEquals(1.0, limits.getCdnLimitGb());
-        assertEquals(1.0, limits.getCdnOverageThresholdGb());
         assertFalse(limits.isCustomDomainAllowed());
         assertEquals(0, limits.getMigrationFileSizeLimit());
         assertEquals(5L * MB, limits.getMaxUploadBytes());

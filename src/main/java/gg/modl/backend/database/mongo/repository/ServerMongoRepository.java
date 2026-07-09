@@ -554,13 +554,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return find(new Query(criteria));
     }
 
-    public void incrementCdnUsage(String serverId, double additionalGb) {
-        updateFirst(
-            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
-            new Update().inc(ServerFields.CDN_USAGE_CURRENT_PERIOD, additionalGb)
-        );
-    }
-
     public void incrementAiRequests(String serverId, long additionalRequests) {
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
@@ -647,7 +640,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
-                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD, 0.0)
                 .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
         );
     }
@@ -660,7 +652,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
                 .set(ServerFields.USER_COUNT, 0L)
                 .set(ServerFields.TICKET_COUNT, 0L)
                 .set(ServerFields.ONLINE_PLAYER_COUNT, 0L)
-                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD, 0.0)
                 .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
                 .set(ServerFields.UPDATED_AT, new Date())
         );

@@ -62,9 +62,6 @@ final class AdminServerProtoMapper {
         if (server.getStripeSubscriptionId() != null) {
             builder.setStripeSubscriptionId(server.getStripeSubscriptionId());
         }
-        if (server.getCdnUsageCurrentPeriod() != null) {
-            builder.setCdnUsageCurrentPeriod(server.getCdnUsageCurrentPeriod());
-        }
         if (server.getAiRequestsCurrentPeriod() != null) {
             builder.setAiRequestsCurrentPeriod(server.getAiRequestsCurrentPeriod());
         }

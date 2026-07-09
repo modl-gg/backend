@@ -1,6 +1,5 @@
 package gg.modl.backend.beta;
 
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.doubleValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
@@ -93,7 +92,6 @@ final class BetaProtoMapper {
             .setStorageUsedBytes(longValue(server.getStorageUsedBytes()))
             .setUserCount(longValue(server.getUserCount()))
             .setTicketCount(longValue(server.getTicketCount()))
-            .setCdnUsageGb(doubleValue(server.getCdnUsageCurrentPeriod()))
             .setAiRequestsUsed(longValue(server.getAiRequestsCurrentPeriod()))
             .build();
     }
@@ -103,7 +101,6 @@ final class BetaProtoMapper {
             .setMaxStaffSeats(limits.getMaxStaffSeats())
             .setMaxStorageBytes(limits.getMaxStorageBytes())
             .setAiRequestLimit(limits.getAiRequestLimit())
-            .setCdnLimitGb(limits.getCdnLimitGb())
             .setCustomDomainAllowed(limits.isCustomDomainAllowed())
             .setMaxUploadBytes(limits.getMaxUploadBytes())
             .build();

@@ -22,7 +22,6 @@ public class UsageTrackingService {
     private final ServerMutationHelper serverMutationHelper;
     private final ServerLimitPolicy serverLimitPolicy;
     public static final long AI_BASE_LIMIT_REQUESTS = 1000L;
-    private static final double CDN_OVERAGE_RATE = 0.08;
     private static final double AI_OVERAGE_RATE = 0.02;
 
     public UsageResponse getUsage(Server server) {
@@ -41,29 +40,15 @@ public class UsageTrackingService {
             currentPeriodEnd = new Date(System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000));
         }
 
-        double cdnUsageGB = freshServer.getCdnUsageCurrentPeriod() != null ? freshServer.getCdnUsageCurrentPeriod() : 0.0;
         long aiRequestsUsed = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
         boolean usageBillingEnabled = Boolean.TRUE.equals(freshServer.getUsageBillingEnabled());
 
-        double cdnLimitGB = getCdnLimitGB(freshServer);
-        double cdnOverageGB = Math.max(0, cdnUsageGB - getCdnOverageThresholdGB(freshServer));
         long aiLimitRequests = getAiRequestLimit(freshServer);
         long aiOverageRequests = Math.max(0, aiRequestsUsed - getAiBaseLimitRequests());
-
-        double cdnOverageCost = usageBillingEnabled ? cdnOverageGB * CDN_OVERAGE_RATE : 0.0;
         double aiOverageCost = usageBillingEnabled ? aiOverageRequests * AI_OVERAGE_RATE : 0.0;
-        double totalOverageCost = cdnOverageCost + aiOverageCost;
 
         return new UsageResponse(
             new UsageResponse.Period(currentPeriodStart, currentPeriodEnd),
-            new UsageResponse.UsageMetric(
-                cdnUsageGB,
-                cdnLimitGB,
-                cdnOverageGB,
-                CDN_OVERAGE_RATE,
-                cdnOverageCost,
-                Math.min(100, cdnLimitGB > 0 ? (cdnUsageGB / cdnLimitGB) * 100 : 0)
-            ),
             new UsageResponse.UsageMetric(
                 aiRequestsUsed,
                 aiLimitRequests,
@@ -72,18 +57,9 @@ public class UsageTrackingService {
                 aiOverageCost,
                 Math.min(100, aiLimitRequests > 0 ? ((double) aiRequestsUsed / aiLimitRequests) * 100 : 0)
             ),
-            totalOverageCost,
+            aiOverageCost,
             usageBillingEnabled
         );
-    }
-
-    public double getCdnLimitGB(Server server) {
-        return serverLimitPolicy.resolve(server).getCdnLimitGb();
-    }
-
-    // CDN overage accrues above the BASE allowance (mirroring AI overage), not above base+overage cap.
-    private double getCdnOverageThresholdGB(Server server) {
-        return serverLimitPolicy.resolve(server).getCdnOverageThresholdGb();
     }
 
     public long getAiRequestLimit(Server server) {
@@ -113,10 +89,6 @@ public class UsageTrackingService {
                          : "Usage billing has been disabled. Overages will not be charged.";
 
         return new UsageBillingSettingsResponse(true, message, enabled);
-    }
-
-    public void incrementCdnUsage(String serverId, double additionalGB) {
-        serverRepository.incrementCdnUsage(serverId, additionalGB);
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
