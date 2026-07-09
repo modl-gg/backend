@@ -104,7 +104,7 @@ class RoleAuthorizationTest {
             new RoleAuthorization.PerformerAuthority(ADMIN_EMAIL, null, true, true);
         Staff target = Staff.builder().email("helper@example.com").build();
 
-        assertDoesNotThrow(() -> roleAuthorization.assertCanAssignMinecraftPlayer(performer, target));
+        assertDoesNotThrow(() -> roleAuthorization.assertCanAssignMinecraftPlayer(server, performer, target));
     }
 
     @Test
@@ -113,7 +113,7 @@ class RoleAuthorizationTest {
             new RoleAuthorization.PerformerAuthority("Helper@Example.com", "helper", false, true);
         Staff target = Staff.builder().email("helper@example.com").build();
 
-        assertDoesNotThrow(() -> roleAuthorization.assertCanAssignMinecraftPlayer(performer, target));
+        assertDoesNotThrow(() -> roleAuthorization.assertCanAssignMinecraftPlayer(server, performer, target));
     }
 
     @Test
@@ -123,7 +123,7 @@ class RoleAuthorizationTest {
         Staff target = Staff.builder().email("helper@example.com").build();
 
         ForbiddenException error = assertThrows(ForbiddenException.class,
-            () -> roleAuthorization.assertCanAssignMinecraftPlayer(performer, target));
+            () -> roleAuthorization.assertCanAssignMinecraftPlayer(server, performer, target));
         assertEquals(NO_AUTHORITY_MESSAGE, error.getMessage());
     }
 

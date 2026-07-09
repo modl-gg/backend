@@ -35,6 +35,9 @@ class ReplayLiteCleanupServiceTest {
     private ReplayLiteStorageService storageService;
 
     @Mock
+    private ReplayLiteService replayLiteService;
+
+    @Mock
     private SchedulerLeaseService schedulerLeaseService;
 
     private ReplayLiteCleanupService cleanupService;
@@ -45,6 +48,7 @@ class ReplayLiteCleanupServiceTest {
         cleanupService = new ReplayLiteCleanupService(
             repository,
             storageService,
+            replayLiteService,
             schedulerLeaseService,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );

@@ -17,6 +17,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRepository<ServerInstanceSnapshot> {
+    private static final int UPSERT_MAX_ATTEMPTS = 3;
+
     public ServerInstanceSnapshotMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(ServerInstanceSnapshot.class, CollectionName.SERVER_INSTANCE_SNAPSHOTS, tenantMongoAccess);
     }
@@ -26,34 +28,43 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
                                    String pluginVersion, Date createdAt) {
         ServerInstanceSnapshot.ServerEntry entry =
             new ServerInstanceSnapshot.ServerEntry(serverId, serverName, playerCount, platform, version, ipAddress, pluginVersion);
+        for (int attempt = 0; attempt < UPSERT_MAX_ATTEMPTS; attempt++) {
+            if (tryPersistServerEntry(date, entry, createdAt)) {
+                return;
+            }
+        }
+    }
 
+    private boolean tryPersistServerEntry(Date date, ServerInstanceSnapshot.ServerEntry entry, Date createdAt) {
         Query updateQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
                 .and("servers").elemMatch(
-                    Criteria.where("serverId").is(serverId).and("serverName").is(serverName))
+                    Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
         );
         Update updateExisting = new Update()
-            .set("servers.$.playerCount", playerCount)
-            .set("servers.$.platform", platform)
-            .set("servers.$.version", version)
-            .set("servers.$.ipAddress", ipAddress)
-            .set("servers.$.pluginVersion", pluginVersion);
+            .set("servers.$.playerCount", entry.getPlayerCount())
+            .set("servers.$.platform", entry.getPlatform())
+            .set("servers.$.version", entry.getVersion())
+            .set("servers.$.ipAddress", entry.getIpAddress())
+            .set("servers.$.pluginVersion", entry.getPluginVersion());
 
         if (updateFirst(updateQuery, updateExisting).getMatchedCount() > 0) {
-            return;
+            return true;
         }
 
         Query insertQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
                 .and("servers").not().elemMatch(
-                    Criteria.where("serverId").is(serverId).and("serverName").is(serverName))
+                    Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
         );
         Update pushNew = new Update()
             .push(ServerInstanceSnapshotFields.SERVERS, entry)
             .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
         try {
             upsert(insertQuery, pushNew);
-        } catch (DuplicateKeyException e) {
+            return true;
+        } catch (DuplicateKeyException raced) {
+            return false;
         }
     }
 

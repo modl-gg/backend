@@ -103,6 +103,9 @@ public class UsageTrackingService {
         if (server.getPlan() != ServerPlan.PREMIUM) {
             throw new ValidationException("Storage limit configuration is only available for premium servers");
         }
+        if (bytes <= 0) {
+            throw new ValidationException("Storage limit must be positive");
+        }
         validatePremiumStorageBytes(bytes);
         serverMutationHelper.mutate(server, current -> current.setMaxStorageLimitBytes(bytes));
     }

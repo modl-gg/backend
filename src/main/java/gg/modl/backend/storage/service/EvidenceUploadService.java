@@ -21,6 +21,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -139,8 +140,9 @@ public class EvidenceUploadService {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
         }
 
-        List<UploadedEvidenceItem> evidenceItems = new ArrayList<>(request.evidence().size());
-        for (EvidenceItemRequest item : request.evidence()) {
+        List<EvidenceItemRequest> items = request.evidence();
+        List<String> keys = new ArrayList<>(items.size());
+        for (EvidenceItemRequest item : items) {
             if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
                 return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
             }
@@ -149,7 +151,15 @@ public class EvidenceUploadService {
             if (key == null) {
                 return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
             }
-            StorageFileDocument doc = storageMetadataService.findConfirmedFile(server, key).orElse(null);
+            keys.add(key);
+        }
+
+        Map<String, StorageFileDocument> confirmedFiles = storageMetadataService.findConfirmedFiles(server, keys);
+
+        List<UploadedEvidenceItem> evidenceItems = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) {
+            EvidenceItemRequest item = items.get(i);
+            StorageFileDocument doc = confirmedFiles.get(keys.get(i));
             if (doc == null) {
                 return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
             }

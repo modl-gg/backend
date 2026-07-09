@@ -69,8 +69,8 @@ dependencies {
 
     // Shared protobuf types
     implementation 'gg.modl:proto:1.6.1'
-    // proto's gencode is stamped at protobuf-java 4.35.1 by the buf generator, but the proto POM
-    // declares 4.35.0; pin the runtime up so it is not older than the linked gencode version.
+    // proto's gencode is stamped at protobuf-java 4.35.1 by the buf generator; pin the runtime to 4.35.1
+    // so a future proto POM declaring an older protobuf-java cannot downgrade the runtime below the gencode.
     implementation 'com.google.protobuf:protobuf-java:4.35.1'
     implementation 'com.google.protobuf:protobuf-java-util:4.35.1'
 

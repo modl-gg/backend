@@ -10,6 +10,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import gg.modl.backend.infrastructure.util.IdGenerator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -27,7 +28,7 @@ class ApiKeySettingsServiceTest {
         SettingsRepositoryAccess settingsRepositoryAccess = mock(SettingsRepositoryAccess.class);
         IdGenerator idGenerator = mock(IdGenerator.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
-        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository);
+        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository, mock(SchedulerLeaseService.class));
         Server server = server();
 
         when(idGenerator.generateToken()).thenReturn("generated");
@@ -43,7 +44,7 @@ class ApiKeySettingsServiceTest {
         SettingsRepositoryAccess settingsRepositoryAccess = mock(SettingsRepositoryAccess.class);
         IdGenerator idGenerator = mock(IdGenerator.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
-        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository);
+        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository, mock(SchedulerLeaseService.class));
         Server server = server();
         Settings settings = new Settings();
         settings.setData(new HashMap<>(Map.of("api_key", "old")));
@@ -63,7 +64,7 @@ class ApiKeySettingsServiceTest {
         SettingsRepositoryAccess settingsRepositoryAccess = mock(SettingsRepositoryAccess.class);
         IdGenerator idGenerator = mock(IdGenerator.class);
         ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
-        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository);
+        ApiKeySettingsService service = new ApiKeySettingsService(settingsRepositoryAccess, idGenerator, serverRepository, mock(SchedulerLeaseService.class));
 
         when(serverRepository.findByApiKey("invalid")).thenReturn(Optional.empty());
 

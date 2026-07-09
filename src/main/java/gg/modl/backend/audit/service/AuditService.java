@@ -23,6 +23,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import gg.modl.backend.infrastructure.util.IdGenerator;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -331,13 +332,30 @@ public class AuditService {
         if (punishment == null) {
             return false;
         }
+        if (AuditDocumentUtil.hasModificationType(punishment, PunishmentModificationType.ROLLBACK.name())) {
+            throw new ValidationException("This punishment cannot be rolled back");
+        }
 
+        Date now = new Date();
+        String playerId = player.getString("_id");
+        auditRepository.appendPunishmentModification(
+            server, playerId, punishmentId, buildRollbackModification(performerUsername, reason, now));
         saveRollbackAuditLog(
-            server, player.getString("_id"),
+            server, playerId,
             AuditDocumentUtil.extractPlayerNameFromDoc(player), punishment,
-            reason, performerUsername, new Date(),
+            reason, performerUsername, now,
             false, Objects.toString(punishment.getString("issuerName"), ""));
         return true;
+    }
+
+    private Map<String, Object> buildRollbackModification(String performerUsername, String reason, Date now) {
+        Map<String, Object> modification = new HashMap<>();
+        modification.put("id", IdGenerator.generateShortId());
+        modification.put("type", PunishmentModificationType.ROLLBACK.name());
+        modification.put("date", now);
+        modification.put("issuerName", performerUsername);
+        modification.put("reason", reason != null ? reason : "Rollback");
+        return modification;
     }
 
     private Document findPunishmentSubdocument(Document player, String punishmentId) {
@@ -488,7 +506,13 @@ public class AuditService {
             if (!isWithinDateRange(punishment.getDate("issued"), startDate, endDate)) {
                 continue;
             }
+            if (AuditDocumentUtil.hasModificationType(punishment, PunishmentModificationType.ROLLBACK.name())) {
+                continue;
+            }
 
+            auditRepository.appendPunishmentModification(
+                server, playerId, punishment.getString("id"),
+                buildRollbackModification(performerUsername, reason, now));
             saveRollbackAuditLog(
                 server, playerId, playerName, punishment,
                 reason, performerUsername, now, true, staffUsername);

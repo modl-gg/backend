@@ -3,6 +3,7 @@ package gg.modl.backend.replaylite.repository;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.database.mongo.fields.ReplayLiteDailyQuotaDocumentFields;
 import gg.modl.backend.replaylite.data.ReplayLiteDailyQuotaDocument;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -45,13 +46,13 @@ public class ReplayLiteQuotaMongoRepository extends AbstractGlobalMongoRepositor
     }
 
     public void releaseConfirmedUpload(UUID pluginServerUuid, LocalDate day, String replayId, Instant now) {
-        Query query = Query.query(Criteria.where("_id").is(quotaId(pluginServerUuid, day))
-            .and("count").gt(0)
-            .and("replayIds").is(replayId));
+        Query query = Query.query(Criteria.where(ReplayLiteDailyQuotaDocumentFields.ID).is(quotaId(pluginServerUuid, day))
+            .and(ReplayLiteDailyQuotaDocumentFields.COUNT).gt(0)
+            .and(ReplayLiteDailyQuotaDocumentFields.REPLAY_IDS).is(replayId));
         Update update = new Update()
-            .inc("count", -1)
-            .pull("replayIds", replayId)
-            .set("updatedAt", now);
+            .inc(ReplayLiteDailyQuotaDocumentFields.COUNT, -1)
+            .pull(ReplayLiteDailyQuotaDocumentFields.REPLAY_IDS, replayId)
+            .set(ReplayLiteDailyQuotaDocumentFields.UPDATED_AT, now);
         updateFirst(query, update);
     }
 
@@ -64,17 +65,17 @@ public class ReplayLiteQuotaMongoRepository extends AbstractGlobalMongoRepositor
         Instant now,
         boolean upsert
     ) {
-        Query query = Query.query(Criteria.where("_id").is(id)
-            .and("count").lt(limit)
-            .and("replayIds").ne(replayId));
+        Query query = Query.query(Criteria.where(ReplayLiteDailyQuotaDocumentFields.ID).is(id)
+            .and(ReplayLiteDailyQuotaDocumentFields.COUNT).lt(limit)
+            .and(ReplayLiteDailyQuotaDocumentFields.REPLAY_IDS).ne(replayId));
         Update update = new Update()
-            .inc("count", 1)
-            .addToSet("replayIds", replayId)
-            .set("updatedAt", now)
-            .setOnInsert("pluginServerUuid", pluginServerUuid)
-            .setOnInsert("day", day)
-            .setOnInsert("createdAt", now)
-            .setOnInsert("expiresAt", day.plusDays(3).atStartOfDay().toInstant(ZoneOffset.UTC));
+            .inc(ReplayLiteDailyQuotaDocumentFields.COUNT, 1)
+            .addToSet(ReplayLiteDailyQuotaDocumentFields.REPLAY_IDS, replayId)
+            .set(ReplayLiteDailyQuotaDocumentFields.UPDATED_AT, now)
+            .setOnInsert(ReplayLiteDailyQuotaDocumentFields.PLUGIN_SERVER_UUID, pluginServerUuid)
+            .setOnInsert(ReplayLiteDailyQuotaDocumentFields.DAY, day)
+            .setOnInsert(ReplayLiteDailyQuotaDocumentFields.CREATED_AT, now)
+            .setOnInsert(ReplayLiteDailyQuotaDocumentFields.EXPIRES_AT, day.plusDays(3).atStartOfDay().toInstant(ZoneOffset.UTC));
 
         FindAndModifyOptions options = FindAndModifyOptions.options().returnNew(true);
         if (upsert) {

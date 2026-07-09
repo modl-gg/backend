@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -467,8 +468,7 @@ public class S3StorageService {
     private String describeDeleteErrors(List<S3Error> errors) {
         return errors.stream()
             .map(error -> error.key() + ":" + error.code())
-            .toList()
-            .toString();
+            .collect(Collectors.joining(", "));
     }
 
     public int bulkDelete(List<String> keys) {

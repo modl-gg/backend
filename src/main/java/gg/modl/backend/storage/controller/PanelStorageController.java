@@ -4,6 +4,7 @@ import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.replay.service.ReplayDeletionService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
@@ -35,8 +36,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.PANEL_STORAGE)
 @RequiredArgsConstructor
 public class PanelStorageController {
-    private static final int MAX_BULK_DELETE_KEYS = 1000;
-
     private final S3StorageService s3StorageService;
     private final StorageQuotaService quotaService;
     private final StorageMetadataService storageMetadataService;
@@ -69,8 +68,8 @@ public class PanelStorageController {
         Server server = RequestUtil.getRequestServer(request);
         List<String> keys = body.getKeysList();
 
-        if (keys.size() > MAX_BULK_DELETE_KEYS) {
-            throw new ValidationException("Too many keys in bulk delete request. Maximum is " + MAX_BULK_DELETE_KEYS);
+        if (keys.size() > RequestValidationLimits.STORAGE_BULK_DELETE_MAX_KEYS) {
+            throw new ValidationException("Too many keys in bulk delete request. Maximum is " + RequestValidationLimits.STORAGE_BULK_DELETE_MAX_KEYS);
         }
         for (String key : keys) {
             validationService.assertKeyOwnedByServer(server, key);

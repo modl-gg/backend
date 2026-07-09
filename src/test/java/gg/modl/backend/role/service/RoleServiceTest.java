@@ -52,7 +52,7 @@ class RoleServiceTest {
         roleService.createDefaultRoles(server);
 
         ArgumentCaptor<StaffRole> captor = ArgumentCaptor.forClass(StaffRole.class);
-        verify(roleRepository, org.mockito.Mockito.times(4)).upsertRole(org.mockito.Mockito.eq(server), captor.capture());
+        verify(roleRepository, org.mockito.Mockito.times(4)).insertRoleIfAbsent(org.mockito.Mockito.eq(server), captor.capture());
         for (StaffRole role : captor.getAllValues()) {
             if (!"super-admin".equals(role.getId())) {
                 assertTrue(role.getPermissions().contains("appeal.modify"), role.getId());
@@ -69,8 +69,7 @@ class RoleServiceTest {
 
         assertThrows(ForbiddenException.class,
             () -> roleService.updateRolePermissions(server, "super-admin", List.of("ticket.reply.all"), SUPER_ADMIN));
-        assertThrows(ForbiddenException.class,
-            () -> roleService.updateRolePermissions(server, "custom-super-admin-x", List.of("ticket.reply.all"), SUPER_ADMIN));
+        assertFalse(roleService.updateRolePermissions(server, "custom-super-admin-x", List.of("ticket.reply.all"), SUPER_ADMIN));
         verify(roleRepository, never()).saveEntity(any(Server.class), any());
     }
 

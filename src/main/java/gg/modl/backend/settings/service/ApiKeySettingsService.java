@@ -1,15 +1,20 @@
 package gg.modl.backend.settings.service;
 
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,8 +24,54 @@ public class ApiKeySettingsService {
     private final SettingsRepositoryAccess settingsRepositoryAccess;
     private final IdGenerator idGenerator;
     private final ServerMongoRepository serverRepository;
+    private final SchedulerLeaseService schedulerLeaseService;
     private static final String SETTINGS_TYPE_API_KEYS = "apiKeys";
     private static final String API_KEY_FIELD = "api_key";
+    private static final String API_KEY_BACKFILL_LEASE = "server-api-key-backfill";
+    private static final Duration API_KEY_BACKFILL_LEASE_TTL = Duration.ofMinutes(30);
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void backfillServerApiKeys() {
+        if (!schedulerLeaseService.tryAcquire(API_KEY_BACKFILL_LEASE, API_KEY_BACKFILL_LEASE_TTL)) {
+            return;
+        }
+        List<Server> servers;
+        try {
+            servers = serverRepository.findAll();
+        } catch (Exception e) {
+            log.error("Failed to load servers for API key backfill", e);
+            return;
+        }
+        int synced = 0;
+        for (Server server : servers) {
+            try {
+                if (syncServerApiKeyFromSettings(server)) {
+                    synced++;
+                }
+            } catch (Exception e) {
+                log.warn("Failed to backfill Server.apiKey for server id={}", server.getId(), e);
+            }
+        }
+        if (synced > 0) {
+            log.info("Backfilled Server.apiKey from settings for {} tenant(s)", synced);
+        }
+    }
+
+    private boolean syncServerApiKeyFromSettings(@NotNull Server server) {
+        if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
+            return false;
+        }
+        String settingsKey = getApiKeyFromSettings(server);
+        if (settingsKey == null || settingsKey.isBlank()) {
+            return false;
+        }
+        String currentKey = server.getApiKey();
+        if (currentKey != null && currentKey.equals(settingsKey)) {
+            return false;
+        }
+        serverRepository.updateApiKey(server.getId(), settingsKey);
+        return true;
+    }
 
     @Nullable
     public Server findServerByApiKey(@NotNull String apiKey) {

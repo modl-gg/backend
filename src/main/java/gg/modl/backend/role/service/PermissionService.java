@@ -4,7 +4,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
-import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
@@ -13,6 +12,7 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -221,14 +221,10 @@ public class PermissionService {
             return Optional.empty();
         }
 
-        List<StaffRole> matches = staffRoleRepository.findAllByName(server, roleName.trim());
-        if (matches.isEmpty()) {
-            return Optional.empty();
-        }
-        if (matches.size() > 1) {
-            throw new ValidationException("Ambiguous role name '" + roleName.trim() + "' - rename roles to be unique");
-        }
-        return Optional.of(matches.get(0));
+        return staffRoleRepository.findAllByName(server, roleName.trim()).stream()
+            .min(Comparator.comparingInt(StaffRole::getOrder)
+                .thenComparing(StaffRole::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(StaffRole::getId));
     }
 
     public Optional<StaffRole> getRoleById(Server server, String roleId) {

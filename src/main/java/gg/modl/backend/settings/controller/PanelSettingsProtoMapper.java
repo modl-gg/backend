@@ -730,8 +730,8 @@ final class PanelSettingsProtoMapper {
     static AIModerationSettings fromUpdateAIModerationSettingsRequest(
         gg.modl.proto.modl.v1.UpdateAIModerationSettingsRequest request) {
         AIModerationSettings.AIModerationSettingsBuilder builder = AIModerationSettings.builder()
-            .enableAIReview(request.hasEnableAiReview() && request.getEnableAiReview())
-            .enableAutomatedActions(request.hasEnableAutomatedActions() && request.getEnableAutomatedActions());
+            .enableAIReview(request.getEnableAiReview())
+            .enableAutomatedActions(request.getEnableAutomatedActions());
         Map<String, AIModerationSettings.AIPunishmentConfig> configs =
             request.getAiPunishmentConfigsMap().entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(
@@ -749,7 +749,7 @@ final class PanelSettingsProtoMapper {
             .id(request.getId())
             .name(request.getName())
             .aiDescription(request.getAiDescription())
-            .enabled(request.hasEnabled() && request.getEnabled())
+            .enabled(request.getEnabled())
             .build();
     }
 
@@ -760,7 +760,7 @@ final class PanelSettingsProtoMapper {
             .discordAdminRoleId(request.getDiscordAdminRoleId())
             .botName(request.getBotName())
             .avatarUrl(request.getAvatarUrl())
-            .enabled(request.hasEnabled() && request.getEnabled());
+            .enabled(request.getEnabled());
         if (request.hasNotifications()) {
             builder.notifications(fromWebhookNotifications(request.getNotifications()));
         }
@@ -773,9 +773,9 @@ final class PanelSettingsProtoMapper {
     private static WebhookSettings.NotificationSettings fromWebhookNotifications(
         gg.modl.proto.modl.v1.WebhookNotificationSettingsRequest request) {
         return WebhookSettings.NotificationSettings.builder()
-            .newTickets(request.hasNewTickets() && request.getNewTickets())
-            .newPunishments(request.hasNewPunishments() && request.getNewPunishments())
-            .auditLogs(request.hasAuditLogs() && request.getAuditLogs())
+            .newTickets(request.getNewTickets())
+            .newPunishments(request.getNewPunishments())
+            .auditLogs(request.getAuditLogs())
             .build();
     }
 
@@ -811,7 +811,7 @@ final class PanelSettingsProtoMapper {
         return WebhookSettings.EmbedField.builder()
             .name(request.getName())
             .value(request.getValue())
-            .inline(request.hasInline() && request.getInline())
+            .inline(request.getInline())
             .build();
     }
 

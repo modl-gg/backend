@@ -35,7 +35,7 @@ public class SystemAlertService {
     ) {
         Date now = new Date();
         SystemAlert alert = SystemAlert.builder()
-            .message(message.trim())
+            .message(requireNonBlankMessage(message))
             .severity(severity != null ? severity : SystemAlertSeverity.BASIC)
             .audience(audience != null ? audience : SystemAlertAudience.ALL_PANEL_USERS)
             .expiresAt(expiresAt)
@@ -56,10 +56,7 @@ public class SystemAlertService {
         @Nullable Date expiresAt,
         String updatedBy
     ) {
-        String trimmedMessage = message != null ? message.trim() : null;
-        if (trimmedMessage != null && trimmedMessage.isEmpty()) {
-            throw new IllegalArgumentException("Alert message cannot be blank");
-        }
+        String trimmedMessage = message != null ? requireNonBlankMessage(message) : null;
         return alertRepository.updateAlert(
             id,
             trimmedMessage,
@@ -70,5 +67,13 @@ public class SystemAlertService {
             new Date(),
             updatedBy
         );
+    }
+
+    private static String requireNonBlankMessage(String message) {
+        String trimmed = message.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("Alert message cannot be blank");
+        }
+        return trimmed;
     }
 }

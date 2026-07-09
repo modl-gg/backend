@@ -130,8 +130,11 @@ public class TicketSearchService {
         );
     }
 
-    public List<Ticket> getTicketsByTag(Server server, String tag) {
-        return ticketRepository.findByTag(server, tag);
+    public List<PlayerTicketResponse> getTicketsByTag(Server server, String tag) {
+        return ticketRepository.findByTag(server, tag)
+            .stream()
+            .map(this::toPlayerTicketResponse)
+            .toList();
     }
 
     private static String normalizeUuid(String value) {

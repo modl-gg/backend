@@ -27,6 +27,7 @@ public class ReplayLiteCleanupService {
 
     private final ReplayLiteMongoRepository repository;
     private final ReplayLiteStorageService storageService;
+    private final ReplayLiteService replayLiteService;
     private final SchedulerLeaseService schedulerLeaseService;
     private final Clock clock;
 
@@ -72,6 +73,7 @@ public class ReplayLiteCleanupService {
                 }
             }
             repository.deleteByReplayId(document.getId());
+            replayLiteService.releaseUnconfirmedDailyQuota(document);
             log.debug("Cleaned Replay Lite replay {}", document.getId());
         }
     }

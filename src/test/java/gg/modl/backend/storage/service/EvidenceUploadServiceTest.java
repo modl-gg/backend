@@ -23,7 +23,7 @@ import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -91,8 +91,8 @@ class EvidenceUploadServiceTest {
         when(tokenService.validateToken("token-1")).thenReturn(uploadToken());
         when(s3StorageService.getCdnDomain()).thenReturn("cdn.example.com");
         when(serverService.getServerByDatabaseName("db")).thenReturn(server);
-        when(storageMetadataService.findConfirmedFile(server, "db/evidence/PUN-1/file.png"))
-            .thenReturn(Optional.of(new StorageFileDocument("db/evidence/PUN-1/file.png", "file.png", 42L, "image/png", "evidence")));
+        when(storageMetadataService.findConfirmedFiles(eq(server), any()))
+            .thenReturn(Map.of("db/evidence/PUN-1/file.png", new StorageFileDocument("db/evidence/PUN-1/file.png", "file.png", 42L, "image/png", "evidence")));
         when(punishmentEvidenceService.addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any()))
             .thenReturn(new PunishmentOperationResult(
                 PunishmentOperationStatus.SUCCESS,

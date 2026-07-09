@@ -14,7 +14,7 @@ public class DynamicMongoTemplateProvider {
     private final MongoClient mongoClient;
     private final MappingMongoConverter mongoConverter;
     private final Cache<String, MongoTemplate> mongoTemplateCache = Caffeine.newBuilder()
-        .maximumSize(500)
+        .maximumSize(10_000)
         .expireAfterAccess(Duration.ofMinutes(30))
         .build();
     private static final String GLOBAL_DATABASE_NAME = "modl";

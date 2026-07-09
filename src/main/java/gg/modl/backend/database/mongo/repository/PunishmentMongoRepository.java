@@ -61,10 +61,10 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
                              PunishmentModification modification, List<PunishmentNote> notes, String status) {
         Query query = punishmentQuery(playerUuid, punishmentId);
         Update update = new Update()
-            .push("punishments.$.modifications", modification)
-            .set("punishments.$.data.status", status);
+            .push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification)
+            .set(PlayerFields.PUNISHMENT_DATA + ".status", status);
         if (!notes.isEmpty()) {
-            update.push("punishments.$.notes").each(notes.toArray());
+            update.push(PlayerFields.PUNISHMENT_NOTES).each(notes.toArray());
         }
         updateFirst(server, query, update);
     }
@@ -73,30 +73,30 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
                                      PunishmentModification modification, PunishmentNote note, long effectiveDuration) {
         Query query = punishmentQuery(playerUuid, punishmentId);
         Update update = new Update()
-            .push("punishments.$.modifications", modification)
-            .push("punishments.$.notes", note)
-            .set("punishments.$.data.duration", effectiveDuration);
+            .push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification)
+            .push(PlayerFields.PUNISHMENT_NOTES, note)
+            .set(PlayerFields.PUNISHMENT_DATA + ".duration", effectiveDuration);
         updateFirst(server, query, update);
     }
 
     public void appendModification(Server server, String playerUuid, String punishmentId,
                                    PunishmentModification modification) {
         Query query = punishmentQuery(playerUuid, punishmentId);
-        Update update = new Update().push("punishments.$.modifications", modification);
+        Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification);
         updateFirst(server, query, update);
     }
 
     public boolean setPunishmentStartedIfUnset(Server server, String playerUuid, String punishmentId, Date started) {
-        Update update = new Update().set("punishments.$.started", started);
+        Update update = new Update().set(PlayerFields.PUNISHMENT_STARTED, started);
         return updateFirst(server, startedUnsetQuery(playerUuid, punishmentId), update).getModifiedCount() > 0;
     }
 
     public void appendEvidence(Server server, String playerUuid, String punishmentId,
                                List<PunishmentEvidence> evidence, @Nullable PunishmentNote note) {
         Query query = punishmentQuery(playerUuid, punishmentId);
-        Update update = new Update().push("punishments.$.evidence").each(evidence.toArray());
+        Update update = new Update().push(PlayerFields.PUNISHMENT_EVIDENCE).each(evidence.toArray());
         if (note != null) {
-            update.push("punishments.$.notes", note);
+            update.push(PlayerFields.PUNISHMENT_NOTES, note);
         }
         updateFirst(server, query, update);
     }
@@ -107,24 +107,24 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
         Update update = new Update();
         for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
             MongoKeyUtils.validateUpdatePath(entry.getKey());
-            update.set("punishments.$.data." + entry.getKey(), MongoKeyUtils.sanitizeValue(entry.getValue()));
+            update.set(PlayerFields.PUNISHMENT_DATA + "." + entry.getKey(), MongoKeyUtils.sanitizeValue(entry.getValue()));
         }
         if (note != null) {
-            update.push("punishments.$.notes", note);
+            update.push(PlayerFields.PUNISHMENT_NOTES, note);
         }
         updateFirst(server, query, update);
     }
 
     public void setPunishmentTickets(Server server, String playerUuid, String punishmentId, List<String> ticketIds) {
         Query query = punishmentQuery(playerUuid, punishmentId);
-        Update update = new Update().set("punishments.$.attachedTicketIds", ticketIds);
+        Update update = new Update().set(PlayerFields.PUNISHMENT_ATTACHED_TICKET_IDS, ticketIds);
         updateFirst(server, query, update);
     }
 
     public boolean acknowledgePunishmentStart(Server server, String playerUuid, String punishmentId, Date started) {
         Update update = new Update()
-            .set("punishments.$.started", started)
-            .unset("punishments.$.data.status");
+            .set(PlayerFields.PUNISHMENT_STARTED, started)
+            .unset(PlayerFields.PUNISHMENT_DATA + ".status");
         return updateFirst(server, startedUnsetQuery(playerUuid, punishmentId), update).getModifiedCount() > 0;
     }
 
@@ -142,15 +142,15 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
                                        String appealId, PunishmentNote note) {
         Query query = punishmentQuery(playerUuid, punishmentId);
         Update update = new Update()
-            .push("punishments.$.attachedTicketIds", appealId)
-            .push("punishments.$.notes", note);
+            .push(PlayerFields.PUNISHMENT_ATTACHED_TICKET_IDS, appealId)
+            .push(PlayerFields.PUNISHMENT_NOTES, note);
         updateFirst(server, query, update);
     }
 
     public void addPunishmentNote(Server server, String playerUuid, String punishmentId,
                                   PunishmentNote note, Map<String, Object> dataUpdates) {
         Query query = punishmentQuery(playerUuid, punishmentId);
-        Update update = new Update().push("punishments.$.notes", note);
+        Update update = new Update().push(PlayerFields.PUNISHMENT_NOTES, note);
         if (dataUpdates != null) {
             for (Map.Entry<String, Object> entry : dataUpdates.entrySet()) {
                 MongoKeyUtils.validateUpdatePath(entry.getKey());
@@ -165,17 +165,17 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
                                     String appealOutcome, String appealTicketId) {
         Query query = punishmentQuery(playerUuid, punishmentId);
         Update update = new Update()
-            .push("punishments.$.modifications", modification)
-            .push("punishments.$.notes", note)
-            .set("punishments.$.data.appealOutcome", appealOutcome)
-            .set("punishments.$.data.appealTicketId", appealTicketId);
+            .push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification)
+            .push(PlayerFields.PUNISHMENT_NOTES, note)
+            .set(PlayerFields.PUNISHMENT_DATA + ".appealOutcome", appealOutcome)
+            .set(PlayerFields.PUNISHMENT_DATA + ".appealTicketId", appealTicketId);
         updateFirst(server, query, update);
     }
 
     private Query punishmentQuery(String playerUuid, String punishmentId) {
         return Query.query(
-            Criteria.where("minecraftUuid").is(playerUuid)
-                .and("punishments.id").is(punishmentId)
+            Criteria.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)
+                .and(PlayerFields.PUNISHMENT_ID).is(punishmentId)
         );
     }
 
@@ -305,9 +305,9 @@ public class PunishmentMongoRepository extends AbstractServerMongoRepository<Pla
     public void unsetPunishmentStatus(Server server, String playerUuid, String punishmentId) {
         Query query = Query.query(
             Criteria.where(PlayerFields.MINECRAFT_UUID).is(playerUuid)
-                .and("punishments.id").is(punishmentId)
+                .and(PlayerFields.PUNISHMENT_ID).is(punishmentId)
         );
-        Update update = new Update().unset("punishments.$.data.status");
+        Update update = new Update().unset(PlayerFields.PUNISHMENT_DATA + ".status");
         updateFirst(server, query, update);
     }
 }

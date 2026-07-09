@@ -7,7 +7,6 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.infrastructure.exception.ConflictException;
-import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.service.PermissionService;
@@ -15,8 +14,6 @@ import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffService;
-import jakarta.mail.MessagingException;
-import java.io.UnsupportedEncodingException;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,11 +36,7 @@ public class EmailChangeService {
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, currentEmail);
         String normalizedNewEmail = validateTarget(server, currentEmail, newEmail, isSuperAdmin);
 
-        try {
-            authService.sendEmailChangeCode(server, normalizedNewEmail);
-        } catch (MessagingException | UnsupportedEncodingException e) {
-            throw new ExternalServiceException("Failed to send verification code.", e);
-        }
+        authService.sendEmailChangeCode(server, normalizedNewEmail);
     }
 
     public AuthSessionData changeEmail(Server server, String currentEmail, String newEmail, String code,

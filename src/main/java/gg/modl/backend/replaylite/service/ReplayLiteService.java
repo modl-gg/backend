@@ -222,6 +222,16 @@ public class ReplayLiteService {
         }
     }
 
+    public void releaseUnconfirmedDailyQuota(ReplayLiteDocument document) {
+        if (document.getStatus() == ReplayLiteStatus.CONFIRMED) {
+            return;
+        }
+        Instant releasedAt = clock.instant();
+        for (LocalDate day : reservationDays(document.getCreatedAt())) {
+            quotaRepository.releaseConfirmedUpload(document.getPluginServerUuid(), day, document.getId(), releasedAt);
+        }
+    }
+
     private Optional<ReplayLiteDocument> findAvailablePublicReplay(String replayId) {
         Instant now = clock.instant();
         return repository.findByReplayId(replayId)
@@ -284,6 +294,12 @@ public class ReplayLiteService {
             throw new ValidationException("Replay Lite daily upload limit reached");
         }
         return result;
+    }
+
+    private List<LocalDate> reservationDays(Instant createdAt) {
+        LocalDate firstDay = LocalDate.ofInstant(createdAt, ZoneOffset.UTC);
+        LocalDate lastDay = LocalDate.ofInstant(createdAt.plus(PENDING_UPLOAD_TTL), ZoneOffset.UTC);
+        return firstDay.equals(lastDay) ? List.of(firstDay) : List.of(firstDay, lastDay);
     }
 
     private boolean confirmPendingUpload(ReplayLiteDocument document, long actualSize, String clientIp) {

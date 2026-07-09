@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 ENVIRONMENT=${1:-staging}
 IMAGE_TAG=${2:-}  # Optional: pre-built image tag from CI
@@ -8,7 +8,6 @@ BLUE_PORT=8080
 GREEN_PORT=8081
 MAX_HEALTH_RETRIES=30
 HEALTH_RETRY_INTERVAL=2
-MODL_DEPLOY_DRAIN_GRACE_SECONDS=${MODL_DEPLOY_DRAIN_GRACE_SECONDS:-90}
 MODL_DEPLOY_STOP_TIMEOUT_SECONDS=${MODL_DEPLOY_STOP_TIMEOUT_SECONDS:-120}
 NGINX_UPSTREAM_CONF="/etc/nginx/conf.d/modl-backend-upstream.conf"
 MODL_DEPLOY_LOCK_FILE=${MODL_DEPLOY_LOCK_FILE:-/home/modl/.modl-deploy.lock}
@@ -140,6 +139,8 @@ docker run -d \
     -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
+    -e MODL_TRUST_PROXY_HEADERS=true \
+    -e MODL_CLIENT_IP_HEADER=CF-Connecting-IP \
     ${DEPLOY_IMAGE}
 
 if ! wait_for_health "$NEW_PORT"; then

@@ -240,6 +240,11 @@ public class AuditMongoRepository {
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
     }
 
+    public void appendPunishmentModification(Server server, String playerId, String punishmentId,
+            Map<String, Object> modification) {
+        appendPunishmentModificationWithData(server, playerId, punishmentId, modification, Map.of());
+    }
+
     public void appendPunishmentModificationWithData(Server server, String playerId, String punishmentId,
             Map<String, Object> modification, Map<String, Object> dataUpdates) {
         Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, modification);

@@ -11,6 +11,7 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
+import gg.modl.backend.database.mongo.fields.AuditLogFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.SettingsFields;
 import gg.modl.backend.database.mongo.fields.StaffRoleFields;
@@ -54,6 +55,7 @@ public class TenantMigrationService {
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
     private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
+    private static final String LOG_METADATA_PLAYER_ID = AuditLogFields.METADATA + ".playerId";
     private static final String STATUS_FIELD = "status";
     private static final String OWNER_FIELD = "owner";
     private static final String LEASE_UNTIL_FIELD = "leaseUntil";
@@ -320,6 +322,7 @@ public class TenantMigrationService {
 
     private void normalizePlayerIds(MongoTemplate template) {
         MongoCollection<Document> players = template.getCollection(CollectionName.PLAYERS);
+        MongoCollection<Document> logs = template.getCollection(CollectionName.LOGS);
         List<Document> legacyPlayers = players
             .find(Filters.type(PlayerFields.ID, BsonType.OBJECT_ID))
             .into(new ArrayList<>());
@@ -336,27 +339,34 @@ public class TenantMigrationService {
             if (transactional) {
                 try (ClientSession session = mongoClient.startSession()) {
                     session.withTransaction(() -> {
-                        reKeyLegacyPlayer(players, legacyId, reKeyedId, reKeyedPlayer, session);
+                        reKeyLegacyPlayer(players, logs, legacyId, reKeyedId, reKeyedPlayer, session);
                         return null;
                     });
                 }
             } else {
-                reKeyLegacyPlayer(players, legacyId, reKeyedId, reKeyedPlayer, null);
+                reKeyLegacyPlayer(players, logs, legacyId, reKeyedId, reKeyedPlayer, null);
             }
         }
         log.info("Normalized player ids in database={} reKeyed={}",
             template.getDb().getName(), legacyPlayers.size());
     }
 
-    private void reKeyLegacyPlayer(MongoCollection<Document> players, Object legacyId, String reKeyedId,
-                                   Document reKeyedPlayer, @Nullable ClientSession session) {
+    private void reKeyLegacyPlayer(MongoCollection<Document> players, MongoCollection<Document> logs,
+                                   Object legacyId, String reKeyedId, Document reKeyedPlayer,
+                                   @Nullable ClientSession session) {
         ReplaceOptions upsert = new ReplaceOptions().upsert(true);
+        Bson legacyFilter = Filters.eq(PlayerFields.ID, legacyId);
+        Bson reKeyedFilter = Filters.eq(PlayerFields.ID, reKeyedId);
+        Bson logFilter = Filters.eq(LOG_METADATA_PLAYER_ID, legacyId);
+        Bson logUpdate = Updates.set(LOG_METADATA_PLAYER_ID, reKeyedId);
         if (session != null) {
-            players.deleteOne(session, Filters.eq(PlayerFields.ID, legacyId));
-            players.replaceOne(session, Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
+            players.deleteOne(session, legacyFilter);
+            players.replaceOne(session, reKeyedFilter, reKeyedPlayer, upsert);
+            logs.updateMany(session, logFilter, logUpdate);
         } else {
-            players.replaceOne(Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
-            players.deleteOne(Filters.eq(PlayerFields.ID, legacyId));
+            players.deleteOne(legacyFilter);
+            players.replaceOne(reKeyedFilter, reKeyedPlayer, upsert);
+            logs.updateMany(logFilter, logUpdate);
         }
     }
 

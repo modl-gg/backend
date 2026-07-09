@@ -69,13 +69,18 @@ public class RoleAuthorization {
         }
     }
 
-    public void assertCanAssignMinecraftPlayer(PerformerAuthority performer, Staff target) {
+    public void assertCanAssignMinecraftPlayer(Server server, PerformerAuthority performer, Staff target) {
         if (performer.superAdmin()) {
             return;
         }
-        if (performer.email() == null || !performer.email().equalsIgnoreCase(target.getEmail())) {
-            throw new ForbiddenException(NO_AUTHORITY_MESSAGE);
+        if (performer.email() != null && performer.email().equalsIgnoreCase(target.getEmail())) {
+            return;
         }
+        if (performer.roleId() != null
+            && permissionService.hasPermission(server, performer.roleId(), MANAGE_MEMBERS_PERMISSION)) {
+            return;
+        }
+        throw new ForbiddenException(NO_AUTHORITY_MESSAGE);
     }
 
     public void assertCanActOnStaff(Server server, PerformerAuthority performer, Staff target) {
@@ -142,6 +147,10 @@ public class RoleAuthorization {
 
     public static boolean isSuperAdminRole(StaffRole role) {
         return SUPER_ADMIN_ROLE_ID.equals(role.getId()) || SUPER_ADMIN_ROLE_NAME.equals(role.getName());
+    }
+
+    public static boolean isSuperAdminRoleId(String roleId) {
+        return SUPER_ADMIN_ROLE_ID.equals(roleId);
     }
 
     public static boolean isSuperAdminEmail(Server server, String email) {

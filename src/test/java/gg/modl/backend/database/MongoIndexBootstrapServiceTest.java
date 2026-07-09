@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.MongoIndexBootstrapService.BootstrapTarget;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
+import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("unique", true)
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.initGlobalIndexes();
 
         verify(adminUsers, never()).createIndex(any());
@@ -100,7 +101,7 @@ class MongoIndexBootstrapServiceTest {
                 .append("key", new Document("email", 1))
         )));
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.initGlobalIndexes();
 
         verify(adminUsers).createIndex(any());
@@ -119,7 +120,7 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.REPLAYS)).thenReturn(replays);
         when(replays.getIndexInfo()).thenReturn(List.of());
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.createTenantIndexes(template);
 
         ArgumentCaptor<IndexDefinition> replayIndexCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
@@ -149,7 +150,7 @@ class MongoIndexBootstrapServiceTest {
         when(template.indexOps(CollectionName.PLAYERS)).thenReturn(players);
         when(players.getIndexInfo()).thenReturn(List.of());
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.createTenantIndexes(template);
 
         ArgumentCaptor<IndexDefinition> storageCaptor = ArgumentCaptor.forClass(IndexDefinition.class);
@@ -191,7 +192,7 @@ class MongoIndexBootstrapServiceTest {
         )));
 
         MongoIndexBootstrapService service = new MongoIndexBootstrapService(
-            tenantMongoAccess, mock(TenantMigrationService.class));
+            tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.createTenantIndexes(template);
 
         verify(players, never()).dropIndex("uidx_players_minecraftUuid");
@@ -225,7 +226,7 @@ class MongoIndexBootstrapServiceTest {
         when(tenantMongoAccess.forDatabase("server_alpha")).thenReturn(firstTemplate);
         when(tenantMongoAccess.forDatabase("server_beta")).thenReturn(secondTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.bootstrapExistingTenants();
 
         verify(firstReplays, timeout(5000).atLeastOnce()).createIndex(any());
@@ -251,7 +252,7 @@ class MongoIndexBootstrapServiceTest {
         when(tenantMongoAccess.forDatabase("server_broken")).thenThrow(new IllegalStateException("boom"));
         when(tenantMongoAccess.forDatabase("server_healthy")).thenReturn(goodTemplate);
 
-        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class));
+        MongoIndexBootstrapService service = new MongoIndexBootstrapService(tenantMongoAccess, mock(TenantMigrationService.class), grantingLease());
         service.bootstrapExistingTenants();
 
         verify(goodReplays, timeout(5000).atLeastOnce()).createIndex(any());
@@ -292,5 +293,11 @@ class MongoIndexBootstrapServiceTest {
         ArgumentCaptor<IndexDefinition> captor = ArgumentCaptor.forClass(IndexDefinition.class);
         verify(indexOperations).createIndex(captor.capture());
         return captor.getValue();
+    }
+
+    private static SchedulerLeaseService grantingLease() {
+        SchedulerLeaseService lease = mock(SchedulerLeaseService.class);
+        when(lease.tryAcquire(any(), any())).thenReturn(true);
+        return lease;
     }
 }

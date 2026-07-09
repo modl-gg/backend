@@ -73,6 +73,19 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         upsert(server, query, update);
     }
 
+    public void insertRoleIfAbsent(Server server, StaffRole role) {
+        Query query = Query.query(Criteria.where(StaffRoleFields.ID).is(role.getId()));
+        Update update = new Update();
+        update.setOnInsert(StaffRoleFields.NAME, role.getName());
+        update.setOnInsert(StaffRoleFields.DESCRIPTION, role.getDescription());
+        update.setOnInsert(StaffRoleFields.PERMISSIONS, role.getPermissions());
+        update.setOnInsert(StaffRoleFields.IS_DEFAULT, role.isDefault());
+        update.setOnInsert(StaffRoleFields.ORDER, role.getOrder());
+        update.setOnInsert(StaffRoleFields.CREATED_AT, role.getCreatedAt());
+        update.setOnInsert(StaffRoleFields.UPDATED_AT, role.getUpdatedAt());
+        upsert(server, query, update);
+    }
+
     public List<StaffRole> findCustomRolesWithOrderZero(Server server) {
         Query query = Query.query(Criteria.where(StaffRoleFields.IS_DEFAULT).is(false)
             .and(StaffRoleFields.ORDER).is(0));

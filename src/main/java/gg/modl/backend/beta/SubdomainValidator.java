@@ -1,7 +1,6 @@
 package gg.modl.backend.beta;
 
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
@@ -41,17 +40,6 @@ public class SubdomainValidator {
     public boolean isReserved(String subdomain) {
         String normalized = normalize(subdomain);
         return normalized != null && RESERVED_SUBDOMAINS.contains(normalized);
-    }
-
-    public Optional<String> validate(String subdomain) {
-        String normalized = normalize(subdomain);
-        if (!matchesFormat(normalized)) {
-            return Optional.of(FORMAT_MESSAGE);
-        }
-        if (isReserved(normalized)) {
-            return Optional.of(RESERVED_MESSAGE);
-        }
-        return Optional.empty();
     }
 
     public String formatMessage() {

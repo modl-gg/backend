@@ -245,6 +245,7 @@ public class PanelSettingsController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AIModerationSettings settings = PanelSettingsProtoMapper.fromUpdateAIModerationSettingsRequest(requestBody);
+        validate(settings);
         AIModerationSettings updated = aiModerationSettingsService.updateAIModerationSettings(server, settings);
         invalidateSettings(server);
         return PanelSettingsProtoMapper.toAIModerationSettings(updated);

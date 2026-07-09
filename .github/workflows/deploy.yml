@@ -3,6 +3,8 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions: {}
+
 on:
   push:
     branches:
@@ -20,7 +22,7 @@ jobs:
 
     steps:
       - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.7.0
+        uses: webfactory/ssh-agent@836c84ec59a0e7bc0eabc79988384eb567561ee2 # v0.7.0
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 

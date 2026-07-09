@@ -262,7 +262,7 @@ public class TicketService {
         }
 
         if (request.locked() != null) {
-            ticket.setLocked(request.locked());
+            applyLockedState(ticket, request.locked());
         }
 
         if (request.tags() != null) {
@@ -336,10 +336,7 @@ public class TicketService {
             boolean wasClosed = ticket.getStatus() != null && ticket.getStatus().isTerminal();
 
             if (request.locked() != null) {
-                TicketStatus nextStatus = request.locked()
-                                          ? TicketStatus.CLOSED
-                                          : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
-                ticket.applyLifecycleStatus(nextStatus);
+                applyLockedState(ticket, request.locked());
                 hasChanges = true;
             }
 
@@ -589,6 +586,13 @@ public class TicketService {
             .map(TicketFormSettings.FormField::getId)
             .filter(id -> id != null && !id.isBlank())
             .collect(Collectors.toSet());
+    }
+
+    private static void applyLockedState(Ticket ticket, boolean locked) {
+        TicketStatus nextStatus = locked
+                                  ? TicketStatus.CLOSED
+                                  : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+        ticket.applyLifecycleStatus(nextStatus);
     }
 
     private static String normalizeUuid(String value) {

@@ -1,6 +1,7 @@
 package gg.modl.backend.replaylite.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -13,6 +14,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Data
 @NoArgsConstructor
 @Document(collection = CollectionName.REPLAY_LITE_DAILY_QUOTAS)
+@GenerateMongoFields
 public class ReplayLiteDailyQuotaDocument {
     @Id
     private String id;

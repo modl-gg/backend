@@ -3,7 +3,6 @@ package gg.modl.backend.punishment.controller;
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.proto.modl.v1.PublicPunishmentAppealInfoResponse;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -29,21 +28,12 @@ final class PublicPunishmentProtoMapper {
             builder.setExpires(expires);
         }
         if (appealInfo.get("existingAppeal") instanceof Map<?, ?> existingAppeal) {
-            builder.setExistingAppeal(ProtoMapperSupport.legacyStruct(normalizeDates(existingAppeal)));
+            builder.setExistingAppeal(ProtoMapperSupport.legacyStruct(ProtoMapperSupport.stringObjectMap(existingAppeal)));
         }
         if (appealInfo.get("appealForm") instanceof Map<?, ?> appealForm) {
-            builder.setAppealForm(ProtoMapperSupport.legacyStruct(normalizeDates(appealForm)));
+            builder.setAppealForm(ProtoMapperSupport.legacyStruct(ProtoMapperSupport.stringObjectMap(appealForm)));
         }
         return builder.build();
-    }
-
-    private static Map<String, Object> normalizeDates(Map<?, ?> source) {
-        Map<String, Object> normalized = new LinkedHashMap<>();
-        source.forEach((key, value) -> normalized.put(
-            Objects.toString(key),
-            value instanceof Date date ? date.getTime() : value
-        ));
-        return normalized;
     }
 
     private static Long epochMillis(Object value) {

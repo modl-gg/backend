@@ -7,8 +7,6 @@ import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeCodec;
 import gg.modl.backend.server.data.Server;
-import jakarta.mail.MessagingException;
-import java.io.UnsupportedEncodingException;
 import java.util.Date;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +24,7 @@ public class AuthService {
     private final OneTimeCodeCodec oneTimeCodeCodec;
 
     @Async("emailTaskExecutor")
-    public void sendUserLoginCode(Server server, String email) throws MessagingException, UnsupportedEncodingException {
+    public void sendUserLoginCode(Server server, String email) {
         String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
             authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
 
@@ -38,7 +36,7 @@ public class AuthService {
     }
 
     @Async("emailTaskExecutor")
-    public void sendEmailChangeCode(Server server, String newEmail) throws MessagingException, UnsupportedEncodingException {
+    public void sendEmailChangeCode(Server server, String newEmail) {
         String code = prepareAndStoreCode(newEmail, (normalizedEmail, codeHash, expiresAt) ->
             authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
 
@@ -65,7 +63,7 @@ public class AuthService {
     }
 
     @Async("emailTaskExecutor")
-    public void sendAdminLoginCode(String email) throws MessagingException, UnsupportedEncodingException {
+    public void sendAdminLoginCode(String email) {
         String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
             authCodeRepository.replaceForGlobal(normalizedEmail, codeHash, expiresAt));
 

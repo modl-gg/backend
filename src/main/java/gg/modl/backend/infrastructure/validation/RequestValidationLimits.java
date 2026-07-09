@@ -153,10 +153,7 @@ public final class RequestValidationLimits {
     public static final int STAFF_EMAILS_MAX_ENTRIES = 50;
     public static final int STAFF_TOKEN_MAX_LENGTH = 512;
     public static final int STORAGE_KEY_MAX_LENGTH = 1_024;
-    public static final int STORAGE_BULK_DELETE_MAX_KEYS = 100;
-    public static final int STORAGE_UPLOAD_TYPE_MAX_LENGTH = 64;
-    public static final int STORAGE_ACCESS_TOKEN_MAX_LENGTH = 512;
-    public static final int STORAGE_ENTITY_ID_MAX_LENGTH = 256;
+    public static final int STORAGE_BULK_DELETE_MAX_KEYS = 1_000;
     public static final int QUICK_RESPONSE_ACTION_ID_MAX_LENGTH = 64;
     public static final int QUICK_RESPONSE_CATEGORY_ID_MAX_LENGTH = 64;
     public static final int QUICK_RESPONSE_SEVERITY_MAX_LENGTH = 32;

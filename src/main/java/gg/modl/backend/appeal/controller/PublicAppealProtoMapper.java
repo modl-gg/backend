@@ -14,6 +14,8 @@ import gg.modl.proto.modl.v1.PublicAppealResponse;
 import java.util.List;
 
 final class PublicAppealProtoMapper {
+    private static final String STAFF_NOTE_TYPE = "staff-note";
+
     private PublicAppealProtoMapper() {
     }
 
@@ -34,7 +36,8 @@ final class PublicAppealProtoMapper {
         }
         List<TicketReply> publicReplies = appeal.messages() == null ? List.of()
             : appeal.messages().stream()
-                .filter(r -> !r.isStaff() && !"system".equalsIgnoreCase(r.getType()))
+                .filter(r -> !STAFF_NOTE_TYPE.equalsIgnoreCase(r.getType()))
+                .map(PublicAppealProtoMapper::withoutCreatorIdentifier)
                 .toList();
         addAll(publicReplies, PanelTicketProtoMapper::toTicketReply, builder::addMessages);
         addAll(appeal.tags(), value -> value, builder::addTags);
@@ -66,8 +69,12 @@ final class PublicAppealProtoMapper {
         return AddPublicAppealReplyResponse.newBuilder()
             .setSuccess(true)
             .setMessage("Reply added successfully")
-            .setReply(PanelTicketProtoMapper.toPublicTicketReply(reply))
+            .setReply(PanelTicketProtoMapper.toPublicTicketReply(withoutCreatorIdentifier(reply)))
             .build();
+    }
+
+    private static TicketReply withoutCreatorIdentifier(TicketReply reply) {
+        return reply.toBuilder().creatorIdentifier(null).build();
     }
 
 }

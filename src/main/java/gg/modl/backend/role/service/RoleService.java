@@ -114,7 +114,7 @@ public class RoleService {
 
     public boolean updateRolePermissions(Server server, String id, List<String> permissions,
                                          RoleAuthorization.PerformerAuthority performer) {
-        if (id != null && id.contains(RoleAuthorization.SUPER_ADMIN_ROLE_ID)) {
+        if (RoleAuthorization.isSuperAdminRoleId(id)) {
             throw new ForbiddenException("Cannot modify Super Admin role");
         }
 
@@ -135,11 +135,7 @@ public class RoleService {
         if (!performer.superAdmin()) {
             StaffRole performerRole = roleAuthorization.requirePerformerRole(server, performer);
             roleAuthorization.assertHigherAuthority(performerRole, targetRole);
-            Set<String> existing = new HashSet<>(targetRole.getPermissions() != null
-                ? targetRole.getPermissions() : List.of());
-            filtered = filtered.stream()
-                .filter(p -> RoleAuthorization.roleGrants(performerRole, p) || existing.contains(p))
-                .collect(Collectors.toCollection(ArrayList::new));
+            filtered = filterToGrantableOrExisting(performerRole, targetRole, filtered);
         }
 
         targetRole.setPermissions(filtered);
@@ -198,6 +194,13 @@ public class RoleService {
             .toList();
     }
 
+    private List<String> filterToGrantableOrExisting(StaffRole performerRole, StaffRole targetRole, List<String> permissions) {
+        Set<String> existing = new HashSet<>(targetRole.getPermissions() != null ? targetRole.getPermissions() : List.of());
+        return permissions.stream()
+            .filter(p -> RoleAuthorization.roleGrants(performerRole, p) || existing.contains(p))
+            .collect(Collectors.toCollection(ArrayList::new));
+    }
+
     private void ensureRoleNameAvailable(Server server, String roleName, String excludeRoleId) {
         if (roleName == null || roleName.isBlank()) {
             throw new ValidationException("Role name cannot be empty");
@@ -212,7 +215,7 @@ public class RoleService {
     }
 
     public Optional<RoleResponse> updateRole(Server server, String id, RoleRequest request, RoleAuthorization.PerformerAuthority performer) {
-        if (RoleAuthorization.SUPER_ADMIN_ROLE_ID.equals(id)) {
+        if (RoleAuthorization.isSuperAdminRoleId(id)) {
             throw new ForbiddenException("Cannot modify Super Admin role");
         }
 
@@ -235,7 +238,7 @@ public class RoleService {
             .filter(validPermissions::contains)
             .toList();
         if (performerRole != null) {
-            filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
+            filteredPermissions = filterToGrantableOrExisting(performerRole, updated, filteredPermissions);
         }
 
         updated.setName(roleName);
@@ -250,7 +253,7 @@ public class RoleService {
     }
 
     public boolean deleteRole(Server server, String id, RoleAuthorization.PerformerAuthority performer) {
-        if (RoleAuthorization.SUPER_ADMIN_ROLE_ID.equals(id)) {
+        if (RoleAuthorization.isSuperAdminRoleId(id)) {
             throw new ForbiddenException("Cannot delete Super Admin role");
         }
 
@@ -384,7 +387,7 @@ public class RoleService {
         );
 
         for (StaffRole role : defaultRoles) {
-            staffRoleRepository.upsertRole(server, role);
+            staffRoleRepository.insertRoleIfAbsent(server, role);
         }
         permissionService.evictPermissionCache();
     }

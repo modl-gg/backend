@@ -248,12 +248,12 @@ function migratePlayer(databaseName, candidate) {
 
         const normalizedPlayer = Object.assign({}, playerDoc, { _id: candidate.newId });
 
-        players.insertOne(normalizedPlayer);
-
         const deleteResult = players.deleteOne({ _id: candidate.oldId });
         if (deleteResult.deletedCount !== 1) {
             throw new Error(`Expected to delete 1 player document, deleted ${deleteResult.deletedCount}.`);
         }
+
+        players.insertOne(normalizedPlayer);
 
         const logUpdateResult = logs.updateMany(
             { "metadata.playerId": candidate.oldId },

@@ -104,7 +104,6 @@ class TenantMigrationServiceTest {
         List<String> filters = filterCaptor.getAllValues().stream().map(TenantMigrationServiceTest::toJson).toList();
         List<String> updates = updateCaptor.getAllValues().stream().map(TenantMigrationServiceTest::toJson).toList();
 
-        // Each role's old name is matched and rewritten to its id, on both staff and invitations.
         assertThat(filters).anyMatch(json -> json.contains("\"role\": \"Helper\""));
         assertThat(updates).anyMatch(json -> json.contains("\"role\": \"helper\""));
         assertThat(filters).anyMatch(json -> json.contains("\"role\": \"Admin\""));
@@ -138,7 +137,6 @@ class TenantMigrationServiceTest {
         MongoTemplate template = mock(MongoTemplate.class);
         mockMigrationsCollection(template, null);
         mockTicketsCollection(template, 0L, 0L);
-        // A custom role literally named "admin" collides with the default role whose id is "admin".
         RoleCollections roleCollections = mockRoleCollections(template, List.of(
             new Document("_id", "admin").append("name", "Admin"),
             new Document("_id", "custom-1").append("name", "admin")
@@ -148,7 +146,6 @@ class TenantMigrationServiceTest {
         TenantMigrationService service = new TenantMigrationService(mock(DuplicatePlayerMerger.class), mock(MongoClient.class));
         service.applyMigrationsForTenant(template);
 
-        // "Admin" -> "admin" is safe; the colliding "admin" name is skipped so already-migrated docs are never clobbered.
         ArgumentCaptor<Bson> filterCaptor = ArgumentCaptor.forClass(Bson.class);
         verify(roleCollections.staff(), times(1)).updateMany(filterCaptor.capture(), any(Bson.class));
         assertThat(toJson(filterCaptor.getValue())).contains("\"role\": \"Admin\"");
@@ -322,6 +319,10 @@ class TenantMigrationServiceTest {
                 .append("usernames", List.of(new Document("username", "Legacy"))));
             return sink;
         });
+        @SuppressWarnings("unchecked")
+        MongoCollection<Document> logs = mock(MongoCollection.class);
+        when(template.getCollection(CollectionName.LOGS)).thenReturn(logs);
+        when(logs.updateMany(any(Bson.class), any(Bson.class))).thenReturn(UpdateResult.acknowledged(0L, 0L, null));
 
         MongoClient mongoClient = mock(MongoClient.class);
         MongoDatabase adminDatabase = mock(MongoDatabase.class);
@@ -341,6 +342,12 @@ class TenantMigrationServiceTest {
         Document replacement = replacementCaptor.getValue();
         assertThat(replacement.get("_id")).isInstanceOf(String.class).isEqualTo(legacyId.toHexString());
         assertThat(replacement.getString("minecraftUuid")).isEqualTo(uuid);
+
+        ArgumentCaptor<Bson> logFilterCaptor = ArgumentCaptor.forClass(Bson.class);
+        ArgumentCaptor<Bson> logUpdateCaptor = ArgumentCaptor.forClass(Bson.class);
+        verify(logs).updateMany(logFilterCaptor.capture(), logUpdateCaptor.capture());
+        assertThat(toJson(logFilterCaptor.getValue())).contains("metadata.playerId").contains(legacyId.toHexString());
+        assertThat(toJson(logUpdateCaptor.getValue())).contains("metadata.playerId").contains(legacyId.toHexString());
     }
 
     private MappingMongoConverter playerConverter() {

@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerBillingUpdate;
 import java.util.Date;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -18,7 +19,7 @@ public class ServerMutationHelper {
     private final ServerMongoRepository serverRepository;
     private final ServerService serverService;
 
-    public void mutate(Server server, Consumer<Server> mutator) {
+    public void mutate(Server server, Consumer<ServerBillingUpdate> mutator) {
         String beforeStripeCustomerId = server.getStripeCustomerId();
         String beforeStripeSubscriptionId = server.getStripeSubscriptionId();
         Object beforeSubscriptionStatus = server.getSubscriptionStatus();

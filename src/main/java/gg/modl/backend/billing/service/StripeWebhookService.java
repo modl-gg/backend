@@ -9,6 +9,7 @@ import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoReposito
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerBillingUpdate;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerMutationHelper;
@@ -72,7 +73,7 @@ public class StripeWebhookService {
         });
     }
 
-    private void applyPeriodDates(Server current, Subscription subscription) {
+    private void applyPeriodDates(ServerBillingUpdate current, Subscription subscription) {
         Date periodStart = stripeService.extractPeriodStart(subscription);
         Date periodEnd = stripeService.extractPeriodEnd(subscription);
         if (periodStart != null) {

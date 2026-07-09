@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 APP_NAME="modl-backend"
 ENVIRONMENT=${1:-${SPRING_PROFILES_ACTIVE:-staging}}
@@ -85,6 +85,8 @@ docker run -d \
     -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
+    -e MODL_TRUST_PROXY_HEADERS=true \
+    -e MODL_CLIENT_IP_HEADER=CF-Connecting-IP \
     ${APP_NAME}:${ROLLBACK_COLOR}
 
 log "Waiting for rollback container to be healthy..."

@@ -3,6 +3,7 @@ package gg.modl.backend.database;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerFields;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import jakarta.annotation.PostConstruct;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -57,9 +58,12 @@ public class MongoIndexBootstrapService {
     );
 
     private static final int BOOTSTRAP_PARALLELISM = 4;
+    private static final String TENANT_BOOTSTRAP_LEASE = "tenant-schema-bootstrap";
+    private static final Duration TENANT_BOOTSTRAP_LEASE_TTL = Duration.ofMinutes(30);
 
     private final TenantMongoAccess tenantMongoAccess;
     private final TenantMigrationService tenantMigrationService;
+    private final SchedulerLeaseService schedulerLeaseService;
 
     @PostConstruct
     public void initGlobalIndexes() {
@@ -88,6 +92,10 @@ public class MongoIndexBootstrapService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapExistingTenants() {
+        if (!schedulerLeaseService.tryAcquire(TENANT_BOOTSTRAP_LEASE, TENANT_BOOTSTRAP_LEASE_TTL)) {
+            log.info("Skipping tenant schema bootstrap; lease held by another instance");
+            return;
+        }
         List<BootstrapTarget> targets;
         try {
             targets = loadBootstrapTargets();
@@ -183,6 +191,7 @@ public class MongoIndexBootstrapService {
             IndexSpec.standard("idx_servers_lastActivityAt", doc("lastActivityAt", -1), false, true)
         ));
 
+        dropSupersededIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of("idx_metric_snapshots_date"));
         ensureIndexes(template, CollectionName.METRIC_SNAPSHOTS, List.of(
             IndexSpec.standard("uidx_metric_snapshots_date", doc("date", 1), true, false)
         ));
@@ -382,6 +391,22 @@ public class MongoIndexBootstrapService {
         ensureIndexes(template, CollectionName.MIGRATIONS, List.of(
             IndexSpec.standard("idx_migrations_status_startedAt", doc("status", 1).append("startedAt", -1), false, false)
         ));
+    }
+
+    private void dropSupersededIndexes(MongoTemplate template, String collectionName, List<String> legacyIndexNames) {
+        IndexOperations indexOps = template.indexOps(collectionName);
+        List<String> existingNames = indexOps.getIndexInfo().stream().map(IndexInfo::getName).toList();
+        for (String legacyName : legacyIndexNames) {
+            if (!existingNames.contains(legacyName)) {
+                continue;
+            }
+            try {
+                indexOps.dropIndex(legacyName);
+                log.info("Dropped superseded index name={} on collection={}", legacyName, collectionName);
+            } catch (Exception e) {
+                log.warn("Failed to drop superseded index name={} on collection={}", legacyName, collectionName, e);
+            }
+        }
     }
 
     private void ensureIndexes(MongoTemplate template, String collectionName, List<IndexSpec> specs) {

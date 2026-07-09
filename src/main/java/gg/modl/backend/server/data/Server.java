@@ -18,7 +18,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @Data
 @RequiredArgsConstructor
 @GenerateMongoFields
-public class Server {
+public class Server implements ServerBillingUpdate {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
     private final String serverName;

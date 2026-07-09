@@ -32,7 +32,6 @@ class PermissionServiceTest {
 
         assertTrue(service.hasPermission(server, "custom-1", "ticket.view.all"));
         assertFalse(service.hasPermission(server, "custom-1", "admin.staff.manage"));
-        // The whole point of the redesign: resolution never touches the mutable name.
         verify(roleRepository, never()).findByName(any(), any());
     }
 
@@ -41,7 +40,6 @@ class PermissionServiceTest {
         StaffRoleMongoRepository roleRepository = mock(StaffRoleMongoRepository.class);
         PermissionService service = newService(roleRepository);
         Server server = server();
-        // Staff stored the role id "custom-1"; the role has since been renamed from "Support" to "Helpers".
         StaffRole renamed = role("custom-1", "Helpers", 5, List.of("ticket.view.all"));
         when(roleRepository.findById(server, "custom-1")).thenReturn(Optional.of(renamed));
 

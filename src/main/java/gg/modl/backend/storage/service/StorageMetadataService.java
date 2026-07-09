@@ -35,6 +35,14 @@ public class StorageMetadataService {
         return storageFileRepository.findByKey(server, key);
     }
 
+    public Map<String, StorageFileDocument> findConfirmedFiles(Server server, Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return Map.of();
+        }
+        return storageFileRepository.findByKeys(server, new ArrayList<>(keys)).stream()
+            .collect(Collectors.toMap(StorageFileDocument::getKey, doc -> doc, (existing, replacement) -> existing));
+    }
+
     public Set<String> existingKeys(Server server, Collection<String> keys) {
         if (keys == null || keys.isEmpty()) {
             return Set.of();

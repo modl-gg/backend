@@ -412,7 +412,7 @@ public class StaffService {
             return Optional.empty();
         }
 
-        roleAuthorization.assertCanAssignMinecraftPlayer(performer, staff);
+        roleAuthorization.assertCanAssignMinecraftPlayer(server, performer, staff);
 
         if ((request.minecraftUuid() == null || request.minecraftUuid().isEmpty()) &&
             (request.minecraftUsername() == null || request.minecraftUsername().isEmpty())) {
