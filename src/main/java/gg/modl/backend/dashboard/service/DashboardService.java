@@ -61,7 +61,7 @@ public class DashboardService {
     private static final int MAX_RECENT_TICKETS_LIMIT = 20;
     private static final int MAX_RECENT_PUNISHMENTS_LIMIT = 20;
     private static final int MAX_ACTIVITY_LIMIT = 100;
-    private static final int MAX_DAYS = 90;
+    public static final int MAX_DAYS = 90;
     private static final int MAX_QUERY_RESULTS = 200;
 
     public MinecraftDashboardStatsResponse getMinecraftStats(Server server) {
@@ -119,7 +119,6 @@ public class DashboardService {
                     continue;
                 }
 
-                // Use the authoritative classifier so configurable (ordinal>=6) bans/mutes are counted.
                 String category = statusCalculator.getEffectiveCategory(punishment, punishmentTypesByOrdinal);
                 if (EnforcementCategory.BAN.name().equals(category)) {
                     activeBans++;

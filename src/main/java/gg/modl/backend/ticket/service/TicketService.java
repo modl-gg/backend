@@ -496,7 +496,7 @@ public class TicketService {
         String creatorEmail = contentService.resolveCreatorEmail(request);
         if (creatorEmail != null) {
             boolean hasExistingEmail = existingCreatorEmail != null;
-            if (!ticket.isEmailAuthEnabled() || !hasExistingEmail || emailVerified) {
+            if (!hasExistingEmail || emailVerified) {
                 existingData.put("creatorEmail", creatorEmail);
             } else {
                 existingData.put("creatorEmail", existingCreatorEmail);
@@ -575,11 +575,6 @@ public class TicketService {
         ticket.applyLifecycleStatus(TicketStatus.OPEN);
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
-    }
-
-    public String getEmailHint(Ticket ticket) {
-        String email = TicketEmailVerificationService.resolveContactEmail(ticket);
-        return email == null ? null : EmailAddressUtil.mask(email);
     }
 
     public Set<String> getPublicFormFieldIds(Server server, Ticket ticket) {

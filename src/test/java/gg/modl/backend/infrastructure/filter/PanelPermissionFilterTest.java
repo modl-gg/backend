@@ -154,7 +154,6 @@ class PanelPermissionFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        // PERMIT sentinel: the controller self-checks punishment.apply.<type>, so the filter passes through.
         verify(chain).doFilter(request, response);
     }
 

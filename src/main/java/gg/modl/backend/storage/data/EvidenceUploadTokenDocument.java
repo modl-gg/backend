@@ -12,18 +12,16 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Document(collection = CollectionName.EVIDENCE_UPLOAD_TOKENS)
 public class EvidenceUploadTokenDocument {
     @Id
-    private String id; // SHA-256 hex of the raw token
+    private String tokenHash;
     private String serverDatabaseName;
     private String punishmentId;
     private String playerUuid;
     private String issuerName;
     private Instant createdAt;
-    // TTL index on this field is created explicitly in MongoIndexBootstrapService (auto-index-creation
-    // is disabled), so @Indexed here would not create one.
     private Instant expiresAt;
 
     public EvidenceUploadTokenDocument(
-        String id,
+        String tokenHash,
         String serverDatabaseName,
         String punishmentId,
         String playerUuid,
@@ -31,7 +29,7 @@ public class EvidenceUploadTokenDocument {
         Instant createdAt,
         Instant expiresAt
     ) {
-        this.id = id;
+        this.tokenHash = tokenHash;
         this.serverDatabaseName = serverDatabaseName;
         this.punishmentId = punishmentId;
         this.playerUuid = playerUuid;

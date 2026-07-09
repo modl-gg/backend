@@ -59,7 +59,7 @@ class PublicTicketControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders
-            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, verificationService, recordAccessService, recordVerificationService, realtimeEventPublisher))
+            .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, recordAccessService, recordVerificationService, realtimeEventPublisher))
             .setControllerAdvice(new GlobalExceptionHandler())
             .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
@@ -200,7 +200,7 @@ class PublicTicketControllerTest {
             .andExpect(jsonPath("$.data.contact_email").doesNotExist())
             .andExpect(jsonPath("$.data.playerUuid").doesNotExist())
             .andExpect(jsonPath("$.replies[0].creatorIdentifier").value(""))
-            .andExpect(jsonPath("$.creatorUuid").value("uuid-1"))
+            .andExpect(jsonPath("$.creatorUuid").value(""))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
             .andExpect(jsonPath("$.chatMessages[0].content").value("message"));
@@ -243,7 +243,7 @@ class PublicTicketControllerTest {
 
         mockMvc.perform(get(RESTMappingV1.PUBLIC_TICKETS + "/TICKET-1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.creatorUuid").value("uuid-1"))
+            .andExpect(jsonPath("$.creatorUuid").value(""))
             .andExpect(jsonPath("$.reportedPlayer").value("Reported"))
             .andExpect(jsonPath("$.reportedPlayerUuid").value(""))
             .andExpect(jsonPath("$.chatMessages[0]").doesNotExist());

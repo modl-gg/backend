@@ -19,17 +19,17 @@ public class PublicRecordAccessService {
         NOT_FOUND
     }
 
-    public record AccessResult(Access access, String emailHint) {
-        static AccessResult granted() {
-            return new AccessResult(Access.GRANTED, null);
+    public record AccessResult(Access access, String emailHint, boolean tokenVerified) {
+        static AccessResult granted(boolean tokenVerified) {
+            return new AccessResult(Access.GRANTED, null, tokenVerified);
         }
 
         static AccessResult notFound() {
-            return new AccessResult(Access.NOT_FOUND, null);
+            return new AccessResult(Access.NOT_FOUND, null, false);
         }
 
         static AccessResult tokenRequired(String emailHint) {
-            return new AccessResult(Access.TOKEN_REQUIRED, emailHint);
+            return new AccessResult(Access.TOKEN_REQUIRED, emailHint, false);
         }
     }
 
@@ -37,9 +37,8 @@ public class PublicRecordAccessService {
         if (record == null || record.isHidden()) {
             return AccessResult.notFound();
         }
-        if (presentedToken != null && !presentedToken.isBlank()
-            && verificationService.validateToken(server, record.getId(), presentedToken)) {
-            return AccessResult.granted();
+        if (hasValidToken(server, record, presentedToken)) {
+            return AccessResult.granted(true);
         }
 
         String contactEmail = TicketEmailVerificationService.resolveContactEmail(record);
@@ -52,6 +51,26 @@ public class PublicRecordAccessService {
         if (properties.getEnforcement() == PublicAccessProperties.Enforcement.STRICT) {
             return AccessResult.tokenRequired(null);
         }
-        return AccessResult.granted();
+        return AccessResult.granted(false);
+    }
+
+    public AccessResult authorizeSubmission(Server server, @Nullable Ticket record, @Nullable String presentedToken) {
+        if (record == null || record.isHidden()) {
+            return AccessResult.notFound();
+        }
+        if (hasValidToken(server, record, presentedToken)) {
+            return AccessResult.granted(true);
+        }
+
+        String contactEmail = TicketEmailVerificationService.resolveContactEmail(record);
+        if (contactEmail != null) {
+            return AccessResult.tokenRequired(EmailAddressUtil.mask(contactEmail));
+        }
+        return AccessResult.granted(false);
+    }
+
+    private boolean hasValidToken(Server server, Ticket record, @Nullable String presentedToken) {
+        return presentedToken != null && !presentedToken.isBlank()
+            && verificationService.validateToken(server, record.getId(), presentedToken);
     }
 }

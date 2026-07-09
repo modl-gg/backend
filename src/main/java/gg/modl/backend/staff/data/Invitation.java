@@ -26,7 +26,6 @@ public class Invitation {
     @Field("email")
     private String email;
 
-    // Mongo column stays "role", but this holds the StaffRole id, not the display name
     @Field("role")
     private String roleId;
 

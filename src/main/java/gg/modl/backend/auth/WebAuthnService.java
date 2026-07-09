@@ -273,7 +273,7 @@ public class WebAuthnService {
         }
 
         if (!result.isSignatureCounterValid()) {
-            log.warn("WebAuthn signature counter invalid for credential {} — possible cloned authenticator",
+            log.warn("WebAuthn signature counter invalid for credential {}: possible cloned authenticator",
                 result.getCredential().getCredentialId().getBase64Url());
             throw new UnauthorizedException("Authentication failed: possible cloned authenticator");
         }

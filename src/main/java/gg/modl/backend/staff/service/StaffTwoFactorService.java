@@ -5,6 +5,7 @@ import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -34,11 +35,6 @@ public class StaffTwoFactorService {
         return Optional.of(new TwoFactorTokenResult(token, "https://" + domain + "/verify/" + token));
     }
 
-    /**
-     * Verifies a staff 2fa token and, on success, activates the session. An empty result means the
-     * token was rejected. A present result carries the staff's assigned Minecraft UUID (if any) so
-     * the caller can push the verification to the plugin.
-     */
     public Optional<VerificationResult> verifyToken(Server server, String token, String sessionEmail) {
         Staff staff = staffRepository.findByTwoFactorToken(server, token).orElse(null);
         if (staff == null) {
@@ -83,6 +79,6 @@ public class StaffTwoFactorService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

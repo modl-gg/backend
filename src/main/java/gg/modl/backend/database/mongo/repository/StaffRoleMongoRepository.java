@@ -117,8 +117,6 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         MongoTemplate template = serverTemplate(server);
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
-            // Compare-and-set: only flip a custom role still stuck at order 0. Once the first
-            // concurrent repair writes a non-zero order, the second writer matches no document.
             Query query = Query.query(Criteria.where("_id").is(entry.getKey())
                 .and(StaffRoleFields.ORDER).is(0)
                 .and(StaffRoleFields.IS_DEFAULT).is(false));

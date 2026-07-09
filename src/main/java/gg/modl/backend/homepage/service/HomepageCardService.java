@@ -32,11 +32,6 @@ public class HomepageCardService {
         return homepageCardRepository.findVisibleOrdered(server);
     }
 
-    /**
-     * Returns the visible cards enriched with their category and (for category_dropdown cards) the
-     * category's visible articles, using exactly two $in batch queries regardless of card count
-     * (one for categories, one for visible articles).
-     */
     public List<EnrichedCardWithArticles> getVisibleCardsEnrichedWithArticles(Server server) {
         List<HomepageCard> cards = getVisibleCards(server);
 

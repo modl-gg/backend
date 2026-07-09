@@ -36,6 +36,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -56,8 +57,6 @@ public class PunishmentQueryService {
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final TicketMongoRepository ticketRepository;
-    // Inline instance (not a constructor-injected bean) so the @RequiredArgsConstructor signature
-    // stays stable for direct test constructors; a default ObjectMapper is sufficient for POJO->Map.
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int RECENT_PUNISHMENT_SCAN_LIMIT = 500;
 
@@ -137,9 +136,6 @@ public class PunishmentQueryService {
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
         String status = PunishmentData.getStatus(data);
-        // data.status carries a lifecycle constant (Unstarted/Pardoned) for stacked/pardoned
-        // punishments; that is NOT an offender status and must not leak onto the wire. Fall through
-        // to the dedicated offenseLevel in that case.
         if (status != null
             && !PunishmentStatus.UNSTARTED.equals(status)
             && !PunishmentStatus.PARDONED.equals(status)) {
@@ -507,9 +503,6 @@ public class PunishmentQueryService {
         }
 
         Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
-        // Convert the AppealForm POJO to a deep Map so the proto mapper's `instanceof Map` guard
-        // passes and the custom form reaches the public appeal page. A null or empty-fields form is
-        // emitted as null so the panel keeps its default reason-field fallback (no regression).
         response.put("appealForm", punishmentType
             .map(PunishmentType::getAppealForm)
             .filter(form -> form.getFields() != null && !form.getFields().isEmpty())
@@ -558,6 +551,6 @@ public class PunishmentQueryService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

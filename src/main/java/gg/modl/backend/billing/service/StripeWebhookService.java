@@ -1,11 +1,13 @@
 package gg.modl.backend.billing.service;
 
+import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
 import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
@@ -96,8 +98,6 @@ public class StripeWebhookService {
         }
         server = findServerByCustomerId(customerId);
         if (server != null && server.getStripeSubscriptionId() == null) {
-            // Self-heal a lost/out-of-order linkage; guarded by ==null so a server legitimately
-            // linked to a different subscription is never clobbered.
             serverMutationHelper.mutate(server, current -> current.setStripeSubscriptionId(subscription.getId()));
         }
         return server;
@@ -248,8 +248,8 @@ public class StripeWebhookService {
             } else {
                 unstickPastDue(server);
             }
-        } catch (Exception exception) {
-            log.error("Error syncing subscription state on payment success", exception);
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to sync subscription state on Stripe payment success", exception);
         }
     }
 

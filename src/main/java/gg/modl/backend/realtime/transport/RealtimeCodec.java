@@ -10,6 +10,7 @@ import gg.modl.proto.modl.v1.ReconnectAction;
 import gg.modl.proto.modl.v1.ReconnectAdvice;
 import gg.modl.proto.modl.v1.ReconnectReason;
 import gg.modl.proto.modl.v1.ServerHello;
+import gg.modl.proto.modl.v1.Topic;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.UUID;
@@ -33,7 +34,7 @@ public class RealtimeCodec {
         return RealtimeEnvelope.parseFrom(payload);
     }
 
-    public BinaryMessage serverHello(String connectionId, Collection<gg.modl.proto.modl.v1.Topic> acceptedTopics) {
+    public BinaryMessage serverHello(String connectionId, Collection<Topic> acceptedTopics) {
         ServerHello hello = ServerHello.newBuilder()
             .setProtocolVersion(properties.getProtocolVersion())
             .setConnectionId(connectionId)

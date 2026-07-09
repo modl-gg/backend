@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.controller;
 
+import com.google.protobuf.Timestamp;
 import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.AdminServerBulkOperationData;
@@ -23,6 +24,7 @@ import gg.modl.proto.modl.v1.AdminServerUsageSummary;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
@@ -222,7 +224,7 @@ final class AdminServerProtoMapper {
         return builder.build();
     }
 
-    private static void setTimestamp(Date date, java.util.function.Consumer<com.google.protobuf.Timestamp> setter) {
+    private static void setTimestamp(Date date, Consumer<Timestamp> setter) {
         if (date != null) {
             setter.accept(toTimestamp(date));
         }

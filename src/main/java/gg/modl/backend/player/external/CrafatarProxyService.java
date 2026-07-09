@@ -22,7 +22,7 @@ public class CrafatarProxyService {
     private final RestTemplate restTemplate;
     private static final int MIN_AVATAR_SIZE = 8;
     private static final int MAX_AVATAR_SIZE = 512;
-    private static final int MAX_AVATAR_BYTES = 1024 * 1024; // 1 MiB
+    private static final int MAX_AVATAR_BYTES = 1024 * 1024;
 
     private static final long MAX_AVATAR_CACHE_BYTES = 64L * 1024 * 1024;
 
@@ -39,8 +39,6 @@ public class CrafatarProxyService {
     }
 
     private byte[] fetchAvatar(String uuid, int clampedSize, boolean overlay) {
-        // Try Crafatar first. Values are passed as URI variables so a stray ?/&/# in uuid is
-        // percent-encoded by DefaultUriBuilderFactory and never re-parsed as URL structure.
         try {
             URI url = UriComponentsBuilder.fromUriString("https://crafatar.com")
                 .pathSegment("avatars", uuid)
@@ -57,7 +55,6 @@ public class CrafatarProxyService {
             log.warn("Crafatar failed for UUID {}, trying Minotar fallback", uuid);
         }
 
-        // Try Minotar as fallback
         try {
             URI fallbackUrl = UriComponentsBuilder.fromUriString("https://minotar.net")
                 .pathSegment("avatar", uuid, String.valueOf(clampedSize))
@@ -71,11 +68,6 @@ public class CrafatarProxyService {
         }
     }
 
-    /**
-     * Fetches an avatar with a content-type and size guard. Returns null (treated as a miss) when the
-     * upstream response is non-image, oversized, or empty, so the unauthenticated proxy never buffers
-     * unbounded bytes into heap and never serves a non-image body mislabeled as a PNG.
-     */
     private byte[] fetch(URI url) {
         ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
         HttpHeaders headers = response.getHeaders();

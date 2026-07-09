@@ -32,8 +32,6 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
     @MongoFieldAlias(name = "REPLY_STAFF", path = "replies.staff")
 })
 public class Ticket {
-    // id is assigned at persistence time by TicketIdGenerator.insertWithUniqueId (PREFIX-NNNNNN),
-    // so it is intentionally nullable at build time — no build-time @NotNull here.
     @Id
     private String id;
 

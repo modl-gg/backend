@@ -47,7 +47,6 @@ public class IconUploadService {
                     return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
                 }
                 default -> {
-                    // SUCCESS
                 }
             }
             return ResponseEntity.ok(Map.of("url", result.cdnUrl()));

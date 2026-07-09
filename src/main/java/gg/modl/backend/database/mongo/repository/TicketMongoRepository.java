@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -133,8 +134,8 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
-        String lower = playerUuid == null ? null : playerUuid.toLowerCase(java.util.Locale.ROOT);
-        String upper = playerUuid == null ? null : playerUuid.toUpperCase(java.util.Locale.ROOT);
+        String lower = playerUuid == null ? null : playerUuid.toLowerCase(Locale.ROOT);
+        String upper = playerUuid == null ? null : playerUuid.toUpperCase(Locale.ROOT);
         List<String> uuidCandidates = lower != null && lower.equals(upper)
             ? List.of(lower)
             : Arrays.asList(lower, upper);

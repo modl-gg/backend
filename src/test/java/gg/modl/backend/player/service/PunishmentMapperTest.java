@@ -23,8 +23,6 @@ class PunishmentMapperTest {
 
     @BeforeEach
     void setUp() {
-        // getEffectiveExpiry/getEffectiveCategory tolerate mocked services for a started,
-        // non-pardoned punishment whose expiry derives from data.duration.
         statusCalculator = new PlayerStatusCalculator(
             mock(PunishmentTypeService.class),
             mock(OffenderThresholdSettingsService.class)

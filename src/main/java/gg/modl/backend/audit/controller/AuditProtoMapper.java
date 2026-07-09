@@ -166,8 +166,6 @@ final class AuditProtoMapper {
                 .setReason(stringValue(punishment.reason()))
                 .setActive(punishment.active())
                 .setHasEvidence(punishment.hasEvidence())
-                // protobuf suffixes this scalar accessor with its field number: the repeated `evidence`
-                // field already generates getEvidenceCount() for its size, so evidence_count collides.
                 .setEvidenceCount15(punishment.evidenceCount());
         setTimestamp(builder::setIssued, punishment.issued());
         setTimestamp(builder::setStarted, punishment.started());

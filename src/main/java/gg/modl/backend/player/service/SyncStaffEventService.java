@@ -191,10 +191,6 @@ public class SyncStaffEventService {
                         String pardoner = modification.get("issuerName") instanceof String value ? value : "System";
                         String punishmentType = punishment.get("type") instanceof String value ? value : "punishment";
                         Object timestamp = modification.get("timestamp");
-                        // Map.of forbids null values; a modification can carry a null timestamp
-                        // (toSimplePunishment emits null when the mod date is null), which would
-                        // otherwise NPE and abort the whole sync. Coalesce to now, mirroring the
-                        // ticket collector, and use a mutable map.
                         Map<String, Object> notification = new LinkedHashMap<>();
                         notification.put("id", "pardon_" + punishment.get("id"));
                         notification.put("type", "PUNISHMENT_PARDONED");

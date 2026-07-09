@@ -18,6 +18,8 @@ import gg.modl.backend.realtime.config.RealtimeProperties;
 import gg.modl.backend.realtime.lifecycle.RealtimeConnectionCleanup;
 import gg.modl.backend.realtime.metrics.RealtimeMetrics;
 import gg.modl.backend.realtime.rate.RealtimeMessageRateLimiter;
+import gg.modl.backend.realtime.rate.RealtimeUnauthenticatedConnectionLimiter;
+import gg.modl.backend.realtime.rate.RealtimeUnauthenticatedConnectionLimiter.Admission;
 import gg.modl.backend.realtime.state.RealtimeConnectionRegistry;
 import gg.modl.backend.realtime.state.RealtimeConnectionState;
 import gg.modl.backend.server.data.Server;
@@ -52,7 +54,8 @@ class RealtimeWebSocketHandlerCleanupTest {
             rateLimiter,
             cleanup,
             metrics,
-            new RealtimeSessionOperations(registry, cleanup, metrics)
+            new RealtimeSessionOperations(registry, cleanup, metrics),
+            new RealtimeUnauthenticatedConnectionLimiter(properties)
         );
         WebSocketSession session = session("transport-error");
         when(session.isOpen()).thenReturn(true, true, false);
@@ -88,7 +91,8 @@ class RealtimeWebSocketHandlerCleanupTest {
             rateLimiter,
             cleanup,
             metrics,
-            new RealtimeSessionOperations(registry, cleanup, metrics)
+            new RealtimeSessionOperations(registry, cleanup, metrics),
+            new RealtimeUnauthenticatedConnectionLimiter(properties)
         );
         WebSocketSession session = session("transport-error-close-throws");
         when(session.isOpen()).thenReturn(true, true, false);
@@ -123,7 +127,8 @@ class RealtimeWebSocketHandlerCleanupTest {
             rateLimiter,
             cleanup,
             metrics,
-            new RealtimeSessionOperations(registry, cleanup, metrics)
+            new RealtimeSessionOperations(registry, cleanup, metrics),
+            new RealtimeUnauthenticatedConnectionLimiter(properties)
         );
         WebSocketSession session = session("terminal-frame");
         doThrow(new java.io.IOException("stalled close")).when(session).close(CloseStatus.SERVER_ERROR);
@@ -207,7 +212,8 @@ class RealtimeWebSocketHandlerCleanupTest {
             rateLimiter,
             cleanup,
             metrics,
-            new RealtimeSessionOperations(registry, cleanup, metrics)
+            new RealtimeSessionOperations(registry, cleanup, metrics),
+            new RealtimeUnauthenticatedConnectionLimiter(properties)
         );
         WebSocketSession session = session("heartbeat");
         RealtimeConnectionState state = registry.register(session);
@@ -220,6 +226,41 @@ class RealtimeWebSocketHandlerCleanupTest {
         handler.handleBinaryMessage(session, new BinaryMessage(envelope.toByteArray()));
 
         verify(session, never()).sendMessage(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void unauthenticatedSlotReleasedOnConnectionClose() {
+        RealtimeProperties properties = new RealtimeProperties();
+        properties.setMaxUnauthenticatedConnections(1);
+        properties.setMaxUnauthenticatedConnectionsPerIp(1);
+        RealtimeConnectionRegistry registry = new RealtimeConnectionRegistry(properties);
+        RealtimeMessageRateLimiter rateLimiter = new RealtimeMessageRateLimiter(properties);
+        RealtimeMetrics metrics = new RealtimeMetrics(new SimpleMeterRegistry());
+        RealtimeConnectionCleanup cleanup = new RealtimeConnectionCleanup(registry, rateLimiter, metrics);
+        RealtimeUnauthenticatedConnectionLimiter connectionLimiter = new RealtimeUnauthenticatedConnectionLimiter(properties);
+        RealtimeWebSocketHandler handler = new RealtimeWebSocketHandler(
+            properties,
+            mock(RealtimeCodec.class),
+            mock(RealtimeAuthenticator.class),
+            mock(RealtimeTopicAuthorizer.class),
+            registry,
+            rateLimiter,
+            cleanup,
+            metrics,
+            new RealtimeSessionOperations(registry, cleanup, metrics),
+            connectionLimiter
+        );
+
+        connectionLimiter.tryAcquire("9.9.9.9");
+        assertEquals(Admission.REJECTED_PER_IP, connectionLimiter.tryAcquire("9.9.9.9"));
+
+        WebSocketSession session = session("slot-release");
+        session.getAttributes().put(RealtimeSessionAttributes.UNAUTHENTICATED_SLOT, new RealtimeUnauthenticatedSlot("9.9.9.9"));
+        registry.register(session);
+
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+        assertEquals(Admission.ADMITTED, connectionLimiter.tryAcquire("9.9.9.9"));
     }
 
     private Server server() {

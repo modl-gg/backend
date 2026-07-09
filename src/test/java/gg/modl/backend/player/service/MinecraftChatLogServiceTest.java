@@ -45,11 +45,12 @@ class MinecraftChatLogServiceTest {
             new MinecraftChatLogService.ChatLogCommand("uuid-1", "PlayerOne", "hello", 10L, "lobby")
         ));
 
-        ArgumentCaptor<ChatLogDocument> captor = ArgumentCaptor.forClass(ChatLogDocument.class);
-        verify(chatLogRepository).saveEntity(any(Server.class), captor.capture());
-        assertEquals("uuid-1", captor.getValue().getUuid());
-        assertEquals("hello", captor.getValue().getMessage());
-        assertEquals("lobby", captor.getValue().getServer());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatLogDocument>> captor = ArgumentCaptor.forClass(List.class);
+        verify(chatLogRepository).insertAll(any(Server.class), captor.capture());
+        assertEquals("uuid-1", captor.getValue().get(0).getUuid());
+        assertEquals("hello", captor.getValue().get(0).getMessage());
+        assertEquals("lobby", captor.getValue().get(0).getServer());
     }
 
     @Test
@@ -60,9 +61,10 @@ class MinecraftChatLogServiceTest {
             new MinecraftChatLogService.ChatLogCommand("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "PlayerOne", "hi", 1L, "lobby")
         ));
 
-        ArgumentCaptor<ChatLogDocument> captor = ArgumentCaptor.forClass(ChatLogDocument.class);
-        verify(chatLogRepository).saveEntity(any(Server.class), captor.capture());
-        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().getUuid());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ChatLogDocument>> captor = ArgumentCaptor.forClass(List.class);
+        verify(chatLogRepository).insertAll(any(Server.class), captor.capture());
+        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().get(0).getUuid());
     }
 
     @Test
@@ -73,9 +75,10 @@ class MinecraftChatLogServiceTest {
             new MinecraftChatLogService.CommandLogCommand("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "PlayerOne", "/help", 1L, "lobby")
         ));
 
-        ArgumentCaptor<CommandLogDocument> captor = ArgumentCaptor.forClass(CommandLogDocument.class);
-        verify(commandLogRepository).saveEntity(any(Server.class), captor.capture());
-        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().getUuid());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CommandLogDocument>> captor = ArgumentCaptor.forClass(List.class);
+        verify(commandLogRepository).insertAll(any(Server.class), captor.capture());
+        assertEquals("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", captor.getValue().get(0).getUuid());
     }
 
     @Test

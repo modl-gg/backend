@@ -37,7 +37,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -91,7 +93,6 @@ public class StaffService {
             }
         }
 
-        // Expose the owner in listings without creating a privileged staff document implicitly.
         if (!superAdminFound && adminEmail != null) {
             result.add(0, toStaffResponse(buildSuperAdminStaff(server, adminEmail), "Active",
                 fallbackRoleName(roleNamesById, RoleAuthorization.SUPER_ADMIN_ROLE_ID)));
@@ -155,8 +156,6 @@ public class StaffService {
     }
 
     public StaffResponse createStaff(Server server, CreateStaffRequest request, RoleAuthorization.PerformerAuthority performer) {
-        // Canonicalize the email so it stores in the same lowercase form every lookup queries
-        // (read paths normalize); otherwise mixed-case storage is unreachable and duplicable.
         String email = EmailAddressUtil.normalizeIfValid(request.email());
         if (email == null) {
             throw new ValidationException("A valid email address is required");
@@ -220,7 +219,6 @@ public class StaffService {
 
         staffRepository.deleteById(server, id);
         evictStaffByEmailCache(server, staffToRemove.getEmail());
-        // Purge the removed staff's passkeys so a de-authorized email keeps no stale WebAuthn credentials.
         webAuthnService.deleteCredentialsForEmail(server, staffToRemove.getEmail());
         serverTimestampService.updateStaffPermissionsTimestamp(server);
         return true;
@@ -254,11 +252,8 @@ public class StaffService {
 
         return allStaff.stream()
             .map(staff -> {
-                // Sum the effective-issuer buckets keyed by this staff's distinct identities (id for
-                // panel-issued punishments; username/assignedUsername for in-game ones). LinkedHashSet
-                // dedups equal keys; the buckets are otherwise disjoint, so summation never double-counts.
                 int punishmentsIssuedCount = 0;
-                java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+                Set<String> keys = new LinkedHashSet<>();
                 if (staff.getId() != null) keys.add(staff.getId());
                 if (staff.getAssignedMinecraftUsername() != null) keys.add(staff.getAssignedMinecraftUsername());
                 if (staff.getUsername() != null) keys.add(staff.getUsername());
@@ -334,8 +329,6 @@ public class StaffService {
 
     private Map<String, Integer> loadPunishmentCounts(Server server) {
         try {
-            // Keyed by effective issuer ($ifNull(issuerId, issuerName)) so panel-issued punishments
-            // (issuerName == null, issuerId set) are counted toward the issuing staff by id.
             return punishmentRepository.countPunishmentsByEffectiveIssuer(server);
         } catch (Exception e) {
             log.warn("Failed to load punishment counts for server {}", server.getDatabaseName(), e);
@@ -590,6 +583,6 @@ public class StaffService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

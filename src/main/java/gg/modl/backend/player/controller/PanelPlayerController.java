@@ -204,9 +204,6 @@ public class PanelPlayerController {
             punishmentQueryService.getPunishmentById(server, punishmentId)));
     }
 
-    // GAP (cross-lane, WS-1): punishment.proto has no PunishmentSearchResultsResponse wrapper,
-    // and proto-JSON cannot serialize a bare top-level array. Until that wrapper is added, this
-    // endpoint keeps returning the legacy record list (Jackson-serialized, unchanged on the wire).
     @GetMapping("/punishments/search")
     public ResponseEntity<List<PunishmentSearchResult>> searchPunishments(
         @RequestParam @Size(min = 2) String q,

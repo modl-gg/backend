@@ -86,7 +86,6 @@ class PlayerLookupServiceTest {
         assertEquals(2, notes.size());
         assertEquals(5, profile.get("punishmentCount"));
         assertEquals(4, profile.get("noteCount"));
-        // Most-recent N, newest first.
         assertEquals("punishment-5", ((Map<?, ?>) punishments.get(0)).get("id"));
         assertEquals("punishment-4", ((Map<?, ?>) punishments.get(1)).get("id"));
         assertEquals("punishment-3", ((Map<?, ?>) punishments.get(2)).get("id"));

@@ -18,16 +18,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-/**
- * Bridges punishment mutations to the realtime layer. It owns the single conversion from a
- * domain {@link Punishment} (plus its owning {@link Player}) into the {@code sync.proto} push
- * messages, reusing the same {@link PunishmentMapper} shape the HTTP baseline sync produces so
- * websocket deltas and reconnect baselines never drift. Punishment services depend on this
- * instead of touching {@link RealtimeEventPublisher} or {@link SyncProtoFactory} directly.
- *
- * <p>Best-effort by contract: the underlying publisher swallows dispatch failures, so a realtime
- * hiccup never fails the originating mutation.
- */
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -39,8 +29,6 @@ public class PunishmentRealtimePublisher {
     private final IssuerNameResolver issuerNameResolver;
 
     public void punishmentIssued(Server server, Player player, Punishment punishment) {
-        // Building the push payload (type lookups, issuer resolution) can fail, but realtime is
-        // best-effort acceleration on top of the HTTP baseline sync, so it must never fail the mutation.
         guard(() -> {
             invalidatePanelViews(server, player, List.of(punishment));
             publisher.pushPunishments(server, List.of(toPending(server, player, punishment)), List.of());
@@ -82,13 +70,6 @@ public class PunishmentRealtimePublisher {
         });
     }
 
-    /**
-     * Pushes modified-punishment deltas for callers that only have the player's uuid/username
-     * (e.g. the audit bulk-pardon loop, which never materializes a {@link Player}). Emits exactly
-     * one {@code pushPunishments(modified)} message (the same shape the single-pardon path already
-     * sends and the plugin already consumes) and coarse-invalidates the panel player/punishment
-     * views so they live-refresh. Best-effort: any conversion failure is swallowed by {@link #guard}.
-     */
     public void punishmentsModifiedByEntry(Server server, List<EntryPunishment> changes) {
         if (changes.isEmpty()) {
             return;
@@ -170,12 +151,6 @@ public class PunishmentRealtimePublisher {
     public record PlayerPunishment(Player player, Punishment punishment) {
     }
 
-    /**
-     * A punishment delta keyed by the player's uuid/username instead of a materialized {@link Player},
-     * for callers (e.g. audit bulk-pardon) that only have those identifiers. {@code minecraftUuid} and
-     * {@code username} must be non-null ({@link Map#of} forbids null values); callers must skip rows
-     * with a null uuid so one bad row cannot abort the whole batch push.
-     */
     public record EntryPunishment(String minecraftUuid, String username, Punishment punishment) {
     }
 }

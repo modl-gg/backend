@@ -5,23 +5,20 @@ if (typeof db === "undefined" || db === null) {
 }
 
 const CONFIG = {
-    targetDatabases: [], // Leave empty to discover all tenant databases.
+    targetDatabases: [],
     globalDbName: "modl",
     serversCollName: "servers",
     playersCollName: "players",
     logsCollName: "logs",
-    dryRun: true,
-    duplicateSampleLimit: 10
+    dryRun: true
 };
 
-const UUID_REGEX =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 function main() {
-    print("\n--- Player Document UUID Migration ---");
+    print("\n--- Player Document Id Normalization ---");
     print(`Mode: ${CONFIG.dryRun ? "DRY RUN" : "LIVE"}`);
-    print("[INFO] Codebase verification: player document _id references were found in logs.metadata.playerId.");
-    print("[INFO] Tickets use player UUID fields (creatorUuid/reportedPlayerUuid), so no ticket update is required.");
+    print("[INFO] Legacy ObjectId player _id values are rewritten to their own hex string form.");
+    print("[INFO] The minecraftUuid field remains the logical player identity; _id stays opaque.");
+    print("[INFO] logs.metadata.playerId references are rewritten to match the new string _id.");
 
     try {
         const transactionSupport = preflightTransactionSupport();
@@ -36,18 +33,6 @@ function main() {
         print(`Discovered ${tenantDatabaseNames.length} tenant database(s).`);
 
         const preflightResults = tenantDatabaseNames.map(preflightTenant);
-        const fatalErrors = preflightResults.flatMap(result =>
-            result.fatalErrors.map(error => `[${result.databaseName}] ${error}`));
-
-        if (fatalErrors.length > 0) {
-            print("\n--- PREFLIGHT FAILED ---");
-            for (const error of fatalErrors) {
-                print(error);
-            }
-            print("[FATAL] Aborting before any writes.");
-            print("[FATAL] Use a maintenance-window collection-rebuild migration instead of continuing partially.");
-            return;
-        }
 
         const globalTotals = {
             scanned: 0,
@@ -70,8 +55,8 @@ function main() {
             }
 
             if (result.candidates.length === 0) {
-                print(`[${result.databaseName}] No player documents need migration.`);
-                printTenantMappings(result.databaseName, [], "migrated");
+                print(`[${result.databaseName}] No player documents need normalization.`);
+                printTenantMappings(result.databaseName, [], "normalized");
                 continue;
             }
 
@@ -85,7 +70,7 @@ function main() {
             globalTotals.migrated += liveResult.migrated;
             globalTotals.failed += liveResult.failed;
 
-            printTenantMappings(result.databaseName, liveResult.mappings, "migrated");
+            printTenantMappings(result.databaseName, liveResult.mappings, "normalized");
             if (liveResult.failures.length > 0) {
                 print(`[${result.databaseName}] Failures:`);
                 for (const failure of liveResult.failures) {
@@ -96,11 +81,11 @@ function main() {
 
         print("\n--- GLOBAL SUMMARY ---");
         print(`Players scanned: ${globalTotals.scanned}`);
-        print(`Players migrated: ${globalTotals.migrated}`);
+        print(`Players normalized: ${globalTotals.migrated}`);
         print(`Players skipped: ${globalTotals.skipped}`);
         print(`Players failed: ${globalTotals.failed}`);
         if (CONFIG.dryRun) {
-            print(`Players that would migrate: ${globalTotals.proposed}`);
+            print(`Players that would normalize: ${globalTotals.proposed}`);
         }
         print("----------------------\n");
     } catch (error) {
@@ -167,7 +152,6 @@ function preflightTenant(databaseName) {
         scanned: 0,
         skipped: 0,
         candidates: [],
-        fatalErrors: [],
         skipReason: null
     };
 
@@ -185,58 +169,24 @@ function preflightTenant(databaseName) {
     }
 
     const players = tenantDb.getCollection(CONFIG.playersCollName);
-
-    if (!hasUniqueMinecraftUuidIndex(players)) {
-        result.fatalErrors.push("Missing unique index on players.minecraftUuid.");
-        return result;
-    }
-
-    const duplicateMinecraftUuids = findDuplicateMinecraftUuids(players);
-    if (duplicateMinecraftUuids.length > 0) {
-        result.fatalErrors.push("Duplicate minecraftUuid documents detected.");
-        result.fatalErrors.push(`Duplicate samples: ${tojsononeline(duplicateMinecraftUuids)}`);
-        return result;
-    }
-
     const playerDocs = players.find({}, { projection: { _id: 1, minecraftUuid: 1 } }).toArray();
     result.scanned = playerDocs.length;
 
     for (const playerDoc of playerDocs) {
         const oldId = playerDoc._id;
-        if (isUuidString(oldId)) {
+        if (isStringId(oldId)) {
             result.skipped++;
-            continue;
-        }
-
-        if (!isUuidString(playerDoc.minecraftUuid)) {
-            result.fatalErrors.push(`Player ${tojsononeline(oldId)} is missing a valid minecraftUuid.`);
             continue;
         }
 
         result.candidates.push({
             minecraftUuid: playerDoc.minecraftUuid,
             oldId,
-            newId: playerDoc.minecraftUuid
+            newId: String(oldId)
         });
     }
 
     return result;
-}
-
-function hasUniqueMinecraftUuidIndex(playersCollection) {
-    return playersCollection.getIndexes().some(index => {
-        const key = index.key || {};
-        return key.minecraftUuid === 1 && index.unique === true;
-    });
-}
-
-function findDuplicateMinecraftUuids(playersCollection) {
-    return playersCollection.aggregate([
-        { $match: { minecraftUuid: { $exists: true, $ne: null } } },
-        { $group: { _id: "$minecraftUuid", count: { $sum: 1 } } },
-        { $match: { count: { $gt: 1 } } },
-        { $limit: CONFIG.duplicateSampleLimit }
-    ]).toArray();
 }
 
 function migrateTenant(preflightResult) {
@@ -263,7 +213,7 @@ function migrateTenant(preflightResult) {
         liveResult.failures.push(outcome.failure);
     }
 
-    print(`[${preflightResult.databaseName}] Migrated=${liveResult.migrated} Failed=${liveResult.failed}`);
+    print(`[${preflightResult.databaseName}] Normalized=${liveResult.migrated} Failed=${liveResult.failed}`);
     return liveResult;
 }
 
@@ -291,19 +241,19 @@ function migratePlayer(databaseName, candidate) {
             };
         }
 
-        if (isUuidString(playerDoc._id)) {
+        if (isStringId(playerDoc._id)) {
             session.abortTransaction();
             return { status: "skipped" };
         }
 
-        const migratedPlayer = Object.assign({}, playerDoc, { _id: candidate.newId });
+        const normalizedPlayer = Object.assign({}, playerDoc, { _id: candidate.newId });
+
+        players.insertOne(normalizedPlayer);
 
         const deleteResult = players.deleteOne({ _id: candidate.oldId });
         if (deleteResult.deletedCount !== 1) {
             throw new Error(`Expected to delete 1 player document, deleted ${deleteResult.deletedCount}.`);
         }
-
-        players.insertOne(migratedPlayer);
 
         const logUpdateResult = logs.updateMany(
             { "metadata.playerId": candidate.oldId },
@@ -325,7 +275,7 @@ function migratePlayer(databaseName, candidate) {
         try {
             session.abortTransaction();
         } catch (abortError) {
-            // Abort failure is secondary to the original migration failure.
+            print(`[WARN] Abort after normalization failure also failed: ${abortError.message}`);
         }
 
         return {
@@ -349,8 +299,8 @@ function printTenantMappings(databaseName, mappings, label) {
     }
 }
 
-function isUuidString(value) {
-    return typeof value === "string" && UUID_REGEX.test(value);
+function isStringId(value) {
+    return typeof value === "string";
 }
 
 main();

@@ -39,12 +39,10 @@ public class TicketContentService {
             try {
                 return Date.from(Instant.parse(trimmed));
             } catch (DateTimeParseException ignored) {
-                // not an ISO-8601 timestamp; fall through to epoch-millis parsing
             }
             try {
                 return new Date(Long.parseLong(trimmed));
             } catch (NumberFormatException ignored) {
-                // not epoch-millis either; fall through to current instant
             }
         }
         return new Date();

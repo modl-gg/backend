@@ -27,7 +27,6 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
         ServerInstanceSnapshot.ServerEntry entry =
             new ServerInstanceSnapshot.ServerEntry(serverId, serverName, playerCount, platform, version, ipAddress, pluginVersion);
 
-        // Step 1: try to update the existing array element in place (atomic per matched document).
         Query updateQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
                 .and("servers").elemMatch(
@@ -44,10 +43,6 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
             return;
         }
 
-        // Step 2: the element is absent — push it, but only into a document that does NOT already
-        // contain it. This query is self-excluding, so a concurrent second push into the same
-        // bucket cannot double-add the entry. The unique index on `date` resolves the residual
-        // create-vs-create race via a swallowed DuplicateKeyException.
         Query insertQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
                 .and("servers").not().elemMatch(
@@ -59,9 +54,6 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
         try {
             upsert(insertQuery, pushNew);
         } catch (DuplicateKeyException e) {
-            // A concurrent writer already inserted the bucket document for this date. The unique
-            // index on `date` rejected our duplicate insert; the entry is (or will be) present
-            // and the next sync cycle reconciles its mutable fields. Safe to ignore.
         }
     }
 

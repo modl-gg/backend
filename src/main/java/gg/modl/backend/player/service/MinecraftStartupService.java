@@ -28,7 +28,11 @@ import org.springframework.stereotype.Service;
 public class MinecraftStartupService {
     private static final List<Topic> MINECRAFT_STARTUP_TOPICS = Arrays.asList(
         Topic.TOPIC_MINECRAFT_PERMISSIONS,
-        Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES
+        Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES,
+        Topic.TOPIC_MINECRAFT_PUNISHMENTS,
+        Topic.TOPIC_MINECRAFT_PLAYER_NOTIFICATIONS,
+        Topic.TOPIC_MINECRAFT_STAFF_2FA,
+        Topic.TOPIC_MINECRAFT_MIGRATION_TASKS
     );
 
     private final ModlProperties modlProperties;

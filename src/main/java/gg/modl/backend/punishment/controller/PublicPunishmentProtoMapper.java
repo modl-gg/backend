@@ -7,13 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/**
- * Maps the ad-hoc appeal-info {@code Map<String,Object>} produced by
- * {@code PunishmentQueryService.getPublicPunishmentWithAppealEligibility} into the
- * {@code PublicPunishmentAppealInfoResponse} proto message the public appeal flow consumes.
- * Dates become epoch milliseconds; the open-ended {@code existingAppeal} and {@code appealForm}
- * blobs map to {@code Struct} so their varying shapes survive without a fixed schema.
- */
 final class PublicPunishmentProtoMapper {
 
     private PublicPunishmentProtoMapper() {

@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -446,6 +447,6 @@ public class AppealService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

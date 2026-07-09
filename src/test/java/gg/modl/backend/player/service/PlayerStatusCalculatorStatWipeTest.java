@@ -172,8 +172,6 @@ class PlayerStatusCalculatorStatWipeTest {
 
     @Test
     void makePermanentOverridesEarlierFiniteDurationChange() {
-        // Started 10 days ago, base duration 1 day; an earlier finite duration-change (5 days ago)
-        // already expired, then a later make-permanent (effectiveDuration=null) must win.
         Date started = new Date(System.currentTimeMillis() - 10L * 86400_000L);
         Date mod1Date = new Date(System.currentTimeMillis() - 5L * 86400_000L);
         Date mod2Date = new Date(System.currentTimeMillis() - 3600_000L);
@@ -220,8 +218,6 @@ class PlayerStatusCalculatorStatWipeTest {
 
     @Test
     void nonDurationModWithEffectiveDurationIgnored() {
-        // A free-form (non-duration-change) modification carrying a stray effectiveDuration must not
-        // alter the expiry, which still derives from data.duration counted from started.
         Date started = new Date(System.currentTimeMillis() - 1800_000L);
         PunishmentModification noteMod = new PunishmentModification(
             "mod-1", "NOTE", new Date(), "Staff", null, "", 1L, null, null

@@ -38,9 +38,6 @@ public class ServerProvisioningService {
         List<String> failures = new ArrayList<>();
         Exception firstError = null;
 
-        // Each seed step runs in isolation so one failing independent step does not abort the others.
-        // Each step short-circuits if its slice already exists, so re-running provision() repairs only
-        // missing slices (idempotent, re-runnable).
         for (Map.Entry<String, Runnable> step : provisioningSteps(server).entrySet()) {
             try {
                 step.getValue().run();
@@ -497,8 +494,6 @@ public class ServerProvisioningService {
             return;
         }
 
-        // Resolve category ids from the repository (the source of truth) so re-provision with pre-existing
-        // KB categories but missing homepage cards still links the category_dropdown cards correctly.
         List<KnowledgebaseCategory> categories = knowledgebaseCategoryRepository.findAllOrdered(server);
 
         // Find category IDs for category_dropdown cards

@@ -101,7 +101,7 @@ public interface EmailHTMLTemplate {
                 </p>
 
                 <p style="color: #555; font-size: 16px;">
-                  If you made this change, no action is needed. If you did not, contact your server administrator immediately — your account security may be at risk.
+                  If you made this change, no action is needed. If you did not, contact your server administrator immediately. Your account security may be at risk.
                 </p>
 
                 <div style="border-top: 1px solid #e9ecef; padding-top: 20px; margin-top: 30px;">

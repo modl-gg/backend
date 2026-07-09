@@ -18,7 +18,9 @@ import gg.modl.backend.storage.data.StorageFileDocument;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -137,14 +139,12 @@ public class EvidenceUploadService {
             return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
         }
 
-        List<UploadedEvidenceItem> evidenceItems = new java.util.ArrayList<>(request.evidence().size());
+        List<UploadedEvidenceItem> evidenceItems = new ArrayList<>(request.evidence().size());
         for (EvidenceItemRequest item : request.evidence()) {
             if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
                 return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
             }
 
-            // Bind the submitted URL to a confirmed S3 object: derive its key, look up the authoritative
-            // StorageFileDocument, and use its contentType/size (never the caller-supplied values).
             String key = extractKeyFromEvidenceUrl(item.url());
             if (key == null) {
                 return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
@@ -280,6 +280,6 @@ public class EvidenceUploadService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

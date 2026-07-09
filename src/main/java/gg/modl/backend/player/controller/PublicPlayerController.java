@@ -26,8 +26,6 @@ public class PublicPlayerController {
         @RequestParam(defaultValue = "32") int size,
         @RequestParam(defaultValue = "true") boolean overlay
     ) {
-        // Normalize/validate before any outbound call so a uuid carrying ?/&/# can never
-        // reshape the upstream avatar request (request-parameter injection on a public endpoint).
         String normalized = normalizeUuid(uuid);
         if (normalized == null) {
             return ResponseEntity.badRequest().build();

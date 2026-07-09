@@ -123,9 +123,6 @@ public final class PunishmentMapper {
         String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
         String category = effectiveCategory != null ? effectiveCategory : "OTHER";
 
-        // Reason source is data.reason (canonical, set on every create for all ordinals), falling
-        // back to the first non-auto-generated note. The old ordinal<=5 gate left custom social/
-        // gameplay types (ordinal>=6) with no reason on the player-facing ban/mute screen.
         String reason = PunishmentData.getReason(data);
         if ((reason == null || reason.isBlank()) && punishment.getNotes() != null) {
             for (PunishmentNote note : punishment.getNotes()) {

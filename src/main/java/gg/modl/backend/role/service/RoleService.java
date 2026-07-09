@@ -70,8 +70,6 @@ public class RoleService {
         StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
         int baseOrder = highestRole != null ? Math.max(highestRole.getOrder(), 3) + 1 : 4;
 
-        // Assign orders deterministically so concurrent readers compute the same target per role
-        // and the compare-and-set repair (matches order == 0) cannot create cross-role duplicates.
         List<StaffRole> sorted = problematicRoles.stream()
             .sorted(Comparator.comparing(StaffRole::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(StaffRole::getId))
@@ -190,8 +188,6 @@ public class RoleService {
             .build();
 
         staffRoleRepository.saveEntity(server, newRole);
-        // No permission-state invalidation: a new role has no staff assigned and no cached entries;
-        // the bump happens on staff assignment via StaffService.
 
         return toRoleResponse(newRole, 0);
     }
@@ -312,8 +308,6 @@ public class RoleService {
             orderById.put(item.id(), item.order());
         }
         staffRoleRepository.bulkUpdateOrder(server, orderById);
-        // Reorder changes grant-hierarchy authority the plugin displays; bump the timestamp so it re-syncs.
-        // No cache evict needed: permissionCache keys are order-independent (serverId:roleId:permission).
         serverTimestampService.updateStaffPermissionsTimestamp(server);
     }
 

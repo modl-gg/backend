@@ -505,7 +505,6 @@ public final class MinecraftPlayerProtoMapper {
         try {
             target.getClass().getMethod(methodName, String.class).invoke(target, Objects.toString(value));
         } catch (NoSuchMethodException ignored) {
-            // Published proto artifacts can lag additive local schema fields during rollout.
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
         }
@@ -515,7 +514,6 @@ public final class MinecraftPlayerProtoMapper {
         try {
             target.getClass().getMethod(methodName, boolean.class).invoke(target, booleanValue(value));
         } catch (NoSuchMethodException ignored) {
-            // Published proto artifacts can lag additive local schema fields during rollout.
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
         }

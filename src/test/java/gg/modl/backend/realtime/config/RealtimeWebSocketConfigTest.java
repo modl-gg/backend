@@ -16,7 +16,11 @@ class RealtimeWebSocketConfigTest {
         properties.setMaxTextFrameBytes(512);
         properties.setIdleTimeoutMs(70_000);
         properties.setAsyncSendTimeoutMs(8_000);
-        RealtimeWebSocketConfig config = new RealtimeWebSocketConfig(mock(RealtimeWebSocketHandler.class), properties);
+        RealtimeWebSocketConfig config = new RealtimeWebSocketConfig(
+            mock(RealtimeWebSocketHandler.class),
+            mock(RealtimeConnectionLimitHandshakeInterceptor.class),
+            properties
+        );
 
         ServletServerContainerFactoryBean container = config.realtimeWebSocketContainer();
 

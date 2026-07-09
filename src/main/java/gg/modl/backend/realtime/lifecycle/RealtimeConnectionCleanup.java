@@ -21,8 +21,6 @@ public class RealtimeConnectionCleanup {
     }
 
     public void unregister(WebSocketSession session, CloseStatus status) {
-        // Tombstone the session as terminal before removal so a late inbound frame cannot
-        // re-register a phantom connection via stateForIncomingFrame.
         connectionRegistry.markTerminal(session);
         connectionRegistry.unregister(session).ifPresent(state -> {
             rateLimiter.forget(state);

@@ -166,8 +166,6 @@ public class AccountLinkingService {
                 linkedUuids.add(linked.getMinecraftUuid().toString());
             }
 
-            // Atomic server-side $addToSet merge keyed by stable minecraftUuid avoids the
-            // read-modify-write lost-update window when two alts link concurrently.
             Date now = new Date();
             playerRepository.addLinkedAccounts(server, player.getMinecraftUuid().toString(), linkedUuids, now);
 

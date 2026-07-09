@@ -30,6 +30,7 @@ import gg.modl.proto.modl.v1.AdminMonitoringUnresolvedLogs;
 import gg.modl.proto.modl.v1.SystemLogResponse;
 
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.doubleValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
@@ -222,7 +223,7 @@ final class AdminMonitoringProtoMapper {
         return builder.build();
     }
 
-    private static void setFilter(Object value, java.util.function.Consumer<String> setter) {
+    private static void setFilter(Object value, Consumer<String> setter) {
         if (value != null) {
             setter.accept(stringValue(value));
         }

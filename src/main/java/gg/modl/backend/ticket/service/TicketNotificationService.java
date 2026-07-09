@@ -130,7 +130,6 @@ public class TicketNotificationService {
         if (player.getMinecraftUuid() != null) {
             String playerUuid = player.getMinecraftUuid().toString();
             notification.putIfAbsent("targetPlayerUuid", playerUuid);
-            // Atomic field-scoped $push so concurrent appends both land and other Player fields are never clobbered.
             playerRepository.pushPendingNotification(server, normalizeUuid(playerUuid), notification);
         }
 

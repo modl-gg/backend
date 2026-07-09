@@ -31,8 +31,6 @@ import org.slf4j.LoggerFactory;
 
 public final class ProtoMapperSupport {
 
-    // 2^53 is the largest integer a double represents exactly; integral values beyond it must travel as
-    // strings inside free-form Structs to survive the double-backed google.protobuf.Value.
     private static final BigInteger MAX_SAFE_DOUBLE_INTEGER = BigInteger.valueOf(2).pow(53);
 
     private static final Logger log = LoggerFactory.getLogger(ProtoMapperSupport.class);
@@ -198,10 +196,6 @@ public final class ProtoMapperSupport {
         return result;
     }
 
-    /**
-     * Maps a nullable domain collection to a repeated proto field. {@code adder} is the builder's {@code addX}
-     * method; {@code converter} maps each element to its proto type. Null/empty collections add nothing.
-     */
     public static <T, P> void addAll(Collection<T> source,
                                      Function<? super T, ? extends P> converter,
                                      Consumer<? super P> adder) {
@@ -211,10 +205,6 @@ public final class ProtoMapperSupport {
         source.forEach(element -> adder.accept(converter.apply(element)));
     }
 
-    /**
-     * Maps a domain {@code Map} to a proto {@code map<string, V>} field. {@code putter} is the builder's
-     * {@code putX(key, value)} method; {@code converter} maps each value to its proto type.
-     */
     public static <V, P> void putAll(Map<String, V> source,
                                      Function<? super V, ? extends P> converter,
                                      BiConsumer<String, ? super P> putter) {
@@ -268,11 +258,6 @@ public final class ProtoMapperSupport {
         return builder.setStringValue(coerceUnexpectedToString(object)).build();
     }
 
-    /**
-     * Coerces a free-form Struct value of an unexpected type to its {@code toString()} form, logging
-     * a warning once per offending class so a POJO-into-Struct mistake is observable rather than
-     * silently producing an opaque string on the wire. Never throws (toStruct is on hot read paths).
-     */
     public static String coerceUnexpectedToString(Object object) {
         Class<?> type = object.getClass();
         if (WARNED_UNEXPECTED_TYPES.add(type)) {
@@ -283,10 +268,6 @@ public final class ProtoMapperSupport {
         return Objects.toString(object);
     }
 
-    // google.protobuf.Value carries numbers as a double, so an integral 64-bit value (epoch millis,
-    // snowflake-style IDs) above 2^53 loses precision once coerced to double. Emit those as a string so
-    // the panel's fromJson rehydration preserves the exact value; genuine floating-point and
-    // small integers stay number values.
     private static Value numberValue(Value.Builder builder, Number number, StructEncoding encoding) {
         if (encoding == StructEncoding.LEGACY_DOUBLE_ISO) {
             return builder.setNumberValue(number.doubleValue()).build();

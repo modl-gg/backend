@@ -310,12 +310,10 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
-        // Check if user is Super Admin (server admin)
         if (permissionService.isSuperAdmin(server, email)) {
             return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(permissionService.getAllPermissionIds(server)));
         }
 
-        // Get staff member and their role
         Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
         if (staffOpt.isEmpty()) {
             return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of()));

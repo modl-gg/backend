@@ -118,9 +118,6 @@ public class PlayerStatusCalculator {
             return null;
         }
 
-        // Only duration-changing modifications (manual/appeal) are authoritative for expiry. The
-        // most recent one wins (append order == chronological); a stray effectiveDuration carried by
-        // a pardon/note/free-form modification must never reset the expiry base.
         PunishmentModification latestDurationChange = null;
         for (PunishmentModification mod : punishment.getModifications()) {
             if (PunishmentModificationType.isDurationChange(mod.type())) {
@@ -130,7 +127,6 @@ public class PlayerStatusCalculator {
 
         if (latestDurationChange != null) {
             Long eff = latestDurationChange.effectiveDuration();
-            // null, 0, or negative (-1L) on the latest duration change means make-permanent (no expiry).
             if (eff == null || eff <= 0) {
                 return null;
             }
@@ -201,9 +197,6 @@ public class PlayerStatusCalculator {
             if (rawOffenseLevel != null) {
                 offenseLevel = rawOffenseLevel;
             } else {
-                // Legacy fallback: older docs stored the offense level in data.status. A lifecycle
-                // constant (Unstarted/Pardoned) there is NOT an offense level, so never run the
-                // offense-level switch on it.
                 String status = PunishmentData.getStatus(data);
                 if (status == null
                     || PunishmentStatus.UNSTARTED.equals(status)

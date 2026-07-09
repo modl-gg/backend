@@ -9,11 +9,6 @@ import java.util.Map;
 public final class MongoKeyUtils {
     private MongoKeyUtils() {}
 
-    /**
-     * Validate map keys for MongoDB storage and recursively copy the value.
-     * Rejecting invalid keys is intentional: lossy replacement can hide
-     * collisions and still misses Mongo operator-looking fields.
-     */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> sanitizeKeys(Map<String, Object> map) {
         if (map == null) {

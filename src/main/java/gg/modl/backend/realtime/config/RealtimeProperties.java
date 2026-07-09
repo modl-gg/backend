@@ -67,8 +67,15 @@ public class RealtimeProperties {
     @Min(1)
     private int dispatchQueueCapacity = 10_000;
 
-    // Upper bound after which a wedged terminal-but-open session is force-evicted by the heartbeat
-    // sweeper (~3 sweep intervals).
     @Min(1000)
     private long terminalGraceMs = 45_000;
+
+    @Min(1000)
+    private long panelAuthorizationSweepIntervalMs = 30_000;
+
+    @Min(1)
+    private int maxUnauthenticatedConnections = 512;
+
+    @Min(1)
+    private int maxUnauthenticatedConnectionsPerIp = 32;
 }

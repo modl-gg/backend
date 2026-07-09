@@ -274,8 +274,6 @@ public class AnalyticsService {
 
         List<Document> hourlyResults = analyticsRepository.aggregateHourlyAuditLogCounts(server, since, ANALYTICS_TIME_ZONE);
 
-        // Key by the FULL Mongo bucket id ('yyyy-MM-ddTHH') so two partial same-hour-of-day
-        // buckets in the sliding 24h window are not collapsed/double-counted.
         Map<String, Integer> hourlyMap = new LinkedHashMap<>();
         for (Document doc : hourlyResults) {
             String bucketKey = doc.getString("_id");

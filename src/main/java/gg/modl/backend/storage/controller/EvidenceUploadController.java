@@ -153,10 +153,6 @@ public class EvidenceUploadController {
         };
     }
 
-    // Controller-local handlers so bean-validation 400s on this endpoint family use the same
-    // {status,message} envelope as the controller's own responses (the panel reads data.message),
-    // rather than the global advice's {status,error} ErrorResponseDTO. Only this controller's own
-    // handler-method exceptions are intercepted; GlobalExceptionHandler still handles everything else.
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidBody(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getAllErrors().stream()

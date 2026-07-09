@@ -80,7 +80,6 @@ class AccountLinkingServiceTest {
 
         assertTrue(result.success());
         assertEquals(1, result.linkedAccountsFound());
-        // Atomic server-side merge: forward link on the player, reverse link on the partner.
         verify(playerRepository).addLinkedAccounts(
             eq(server),
             eq(playerUuid.toString()),

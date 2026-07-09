@@ -174,7 +174,6 @@ public class MigrationService {
             throw new ValidationException("Invalid totalRecords value");
         }
 
-        // Clamp (never reject) over-length messages so terminal state transitions always persist.
         String message = clampMessage(request.message());
 
         MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);

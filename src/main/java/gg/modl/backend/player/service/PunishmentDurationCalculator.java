@@ -22,11 +22,6 @@ public class PunishmentDurationCalculator {
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final PlayerStatusCalculator statusCalculator;
 
-    /**
-     * @param status       the display status (low/medium/habitual) shown on UIs
-     * @param offenseLevel the internal offense level (first/medium/habitual) used by
-     *                     {@link PlayerStatusCalculator#getEffectiveCategory} via DurationDetail
-     */
     public record DurationResult(@Nullable Long duration, @Nullable String status, @Nullable String offenseLevel) {}
 
     public DurationResult calculate(Server server, List<Punishment> existingPunishments, int typeOrdinal, String severity) {

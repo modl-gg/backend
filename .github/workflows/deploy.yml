@@ -1,6 +1,7 @@
 name: Deploy Production
 concurrency:
-  group: ${{ github.workflow }}
+  group: deploy-production
+  cancel-in-progress: false
 
 on:
   push:

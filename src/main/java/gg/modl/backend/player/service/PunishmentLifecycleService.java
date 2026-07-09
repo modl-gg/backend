@@ -189,8 +189,6 @@ public class PunishmentLifecycleService {
             if (result.status() != null && (!data.containsKey("status") || PunishmentData.getStatus(data) == null)) {
                 data.put("status", result.status());
             }
-            // Persist the internal offense level into its dedicated key so it survives any later
-            // data.status lifecycle mutation (stacking -> UNSTARTED, acknowledge/promote -> removed).
             if (result.offenseLevel() != null && !data.containsKey("offenseLevel")) {
                 data.put("offenseLevel", result.offenseLevel());
             }
@@ -308,9 +306,6 @@ public class PunishmentLifecycleService {
 
         String punishmentId = IdGenerator.generateShortId();
 
-        // Plugin-originated punishments are pre-enforced in-game; the plugin anchors `started` via
-        // acknowledgePunishment, so they are created unstarted AND must be marked UNSTARTED so they
-        // are consistently inactive (not an active record with a moving expiry that never counts down).
         boolean pendingAcknowledgement = Boolean.TRUE.equals(data.remove("pendingAcknowledgement"));
         if (pendingAcknowledgement) {
             data.put("status", PunishmentStatus.UNSTARTED);

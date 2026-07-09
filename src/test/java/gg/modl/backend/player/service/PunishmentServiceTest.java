@@ -281,7 +281,6 @@ class PunishmentServiceTest {
         Punishment created = player.getPunishments().get(0);
         assertEquals("habitual", created.getData().get("offenseLevel"));
 
-        // Simulate a status-wipe lifecycle mutation; the dedicated offenseLevel must survive.
         created.getData().remove("status");
         assertEquals("habitual", created.getData().get("offenseLevel"));
     }

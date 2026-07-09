@@ -20,7 +20,6 @@ import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -130,7 +129,6 @@ public class BillingService {
         );
     }
 
-    @Async
     public void reconcileBillingStatus(Server server) {
         SubscriptionStatus currentStatus = server.getSubscriptionStatus();
         boolean reconcilable = server.getStripeSubscriptionId() != null

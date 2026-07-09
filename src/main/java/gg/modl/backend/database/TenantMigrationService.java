@@ -193,9 +193,6 @@ public class TenantMigrationService {
             template.getDb().getName(), result.getMatchedCount(), result.getModifiedCount());
     }
 
-    // Staff and invitations historically stored the role display name; this rewrites those references to the
-    // immutable StaffRole id so a later role rename can no longer orphan them. Idempotent and safe to re-run:
-    // a value that is already a role id is left alone, and names that collide with a role id are skipped.
     private void backfillStaffRoleIds(MongoTemplate template) {
         List<Document> roles = template.getCollection(CollectionName.STAFF_ROLES)
             .find()
@@ -358,8 +355,8 @@ public class TenantMigrationService {
             players.deleteOne(session, Filters.eq(PlayerFields.ID, legacyId));
             players.replaceOne(session, Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
         } else {
-            players.deleteOne(Filters.eq(PlayerFields.ID, legacyId));
             players.replaceOne(Filters.eq(PlayerFields.ID, reKeyedId), reKeyedPlayer, upsert);
+            players.deleteOne(Filters.eq(PlayerFields.ID, legacyId));
         }
     }
 

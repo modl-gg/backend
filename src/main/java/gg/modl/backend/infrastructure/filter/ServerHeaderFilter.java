@@ -62,10 +62,6 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
         String serverDomain = requestHost != null ? requestHost : legacyServerDomainHeader;
 
-        // In development mode, use the configured dev server domain for localhost requests.
-        // Track whether the override actually replaced the host so the mismatch guard below
-        // can be skipped: the panel intentionally sends a real X-Server-Domain while the
-        // proxied Host is localhost in this supported dev configuration.
         boolean devHostOverrideApplied = false;
         if (developmentMode && devServerDomain != null && !devServerDomain.isBlank()) {
             if (serverDomain == null || serverDomain.isBlank() || originPolicy.isDevLocalhost(serverDomain)) {

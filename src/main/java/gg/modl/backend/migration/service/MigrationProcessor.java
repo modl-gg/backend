@@ -644,15 +644,12 @@ public class MigrationProcessor {
 
             Date started = validator.parseDate(map.get("started"));
 
-            // V35: derive a deterministic id from stable fields when no source id (or _id) is present,
-            // so id-less sources dedup across re-imports.
             if (id == null || id.isBlank()) {
                 id = "import-" + UUID.nameUUIDFromBytes(
                     (typeOrdinal + "|" + issued.getTime() + "|" + issuerName + "|" + (reason != null ? reason : ""))
                         .getBytes(StandardCharsets.UTF_8)).toString();
             }
 
-            // G48: source-removed/inactive bans must import as already-pardoned so they are not re-imposed.
             Object activeObj = punishmentData.get("active");
             Object pardonedBy = punishmentData.get("pardonedBy");
             boolean sourceInactive = Boolean.FALSE.equals(activeObj)

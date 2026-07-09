@@ -12,7 +12,6 @@ import gg.modl.backend.ticket.service.PublicRecordAccessService;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.Access;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.AccessResult;
 import gg.modl.backend.ticket.service.PublicRecordVerificationService;
-import gg.modl.backend.ticket.service.TicketEmailVerificationService;
 import gg.modl.backend.ticket.service.TicketReplyService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.proto.modl.v1.AddReplyRequest;
@@ -20,7 +19,6 @@ import gg.modl.proto.modl.v1.AddTicketReplyResponse;
 import gg.modl.proto.modl.v1.PanelResource;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -39,7 +37,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class PublicTicketController {
     private final TicketService ticketService;
     private final TicketReplyService ticketReplyService;
-    private final TicketEmailVerificationService verificationService;
     private final PublicRecordAccessService recordAccessService;
     private final PublicRecordVerificationService recordVerificationService;
     private final RealtimeEventPublisher realtimeEventPublisher;
@@ -151,24 +148,21 @@ public class PublicTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Optional<Ticket> rawTicket = ticketService.getTicketRaw(server, id);
-        if (rawTicket.isEmpty() || rawTicket.get().isHidden()) {
+        Ticket ticket = ticketService.getTicketRaw(server, id).orElse(null);
+        AccessResult access = recordAccessService.authorizeSubmission(server, ticket, ticketToken);
+        if (access.access() == Access.NOT_FOUND) {
             return ResponseEntity.notFound().build();
         }
+        if (access.access() == Access.TOKEN_REQUIRED) {
+            throw new ForbiddenException("Email verification required");
+        }
 
-        Ticket ticket = rawTicket.get();
         if (ticket.isLocked() || (ticket.getStatus() != null && ticket.getStatus().isTerminal())) {
             throw new ForbiddenException("Ticket is closed and cannot be resubmitted");
         }
 
-        boolean tokenValid = ticketToken != null && verificationService.validateToken(server, id, ticketToken);
-        if (ticket.isEmailAuthEnabled() && ticketService.getEmailHint(ticket) != null && !tokenValid) {
-            throw new ForbiddenException("Email verification required");
-        }
-
-        boolean emailVerified = !ticket.isEmailAuthEnabled() || tokenValid;
         TicketResponse ticketResp = ticketService.submitTicketForm(
-            server, id, PublicTicketProtoMapper.fromSubmitTicketFormRequest(submitRequest), emailVerified);
+            server, id, PublicTicketProtoMapper.fromSubmitTicketFormRequest(submitRequest), access.tokenVerified());
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
         return ResponseEntity.ok(PublicTicketProtoMapper.toSubmitResponse(ticketResp));
     }

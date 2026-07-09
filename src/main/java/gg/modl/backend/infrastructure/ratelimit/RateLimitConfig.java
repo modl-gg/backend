@@ -38,8 +38,6 @@ public class RateLimitConfig {
         new PathRule("/v1/admin/beta-testers", RateLimitTier.ADMIN_BETA),
         new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
     );
-    // Login is matched by EXACT path (not prefix) so the high-capacity login tier can never leak
-    // to other /players/* routes or future nested paths.
     private static final Map<String, RateLimitTier> EXACT_PATH_RULES = Map.of(
         "/v1/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN,
         "/v3/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN

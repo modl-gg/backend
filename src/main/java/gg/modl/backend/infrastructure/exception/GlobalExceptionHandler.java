@@ -77,7 +77,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
-        log.warn("Unhandled IllegalArgumentException — consider replacing with a typed exception at the throw site", ex);
+        log.warn("Unhandled IllegalArgumentException. Consider replacing with a typed exception at the throw site", ex);
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
             return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid argument");
         }
@@ -183,9 +183,6 @@ public class GlobalExceptionHandler {
             .body(new ErrorResponseDTO(405, message));
     }
 
-    // Inactive under the default static-resource mapping (Spring MVC raises
-    // NoResourceFoundException, handled below). Kept because it remains the correct handler if
-    // spring.mvc.throw-exception-if-no-handler-found=true is ever enabled.
     @ExceptionHandler(NoHandlerFoundException.class)
     public ResponseEntity<?> handleNoHandlerFound(NoHandlerFoundException ex, HttpServletRequest request) {
         String message = "No endpoint found for " + ex.getHttpMethod() + " " + ex.getRequestURL();

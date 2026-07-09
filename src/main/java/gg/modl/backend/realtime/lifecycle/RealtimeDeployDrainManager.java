@@ -43,8 +43,6 @@ public class RealtimeDeployDrainManager {
     }
 
     private void closeWithAdvice(WebSocketSession session, RealtimeConnectionState state, CloseStatus closeStatus) {
-        // Best-effort advice frame; the intended deploy-drain close code must always be applied even
-        // if the advice send fails, so trySend (non-closing, non-throwing) precedes requestClose.
         sessionOperations.trySend(session, state, codec.deployDrainAdvice());
         sessionOperations.requestClose(session, state, closeStatus, "deploy_drain");
     }

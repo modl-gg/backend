@@ -23,9 +23,9 @@ public class StorageQuotaService {
     private final ServerLimitPolicy serverLimitPolicy;
 
     private static final long BYTES_PER_GB = 1024L * 1024 * 1024;
-    public static final long PREMIUM_BASE_BYTES = 200L * BYTES_PER_GB; // 200 GB base premium allowance
-    public static final long MAX_STORAGE_OVERAGE_BYTES = 2000L * BYTES_PER_GB; // 2000 GB max purchasable overage
-    public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES; // 2200 GB cap
+    public static final long PREMIUM_BASE_BYTES = 200L * BYTES_PER_GB;
+    public static final long MAX_STORAGE_OVERAGE_BYTES = 2000L * BYTES_PER_GB;
+    public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES;
     public static final long MAX_AI_OVERAGE_REQUESTS = 5000L;
     private static final double AI_OVERAGE_RATE = 0.02;
 

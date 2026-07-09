@@ -41,9 +41,6 @@ public class RealtimeSessionOperations {
         }
     }
 
-    /**
-     * Best-effort dispatch (fan-out): drops a stuck client by closing it on failure. Never throws.
-     */
     public boolean deliver(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) {
         SendOutcome outcome = attemptSend(session, state, message);
         if (outcome == SendOutcome.SENT) {
@@ -55,10 +52,6 @@ public class RealtimeSessionOperations {
         return false;
     }
 
-    /**
-     * Control-path send: never closes the session and never throws. The caller keeps ownership of
-     * the close and its intended status.
-     */
     public boolean trySend(WebSocketSession session, RealtimeConnectionState state, BinaryMessage message) {
         return attemptSend(session, state, message) == SendOutcome.SENT;
     }

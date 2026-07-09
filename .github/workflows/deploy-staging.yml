@@ -1,6 +1,7 @@
 name: Deploy Staging
 concurrency:
-  group: ${{ github.workflow }}
+  group: deploy-staging
+  cancel-in-progress: false
 
 on:
   push:

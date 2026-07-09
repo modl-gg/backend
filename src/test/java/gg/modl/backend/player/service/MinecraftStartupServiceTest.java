@@ -52,7 +52,11 @@ class MinecraftStartupServiceTest {
         assertIterableEquals(
             List.of(
                 Topic.TOPIC_MINECRAFT_PERMISSIONS.name(),
-                Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES.name()
+                Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES.name(),
+                Topic.TOPIC_MINECRAFT_PUNISHMENTS.name(),
+                Topic.TOPIC_MINECRAFT_PLAYER_NOTIFICATIONS.name(),
+                Topic.TOPIC_MINECRAFT_STAFF_2FA.name(),
+                Topic.TOPIC_MINECRAFT_MIGRATION_TASKS.name()
             ),
             (List<?>) response.get("realtimeTopics")
         );

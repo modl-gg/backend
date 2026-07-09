@@ -3,6 +3,7 @@ package gg.modl.backend.database.mongo;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -50,6 +51,10 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
 
     public T saveEntity(Server server, T entity) {
         return save(tenantMongoAccess.forServer(server), entity);
+    }
+
+    public void insertAll(Server server, Collection<T> entities) {
+        insertAll(tenantMongoAccess.forServer(server), entities);
     }
 
     public UpdateResult updateFirst(Server server, Query query, Update update) {

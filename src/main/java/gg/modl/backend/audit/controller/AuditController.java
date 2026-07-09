@@ -223,8 +223,6 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        // Raw multi-collection DB viewer is a super-admin-grade capability; gate it as such so a role
-        // with only admin.audit.view.logs cannot exfiltrate the settings collection (plaintext API keys).
         requireSuperAdmin(server, request);
 
         if (!AuditService.ALLOWED_TABLES.contains(table)) {

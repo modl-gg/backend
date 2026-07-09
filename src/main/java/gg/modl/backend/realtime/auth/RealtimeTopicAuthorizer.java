@@ -25,10 +25,6 @@ public class RealtimeTopicAuthorizer {
         }
 
         if (principal.clientKind() == RealtimeClientKind.PANEL) {
-            // Permission keys mirror the READ guard each resource's panel route enforces
-            // (PanelPermissionFilter). PermissionService grants a child permission when the
-            // role holds its parent, so a specific key (e.g. admin.audit.view.dashboard) is
-            // satisfied by the broader admin.audit.view, matching the HTTP route guard exactly.
             return switch (topic) {
                 case TOPIC_PANEL_TICKETS, TOPIC_PANEL_ASSIGNED_TICKETS,
                      TOPIC_PANEL_NOTIFICATIONS, TOPIC_PANEL_APPEALS

@@ -25,16 +25,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Service;
 
-/**
- * Single entry point domain services use to emit realtime events. It is the dependency-inversion
- * boundary: callers get a small, intent-named API and never build {@link RealtimeEnvelope}s or touch
- * the {@link RealtimeEventDispatcher} directly. Realtime is best-effort acceleration on top of the
- * HTTP baseline sync, so a publish failure is swallowed and logged and never propagates into the
- * originating mutation.
- *
- * <p>Thread-safe: holds no mutable state; the dispatcher it delegates to is responsible for its own
- * concurrency.
- */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -76,11 +66,6 @@ public class RealtimeEventPublisher {
             null, envelope -> envelope.setPlayerNotificationPush(event));
     }
 
-    // Staff notifications are derived during the HTTP baseline sync from time-window queries over
-    // recently created tickets and recently issued/pardoned punishments (SyncStaffEventService), with
-    // many producer mutations across the ticket, appeal, and punishment subsystems. A live push would
-    // mean duplicating that centralized derivation at every producer, so this stays as the
-    // baseline-on-poll path and the plugin picks notifications up on its next sync.
     public void pushStaffNotifications(Server server, List<SyncStaffNotification> notifications) {
         StaffNotificationPushEvent event = StaffNotificationPushEvent.newBuilder()
             .addAllNotifications(notifications)
@@ -123,9 +108,6 @@ public class RealtimeEventPublisher {
         }
     }
 
-    // Deterministic ids let the plugin's RecentRealtimeEventIds dedup a retried/double publish of the
-    // same durable mutation. They apply only when a push carries a single durable entity; batch pushes
-    // fall back to a codec-assigned UUID, where a stable id would have no single meaning anyway.
     @Nullable
     private static String punishmentEventId(String serverId, List<SyncPendingPunishment> pending,
                                             List<SyncModifiedPunishment> modified) {

@@ -101,8 +101,6 @@ public class PanelPunishmentTypeController {
         return PanelSettingsProtoMapper.toPunishmentTypesResponse(types);
     }
 
-    // No PunishmentTypeDeleteResponse proto message exists (settings.proto only defines ApiKeyDeleteResponse), so this
-    // endpoint keeps the legacy {message} JSON body via Jackson rather than inventing an out-of-lane proto change.
     @DeleteMapping("/{ordinal}")
     public ResponseEntity<?> deletePunishmentType(
         @PathVariable int ordinal,

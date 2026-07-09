@@ -48,6 +48,11 @@ public class RealtimeMetrics {
         log.warn("Realtime websocket rejected connectionId={} reason={}", state.getConnectionId(), reason);
     }
 
+    public void recordUnauthenticatedConnectionRejected(String scope) {
+        incrementReason("unauthenticated_connection_rejected", scope);
+        log.warn("Realtime websocket rejected pre-auth connection scope={}", scope);
+    }
+
     public void recordAck(RealtimeConnectionState state, String eventId) {
         increment("ack");
         log.debug("Realtime websocket ack connectionId={} eventId={}", state.getConnectionId(), eventId);

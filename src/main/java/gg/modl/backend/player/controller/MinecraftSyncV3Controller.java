@@ -1,8 +1,10 @@
 package gg.modl.backend.player.controller;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.player.service.MinecraftSyncService;
 import gg.modl.backend.player.service.SyncProtoFactory;
 import gg.modl.backend.server.data.Server;
@@ -37,6 +39,7 @@ public class MinecraftSyncV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        requireLogBatchesWithinLimit(request);
         String clientIp = RequestUtil.getClientIp(httpRequest);
         Map<String, Object> response = minecraftSyncService.sync(
             server,
@@ -82,6 +85,7 @@ public class MinecraftSyncV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
+        requireLogBatchesWithinLimit(request);
         minecraftSyncService.submitLogs(
             server,
             MinecraftSyncProtoMapper.toChatLogs(request),
@@ -111,5 +115,17 @@ public class MinecraftSyncV3Controller {
         );
 
         return ResponseEntity.ok(SimpleResponse.newBuilder().setSuccess(true).build());
+    }
+
+    private void requireLogBatchesWithinLimit(SyncRequest request) {
+        requireBatchWithinLimit(request.getChatLogsCount(), "chatLogs");
+        requireBatchWithinLimit(request.getCommandLogsCount(), "commandLogs");
+    }
+
+    private void requireBatchWithinLimit(int size, String field) {
+        if (size > RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) {
+            throw new ValidationException(field + " must contain no more than "
+                + RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES + " entries");
+        }
     }
 }

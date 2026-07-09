@@ -35,8 +35,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
         new PermissionMapping(RESTMappingV1.PANEL_LOGS, "admin.audit.view.logs"),
         new PermissionMapping(RESTMappingV1.PANEL_REPLAYS, "punishment.modify")
     );
-    // Sentinels used by resolveRequiredPermission for path-scoped player authorization.
-    // Chosen so they can never equal a real permission id.
     private static final String PERMIT = "__PERMIT__";
     private static final String PLAYER_READ = "__PLAYER_READ__";
     private static final List<PermissionMapping> RW_PERMISSIONS = List.of(
@@ -94,8 +92,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Punishment creation self-checks the per-type punishment.apply.<type> permission inside
-        // the controller, so the filter must let it through to that check.
         if (PERMIT.equals(requiredPermission)) {
             filterChain.doFilter(request, response);
             return;
@@ -196,7 +192,6 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return false;
         }
         String[] segments = path.substring(prefix.length()).split("/");
-        // Match exactly /{uuid}/punishments (NOT /{uuid}/punishments/{id}/...).
         return segments.length == 2
             && !segments[0].isEmpty()
             && "punishments".equals(segments[1]);

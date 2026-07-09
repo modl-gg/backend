@@ -52,7 +52,7 @@ final class PublicTicketProtoMapper {
             .setStatus(stringValue(ticket.status()))
             .setCreatorName(creatorName)
             .setCreator(creatorName)
-            .setCreatorUuid(stringValue(ticket.creatorUuid()))
+            .setCreatorUuid("")
             .setReportedBy(ticket.reportedBy() != null ? ticket.reportedBy() : "")
             .setCategory(stringValue(ticket.category()))
             .setLocked(ticket.locked())

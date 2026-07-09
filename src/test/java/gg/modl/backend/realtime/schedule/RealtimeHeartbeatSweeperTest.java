@@ -210,7 +210,6 @@ class RealtimeHeartbeatSweeperTest {
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.minecraft(server()), 1);
         rateLimiter.tryAcquire(state);
-        // Session is wedged open (isOpen stays true) and has been terminal since the epoch.
         ReflectionTestUtils.setField(state, "terminalSince", Instant.EPOCH);
 
         sweeper.closeTimedOutSessions();
@@ -237,7 +236,6 @@ class RealtimeHeartbeatSweeperTest {
         WebSocketSession session = session("fresh-terminal", true);
         RealtimeConnectionState state = registry.register(session);
         state.authenticate(RealtimePrincipal.minecraft(server()), 1);
-        // Fresh terminal stamp (now) is within the grace window.
         state.markTerminal();
 
         sweeper.closeTimedOutSessions();

@@ -6,6 +6,7 @@ import gg.modl.backend.storage.repository.EvidenceUploadTokenMongoRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class EvidenceUploadTokenService {
 
-    private static final long TTL_SECONDS = 30 * 60;
+    private static final Duration TOKEN_TTL = Duration.ofMinutes(30);
 
     private final EvidenceUploadTokenMongoRepository tokenRepository;
 
@@ -31,7 +32,7 @@ public class EvidenceUploadTokenService {
             playerUuid,
             issuerName,
             now,
-            now.plusSeconds(TTL_SECONDS)
+            now.plus(TOKEN_TTL)
         ));
         return token;
     }
@@ -42,7 +43,6 @@ public class EvidenceUploadTokenService {
         if (doc == null) {
             return null;
         }
-        // Defensive read-time expiry check in case the TTL sweep lags.
         if (doc.getExpiresAt() != null && doc.getExpiresAt().isBefore(Instant.now())) {
             tokenRepository.deleteByTokenHash(hash);
             return null;
@@ -84,10 +84,5 @@ public class EvidenceUploadTokenService {
         String issuerName,
         Instant createdAt
     ) {
-        private static final long TTL_MINUTES = 30;
-
-        public boolean isExpired() {
-            return Instant.now().isAfter(createdAt.plusSeconds(TTL_MINUTES * 60));
-        }
     }
 }

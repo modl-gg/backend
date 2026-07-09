@@ -9,6 +9,7 @@ import gg.modl.backend.realtime.config.RealtimeProperties;
 import gg.modl.backend.realtime.lifecycle.RealtimeConnectionCleanup;
 import gg.modl.backend.realtime.metrics.RealtimeMetrics;
 import gg.modl.backend.realtime.rate.RealtimeMessageRateLimiter;
+import gg.modl.backend.realtime.rate.RealtimeUnauthenticatedConnectionLimiter;
 import gg.modl.backend.realtime.state.RealtimeConnectionRegistry;
 import gg.modl.backend.realtime.state.RealtimeConnectionState;
 import gg.modl.proto.modl.v1.ClientHello;
@@ -16,6 +17,7 @@ import gg.modl.proto.modl.v1.ErrorCode;
 import gg.modl.proto.modl.v1.RealtimeEnvelope;
 import gg.modl.proto.modl.v1.Topic;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
@@ -41,11 +43,12 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
     private final RealtimeConnectionCleanup connectionCleanup;
     private final RealtimeMetrics metrics;
     private final RealtimeSessionOperations sessionOperations;
+    private final RealtimeUnauthenticatedConnectionLimiter connectionLimiter;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         RealtimeConnectionState state = connectionRegistry.register(session);
-        session.getAttributes().put("realtime.connectionId", state.getConnectionId());
+        session.getAttributes().put(RealtimeSessionAttributes.CONNECTION_ID, state.getConnectionId());
         metrics.recordConnect();
 
         if (!properties.isEnabled()) {
@@ -117,6 +120,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        releaseUnauthenticatedSlot(session);
         connectionCleanup.unregister(session, status);
     }
 
@@ -148,6 +152,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
 
         state.authenticate(principal, requestedProtocolVersion);
         connectionRegistry.onAuthenticated(session);
+        releaseUnauthenticatedSlot(session);
         for (Topic topic : hello.getSupportedTopicsList()) {
             if (topicAuthorizer.canSubscribe(principal, topic)) {
                 state.subscribe(topic);
@@ -157,6 +162,16 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         }
 
         sessionOperations.trySend(session, state, codec.serverHello(state.getConnectionId(), state.getSubscriptions()));
+    }
+
+    private void releaseUnauthenticatedSlot(WebSocketSession session) {
+        Map<String, Object> attributes = session.getAttributes();
+        if (attributes == null) {
+            return;
+        }
+        if (attributes.get(RealtimeSessionAttributes.UNAUTHENTICATED_SLOT) instanceof RealtimeUnauthenticatedSlot slot) {
+            slot.releaseOnce(connectionLimiter);
+        }
     }
 
     private RealtimeConnectionState stateForIncomingFrame(WebSocketSession session) {

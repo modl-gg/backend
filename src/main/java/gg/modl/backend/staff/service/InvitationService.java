@@ -146,8 +146,6 @@ public class InvitationService {
             return;
         }
 
-        // Re-check the cap per insert to shrink the batch-level TOCTOU window. The invitation does not
-        // yet exist, so <= 0 is the correct boundary (no -1 exclusion).
         if (availableSeats(server) <= 0) {
             failed.add(new InviteResultResponse.FailedInvite(normalizedEmail,
                 "Staff member limit reached. Please remove a staff member or upgrade your plan."));
@@ -192,8 +190,6 @@ public class InvitationService {
             return false;
         }
 
-        // Capture the prior token/expiry so we can restore it if the send fails (otherwise the rotated,
-        // undelivered token leaves the previously delivered link dead and the new link undelivered).
         String previousToken = invitation.getToken();
         Date previousExpiry = invitation.getExpiresAt();
 
@@ -215,7 +211,6 @@ public class InvitationService {
         } catch (Exception e) {
             log.error("Failed to resend invitation email to {}, restoring previous token", invitation.getEmail(), e);
             invitationRepository.refreshToken(server, invitationId, previousToken, previousExpiry, new Date());
-            // Re-throw so the controller surfaces the external-service error; returning false maps to 404.
             throw e;
         }
 
@@ -238,9 +233,6 @@ public class InvitationService {
         }
         StaffRole invitationRole = resolveInvitationRole(server, invitation.getRoleId());
 
-        // Re-check the seat cap before minting the seat (a stale invite can over-provision after a
-        // plan downgrade or other staff being added). This invitation is itself still counted in
-        // countActive at this moment, so exclude it (-1).
         long staffLimit = staffLimitFor(server);
         long occupied = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date()) - 1;
         if (occupied >= staffLimit) {
@@ -293,9 +285,6 @@ public class InvitationService {
         return username;
     }
 
-    // The accept path is unauthenticated; the stored roleId already snapshots the grantability decision
-    // validated at invite time, so no order/authority comparison is meaningful here. Only resolve the
-    // role (deleted/legacy-name-keyed roles fail to resolve -> 400) and reject super-admin as defense-in-depth.
     private StaffRole resolveInvitationRole(Server server, String roleId) {
         StaffRole role = permissionService.getRoleById(server, roleId)
             .orElseThrow(() -> new ValidationException(

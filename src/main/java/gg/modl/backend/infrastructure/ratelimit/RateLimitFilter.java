@@ -26,10 +26,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private final RateLimitConfig rateLimitConfig;
     private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
 
-    // Canonical response headers
     private static final String RATE_LIMIT_REMAINING_HEADER = "X-RateLimit-Remaining";
     private static final String RATE_LIMIT_RETRY_AFTER_HEADER = "X-RateLimit-Retry-After";
-    // Legacy aliases kept for compatibility with existing clients/proxies
     private static final String RATE_LIMIT_REMAINING_HEADER_LEGACY = "X-Rate-Limit-Remaining";
     private static final String RATE_LIMIT_RETRY_AFTER_HEADER_LEGACY = "X-Rate-Limit-Retry-After-Seconds";
 
@@ -40,8 +38,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
         String path = request.getRequestURI();
         return path.startsWith("/actuator")
-            || path.equals(RESTMappingV1.HEALTH) // "/v1/health"
-            || path.equals("/health");           // legacy fallback
+            || path.equals(RESTMappingV1.HEALTH)
+            || path.equals("/health");
     }
 
     @Override

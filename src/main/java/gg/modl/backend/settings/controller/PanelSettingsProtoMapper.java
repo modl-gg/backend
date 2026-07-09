@@ -47,17 +47,10 @@ import gg.modl.proto.modl.v1.WebhookTestResponse;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Bridges the settings domain/service models to their generated {@code modl.v1} proto-JSON message types and back.
- * Outbound {@code to*} methods transcribe the {@code @Data} settings beans; inbound {@code from*} methods rebuild the
- * domain commands from request messages. Mirrors the conversion rules established by the minecraft V3 mappers.
- */
 final class PanelSettingsProtoMapper {
 
     private PanelSettingsProtoMapper() {
     }
-
-    // --- Envelopes ---
 
     static GeneralSettingsEnvelope toGeneralSettingsEnvelope(VersionedSettings<GeneralSettings> settings) {
         return GeneralSettingsEnvelope.newBuilder()
@@ -112,8 +105,6 @@ final class PanelSettingsProtoMapper {
         }
         return builder.build();
     }
-
-    // --- Settings data types ---
 
     static gg.modl.proto.modl.v1.GeneralSettings toGeneralSettings(GeneralSettings settings) {
         if (settings == null) {
@@ -384,8 +375,6 @@ final class PanelSettingsProtoMapper {
             .build();
     }
 
-    // --- Punishment types ---
-
     static PanelPunishmentTypesResponse toPunishmentTypesResponse(List<PunishmentType> types) {
         PanelPunishmentTypesResponse.Builder builder = PanelPunishmentTypesResponse.newBuilder();
         if (types != null) {
@@ -508,8 +497,6 @@ final class PanelSettingsProtoMapper {
         return builder.build();
     }
 
-    // --- Domain settings ---
-
     static gg.modl.proto.modl.v1.DomainSettings toDomainSettings(DomainSettings settings) {
         gg.modl.proto.modl.v1.DomainSettings.Builder builder = gg.modl.proto.modl.v1.DomainSettings.newBuilder()
             .setCustomDomain(stringValue(settings.getCustomDomain()))
@@ -546,8 +533,6 @@ final class PanelSettingsProtoMapper {
         return RemoveDomainResponse.newBuilder().setMessage(stringValue(message)).build();
     }
 
-    // --- API keys / webhook test / AI suggestion ---
-
     static ApiKeyGenerateResponse toApiKeyGenerateResponse(String message, String apiKey) {
         return ApiKeyGenerateResponse.newBuilder()
             .setMessage(stringValue(message))
@@ -579,8 +564,6 @@ final class PanelSettingsProtoMapper {
             .build();
     }
 
-    // --- Public settings ---
-
     static gg.modl.proto.modl.v1.PublicSettingsResponse toPublicSettingsResponse(PublicSettingsResponse response) {
         gg.modl.proto.modl.v1.PublicSettingsResponse.Builder builder =
             gg.modl.proto.modl.v1.PublicSettingsResponse.newBuilder()
@@ -596,8 +579,6 @@ final class PanelSettingsProtoMapper {
         }
         return builder.build();
     }
-
-    // --- Inbound: request messages -> domain models ---
 
     static GeneralSettings fromPatchGeneralSettingsRequest(
         gg.modl.proto.modl.v1.PatchGeneralSettingsRequest request) {

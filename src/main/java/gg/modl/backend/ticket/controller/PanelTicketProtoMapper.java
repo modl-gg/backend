@@ -27,17 +27,9 @@ import gg.modl.backend.ticket.dto.response.TicketResponse;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Bridges the ticket domain/service model to the {@code modl.v1} ticket proto messages for the
- * panel REST surface (proto-JSON). Outbound {@code to*} methods transcribe the response records;
- * inbound {@code from*} methods reconstruct the existing service command records from proto request
- * messages so the ticket services keep their current signatures.
- */
 public final class PanelTicketProtoMapper {
     private PanelTicketProtoMapper() {
     }
-
-    // --- Responses ---
 
     public static gg.modl.proto.modl.v1.TicketResponse toTicketResponse(TicketResponse ticket) {
         gg.modl.proto.modl.v1.TicketResponse.Builder builder = gg.modl.proto.modl.v1.TicketResponse.newBuilder()
@@ -215,8 +207,6 @@ public final class PanelTicketProtoMapper {
         return builder.build();
     }
 
-    // --- Requests ---
-
     static CreateTicketRequest fromCreateTicketRequest(gg.modl.proto.modl.v1.CreateTicketRequest request) {
         return new CreateTicketRequest(
             request.getType(),
@@ -319,8 +309,6 @@ public final class PanelTicketProtoMapper {
             request.hasAppealAction() ? request.getAppealAction() : null
         );
     }
-
-    // --- Helpers ---
 
     private static gg.modl.proto.modl.v1.TicketListItemResponse toTicketListItem(TicketListItemResponse item) {
         gg.modl.proto.modl.v1.TicketListItemResponse.Builder builder =

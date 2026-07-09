@@ -27,6 +27,7 @@ import gg.modl.proto.modl.v1.AdminSystemServiceRestartResponse;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
@@ -75,7 +76,7 @@ final class AdminSystemProtoMapper {
         return builder.build();
     }
 
-    static AdminSystemMaintenanceResponse toMaintenanceResponse(java.util.Map<String, Object> status, String message) {
+    static AdminSystemMaintenanceResponse toMaintenanceResponse(Map<String, Object> status, String message) {
         AdminSystemMaintenanceStatus.Builder data = AdminSystemMaintenanceStatus.newBuilder()
             .setIsActive(booleanValue(status.get("isActive")));
         Object messageValue = status.get("message");
@@ -91,7 +92,7 @@ final class AdminSystemProtoMapper {
         return builder.build();
     }
 
-    static AdminSystemRateLimitsResponse toRateLimitsResponse(java.util.Map<String, Object> status) {
+    static AdminSystemRateLimitsResponse toRateLimitsResponse(Map<String, Object> status) {
         AdminSystemRateLimitsData.Builder data = AdminSystemRateLimitsData.newBuilder()
             .setActive(booleanValue(status.get("active")));
         Object current = status.get("current");

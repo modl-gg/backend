@@ -2,6 +2,7 @@ package gg.modl.backend.database.mongo;
 
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -31,6 +32,13 @@ public abstract class AbstractTenantMongoRepository<T> {
 
     protected T insert(MongoTemplate template, T entity) {
         return template.insert(entity, collectionName);
+    }
+
+    protected void insertAll(MongoTemplate template, Collection<T> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return;
+        }
+        template.insert(entities, collectionName);
     }
 
     protected Optional<T> findOne(MongoTemplate template, Query query) {

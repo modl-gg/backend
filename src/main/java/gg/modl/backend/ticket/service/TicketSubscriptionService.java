@@ -29,8 +29,7 @@ public class TicketSubscriptionService {
     private final TicketMongoRepository ticketRepository;
     private static final int MAX_UPDATES_LIMIT = 25;
     private static final int MAX_TICKETS_TO_SCAN = 250;
-    // For assigned tickets with no read cursor yet, surface only recent activity instead of the entire reply history (mirrors getUpdates' subscribedAt floor).
-    private static final long ASSIGNED_NO_CURSOR_WINDOW_MS = 7L * 24 * 60 * 60 * 1000; // 7 days
+    private static final long ASSIGNED_NO_CURSOR_WINDOW_MS = 7L * 24 * 60 * 60 * 1000;
 
     public List<TicketSubscriptionResponse> getSubscriptions(Server server, String staffEmail) {
         Staff staff = staffRepository.findByEmailExact(server, staffEmail).orElse(null);

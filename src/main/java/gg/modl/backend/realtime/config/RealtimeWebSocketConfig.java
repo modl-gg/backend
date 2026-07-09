@@ -15,11 +15,13 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @RequiredArgsConstructor
 public class RealtimeWebSocketConfig implements WebSocketConfigurer {
     private final RealtimeWebSocketHandler realtimeWebSocketHandler;
+    private final RealtimeConnectionLimitHandshakeInterceptor connectionLimitHandshakeInterceptor;
     private final RealtimeProperties properties;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(realtimeWebSocketHandler, RESTMappingV1.REALTIME_WS)
+            .addInterceptors(connectionLimitHandshakeInterceptor)
             .setAllowedOriginPatterns("*");
     }
 

@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -166,9 +167,6 @@ public class MinecraftSyncService {
                         categoriesWithActiveStarted.add(category);
                     } else if (category != null && punishment.getStarted() == null) {
                         Punishment existing = oldestUnstartedPerCategory.get(category);
-                        // Null-safe oldest-wins: a non-null-issued candidate replaces a null-issued
-                        // incumbent; the earlier of two non-null dates wins; a null-issued candidate
-                        // never displaces a non-null incumbent and never NPEs.
                         if (existing == null
                             || (punishment.getIssued() != null
                                 && (existing.getIssued() == null
@@ -286,12 +284,6 @@ public class MinecraftSyncService {
         );
     }
 
-    /**
-     * Presence slice of the sync: refresh the server's last-activity / online
-     * count and reconcile which players the plugin no longer reports online.
-     * Shared by the baseline {@code sync()} and the dedicated presence upload
-     * endpoint so both go through one Mongo write path.
-     */
     public void applyPresence(Server server, List<OnlinePlayerInput> onlinePlayers, String serverName, Instant now) {
         serverRepository.updateFirst(
             Query.query(Criteria.where("_id").is(server.getId())),
@@ -303,10 +295,6 @@ public class MinecraftSyncService {
         playerRepository.markStalePlayersOffline(server, collectOnlineUuids(onlinePlayers), serverName, Date.from(now));
     }
 
-    /**
-     * Chat + command log slice. Append-only and idempotent on the backend; shared
-     * by the baseline {@code sync()} and the dedicated logs upload endpoint.
-     */
     public void submitLogs(Server server, List<ChatLogInput> chatLogs, List<CommandLogInput> commandLogs) {
         if (chatLogs != null && !chatLogs.isEmpty()) {
             minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
@@ -332,10 +320,6 @@ public class MinecraftSyncService {
         }
     }
 
-    /**
-     * Server-status heartbeat slice. Upserts the per-instance snapshot. Shared by
-     * the baseline {@code sync()} and the dedicated status upload endpoint.
-     */
     public void applyServerStatus(Server server, ServerStatusInput serverStatus, String serverName, String clientIp, Instant now) {
         if (serverStatus == null) {
             return;
@@ -359,12 +343,6 @@ public class MinecraftSyncService {
         }
     }
 
-    /**
-     * Tolerantly parses the client-supplied last-sync timestamp. The proto field is an unconstrained
-     * proto3 string (empty, not null, when unset), so null/blank/malformed values must not 500 the
-     * whole reconciliation pass; they fall back to a default 30s window. The client dedups deltas by
-     * deterministic eventId, so a slightly wider window is benign.
-     */
     private Instant parseLastSync(String lastSyncTimestamp, Instant now) {
         if (lastSyncTimestamp == null || lastSyncTimestamp.isBlank()) {
             return now.minusSeconds(30);
@@ -504,6 +482,6 @@ public class MinecraftSyncService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

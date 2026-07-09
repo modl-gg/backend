@@ -28,8 +28,6 @@ public class SystemAlertMongoRepository extends AbstractGlobalMongoRepository<Sy
     }
 
     public List<SystemAlert> findVisible(Date now) {
-        // Permanent (null/missing expiresAt) alerts never expire and must remain visible.
-        // $gt does not match null/missing fields, so OR them in explicitly.
         Criteria notExpired = new Criteria().orOperator(
             Criteria.where(SystemAlertFields.EXPIRES_AT).is(null),
             Criteria.where(SystemAlertFields.EXPIRES_AT).exists(false),
@@ -67,7 +65,6 @@ public class SystemAlertMongoRepository extends AbstractGlobalMongoRepository<Sy
             update.set(SystemAlertFields.AUDIENCE, audience);
         }
         if (expiresAtPresent) {
-            // Present-and-null means "clear the expiry / make permanent"; $unset the field.
             if (expiresAt != null) {
                 update.set(SystemAlertFields.EXPIRES_AT, expiresAt);
             } else {

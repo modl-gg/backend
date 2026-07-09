@@ -20,7 +20,6 @@ public class RealtimeTopicPayloadValidator {
     private static Map<Topic, Set<RealtimeEnvelope.PayloadCase>> allowedPayloads() {
         Map<Topic, Set<RealtimeEnvelope.PayloadCase>> allowedPayloads = new EnumMap<>(Topic.class);
 
-        // Panel: already-wired topics keep their domain events and additionally accept the generic invalidation.
         allowedPayloads.put(Topic.TOPIC_PANEL_TICKETS,
             EnumSet.of(RealtimeEnvelope.PayloadCase.TICKET_CHANGED, RealtimeEnvelope.PayloadCase.PANEL_INVALIDATED));
         allowedPayloads.put(Topic.TOPIC_PANEL_ASSIGNED_TICKETS,
@@ -40,7 +39,6 @@ public class RealtimeTopicPayloadValidator {
         allowedPayloads.put(Topic.TOPIC_PANEL_DASHBOARD, EnumSet.of(RealtimeEnvelope.PayloadCase.PANEL_INVALIDATED));
         allowedPayloads.put(Topic.TOPIC_PANEL_NOTIFICATIONS, EnumSet.of(RealtimeEnvelope.PayloadCase.PANEL_INVALIDATED));
 
-        // Minecraft: each topic accepts its existing legacy/hint payload(s) plus the new authoritative push.
         allowedPayloads.put(Topic.TOPIC_MINECRAFT_PERMISSIONS,
             EnumSet.of(RealtimeEnvelope.PayloadCase.PERMISSION_INVALIDATED, RealtimeEnvelope.PayloadCase.ACTIVE_STAFF_PUSH));
         allowedPayloads.put(Topic.TOPIC_MINECRAFT_PUNISHMENT_TYPES,

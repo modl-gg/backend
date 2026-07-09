@@ -22,6 +22,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -280,7 +281,6 @@ public class PlayerLookupService {
         int warnings = 0;
         for (Punishment punishment : player.getPunishments()) {
             PunishmentType type = typesByOrdinal.get(punishment.getTypeOrdinal());
-            // Kicks first: getEffectiveCategory returns null for kicks (would otherwise be a warning).
             if (type != null && type.isKick()) {
                 kicks++;
                 continue;
@@ -499,6 +499,6 @@ public class PlayerLookupService {
     }
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

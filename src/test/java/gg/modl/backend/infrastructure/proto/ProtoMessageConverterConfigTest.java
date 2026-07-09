@@ -29,18 +29,12 @@ import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-/**
- * Guards the message-converter ordering fix: a protobuf {@code @RequestBody} sent as
- * {@code application/json} must be read by {@link ProtoJsonHttpMessageConverter}, not by the default
- * Jackson converter (which would yield an empty message and a spurious 400 for every request).
- */
 class ProtoMessageConverterConfigTest {
 
     private static final String FORM_PAYLOAD =
         "{\"email\":\"info@byteful.me\",\"serverName\":\"test\",\"customDomain\":\"test1\","
             + "\"agreeTerms\":true,\"turnstileToken\":\"dummy\",\"plan\":\"free\"}";
 
-    /** Mirrors Spring's assembly: the default Jackson converter ahead of the @Component proto beans. */
     private static List<HttpMessageConverter<?>> jacksonFirstList() {
         List<HttpMessageConverter<?>> list = new ArrayList<>();
         list.add(new JacksonJsonHttpMessageConverter());
@@ -73,13 +67,11 @@ class ProtoMessageConverterConfigTest {
         assertTrue(protoIdx >= 0 && jacksonIdx >= 0, "both converters present");
         assertTrue(protoIdx < jacksonIdx, "proto JSON converter must precede Jackson");
 
-        // The first converter able to read a protobuf type as JSON must be the proto one.
         HttpMessageConverter<?> firstReader = list.stream()
             .filter(c -> c.canRead(PublicRegistrationRequest.class, MediaType.APPLICATION_JSON))
             .findFirst().orElseThrow();
         assertInstanceOf(ProtoJsonHttpMessageConverter.class, firstReader);
 
-        // No duplicate converters left behind.
         assertEquals(1, list.stream().filter(c -> c instanceof ProtoJsonHttpMessageConverter).count());
         assertEquals(1, list.stream().filter(c -> c instanceof ProtoBinaryHttpMessageConverter).count());
     }
@@ -90,8 +82,6 @@ class ProtoMessageConverterConfigTest {
         applyConfig(converters);
 
         MockMvc mvc = buildMockMvc(converters);
-        // Body parsing must succeed so the controller runs; turnstile is mocked to fail, proving the
-        // request reached the controller (rather than dying at proto validation with empty fields).
         mvc.perform(post(RESTMappingV1.PUBLIC_REGISTRATION)
                 .contentType(MediaType.APPLICATION_JSON).content(FORM_PAYLOAD))
             .andExpect(status().isBadRequest())
@@ -100,8 +90,6 @@ class ProtoMessageConverterConfigTest {
 
     @Test
     void jacksonFirstWithoutReorderingFailsToParse() throws Exception {
-        // Documents the bug: without the reordering, Jackson consumes the protobuf body and the
-        // request dies at validation with the generic message, never reaching the controller.
         MockMvc mvc = buildMockMvc(jacksonFirstList());
         mvc.perform(post(RESTMappingV1.PUBLIC_REGISTRATION)
                 .contentType(MediaType.APPLICATION_JSON).content(FORM_PAYLOAD))

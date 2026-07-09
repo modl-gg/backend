@@ -221,8 +221,6 @@ public class PermissionService {
             return Optional.empty();
         }
 
-        // The wire field carries the role NAME, a non-unique/mutable key. Fail loudly on ambiguity
-        // instead of silently binding to an arbitrary role's order in the hierarchy check.
         List<StaffRole> matches = staffRoleRepository.findAllByName(server, roleName.trim());
         if (matches.isEmpty()) {
             return Optional.empty();
@@ -258,7 +256,6 @@ public class PermissionService {
         return names;
     }
 
-    // Resolves a stored role id to its display name; falls back to the raw id so an orphaned reference stays visible.
     public String resolveRoleName(Server server, String roleId) {
         if (roleId == null || roleId.isBlank()) {
             return "";

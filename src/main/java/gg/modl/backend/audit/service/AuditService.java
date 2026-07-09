@@ -55,7 +55,6 @@ public class AuditService {
         .maximumSize(500)
         .build();
 
-    // Real collection names; the single canonical allowlist for the raw DB viewer (shared with AuditController).
     public static final Set<String> ALLOWED_TABLES = Set.of(
         CollectionName.PLAYERS,
         CollectionName.SETTINGS,
@@ -69,13 +68,13 @@ public class AuditService {
         CollectionName.HOMEPAGE_CARDS
     );
 
-    // Settings doc types that store plaintext secrets in their `data` payload.
-    private static final Set<String> SECRET_SETTINGS_TYPES =
-        Set.of("apiKeys", "webhookSettings", "aiModerationSettings", "domain");
-    // Top-level field names whose values are redacted across every dumped collection (case-insensitive contains).
+    private static final Set<String> SAFE_SETTINGS_TYPES = Set.of(
+        "general", "punishmentTypes", "quickResponses", "replayRetention",
+        "statusThresholds", "ticketForms", "ticketLabels");
     private static final List<String> SECRET_FIELD_NAMES = List.of(
         "api_key", "ticket_api_key", "minecraft_api_key", "apiKey", "webhookUrl", "token", "secret", "password");
     private static final String REDACTED = "[REDACTED]";
+    private static final long PERMANENT_PUNISHMENT_DURATION = -1L;
 
     public List<PunishmentAuditResponse> getPunishments(
         Server server, int limit, boolean canRollbackOnly) {
@@ -268,7 +267,6 @@ public class AuditService {
 
     private Punishment reconstructPunishment(Document doc) {
         Punishment punishment = new Punishment();
-        // Aggregate rows alias the id as "punishmentId"; raw embedded subdocs carry the native "id" field.
         String reconstructedId = doc.getString("punishmentId");
         if (reconstructedId == null) {
             reconstructedId = doc.getString("id");
@@ -387,8 +385,6 @@ public class AuditService {
 
     public Map<String, Object> getDatabaseTable(
         Server server, String table, int limit, int skip) {
-        // Single canonical allowlist (real collection names). The controller pre-checks the same set;
-        // re-assert here so `table` is always a real collection name before it reaches the repository.
         if (!ALLOWED_TABLES.contains(table)) {
             throw new ValidationException("Invalid table name");
         }
@@ -404,27 +400,43 @@ public class AuditService {
         );
     }
 
-    // Defense in depth: never let the generic DB viewer leak plaintext secrets, even to a super-admin.
-    // Returns COPIES so the managed Mongo Document instances are never mutated on the read path.
     private List<Document> redactDocuments(String table, List<Document> docs) {
         if (docs == null) {
             return Collections.emptyList();
         }
         List<Document> redacted = new ArrayList<>(docs.size());
         for (Document orig : docs) {
-            Document copy = new Document(orig);
-            if (CollectionName.SETTINGS.equals(table) && SECRET_SETTINGS_TYPES.contains(copy.getString("type"))) {
+            Document copy = (Document) redactSecretFields(orig);
+            if (CollectionName.SETTINGS.equals(table) && !SAFE_SETTINGS_TYPES.contains(copy.getString("type"))) {
                 copy.put("data", REDACTED);
-            }
-            for (String key : new ArrayList<>(copy.keySet())) {
-                String lowerKey = key.toLowerCase();
-                if (SECRET_FIELD_NAMES.stream().anyMatch(secret -> lowerKey.contains(secret.toLowerCase()))) {
-                    copy.put(key, REDACTED);
-                }
             }
             redacted.add(copy);
         }
         return redacted;
+    }
+
+    private Object redactSecretFields(Object value) {
+        if (value instanceof Document document) {
+            Document copy = new Document();
+            for (Map.Entry<String, Object> entry : document.entrySet()) {
+                copy.put(entry.getKey(),
+                    isSecretFieldName(entry.getKey()) ? REDACTED : redactSecretFields(entry.getValue()));
+            }
+            return copy;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            for (Object element : list) {
+                copy.add(redactSecretFields(element));
+            }
+            return copy;
+        }
+        return value;
+    }
+
+    private boolean isSecretFieldName(String key) {
+        String lowerKey = key.toLowerCase();
+        return SECRET_FIELD_NAMES.stream().anyMatch(secret -> lowerKey.contains(secret.toLowerCase()));
     }
 
     public int rollbackAllPunishmentsByStaff(
@@ -522,9 +534,6 @@ public class AuditService {
                     return false;
                 }
 
-                // Route through the canonical pardon entry point so the bulk path matches single-pardon:
-                // MANUAL_PARDON modification + pardoned/reason notes + data.status=Pardoned + realtime
-                // push (plugin un-enforces in-game, panel invalidates) + alt-blocking linked-ban cascade.
                 PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
                     server, ctx.punishmentId, performerUsername, null, reason);
                 if (!result.success()) {
@@ -542,15 +551,10 @@ public class AuditService {
     public int bulkSetExpirationByType(
         Server server, List<Integer> typeOrdinals, long newDurationMs,
         String reason, String performerUsername) {
-        // -1L is the explicit permanent sentinel (getEffectiveExpiry treats duration <= 0 as permanent);
-        // a null/omitted duration would leave the original finite expiry in place (silent no-op).
-        long effectiveDuration = newDurationMs <= 0 ? -1L : newDurationMs;
+        long effectiveDuration = newDurationMs <= 0 ? PERMANENT_PUNISHMENT_DURATION : newDurationMs;
 
         return processBulkPunishmentAction(server, typeOrdinals, reason, performerUsername,
             "bulk set expiration", (ctx) -> {
-                // Route through the canonical duration-change entry point so the bulk path matches the
-                // single change: MANUAL_DURATION_CHANGE + data.duration write + realtime push (plugin
-                // recomputes expiry / releases shortened bans) + alt-blocking linked-ban cascade.
                 PunishmentOperationResult result = punishmentMutationService.changeDuration(
                     server, ctx.punishmentId, effectiveDuration, performerUsername, null);
                 if (!result.success()) {
@@ -599,7 +603,6 @@ public class AuditService {
                         continue;
                     }
 
-                    // Embedded punishment subdocs key their short id under the native "id" field, not "_id".
                     String punishmentId = punishmentDoc.getString("id");
                     String typeName = typeNameCache.getOrDefault(typeOrdinal, "Unknown");
 

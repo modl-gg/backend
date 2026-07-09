@@ -25,10 +25,12 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -250,7 +252,7 @@ public class MinecraftTicketService {
         String ticketId,
         String staffName,
         String closeMessage,
-        java.util.function.BiConsumer<Ticket, Date> applyMetadata
+        BiConsumer<Ticket, Date> applyMetadata
     ) {
         Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
         if (ticket == null) {
@@ -447,7 +449,7 @@ public class MinecraftTicketService {
     public record ReportOperationResult(ReportOperationStatus status, Ticket ticket) {}
 
     private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 
     private static Ticket.ChatMessage parseChatMessage(String rawMessage, Date reportTime) {

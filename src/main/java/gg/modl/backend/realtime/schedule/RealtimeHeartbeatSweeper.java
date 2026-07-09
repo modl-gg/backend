@@ -42,8 +42,6 @@ public class RealtimeHeartbeatSweeper {
             Instant terminalSince = state.getTerminalSince();
             if (terminalSince != null
                 && terminalSince.isBefore(now.minusMillis(properties.getTerminalGraceMs()))) {
-                // Upper bound for a wedged terminal-but-open session whose close() keeps failing:
-                // force-evict regardless of isOpen() so its decorator + rate-limit window are freed.
                 metrics.recordReject(state, "terminal_force_evict");
                 connectionCleanup.unregister(session, CloseStatus.NO_CLOSE_FRAME);
                 continue;

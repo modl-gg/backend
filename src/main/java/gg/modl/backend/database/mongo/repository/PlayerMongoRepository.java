@@ -211,10 +211,6 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return find(server, query);
     }
 
-    public void insertAll(Server server, List<Player> players) {
-        serverTemplate(server).insertAll(players);
-    }
-
     public BulkOperations bulkOps(Server server) {
         return serverTemplate(server).bulkOps(
             BulkOperations.BulkMode.UNORDERED,

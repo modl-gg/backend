@@ -47,8 +47,6 @@ public class StorageSyncService {
 
     public int syncServerFiles(Server server, boolean authoritative) {
         if (!s3StorageService.isConfigured()) {
-            // S3 unconfigured: listAllObjects would return an empty list, which would otherwise wipe
-            // the tenant's storage_files metadata and zero its usage. Abort without touching state.
             log.warn("Skipping storage sync for server {}: S3 is not configured", server.getDatabaseName());
             return 0;
         }
@@ -86,8 +84,6 @@ public class StorageSyncService {
         if (authoritative) {
             serverRepository.setStorageUsed(server.getId(), totalSize);
         } else {
-            // Background/opportunistic sync must never LOWER the counter: a concurrent confirm may have
-            // reserved quota for an object not yet visible in this S3 listing. Raise-only CAS.
             serverRepository.setStorageUsedIfBelow(server.getId(), totalSize);
         }
 

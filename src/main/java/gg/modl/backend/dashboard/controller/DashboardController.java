@@ -66,7 +66,7 @@ public class DashboardController {
     @GetMapping("/activity/recent")
     public ResponseEntity<DashboardActivityResponse> getRecentActivity(
         @RequestParam(defaultValue = "20") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
-        @RequestParam(defaultValue = "7") @Min(1) @Max(90) int days, // must match DashboardService.MAX_DAYS
+        @RequestParam(defaultValue = "7") @Min(1) @Max(DashboardService.MAX_DAYS) int days,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

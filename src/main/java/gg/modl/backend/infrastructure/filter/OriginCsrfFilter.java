@@ -71,8 +71,6 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Accept only same-origin; cross-subdomain (same-site) is intentionally rejected so
-        // cross-tenant CSRF isolation does not depend on the coarse registrable-domain signal.
         String fetchSite = request.getHeader("Sec-Fetch-Site");
         if (fetchSite != null && "same-origin".equalsIgnoreCase(fetchSite)) {
             filterChain.doFilter(request, response);

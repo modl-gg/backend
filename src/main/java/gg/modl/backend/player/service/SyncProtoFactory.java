@@ -21,13 +21,6 @@ import java.util.Objects;
 import java.util.function.LongConsumer;
 import org.springframework.stereotype.Component;
 
-/**
- * Converts the {@code Map<String,Object>} sync payload shapes produced by
- * {@link MinecraftSyncService} into the {@code sync.proto} message types. Shared
- * by the V3 sync controller (full {@link SyncResponse}) and the realtime
- * publishers (per-domain messages), so the websocket push payloads always match
- * the HTTP baseline sync shape.
- */
 @Component
 public class SyncProtoFactory {
 

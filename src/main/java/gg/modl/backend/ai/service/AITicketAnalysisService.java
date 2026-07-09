@@ -101,6 +101,7 @@ public class AITicketAnalysisService {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return;
         }
+        usageTrackingService.incrementAiRequests(server.getId(), 1);
 
         final AIAnalysisResult result = parseResponse(rawResponse);
         if (result == null) {
@@ -113,8 +114,6 @@ public class AITicketAnalysisService {
         }
         ticket.setUpdatedAt(new Date());
         ticketRepository.saveEntity(server, ticket);
-
-        usageTrackingService.incrementAiRequests(server.getId(), 1);
     }
 
     @Nullable

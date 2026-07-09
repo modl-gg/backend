@@ -18,14 +18,7 @@ public class ServerMutationHelper {
     private final ServerMongoRepository serverRepository;
     private final ServerService serverService;
 
-    /**
-     * Applies a mutation to the given Server and persists ONLY the config fields the mutator actually
-     * changed via a field-scoped $set keyed by _id. Counter/timestamp/stat fields (usage counters, sync
-     * cursors, activity stats) are never part of the update, so a stale/cached snapshot can never clobber
-     * concurrent atomic field updates.
-     */
     public void mutate(Server server, Consumer<Server> mutator) {
-        // Snapshot the mutate-relevant config fields before running the mutator.
         String beforeStripeCustomerId = server.getStripeCustomerId();
         String beforeStripeSubscriptionId = server.getStripeSubscriptionId();
         Object beforeSubscriptionStatus = server.getSubscriptionStatus();

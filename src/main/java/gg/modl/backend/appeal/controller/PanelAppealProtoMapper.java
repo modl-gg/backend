@@ -13,11 +13,6 @@ import gg.modl.proto.modl.v1.AddTicketReplyResponse;
 import gg.modl.proto.modl.v1.AppealTicketsResponse;
 import java.util.List;
 
-/**
- * Bridges the appeal domain to {@code modl.v1} proto for the panel appeal REST surface (proto-JSON).
- * Appeals reuse the ticket {@code TicketResponse} proto via {@link PanelTicketProtoMapper}; this mapper
- * adds the appeal list wrapper, the reply response, and inbound request reconstruction.
- */
 final class PanelAppealProtoMapper {
     private PanelAppealProtoMapper() {
     }

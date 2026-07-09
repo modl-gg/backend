@@ -1,5 +1,6 @@
 package gg.modl.backend.admin.controller;
 
+import com.google.protobuf.Timestamp;
 import gg.modl.backend.admin.service.AdminServerService;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
@@ -249,7 +250,7 @@ public class AdminServerController {
         return ResponseEntity.ok(AdminServerProtoMapper.toExportResponse(servers, new Date(), format, servers.size()));
     }
 
-    private static Date toDate(com.google.protobuf.Timestamp timestamp) {
+    private static Date toDate(Timestamp timestamp) {
         return new Date(timestamp.getSeconds() * 1000L + timestamp.getNanos() / 1_000_000L);
     }
 }

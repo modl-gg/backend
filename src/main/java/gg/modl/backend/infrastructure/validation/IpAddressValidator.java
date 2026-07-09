@@ -9,7 +9,6 @@ public class IpAddressValidator implements ConstraintValidator<ValidIpAddress, S
 
     @Override
     public boolean isValid(String value, ConstraintValidatorContext context) {
-        // null -> valid (mirrors @Pattern; required fields are handled separately by @NotBlank).
         if (value == null) {
             return true;
         }
@@ -44,7 +43,6 @@ public class IpAddressValidator implements ConstraintValidator<ValidIpAddress, S
                     return false;
                 }
             }
-            // Reject leading zeros (e.g. "01").
             if (octet.length() > 1 && octet.charAt(0) == '0') {
                 return false;
             }
@@ -57,16 +55,25 @@ public class IpAddressValidator implements ConstraintValidator<ValidIpAddress, S
     }
 
     private boolean isIpv6(String s) {
-        // Strip an IPv6 zone id (e.g. "fe80::1%eth0").
-        int pct = s.indexOf('%');
-        if (pct >= 0) {
-            s = s.substring(0, pct);
+        int zoneIdSeparatorIndex = s.indexOf('%');
+        if (zoneIdSeparatorIndex >= 0) {
+            s = s.substring(0, zoneIdSeparatorIndex);
         }
         if (!s.contains(":")) {
             return false;
         }
-        // Guard: only hex digits, ':' and '.' are permitted. This guarantees getByName below can
-        // only parse a literal and can NEVER perform a DNS lookup.
+        if (!containsOnlyIpLiteralCharacters(s)) {
+            return false;
+        }
+        try {
+            InetAddress address = InetAddress.getByName(s);
+            return (address instanceof Inet6Address) || s.contains(".");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean containsOnlyIpLiteralCharacters(String s) {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             boolean allowed = (c >= '0' && c <= '9')
@@ -77,11 +84,6 @@ public class IpAddressValidator implements ConstraintValidator<ValidIpAddress, S
                 return false;
             }
         }
-        try {
-            InetAddress address = InetAddress.getByName(s);
-            return (address instanceof Inet6Address) || s.contains(".");
-        } catch (Exception e) {
-            return false;
-        }
+        return true;
     }
 }
