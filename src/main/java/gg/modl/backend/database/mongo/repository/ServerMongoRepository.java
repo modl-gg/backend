@@ -595,7 +595,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         globalTemplate().updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             update,
-            entityType(),
             collectionName()
         );
     }
