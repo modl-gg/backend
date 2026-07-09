@@ -6,6 +6,7 @@ import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
@@ -30,8 +31,19 @@ public class TicketContentService {
         if (value instanceof Date date) {
             return date;
         }
-        if (value instanceof String str) {
-            return Date.from(Instant.parse(str));
+        if (value instanceof Number number) {
+            return new Date(number.longValue());
+        }
+        if (value instanceof String str && !str.isBlank()) {
+            String trimmed = str.trim();
+            try {
+                return Date.from(Instant.parse(trimmed));
+            } catch (DateTimeParseException ignored) {
+            }
+            try {
+                return new Date(Long.parseLong(trimmed));
+            } catch (NumberFormatException ignored) {
+            }
         }
         return new Date();
     }
@@ -127,7 +139,7 @@ public class TicketContentService {
 
             if (attachment instanceof String attachmentUrl) {
                 String trimmedUrl = attachmentUrl.trim();
-                if (trimmedUrl.isBlank()) {
+                if (trimmedUrl.isBlank() || !isHttpUrl(trimmedUrl)) {
                     continue;
                 }
                 normalized.add(createAttachmentFromUrl(trimmedUrl));
@@ -148,6 +160,9 @@ public class TicketContentService {
                 }
 
                 String url = urlValue.toString().trim();
+                if (!isHttpUrl(url)) {
+                    continue;
+                }
                 normalizedMap.put("url", url);
                 normalizedMap.putIfAbsent("fileName", extractFileName(url));
                 normalizedMap.putIfAbsent("fileType", inferFileType(url));
@@ -219,7 +234,13 @@ public class TicketContentService {
                 if (content != null && content.length() > MAX_CHAT_MESSAGE_LENGTH) {
                     content = content.substring(0, MAX_CHAT_MESSAGE_LENGTH);
                 }
-                return new Ticket.ChatMessage(content, parseTimestamp(x.get("timestamp")));
+                Object rawSender = x.get("sender");
+                String sender = rawSender instanceof String s ? s : null;
+                return Ticket.ChatMessage.builder()
+                    .content(content)
+                    .timestamp(parseTimestamp(x.get("timestamp")))
+                    .sender(sender)
+                    .build();
             })
             .toList();
     }
@@ -275,7 +296,9 @@ public class TicketContentService {
     }
 
     private boolean isHttpUrl(String value) {
-        return value.startsWith("https://") || value.startsWith("http://");
+        return value != null
+            && (value.regionMatches(true, 0, "https://", 0, 8)
+                || value.regionMatches(true, 0, "http://", 0, 7));
     }
 
     private Map<String, Object> createAttachmentFromUrl(String url) {

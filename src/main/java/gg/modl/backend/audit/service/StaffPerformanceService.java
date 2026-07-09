@@ -8,6 +8,7 @@ import gg.modl.backend.database.mongo.repository.AuditMongoRepository.OrdinalCou
 import gg.modl.backend.database.mongo.repository.AuditMongoRepository.StaffActivityResult;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
@@ -36,11 +37,14 @@ public class StaffPerformanceService {
     private final AuditMongoRepository auditRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
+    private final PermissionService permissionService;
 
     public List<StaffPerformanceResponse> getStaffPerformance(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
 
         List<Staff> allStaff = auditRepository.findAllStaff(server);
+        Map<String, String> roleNamesById = permissionService.resolveRoleNames(server,
+            allStaff.stream().map(Staff::getRoleId).toList());
         Map<String, StaffActivityResult> activityByUsername = indexStaffActivity(
             auditRepository.aggregateLogActivityBySource(server, startDate));
         Map<String, Integer> ticketResponsesByStaff = indexIdCounts(
@@ -77,10 +81,13 @@ public class StaffPerformanceService {
                 totalActions = Math.max(totalActions, ticketActions + moderationActions);
             }
 
+            String roleName = staff.getRoleId() != null && !staff.getRoleId().isBlank()
+                              ? roleNamesById.getOrDefault(staff.getRoleId(), staff.getRoleId())
+                              : "User";
             performanceList.add(new StaffPerformanceResponse(
                 staff.getId(),
                 username,
-                staff.getRole() != null ? staff.getRole() : "User",
+                roleName,
                 totalActions,
                 ticketActions,
                 moderationActions,

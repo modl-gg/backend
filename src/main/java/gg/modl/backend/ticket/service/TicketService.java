@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.service;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
@@ -58,6 +59,10 @@ public class TicketService {
     public TicketResponse getTicketById(Server server, String ticketId) {
         Ticket ticket = ticketRepository.findById(server, ticketId)
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+        return toTicketResponse(server, ticket);
+    }
+
+    public TicketResponse toResponse(Server server, Ticket ticket) {
         return toTicketResponse(server, ticket);
     }
 
@@ -123,20 +128,22 @@ public class TicketService {
 
         return ticket.getReplies()
             .stream().map(reply -> {
-                if (reply.getName() == null || reply.getName().isBlank()) {
-                    String fallbackName = reply.isStaff() ? "Staff" : creatorName;
-                    reply.setName(fallbackName);
+                String name = reply.getName();
+                if (name == null || name.isBlank()) {
+                    name = reply.isStaff() ? "Staff" : creatorName;
                 }
-                if (reply.getType() == null || reply.getType().isBlank()) {
-                    reply.setType(reply.isStaff() ? "staff" : "user");
+                String type = reply.getType();
+                if (type == null || type.isBlank()) {
+                    type = reply.isStaff() ? "staff" : "user";
                 }
-                if (reply.isStaff() && (reply.getAvatar() == null || reply.getAvatar().isBlank()) && reply.getName() != null) {
-                    String avatar = staffAvatarMap.get(reply.getName());
-                    if (avatar != null) {
-                        reply.setAvatar(avatar);
+                String avatar = reply.getAvatar();
+                if (reply.isStaff() && (avatar == null || avatar.isBlank()) && name != null) {
+                    String staffAvatar = staffAvatarMap.get(name);
+                    if (staffAvatar != null) {
+                        avatar = staffAvatar;
                     }
                 }
-                return reply;
+                return reply.toBuilder().name(name).type(type).avatar(avatar).build();
             }).toList();
     }
 
@@ -145,12 +152,21 @@ public class TicketService {
     }
 
     public TicketResponse createTicket(Server server, CreateTicketRequest request) {
+        return createTicketInternal(server, request, false);
+    }
+
+    public TicketResponse createUnfinishedTicket(Server server, CreateTicketRequest request) {
+        return createTicketInternal(server, request, true);
+    }
+
+    private TicketResponse createTicketInternal(Server server, CreateTicketRequest request, boolean forceUnfinished) {
         TicketCategory ticketCategory = TicketCategory.fromCanonicalId(request.type());
-        String ticketId = ticketIdGenerator.generate(server, ticketCategory);
 
         boolean shouldOpenImmediately = ticketCategory.isReport()
                                         || (request.subject() != null && !request.subject().isBlank());
-        TicketStatus ticketStatus = shouldOpenImmediately ? TicketStatus.OPEN : TicketStatus.UNFINISHED;
+        TicketStatus ticketStatus = forceUnfinished
+                                    ? TicketStatus.UNFINISHED
+                                    : (shouldOpenImmediately ? TicketStatus.OPEN : TicketStatus.UNFINISHED);
         String subject = (request.subject() != null && !request.subject().isBlank())
                          ? request.subject()
                          : ticketCategory.getDisplayName();
@@ -198,15 +214,14 @@ public class TicketService {
         }
 
         Ticket ticket = Ticket.builder()
-            .id(ticketId)
             .type(ticketCategory)
             .subject(subject)
             .status(ticketStatus)
             .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
             .creatorName(creatorDisplayName)
-            .creatorUuid(request.creatorUuid())
+            .creatorUuid(normalizeUuid(request.creatorUuid()))
             .reportedPlayer(request.reportedPlayerName())
-            .reportedPlayerUuid(request.reportedPlayerUuid())
+            .reportedPlayerUuid(normalizeUuid(request.reportedPlayerUuid()))
             .tags(tags)
             .replies(replies)
             .notes(new ArrayList<>())
@@ -220,18 +235,20 @@ public class TicketService {
             .updatedAt(new Date())
             .build();
 
-        ticketRepository.saveEntity(server, ticket);
+        Ticket saved = ticketIdGenerator.insertWithUniqueId(server, ticketCategory.getTicketPrefix(), ticket);
 
-        webhookSettingsService.sendTicketCreatedWebhook(server, Map.of(
-            "id", ticketId,
-            "type", ticketCategory.getDisplayName(),
-            "title", subject,
-            "priority", ticket.getPriority() != null ? ticket.getPriority().name() : "Normal",
-            "category", ticketCategory.getDisplayName(),
-            "submittedBy", creatorDisplayName
-        ));
+        if (!forceUnfinished) {
+            webhookSettingsService.sendTicketCreatedWebhook(server, Map.of(
+                "id", saved.getId(),
+                "type", ticketCategory.getDisplayName(),
+                "title", subject,
+                "priority", saved.getPriority() != null ? saved.getPriority().name() : "Normal",
+                "category", ticketCategory.getDisplayName(),
+                "submittedBy", creatorDisplayName
+            ));
+        }
 
-        return toTicketResponse(server, ticket);
+        return toTicketResponse(server, saved);
     }
 
     public TicketResponse updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
@@ -245,10 +262,7 @@ public class TicketService {
         }
 
         if (request.locked() != null) {
-            TicketStatus nextStatus = request.locked()
-                                      ? TicketStatus.CLOSED
-                                      : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
-            ticket.applyLifecycleStatus(nextStatus);
+            applyLockedState(ticket, request.locked());
         }
 
         if (request.tags() != null) {
@@ -281,6 +295,7 @@ public class TicketService {
                 .staff(request.newReply().staff())
                 .action(request.newReply().action())
                 .attachments(request.newReply().attachments() != null ? request.newReply().attachments() : new ArrayList<>())
+                .creatorIdentifier(request.newReply().creatorIdentifier())
                 .build();
 
             ticket.ensureReplies().add(newReply);
@@ -321,10 +336,7 @@ public class TicketService {
             boolean wasClosed = ticket.getStatus() != null && ticket.getStatus().isTerminal();
 
             if (request.locked() != null) {
-                TicketStatus nextStatus = request.locked()
-                                          ? TicketStatus.CLOSED
-                                          : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
-                ticket.applyLifecycleStatus(nextStatus);
+                applyLockedState(ticket, request.locked());
                 hasChanges = true;
             }
 
@@ -423,10 +435,16 @@ public class TicketService {
         );
     }
 
-    public TicketResponse submitTicketForm(Server server, String ticketId, SubmitTicketFormRequest request) {
+    public TicketResponse submitTicketForm(Server server, String ticketId, SubmitTicketFormRequest request, boolean emailVerified) {
         Ticket ticket = ticketRepository.findById(server, ticketId)
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
-        ticket.applyLifecycleStatus(TicketStatus.OPEN);
+        if (ticket.isLocked() || (ticket.getStatus() != null && ticket.getStatus().isTerminal())) {
+            throw new ConflictException("Ticket is locked and cannot be resubmitted");
+        }
+        Object existingCreatorEmail = ticket.getData() != null ? ticket.getData().get("creatorEmail") : null;
+        if (ticket.getStatus() != TicketStatus.OPEN) {
+            ticket.applyLifecycleStatus(TicketStatus.OPEN);
+        }
         ticket.setUpdatedAt(new Date());
 
         Map<String, Object> requestFormData = request.formData() != null ? request.formData() : Collections.emptyMap();
@@ -444,7 +462,7 @@ public class TicketService {
         boolean hasDataUpdates = false;
 
         if (request.formData() != null && !request.formData().isEmpty()) {
-            Map<String, Object> sanitizedFormData = MongoKeyUtils.sanitizeKeys(request.formData());
+            Map<String, Object> sanitizedFormData = new HashMap<>(MongoKeyUtils.sanitizeKeys(request.formData()));
 
             existingData.putAll(sanitizedFormData);
             existingData.remove("creatorEmail");
@@ -452,10 +470,9 @@ public class TicketService {
             hasDataUpdates = true;
 
             Object emailAuthValue = request.formData().get("emailAuthEnabled");
-            if (emailAuthValue != null) {
-                boolean emailAuth = Boolean.parseBoolean(emailAuthValue.toString());
-                ticket.setEmailAuthEnabled(emailAuth);
-                existingData.put("emailAuthEnabled", emailAuth);
+            if (emailAuthValue != null && Boolean.parseBoolean(emailAuthValue.toString())) {
+                ticket.setEmailAuthEnabled(true);
+                existingData.put("emailAuthEnabled", true);
             }
 
             if (ticket.getType() != null) {
@@ -466,17 +483,34 @@ public class TicketService {
                 }
             }
 
-            ticket.setFormData(sanitizedFormData);
+            Map<String, Object> mergedFormData = ticket.getFormData() != null
+                                                 ? new HashMap<>(ticket.getFormData())
+                                                 : new HashMap<>();
+            mergedFormData.putAll(sanitizedFormData);
+            ticket.setFormData(mergedFormData);
         }
 
         String creatorEmail = contentService.resolveCreatorEmail(request);
         if (creatorEmail != null) {
-            existingData.put("creatorEmail", creatorEmail);
+            boolean hasExistingEmail = existingCreatorEmail != null;
+            if (!hasExistingEmail || emailVerified) {
+                existingData.put("creatorEmail", creatorEmail);
+            } else {
+                existingData.put("creatorEmail", existingCreatorEmail);
+            }
+            hasDataUpdates = true;
+        } else if (existingCreatorEmail != null) {
+            existingData.put("creatorEmail", existingCreatorEmail);
             hasDataUpdates = true;
         }
 
         if (request.creatorIdentifier() != null) {
             existingData.put("creatorIdentifier", request.creatorIdentifier());
+            hasDataUpdates = true;
+        }
+
+        if (ticket.isEmailAuthEnabled()) {
+            existingData.put("emailAuthEnabled", true);
             hasDataUpdates = true;
         }
 
@@ -540,20 +574,29 @@ public class TicketService {
         ticketRepository.saveEntity(server, ticket);
     }
 
-    public String getEmailHint(Ticket ticket) {
-        if (ticket.getData() == null) {
-            return null;
+    public Set<String> getPublicFormFieldIds(Server server, Ticket ticket) {
+        if (ticket == null || ticket.getType() == null) {
+            return Set.of();
         }
-        Object email = ticket.getData().get("creatorEmail");
-        if (email == null) {
-            return null;
+        TicketFormSettings.TicketForm form = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
+        if (form == null || form.getFields() == null) {
+            return Set.of();
         }
-        String emailStr = email.toString();
-        int atIndex = emailStr.indexOf('@');
-        if (atIndex <= 1) {
-            return emailStr;
-        }
-        return emailStr.charAt(0) + "***" + emailStr.substring(atIndex);
+        return form.getFields().stream()
+            .map(TicketFormSettings.FormField::getId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
+    }
+
+    private static void applyLockedState(Ticket ticket, boolean locked) {
+        TicketStatus nextStatus = locked
+                                  ? TicketStatus.CLOSED
+                                  : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
+        ticket.applyLifecycleStatus(nextStatus);
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 
 }

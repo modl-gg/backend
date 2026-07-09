@@ -1,6 +1,8 @@
 package gg.modl.backend.storage.service;
 
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.util.ByteFormatUtil;
+import gg.modl.backend.server.data.Server;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -131,7 +133,25 @@ public class MediaValidationService {
     }
 
     public boolean isKeyOwnedByServer(String key, String serverDatabaseName) {
-        return key != null && serverDatabaseName != null && key.startsWith(serverDatabaseName + "/");
+        if (key == null || serverDatabaseName == null || !key.startsWith(serverDatabaseName + "/")) {
+            return false;
+        }
+        return !hasPathTraversal(key);
+    }
+
+    public void assertKeyOwnedByServer(Server server, String key) {
+        if (server == null || !isKeyOwnedByServer(key, server.getDatabaseName())) {
+            throw new ForbiddenException("Access denied");
+        }
+    }
+
+    private boolean hasPathTraversal(String key) {
+        for (String segment : key.split("/")) {
+            if (segment.equals("..")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public String extractUploadType(String key) {

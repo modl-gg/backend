@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 ENVIRONMENT=${1:-staging}
 IMAGE_TAG=${2:-}  # Optional: pre-built image tag from CI
@@ -8,10 +8,25 @@ BLUE_PORT=8080
 GREEN_PORT=8081
 MAX_HEALTH_RETRIES=30
 HEALTH_RETRY_INTERVAL=2
+MODL_DEPLOY_STOP_TIMEOUT_SECONDS=${MODL_DEPLOY_STOP_TIMEOUT_SECONDS:-120}
 NGINX_UPSTREAM_CONF="/etc/nginx/conf.d/modl-backend-upstream.conf"
+MODL_DEPLOY_LOCK_FILE=${MODL_DEPLOY_LOCK_FILE:-/home/modl/.modl-deploy.lock}
+MODL_DEPLOY_LOCK_WAIT_SECONDS=${MODL_DEPLOY_LOCK_WAIT_SECONDS:-600}
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+acquire_deploy_lock() {
+    exec {MODL_DEPLOY_LOCK_FD}>"$MODL_DEPLOY_LOCK_FILE"
+    if flock --nonblock "$MODL_DEPLOY_LOCK_FD"; then
+        return 0
+    fi
+    log "Waiting for in-progress deployment to release $MODL_DEPLOY_LOCK_FILE..."
+    if ! flock --wait "$MODL_DEPLOY_LOCK_WAIT_SECONDS" "$MODL_DEPLOY_LOCK_FD"; then
+        log "ERROR: gave up waiting for the deploy lock after ${MODL_DEPLOY_LOCK_WAIT_SECONDS}s; another deployment is still running."
+        exit 1
+    fi
 }
 
 get_current_container() {
@@ -74,9 +89,13 @@ update_nginx() {
 
     echo "upstream modl_backend { server 127.0.0.1:${active_port}; keepalive 32; }" | sudo tee $NGINX_UPSTREAM_CONF > /dev/null
 
-    sudo nginx -t && sudo systemctl reload nginx
+    log "Validating nginx configuration..."
+    sudo nginx -t
+    sudo systemctl reload nginx
     log "Nginx updated and reloaded"
 }
+
+acquire_deploy_lock
 
 log "Starting zero-downtime deployment for $ENVIRONMENT environment"
 
@@ -101,8 +120,15 @@ else
 fi
 
 log "Stopping and removing existing $NEXT_COLOR container if exists..."
-docker stop "$NEW_CONTAINER" 2>/dev/null || true
+docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$NEW_CONTAINER" 2>/dev/null || true
 docker rm "$NEW_CONTAINER" 2>/dev/null || true
+
+ENV_FILE="$(pwd)/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    log "ERROR: Config file not found at $ENV_FILE (expected a regular file)."
+    log "Create the .env file (see backend/.env.example) before deploying, or the bind-mount will auto-create it as an empty directory and the container will crash on startup."
+    exit 1
+fi
 
 log "Starting new container: $NEW_CONTAINER on port $NEW_PORT"
 docker run -d \
@@ -110,15 +136,17 @@ docker run -d \
     --network modl \
     --restart unless-stopped \
     -p ${NEW_PORT}:8080 \
-    -v "$(pwd)/.env:/app/.env:ro" \
+    -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
     -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
+    -e MODL_TRUST_PROXY_HEADERS=true \
+    -e MODL_CLIENT_IP_HEADER=CF-Connecting-IP \
     ${DEPLOY_IMAGE}
 
 if ! wait_for_health "$NEW_PORT"; then
     log "Rolling back: stopping failed container"
     docker logs "$NEW_CONTAINER" --tail 50
-    docker stop "$NEW_CONTAINER" 2>/dev/null || true
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$NEW_CONTAINER" 2>/dev/null || true
     docker rm "$NEW_CONTAINER" 2>/dev/null || true
     exit 1
 fi
@@ -127,9 +155,8 @@ log "Switching nginx to new container..."
 update_nginx $NEW_PORT
 
 if [[ "$CURRENT_COLOR" != "none" ]]; then
-    log "Stopping old container: $CURRENT_CONTAINER"
-    sleep 5  # Allow in-flight requests to complete
-    docker stop "$CURRENT_CONTAINER" 2>/dev/null || true
+    log "Stopping old container with ${MODL_DEPLOY_STOP_TIMEOUT_SECONDS}s timeout: $CURRENT_CONTAINER"
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$CURRENT_CONTAINER" 2>/dev/null || true
     docker rm "$CURRENT_CONTAINER" 2>/dev/null || true
 fi
 

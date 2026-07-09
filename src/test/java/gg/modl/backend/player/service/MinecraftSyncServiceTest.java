@@ -2,6 +2,9 @@ package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
@@ -12,11 +15,13 @@ import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -102,5 +107,29 @@ class MinecraftSyncServiceTest {
         Map<String, Object> data = (Map<String, Object>) response.get("data");
         assertTrue(data.containsKey("pendingPunishments"));
         assertTrue(data.containsKey("staffNotifications"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void syncLowercasesOnlineUuidsBeforeQueryingRepositories() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+
+        when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
+        when(playerRepository.findByMinecraftUuids(eq(server), any(Collection.class))).thenReturn(List.of());
+
+        minecraftSyncService.sync(
+            server,
+            "2025-01-01T00:00:00Z",
+            List.of(new MinecraftSyncService.OnlinePlayerInput("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "PlayerOne", "1.2.3.4")),
+            "lobby",
+            List.of(),
+            List.of(),
+            null,
+            null
+        );
+
+        ArgumentCaptor<Collection<String>> uuidsCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(playerRepository).findByMinecraftUuids(eq(server), uuidsCaptor.capture());
+        assertTrue(uuidsCaptor.getValue().contains("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
     }
 }

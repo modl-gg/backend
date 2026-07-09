@@ -6,9 +6,11 @@ import gg.modl.backend.player.controller.MinecraftSyncController.OnlinePlayer;
 import gg.modl.backend.player.service.MinecraftSyncService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV2;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -54,11 +56,12 @@ public class MinecraftSyncV2Controller {
     }
 
     public record V2SyncRequest(
-        String lastSyncTimestamp,
-        List<OnlinePlayer> onlinePlayers,
-        String serverName,
-        List<ChatLogEntry> chatLogs,
-        List<CommandLogEntry> commandLogs
+        @Size(max = RequestValidationLimits.TIMESTAMP_MAX_LENGTH) String lastSyncTimestamp,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid OnlinePlayer> onlinePlayers,
+        @Size(max = RequestValidationLimits.LOG_SERVER_NAME_MAX_LENGTH) String serverName,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid ChatLogEntry> chatLogs,
+        @Size(max = RequestValidationLimits.CHAT_LOG_BATCH_MAX_ENTRIES) List<@Valid CommandLogEntry> commandLogs,
+        String serverInstanceId
     ) {
     }
 }

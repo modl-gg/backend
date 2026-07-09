@@ -3,12 +3,18 @@ package gg.modl.backend.staff.service;
 import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.limits.ServerLimitPolicy;
+import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.staff.data.Invitation;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
@@ -31,13 +37,14 @@ public class InvitationService {
     private final EmailService emailService;
     private final IdGenerator idGenerator;
     private final ModlProperties modlProperties;
+    private final PermissionService permissionService;
+    private final RoleAuthorization roleAuthorization;
+    private final ServerLimitPolicy serverLimitPolicy;
+    private final GeneralSettingsService generalSettingsService;
 
     private static final long INVITATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 
-    private static final int FREE_TIER_STAFF_LIMIT = 5;
-    private static final int PREMIUM_TIER_STAFF_LIMIT = 100_000;
-
-    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, String inviterEmail) {
+    public InviteResultResponse sendInvitations(Server server, InviteStaffRequest request, RoleAuthorization.PerformerAuthority performer) {
         List<String> emailsToInvite = new ArrayList<>();
         if (request.emails() != null && !request.emails().isEmpty()) {
             emailsToInvite.addAll(request.emails());
@@ -58,8 +65,9 @@ public class InvitationService {
         if (normalizedEmailsToInvite.isEmpty()) {
             throw new ValidationException("No valid emails provided");
         }
+        StaffRole grantedRole = roleAuthorization.assertGrantableRole(server, performer, request.role());
 
-        int staffLimit = server.getPlan() == ServerPlan.PREMIUM ? PREMIUM_TIER_STAFF_LIMIT : FREE_TIER_STAFF_LIMIT;
+        long staffLimit = staffLimitFor(server);
         long currentStaffCount = staffRepository.countAll(server);
         long pendingInvitationsCount = invitationRepository.countActive(server, new Date());
         long totalCurrentMembers = currentStaffCount + pendingInvitationsCount;
@@ -86,7 +94,7 @@ public class InvitationService {
 
         for (String email : normalizedEmailsToInvite) {
             try {
-                processInvitation(server, email, request.role(), failed);
+                processInvitation(server, email, grantedRole, failed);
                 if (failed.stream().noneMatch(f -> f.email().equals(email))) {
                     success.add(email);
                 }
@@ -109,7 +117,17 @@ public class InvitationService {
         return new InviteResultResponse(message, success, failed);
     }
 
-    private void processInvitation(Server server, String email, String role,
+    private long staffLimitFor(Server server) {
+        return serverLimitPolicy.resolve(server).getMaxStaffSeats();
+    }
+
+    private int availableSeats(Server server) {
+        long staffLimit = staffLimitFor(server);
+        long current = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date());
+        return (int) (staffLimit - current);
+    }
+
+    private void processInvitation(Server server, String email, StaffRole role,
                                    List<InviteResultResponse.FailedInvite> failed) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
 
@@ -128,12 +146,18 @@ public class InvitationService {
             return;
         }
 
+        if (availableSeats(server) <= 0) {
+            failed.add(new InviteResultResponse.FailedInvite(normalizedEmail,
+                "Staff member limit reached. Please remove a staff member or upgrade your plan."));
+            return;
+        }
+
         String token = idGenerator.generateToken();
         Date expiresAt = new Date(System.currentTimeMillis() + INVITATION_EXPIRY_MS);
 
         Invitation invitation = Invitation.builder()
             .email(normalizedEmail)
-            .role(role)
+            .roleId(role.getId())
             .token(token)
             .expiresAt(expiresAt)
             .createdAt(new Date())
@@ -149,7 +173,7 @@ public class InvitationService {
             emailService.sendStaffInviteEmail(
                 normalizedEmail,
                 server.getServerName(),
-                role,
+                role.getName(),
                 invitationLink
             );
         } catch (Exception e) {
@@ -166,6 +190,9 @@ public class InvitationService {
             return false;
         }
 
+        String previousToken = invitation.getToken();
+        Date previousExpiry = invitation.getExpiresAt();
+
         String newToken = idGenerator.generateToken();
         Date newExpiry = new Date(System.currentTimeMillis() + INVITATION_EXPIRY_MS);
 
@@ -174,12 +201,18 @@ public class InvitationService {
         String invitationLink = String.format("https://%s.%s/accept-invitation?token=%s",
             server.getCustomDomain(), modlProperties.getDomain(), newToken);
 
-        emailService.sendStaffInviteEmail(
-            invitation.getEmail(),
-            server.getServerName(),
-            invitation.getRole(),
-            invitationLink
-        );
+        try {
+            emailService.sendStaffInviteEmail(
+                invitation.getEmail(),
+                server.getServerName(),
+                permissionService.resolveRoleName(server, invitation.getRoleId()),
+                invitationLink
+            );
+        } catch (Exception e) {
+            log.error("Failed to resend invitation email to {}, restoring previous token", invitation.getEmail(), e);
+            invitationRepository.refreshToken(server, invitationId, previousToken, previousExpiry, new Date());
+            throw e;
+        }
 
         return true;
     }
@@ -198,6 +231,13 @@ public class InvitationService {
         if (staffRepository.existsByEmailExact(server, invitation.getEmail())) {
             throw new ConflictException("A staff member with this email already exists.");
         }
+        StaffRole invitationRole = resolveInvitationRole(server, invitation.getRoleId());
+
+        long staffLimit = staffLimitFor(server);
+        long occupied = staffRepository.countAll(server) + invitationRepository.countActive(server, new Date()) - 1;
+        if (occupied >= staffLimit) {
+            throw new ConflictException("Staff member limit reached for this server. Please contact an administrator.");
+        }
 
         String username = generateUsernameFromEmail(invitation.getEmail());
         String uniqueUsername = ensureUniqueUsername(server, username);
@@ -206,7 +246,8 @@ public class InvitationService {
         Staff newStaff = Staff.builder()
             .email(invitation.getEmail())
             .username(uniqueUsername)
-            .role(invitation.getRole())
+            .roleId(invitation.getRoleId())
+            .language(generalSettingsService.getGeneralSettings(server).getDefaultLanguage())
             .createdAt(now)
             .updatedAt(now)
             .build();
@@ -219,7 +260,7 @@ public class InvitationService {
             newStaff.getId(),
             newStaff.getEmail(),
             newStaff.getUsername(),
-            newStaff.getRole(),
+            invitationRole.getName(),
             "active",
             newStaff.getAssignedMinecraftUuid(),
             newStaff.getAssignedMinecraftUsername(),
@@ -242,5 +283,15 @@ public class InvitationService {
         }
 
         return username;
+    }
+
+    private StaffRole resolveInvitationRole(Server server, String roleId) {
+        StaffRole role = permissionService.getRoleById(server, roleId)
+            .orElseThrow(() -> new ValidationException(
+                "This invitation references a role that no longer exists. Please request a new invitation."));
+        if (RoleAuthorization.isSuperAdminRole(role)) {
+            throw new ForbiddenException("This invitation role must be reissued by an administrator");
+        }
+        return role;
     }
 }

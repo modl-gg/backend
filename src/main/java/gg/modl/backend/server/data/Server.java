@@ -18,7 +18,7 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 @Data
 @RequiredArgsConstructor
 @GenerateMongoFields
-public class Server {
+public class Server implements ServerBillingUpdate {
     @NotNull
     @Field(name = ServerField.SERVER_NAME, targetType = FieldType.STRING)
     private final String serverName;
@@ -46,6 +46,14 @@ public class Server {
     @Nullable
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
     private String emailVerificationToken;
+
+    @Nullable
+    @Field(name = "cleanupClaimId", targetType = FieldType.STRING)
+    private String cleanupClaimId;
+
+    @Nullable
+    @Field(name = "cleanupClaimedAt", targetType = FieldType.DATE_TIME)
+    private Date cleanupClaimedAt;
 
     @Nullable
     @Field(name = "provisioningStatus", targetType = FieldType.STRING)
@@ -86,10 +94,6 @@ public class Server {
     @Nullable
     @Field(name = "stripeSubscriptionId", targetType = FieldType.STRING)
     private String stripeSubscriptionId;
-
-    @Nullable
-    @Field(name = "cdnUsageCurrentPeriod", targetType = FieldType.DOUBLE)
-    private Double cdnUsageCurrentPeriod; // GB used in current billing period
 
     @Nullable
     @Field(name = "aiRequestsCurrentPeriod", targetType = FieldType.INT64)
@@ -142,6 +146,18 @@ public class Server {
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN_GRANDFATHERED, targetType = FieldType.BOOLEAN)
     private Boolean customDomainGrandfathered;
+
+    @Nullable
+    @Field(name = "betaTester", targetType = FieldType.BOOLEAN)
+    private Boolean betaTester;
+
+    @Nullable
+    @Field(name = "betaTesterCreatedAt", targetType = FieldType.DATE_TIME)
+    private Date betaTesterCreatedAt;
+
+    @Nullable
+    @Field(name = "betaTesterCreatedBy", targetType = FieldType.STRING)
+    private String betaTesterCreatedBy;
 
     @Nullable
     @Field(name = "cliSetupToken", targetType = FieldType.STRING)

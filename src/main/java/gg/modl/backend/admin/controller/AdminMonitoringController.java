@@ -1,18 +1,13 @@
 package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.SystemLog;
-import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
-import gg.modl.backend.admin.dto.request.DeleteLogsRequest;
-import gg.modl.backend.admin.dto.request.ResolveLogRequest;
-import gg.modl.backend.admin.dto.request.TogglePm2Request;
 import gg.modl.backend.admin.service.AdminMonitoringService;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.Date;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -34,7 +29,7 @@ public class AdminMonitoringController {
 
     @GetMapping("/dashboard")
     public ResponseEntity<?> getDashboard() {
-        return ResponseEntity.ok(adminMonitoringService.getDashboard());
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toDashboardResponse(adminMonitoringService.getDashboard()));
     }
 
     @GetMapping("/logs")
@@ -51,7 +46,7 @@ public class AdminMonitoringController {
         @RequestParam(required = false) String endDate,
         @RequestParam(defaultValue = "timestamp") String sort,
         @RequestParam(defaultValue = "desc") String order) {
-        return ResponseEntity.ok(adminMonitoringService.getLogs(
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toLogsResponse(adminMonitoringService.getLogs(
             page,
             limit,
             level,
@@ -64,40 +59,41 @@ public class AdminMonitoringController {
             endDate,
             sort,
             order
-        ));
+        )));
     }
 
     @PostMapping("/logs")
-    public ResponseEntity<?> createLog(@RequestBody @Valid CreateSystemLogRequest request) {
-        SystemLog saved = adminMonitoringService.createLog(request);
-        return ResponseEntity.status(201).body(Map.of("success", true, "data", saved, "message", "Log entry created successfully"));
+    public ResponseEntity<?> createLog(@RequestBody gg.modl.proto.modl.v1.CreateSystemLogRequest request) {
+        SystemLog saved = adminMonitoringService.createLog(AdminMonitoringProtoMapper.fromCreateLog(request));
+        return ResponseEntity.status(201).body(
+            AdminMonitoringProtoMapper.toSystemLogMutationResponse(saved, "Log entry created successfully"));
     }
 
     @GetMapping("/sources")
     public ResponseEntity<?> getSources() {
-        return ResponseEntity.ok(adminMonitoringService.getSources());
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toSourcesResponse(adminMonitoringService.getSources()));
     }
 
     @PutMapping("/logs/{id}/resolve")
-    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody @Valid ResolveLogRequest request) {
-        SystemLog updated = adminMonitoringService.resolveLog(id, request).orElse(null);
+    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody gg.modl.proto.modl.v1.ResolveLogRequest request) {
+        SystemLog updated = adminMonitoringService.resolveLog(id, AdminMonitoringProtoMapper.fromResolveLog(request)).orElse(null);
         if (updated == null) {
-            return ResponseEntity.status(404).body(Map.of("success", false, "error", "Log entry not found"));
+            throw new ResourceNotFoundException("Log entry not found");
         }
 
-        return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Log entry marked as resolved"));
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toSystemLogMutationResponse(updated, "Log entry marked as resolved"));
     }
 
     @GetMapping("/health")
     public ResponseEntity<?> getHealth() {
-        return ResponseEntity.ok(adminMonitoringService.getHealth());
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toHealthResponse(adminMonitoringService.getHealth()));
     }
 
     @PostMapping("/logs/delete")
-    public ResponseEntity<?> deleteLogs(@RequestBody @Valid DeleteLogsRequest request) {
-        long deletedCount = adminMonitoringService.deleteLogs(request.logIds());
-        return ResponseEntity.ok(
-            Map.of("success", true, "data", Map.of("deletedCount", deletedCount), "message", "Successfully deleted " + deletedCount + " log(s)"));
+    public ResponseEntity<?> deleteLogs(@RequestBody gg.modl.proto.modl.v1.DeleteLogsRequest request) {
+        long deletedCount = adminMonitoringService.deleteLogs(request.getLogIdsList());
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toDeleteLogsResponse(
+            deletedCount, "Successfully deleted " + deletedCount + " log(s)"));
     }
 
     @GetMapping("/logs/export")
@@ -120,33 +116,24 @@ public class AdminMonitoringController {
     @PostMapping("/logs/clear-all")
     public ResponseEntity<?> clearAllLogs() {
         long deletedCount = adminMonitoringService.clearAllLogs();
-        return ResponseEntity.ok(Map.of("success", true, "data", Map.of("deletedCount", deletedCount), "message", "Successfully cleared all logs"));
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toDeleteLogsResponse(deletedCount, "Successfully cleared all logs"));
     }
 
     @GetMapping("/pm2-status")
     public ResponseEntity<?> getPm2Status() {
         // PM2 integration placeholder - would require native process monitoring
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of(
-                "isEnabled", false,
-                "isStreaming", false,
-                "reconnectAttempts", 0,
-                "recentLogsCount", 0,
-                "lastLogTime", null
-            )
-        ));
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toPm2StatusResponse());
     }
 
     @PostMapping("/pm2/restart")
     public ResponseEntity<?> restartPm2() {
-        return ResponseEntity.ok(Map.of("success", true, "message", "PM2 log streaming restarted"));
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toPm2RestartResponse("PM2 log streaming restarted"));
     }
 
     @PostMapping("/pm2/toggle")
-    public ResponseEntity<?> togglePm2(@RequestBody @Valid TogglePm2Request request) {
-        boolean enabled = request.enabled();
-        return ResponseEntity.ok(Map.of("success", true, "data", Map.of("isEnabled", enabled, "isStreaming", enabled), "message",
-            "PM2 log streaming " + (enabled ? "enabled" : "disabled")));
+    public ResponseEntity<?> togglePm2(@RequestBody gg.modl.proto.modl.v1.TogglePm2Request request) {
+        boolean enabled = request.hasEnabledValue() ? request.getEnabledValue() : request.getEnabled();
+        return ResponseEntity.ok(AdminMonitoringProtoMapper.toPm2ToggleResponse(
+            enabled, "PM2 log streaming " + (enabled ? "enabled" : "disabled")));
     }
 }

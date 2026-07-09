@@ -19,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 @Component
 public class ProtoJsonHttpMessageConverter extends AbstractHttpMessageConverter<Message> {
 
-    private static final JsonFormat.Printer PRINTER = JsonFormat.printer().omittingInsignificantWhitespace();
+    private static final JsonFormat.Printer PRINTER = JsonFormat.printer()
+            .alwaysPrintFieldsWithNoPresence()
+            .omittingInsignificantWhitespace();
     private static final JsonFormat.Parser PARSER = JsonFormat.parser().ignoringUnknownFields();
 
     public ProtoJsonHttpMessageConverter() {

@@ -14,4 +14,5 @@ public class GeneralSettings {
     private String discordWebhookUrl;
     private String homepageIconUrl;
     private String panelIconUrl;
+    private String defaultLanguage;
 }

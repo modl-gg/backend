@@ -33,6 +33,6 @@ public class PublicPunishmentController {
             return ResponseEntity.badRequest().body(result);
         }
 
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(PublicPunishmentProtoMapper.toAppealInfo(result));
     }
 }

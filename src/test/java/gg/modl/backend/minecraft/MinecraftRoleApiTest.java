@@ -47,14 +47,28 @@ class MinecraftRoleApiTest {
 
     @Test
     void updateRolePermissions() throws Exception {
-        // Get a role to update (idempotent - set same permissions)
+        // Get a role to update (idempotent - set same permissions).
         var listResponse = api.minecraftGet("/v1/minecraft/roles");
         var roles = JsonHelper.parseObject(listResponse.body()).getAsJsonArray("roles");
         if (roles.isEmpty()) {
             return;
         }
 
-        var role = roles.get(0).getAsJsonObject();
+        // The super-admin role is protected (updateRolePermissions now 403s for it), so pick the
+        // last non-super-admin role instead; skip if every role is a protected super-admin role.
+        com.google.gson.JsonObject role = null;
+        for (int i = roles.size() - 1; i >= 0; i--) {
+            var candidate = roles.get(i).getAsJsonObject();
+            String candidateId = candidate.get("id").getAsString();
+            if (candidateId != null && !candidateId.contains("super-admin")) {
+                role = candidate;
+                break;
+            }
+        }
+        if (role == null) {
+            return;
+        }
+
         String roleId = role.get("id").getAsString();
         var permissions = role.getAsJsonArray("permissions");
 

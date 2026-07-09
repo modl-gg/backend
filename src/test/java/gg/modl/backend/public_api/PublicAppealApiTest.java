@@ -74,9 +74,13 @@ class PublicAppealApiTest {
                     assertEquals("appeal", dbTicket.getString("type"));
                 }
 
-                // Get the appeal
-                var getResponse = api.publicGet("/v1/public/appeals/" + appealId);
-                JsonHelper.assertStatus(getResponse, 200);
+                var unverifiedGet = api.publicGet("/v1/public/appeals/" + appealId);
+                assertEquals(403, unverifiedGet.statusCode());
+                var unverifiedGetJson = JsonHelper.parseObject(unverifiedGet.body());
+                assertTrue(unverifiedGetJson.get("requiresVerification").getAsBoolean());
+
+                var invalidCodeVerify = api.publicPost("/v1/public/appeals/" + appealId + "/verify", Map.of("code", "000000"));
+                assertEquals(403, invalidCodeVerify.statusCode());
 
                 // Cleanup: dismiss via panel
                 api.panelPatch("/v1/panel/appeals/" + appealId + "/status", Map.of("status", "dismissed"));

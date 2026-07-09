@@ -9,9 +9,13 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.data.Settings;
+import java.net.IDN;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,6 +30,11 @@ public class DomainSettingsService {
     private final DynamicCorsConfigurationSource corsConfigurationSource;
     private final CustomDomainAccessService customDomainAccessService;
     private static final String SETTINGS_TYPE_DOMAIN = "domain";
+    private static final Pattern HOSTNAME_PATTERN = Pattern.compile("^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\\.(?!-)[a-z0-9-]{1,63}(?<!-))+$");
+    private static final Pattern IPV4_PATTERN = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$");
+    private static final Set<String> RESERVED_SUFFIXES = Set.of(
+        "modl.gg", "modl.top", "localhost", "local", "internal", "test", "example", "invalid"
+    );
 
     public DomainSettings getDomainSettings(Server server, String requestHost) {
         Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
@@ -86,9 +95,7 @@ public class DomainSettingsService {
     }
 
     public DomainSettings configureDomain(Server server, String customDomain) {
-        if (customDomain.toLowerCase().endsWith("modl.gg")) {
-            throw new ValidationException("modl.gg domains cannot be used as custom domains.");
-        }
+        customDomain = normalizeAndValidateCustomDomain(customDomain);
 
         String currentDomain = extractCurrentDomain(server);
 
@@ -96,8 +103,12 @@ public class DomainSettingsService {
             throw new ConflictException("This domain is already configured. Please verify the existing configuration or remove it first.");
         }
 
+        String currentCloudflareHostnameId = extractCurrentCloudflareHostnameId(server);
         CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
         if (existingHostname != null) {
+            if (currentCloudflareHostnameId == null || !existingHostname.id().equals(currentCloudflareHostnameId)) {
+                throw new ConflictException("This domain is already configured by another server.");
+            }
             cloudflareClient.deleteCustomHostname(existingHostname.id());
         }
 
@@ -162,6 +173,19 @@ public class DomainSettingsService {
         return currentDomain;
     }
 
+    private String extractCurrentCloudflareHostnameId(Server server) {
+        String currentCloudflareHostnameId = server.getCustomDomainCloudflareId();
+        if (currentCloudflareHostnameId == null) {
+            Settings existingSettings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
+            if (existingSettings != null && existingSettings.getData() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
+                currentCloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
+            }
+        }
+        return currentCloudflareHostnameId;
+    }
+
     private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
         Map<String, Object> statusMap = new HashMap<>();
         statusMap.put("domain", status.getDomain());
@@ -198,6 +222,7 @@ public class DomainSettingsService {
     }
 
     public DomainSettings verifyDomain(Server server, String domain) {
+        domain = normalizeAndValidateCustomDomain(domain);
         Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
         if (settings == null || settings.getData() == null) {
@@ -268,6 +293,38 @@ public class DomainSettingsService {
         return buildDomainSettingsResponse(server, domain, status);
     }
 
+    private String normalizeAndValidateCustomDomain(String domain) {
+        if (domain == null || domain.isBlank()) {
+            throw new ValidationException("Custom domain is required");
+        }
+        String trimmed = domain.trim();
+        if (trimmed.endsWith(".")) {
+            throw new ValidationException("Custom domain must not include a trailing dot");
+        }
+        String ascii;
+        try {
+            ascii = IDN.toASCII(trimmed, IDN.USE_STD3_ASCII_RULES).toLowerCase(Locale.ROOT);
+        } catch (IllegalArgumentException exception) {
+            throw new ValidationException("Invalid custom domain", exception);
+        }
+        if (!HOSTNAME_PATTERN.matcher(ascii).matches()
+            || IPV4_PATTERN.matcher(ascii).matches()
+            || ascii.contains(":")
+            || isReservedDomain(ascii)) {
+            throw new ValidationException("This custom domain cannot be used.");
+        }
+        return ascii;
+    }
+
+    private boolean isReservedDomain(String domain) {
+        for (String suffix : RESERVED_SUFFIXES) {
+            if (domain.equals(suffix) || domain.endsWith("." + suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void removeDomain(Server server) {
         Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
 
@@ -283,11 +340,6 @@ public class DomainSettingsService {
                 boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
                 if (!deleted) {
                     log.warn("Failed to delete Cloudflare custom hostname for domain: {}", customDomain);
-                }
-            } else if (customDomain != null && !customDomain.isEmpty()) {
-                CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.findCustomHostnameByName(customDomain);
-                if (cfResult != null) {
-                    cloudflareClient.deleteCustomHostname(cfResult.id());
                 }
             }
         }

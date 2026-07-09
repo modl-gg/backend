@@ -13,11 +13,14 @@ import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
+import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
@@ -30,7 +33,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +48,7 @@ public class DashboardService {
     private final PlayerMongoRepository playerRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final StaffMongoRepository staffRepository;
+    private final StaffService staffService;
     private final PunishmentTypeService punishmentTypeService;
     private final PlayerStatusCalculator statusCalculator;
 
@@ -58,7 +61,7 @@ public class DashboardService {
     private static final int MAX_RECENT_TICKETS_LIMIT = 20;
     private static final int MAX_RECENT_PUNISHMENTS_LIMIT = 20;
     private static final int MAX_ACTIVITY_LIMIT = 100;
-    private static final int MAX_DAYS = 90;
+    public static final int MAX_DAYS = 90;
     private static final int MAX_QUERY_RESULTS = 200;
 
     public MinecraftDashboardStatsResponse getMinecraftStats(Server server) {
@@ -116,10 +119,10 @@ public class DashboardService {
                     continue;
                 }
 
-                if (punishmentType.isBan()) {
+                String category = statusCalculator.getEffectiveCategory(punishment, punishmentTypesByOrdinal);
+                if (EnforcementCategory.BAN.name().equals(category)) {
                     activeBans++;
-                }
-                if (punishmentType.isMute()) {
+                } else if (EnforcementCategory.MUTE.name().equals(category)) {
                     activeMutes++;
                 }
             }
@@ -129,11 +132,7 @@ public class DashboardService {
     }
 
     private Map<Integer, PunishmentType> buildPunishmentTypeByOrdinal(Server server) {
-        Map<Integer, PunishmentType> punishmentTypes = new LinkedHashMap<>();
-        for (PunishmentType punishmentType : punishmentTypeService.getPunishmentTypes(server)) {
-            punishmentTypes.put(punishmentType.getOrdinal(), punishmentType);
-        }
-        return punishmentTypes;
+        return PunishmentTypeIndex.byOrdinal(punishmentTypeService.getPunishmentTypes(server));
     }
 
     private boolean isPunishmentActiveSafely(Punishment punishment) {
@@ -145,21 +144,26 @@ public class DashboardService {
         }
     }
 
-    public DashboardMetricsResponse getMetrics(Server server) {
-        Date thirtyDaysAgo = DateRangeUtil.daysAgo(30);
-        Date sixtyDaysAgo = DateRangeUtil.daysAgo(60);
+    public DashboardMetricsResponse getMetrics(Server server, String period) {
+        int windowDays = DateRangeUtil.resolveRangeDays(period);
+        Date windowStart = DateRangeUtil.daysAgo(windowDays);
+        Date priorWindowStart = DateRangeUtil.daysAgo(windowDays * 2);
 
         long totalTickets = ticketRepository.countAll(server);
         long openTickets = ticketRepository.countByStatus(server, TicketStatus.OPEN);
         long totalPlayers = playerRepository.countAll(server);
-        long totalStaff = staffRepository.countAll(server);
+        long totalStaff = staffService.countStaffIncludingSuperAdmin(server);
 
-        long totalPunishments = 0;
-        long activePunishments = 0;
+        long activePunishments = countActivePunishments(server).total();
+        long totalPunishments = punishmentRepository.countAllPunishments(server);
 
-        long recentTickets = ticketRepository.countCreatedAfter(server, thirtyDaysAgo);
-        long prevTickets = ticketRepository.countCreatedBetween(server, sixtyDaysAgo, thirtyDaysAgo);
+        long recentTickets = ticketRepository.countCreatedAfter(server, windowStart);
+        long prevTickets = ticketRepository.countCreatedBetween(server, priorWindowStart, windowStart);
         int ticketsTrend = prevTickets > 0 ? (int) Math.round(((double) (recentTickets - prevTickets) / prevTickets) * 100) : 0;
+
+        long recentPlayers = playerRepository.countFirstJoinedAfter(server, windowStart);
+        long prevPlayers = playerRepository.countFirstJoinedBetween(server, priorWindowStart, windowStart);
+        int playersTrend = prevPlayers > 0 ? (int) Math.round(((double) (recentPlayers - prevPlayers) / prevPlayers) * 100) : 0;
 
         return new DashboardMetricsResponse(
             totalTickets,
@@ -169,7 +173,7 @@ public class DashboardService {
             activePunishments,
             totalStaff,
             ticketsTrend,
-            0
+            playersTrend
         );
     }
 

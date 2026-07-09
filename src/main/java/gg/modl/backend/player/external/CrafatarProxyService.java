@@ -1,11 +1,18 @@
 package gg.modl.backend.player.external;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import java.net.URI;
+import java.time.Duration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Service
 @RequiredArgsConstructor
@@ -13,45 +20,74 @@ import org.springframework.web.client.RestTemplate;
 public class CrafatarProxyService {
 
     private final RestTemplate restTemplate;
-    private static final String CRAFATAR_URL = "https://crafatar.com/avatars/%s?size=%d&overlay=%s";
-    private static final String MINOTAR_FALLBACK_URL = "https://minotar.net/avatar/%s/%d";
     private static final int MIN_AVATAR_SIZE = 8;
     private static final int MAX_AVATAR_SIZE = 512;
+    private static final int MAX_AVATAR_BYTES = 1024 * 1024;
+
+    private static final long MAX_AVATAR_CACHE_BYTES = 64L * 1024 * 1024;
+
+    private final Cache<String, byte[]> avatarCache = Caffeine.newBuilder()
+        .maximumWeight(MAX_AVATAR_CACHE_BYTES)
+        .weigher((String key, byte[] body) -> body.length)
+        .expireAfterWrite(Duration.ofMinutes(10))
+        .build();
 
     public byte[] getAvatar(String uuid, int size, boolean overlay) {
         int clampedSize = Math.max(MIN_AVATAR_SIZE, Math.min(size, MAX_AVATAR_SIZE));
+        String cacheKey = clampedSize + ":" + overlay + ":" + uuid;
+        return avatarCache.get(cacheKey, key -> fetchAvatar(uuid, clampedSize, overlay));
+    }
 
-        // Try Crafatar first
+    private byte[] fetchAvatar(String uuid, int clampedSize, boolean overlay) {
         try {
-            String url = String.format(CRAFATAR_URL, uuid, clampedSize, overlay);
-            ResponseEntity<byte[]> response = restTemplate.exchange(
-                url,
-                HttpMethod.GET,
-                null,
-                byte[].class
-            );
-
-            if (response.getBody() != null) {
-                return response.getBody();
+            URI url = UriComponentsBuilder.fromUriString("https://crafatar.com")
+                .pathSegment("avatars", uuid)
+                .queryParam("size", clampedSize)
+                .queryParam("overlay", overlay)
+                .build()
+                .encode()
+                .toUri();
+            byte[] body = fetch(url);
+            if (body != null) {
+                return body;
             }
         } catch (Exception e) {
             log.warn("Crafatar failed for UUID {}, trying Minotar fallback", uuid);
         }
 
-        // Try Minotar as fallback
         try {
-            String fallbackUrl = String.format(MINOTAR_FALLBACK_URL, uuid, clampedSize);
-            ResponseEntity<byte[]> response = restTemplate.exchange(
-                fallbackUrl,
-                HttpMethod.GET,
-                null,
-                byte[].class
-            );
-
-            return response.getBody();
+            URI fallbackUrl = UriComponentsBuilder.fromUriString("https://minotar.net")
+                .pathSegment("avatar", uuid, String.valueOf(clampedSize))
+                .build()
+                .encode()
+                .toUri();
+            return fetch(fallbackUrl);
         } catch (Exception e) {
             log.error("Both Crafatar and Minotar failed for UUID {}", uuid, e);
             return null;
         }
+    }
+
+    private byte[] fetch(URI url) {
+        ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
+        HttpHeaders headers = response.getHeaders();
+        if (headers.getContentLength() > MAX_AVATAR_BYTES) {
+            log.warn("Avatar upstream {} reported content-length {} over cap {}", url, headers.getContentLength(), MAX_AVATAR_BYTES);
+            return null;
+        }
+        MediaType contentType = headers.getContentType();
+        if (contentType != null && !"image".equalsIgnoreCase(contentType.getType())) {
+            log.warn("Avatar upstream {} returned non-image content-type {}", url, contentType);
+            return null;
+        }
+        byte[] body = response.getBody();
+        if (body == null || body.length == 0) {
+            return null;
+        }
+        if (body.length > MAX_AVATAR_BYTES) {
+            log.warn("Avatar upstream {} body length {} over cap {}", url, body.length, MAX_AVATAR_BYTES);
+            return null;
+        }
+        return body;
     }
 }

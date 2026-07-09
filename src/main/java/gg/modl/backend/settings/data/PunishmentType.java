@@ -1,13 +1,17 @@
 package gg.modl.backend.settings.data;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -18,13 +22,20 @@ public class PunishmentType {
     private Boolean customizable;
     private Integer ordinal;
 
+    @Valid
     private PunishmentDurations durations;
 
     private Boolean singleSeverityPunishment;
+    @Valid
     private OffenseLevelDurations singleSeverityDurations;
+    @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
+    @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
     private Integer singleSeverityPoints;
 
+    @Valid
     private PunishmentPoints points;
+    @Min(RequestValidationLimits.PUNISHMENT_POINTS_MIN)
+    @Max(RequestValidationLimits.PUNISHMENT_POINTS_MAX)
     private Integer customPoints;
 
     private String staffDescription;

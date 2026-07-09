@@ -4,6 +4,7 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.TicketFields;
+import gg.modl.backend.infrastructure.util.CanonicalAliasIndex;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.AppealWorkflowStatus;
 import gg.modl.backend.ticket.data.Ticket;
@@ -12,11 +13,17 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -116,13 +123,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     private String normalizeTypeValue(String type) {
-        if (type == null) {
-            return "";
-        }
-        return type.trim()
-            .toLowerCase()
-            .replaceAll("[^a-z0-9]+", "_")
-            .replaceAll("^_+|_+$", "");
+        return CanonicalAliasIndex.normalize(type);
     }
 
     public List<Ticket> findRecentByCreator(Server server, String creatorUuid, int limit) {
@@ -130,6 +131,64 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
         query.limit(Math.min(limit, 50));
         return find(server, query);
+    }
+
+    public List<Ticket> findPlayerTicketsWithReplayUrl(Server server, String playerUuid, int limit) {
+        String lower = playerUuid == null ? null : playerUuid.toLowerCase(Locale.ROOT);
+        String upper = playerUuid == null ? null : playerUuid.toUpperCase(Locale.ROOT);
+        List<String> uuidCandidates = lower != null && lower.equals(upper)
+            ? List.of(lower)
+            : Arrays.asList(lower, upper);
+
+        Query query = Query.query(new Criteria().andOperator(
+            new Criteria().orOperator(
+                Criteria.where(TicketFields.CREATOR_UUID).in(uuidCandidates),
+                Criteria.where(TicketFields.REPORTED_PLAYER_UUID).in(uuidCandidates)
+            ),
+            Criteria.where(TicketFields.REPLAY_URL).exists(true).nin(Arrays.asList(null, ""))
+        ));
+        query.with(Sort.by(Sort.Direction.DESC, TicketFields.CREATED));
+        query.limit(Math.min(limit, 100));
+        return find(server, query);
+    }
+
+    public long clearReplayReferences(Server server, Collection<String> replayIds) {
+        List<String> ids = sanitizeReplayIds(replayIds);
+        if (ids.isEmpty()) {
+            return 0L;
+        }
+        Query query = Query.query(Criteria.where(TicketFields.REPLAY_ID).in(ids));
+        Update update = new Update().unset(TicketFields.REPLAY_URL).unset(TicketFields.REPLAY_ID);
+        return updateMulti(server, query, update).getModifiedCount();
+    }
+
+    public Set<String> findReplayIdsReferencedByUnresolvedTicket(Server server, Collection<String> replayIds) {
+        List<String> ids = sanitizeReplayIds(replayIds);
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(TicketFields.REPLAY_ID).in(ids),
+            Criteria.where(TicketFields.STATUS).ne(TicketStatus.CLOSED.getId())
+        ));
+        query.fields().include(TicketFields.REPLAY_ID);
+        return find(server, query).stream()
+            .map(Ticket::getReplayId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+    }
+
+    private List<String> sanitizeReplayIds(Collection<String> replayIds) {
+        if (replayIds == null || replayIds.isEmpty()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>(replayIds.size());
+        for (String replayId : replayIds) {
+            if (replayId != null && !replayId.isBlank()) {
+                ids.add(replayId);
+            }
+        }
+        return ids;
     }
 
     public List<Ticket> findReports(Server server, String status, String playerUuid, int limit, boolean sortByCreatedDesc) {
@@ -345,16 +404,12 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         return find(server, query);
     }
 
-    public boolean existsAppealForPunishment(Server server, String punishmentId) {
-        Query query = Query.query(
-            Criteria.where(TicketFields.TYPE).is(TicketCategory.APPEAL.getId())
-                .and(TicketFields.DATA + ".punishmentId").is(punishmentId)
-        );
-        return exists(server, query);
-    }
-
     public Ticket saveAppeal(Server server, Ticket appeal) {
         return saveEntity(server, appeal);
+    }
+
+    public Ticket insertTicket(Server server, Ticket ticket) {
+        return insert(serverTemplate(server), ticket);
     }
 
     public void pushReply(Server server, String ticketId, TicketReply reply) {
@@ -374,7 +429,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
         Update update = new Update().set(TicketFields.UPDATED_AT, new Date());
 
         if (appealWorkflowStatus != null) {
-            update.set("appealWorkflowStatus", appealWorkflowStatus.getId());
+            update.set(TicketFields.APPEAL_WORKFLOW_STATUS, appealWorkflowStatus.getId());
         }
         if (status != null) {
             update.set(TicketFields.STATUS, status.getId());
@@ -383,7 +438,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
             update.set(TicketFields.LOCKED, locked);
         }
         if (data != null) {
-            update.set("data", data);
+            update.set(TicketFields.DATA, data);
         }
         if (systemReplies != null) {
             for (TicketReply reply : systemReplies) {

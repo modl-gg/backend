@@ -24,6 +24,7 @@ import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOptions;
 import org.springframework.data.mongodb.core.aggregation.ConditionalOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -68,7 +69,7 @@ public class AuditMongoRepository {
 
     public List<Staff> findAllStaff(Server server) {
         Query query = new Query();
-        query.fields().include(StaffFields.ID, StaffFields.USERNAME, StaffFields.EMAIL, StaffFields.ROLE, StaffFields.ASSIGNED_MINECRAFT_USERNAME, StaffFields.UPDATED_AT);
+        query.fields().include(StaffFields.ID, StaffFields.USERNAME, StaffFields.EMAIL, StaffFields.ROLE_ID, StaffFields.ASSIGNED_MINECRAFT_USERNAME, StaffFields.UPDATED_AT);
         return tenantMongoAccess.forServer(server).find(query, Staff.class, CollectionName.STAFF);
     }
 
@@ -185,33 +186,15 @@ public class AuditMongoRepository {
                 .and("punishments." + PunishmentFields.EVIDENCE).as(ALIAS_EVIDENCE)
                 .and("punishments." + PunishmentFields.ATTACHED_TICKET_IDS).as(ALIAS_ATTACHED_TICKET_IDS)
                 .and(PlayerFields.USERNAMES).as(ALIAS_USERNAMES)
-        );
+        ).withOptions(AggregationOptions.builder().allowDiskUse(true).build());
 
         return tenantMongoAccess.forServer(server)
             .aggregate(aggregation, CollectionName.PLAYERS, Document.class)
             .getMappedResults();
     }
 
-    public AuditLog findAuditLogById(Server server, String logId) {
-        return tenantMongoAccess.forServer(server)
-            .findOne(Query.query(Criteria.where(AuditLogFields.ID).is(logId)), AuditLog.class, CollectionName.LOGS);
-    }
-
     public void saveAuditLog(Server server, AuditLog auditLog) {
         tenantMongoAccess.forServer(server).save(auditLog, CollectionName.LOGS);
-    }
-
-    public void markAuditLogRolledBack(Server server, String logId, String performerUsername, Date rollbackDate) {
-        Update update = new Update()
-            .set(AuditLogFields.METADATA_ROLLED_BACK, true)
-            .set(AuditLogFields.METADATA_ROLLBACK_DATE, rollbackDate)
-            .set(AuditLogFields.METADATA_ROLLBACK_BY, performerUsername);
-        tenantMongoAccess.forServer(server).updateFirst(
-            Query.query(Criteria.where(AuditLogFields.ID).is(logId)),
-            update,
-            AuditLog.class,
-            CollectionName.LOGS
-        );
     }
 
     public List<Document> readTable(Server server, String collectionName, int limit, int skip) {
@@ -241,10 +224,11 @@ public class AuditMongoRepository {
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
     }
 
-    public void appendRollbackModification(Server server, String playerId, String punishmentId, Map<String, Object> rollbackModification) {
-        Update update = new Update().push(PlayerFields.PUNISHMENT_MODIFICATIONS, rollbackModification);
-        Query query = Query.query(Criteria.where(PlayerFields.ID).is(playerId).and(PlayerFields.PUNISHMENT_ID).is(punishmentId));
-        tenantMongoAccess.forServer(server).updateFirst(query, update, CollectionName.PLAYERS);
+    public Document findPlayerByPunishmentId(Server server, String punishmentId) {
+        Query query = Query.query(Criteria.where(PlayerFields.PUNISHMENT_ID).is(punishmentId));
+        query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID,
+            PlayerFields.USERNAMES, PlayerFields.PUNISHMENTS);
+        return tenantMongoAccess.forServer(server).findOne(query, Document.class, CollectionName.PLAYERS);
     }
 
     public List<Document> findPlayersForBulkAction(Server server, List<Integer> typeOrdinals) {
@@ -254,6 +238,11 @@ public class AuditMongoRepository {
         query.fields().include(PlayerFields.ID, PlayerFields.MINECRAFT_UUID,
             PlayerFields.USERNAMES, PlayerFields.PUNISHMENTS);
         return tenantMongoAccess.forServer(server).find(query, Document.class, CollectionName.PLAYERS);
+    }
+
+    public void appendPunishmentModification(Server server, String playerId, String punishmentId,
+            Map<String, Object> modification) {
+        appendPunishmentModificationWithData(server, playerId, punishmentId, modification, Map.of());
     }
 
     public void appendPunishmentModificationWithData(Server server, String playerId, String punishmentId,

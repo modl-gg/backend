@@ -116,7 +116,8 @@ class PanelTicketApiTest {
         if (TestDatabase.isAvailable()) {
             var dbTicket = TestDatabase.getInstance().findTicketById(ticketId);
             assertNotNull(dbTicket, "Ticket should exist in DB");
-            assertEquals("in_progress", dbTicket.getString("status"));
+            // "in_progress" is an alias for TicketStatus.OPEN; the canonical id "open" is what is persisted to Mongo.
+            assertEquals("open", dbTicket.getString("status"));
         }
 
         // Cleanup

@@ -2,6 +2,7 @@ package gg.modl.backend.player;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -11,6 +12,8 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentQueryService;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.time.Instant;
@@ -39,13 +42,19 @@ class PlayerServiceSearchRankingTest {
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
+    private RealtimeEventPublisher realtimePublisher;
+
+    @Mock
+    private PunishmentQueryService punishmentQueryService;
+
+    @Mock
     private Server server;
 
     private PlayerService playerService;
 
     @BeforeEach
     void setUp() {
-        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService);
+        playerService = new PlayerService(playerRepository, statusCalculator, punishmentTypeService, realtimePublisher, punishmentQueryService);
     }
 
     @Test
@@ -121,6 +130,39 @@ class PlayerServiceSearchRankingTest {
         assertEquals(2, results.size());
         assertEquals(exactUuid.toString(), results.get(0).uuid());
         assertEquals("NAME123", results.get(0).username());
+    }
+
+    @Test
+    void findBestByUsernamePrefersOnlineCurrentMatchOverOfflineDuplicate() {
+        UUID offlineUuid = UUID.fromString("88888888-8888-8888-8888-888888888888");
+        UUID onlineUuid = UUID.fromString("99999999-9999-9999-9999-999999999999");
+
+        Player offlinePlayer = player(offlineUuid, List.of("modltarget"), Date.from(Instant.parse("2026-04-20T10:15:30Z")));
+        Player onlinePlayer = player(onlineUuid, List.of("modltarget"), Date.from(Instant.parse("2026-04-21T10:15:30Z")));
+        onlinePlayer.getData().put("isOnline", true);
+
+        when(playerRepository.searchByUsernamePattern(server, "modltarget", 100))
+            .thenReturn(List.of(offlinePlayer, onlinePlayer));
+
+        Player resolved = playerService.findBestByUsername(server, "modltarget").orElseThrow();
+
+        assertSame(onlinePlayer, resolved);
+    }
+
+    @Test
+    void findBestByUsernamePrefersCurrentExactMatchOverHistoricalExactMatch() {
+        UUID renamedUuid = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        UUID currentUuid = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        Player renamedPlayer = player(renamedUuid, List.of("modltarget", "renamedtarget"), Date.from(Instant.parse("2026-04-21T09:15:30Z")));
+        Player currentPlayer = player(currentUuid, List.of("modltarget"), Date.from(Instant.parse("2026-04-20T09:15:30Z")));
+
+        when(playerRepository.searchByUsernamePattern(server, "modltarget", 100))
+            .thenReturn(List.of(renamedPlayer, currentPlayer));
+
+        Player resolved = playerService.findBestByUsername(server, "modltarget").orElseThrow();
+
+        assertSame(currentPlayer, resolved);
     }
 
     @Test

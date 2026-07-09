@@ -1,8 +1,10 @@
 package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
+import gg.modl.backend.settings.data.SupportedLanguages;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -30,27 +32,27 @@ public class GeneralSettingsService {
     }
 
     private GeneralSettings mapToGeneralSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return defaultGeneralSettings();
-        }
+        GeneralSettings mapped = codec().decode(data);
+        return GeneralSettings.builder()
+            .serverDisplayName(sanitizeOrEmpty(mapped.getServerDisplayName(), MAX_SERVER_NAME_LENGTH))
+            .discordWebhookUrl(sanitizeOrEmpty(mapped.getDiscordWebhookUrl(), MAX_URL_LENGTH))
+            .homepageIconUrl(sanitizeOrEmpty(mapped.getHomepageIconUrl(), MAX_URL_LENGTH))
+            .panelIconUrl(sanitizeOrEmpty(mapped.getPanelIconUrl(), MAX_URL_LENGTH))
+            .defaultLanguage(resolveLanguage(mapped.getDefaultLanguage()))
+            .build();
+    }
 
-        try {
-            GeneralSettings mapped = objectMapper.convertValue(data, GeneralSettings.class);
-            String serverDisplayName = sanitize(mapped.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
-            String discordWebhookUrl = sanitize(mapped.getDiscordWebhookUrl(), MAX_URL_LENGTH);
-            String homepageIconUrl = sanitize(mapped.getHomepageIconUrl(), MAX_URL_LENGTH);
-            String panelIconUrl = sanitize(mapped.getPanelIconUrl(), MAX_URL_LENGTH);
+    private String resolveLanguage(String value) {
+        return SupportedLanguages.isSupported(value) ? value : SupportedLanguages.DEFAULT;
+    }
 
-            return GeneralSettings.builder()
-                .serverDisplayName(serverDisplayName != null ? serverDisplayName : "")
-                .discordWebhookUrl(discordWebhookUrl != null ? discordWebhookUrl : "")
-                .homepageIconUrl(homepageIconUrl != null ? homepageIconUrl : "")
-                .panelIconUrl(panelIconUrl != null ? panelIconUrl : "")
-                .build();
-        } catch (IllegalArgumentException exception) {
-            log.warn("Failed to map general settings, using defaults: {}", exception.getMessage());
-            return defaultGeneralSettings();
-        }
+    private SettingsCodec<GeneralSettings> codec() {
+        return SettingsCodec.of(objectMapper, GeneralSettings.class, this::defaultGeneralSettings);
+    }
+
+    private String sanitizeOrEmpty(String value, int maxLength) {
+        String sanitized = sanitize(value, maxLength);
+        return sanitized != null ? sanitized : "";
     }
 
     private GeneralSettings defaultGeneralSettings() {
@@ -59,6 +61,7 @@ public class GeneralSettingsService {
             .discordWebhookUrl("")
             .homepageIconUrl("")
             .panelIconUrl("")
+            .defaultLanguage(SupportedLanguages.DEFAULT)
             .build();
     }
 
@@ -86,6 +89,7 @@ public class GeneralSettingsService {
         putIfNotNull(data, "discordWebhookUrl", patch.getDiscordWebhookUrl(), MAX_URL_LENGTH);
         putIfNotNull(data, "homepageIconUrl", patch.getHomepageIconUrl(), MAX_URL_LENGTH);
         putIfNotNull(data, "panelIconUrl", patch.getPanelIconUrl(), MAX_URL_LENGTH);
+        putLanguageIfNotNull(data, patch.getDefaultLanguage());
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
             server,
@@ -100,5 +104,16 @@ public class GeneralSettingsService {
         if (value != null) {
             data.put(key, sanitize(value, maxLength));
         }
+    }
+
+    private void putLanguageIfNotNull(Map<String, Object> data, String value) {
+        if (value == null) {
+            return;
+        }
+        String language = value.trim();
+        if (!SupportedLanguages.isSupported(language)) {
+            throw new ValidationException("Unsupported default language: " + language);
+        }
+        data.put("defaultLanguage", language);
     }
 }

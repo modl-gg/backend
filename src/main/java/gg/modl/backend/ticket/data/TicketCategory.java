@@ -2,10 +2,8 @@ package gg.modl.backend.ticket.data;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import java.util.LinkedHashMap;
+import gg.modl.backend.infrastructure.util.CanonicalAliasIndex;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 
 public enum TicketCategory {
     BUG("bug", "Bug Report", "BUG"),
@@ -18,22 +16,17 @@ public enum TicketCategory {
     private final String id;
     private final String displayName;
     private final String ticketPrefix;
-    private static final Map<String, TicketCategory> BY_CANONICAL_ID = new LinkedHashMap<>();
-
-    static {
-        for (TicketCategory category : values()) {
-            BY_CANONICAL_ID.put(category.id, category);
-        }
-        registerAlias(BUG, "bug_report");
-        registerAlias(PLAYER, "player_report");
-        registerAlias(CHAT, "chat_report");
-        registerAlias(APPEAL, "ban_appeal");
-        registerAlias(APPLICATION, "staff");
-        registerAlias(APPLICATION, "staff_application");
-        registerAlias(APPLICATION, "apply");
-        registerAlias(SUPPORT, "general_support");
-        registerAlias(PLAYER, "report");
-    }
+    private static final CanonicalAliasIndex<TicketCategory> INDEX = CanonicalAliasIndex
+        .of("ticket category", values(), TicketCategory::getId)
+        .alias(BUG, "bug_report")
+        .alias(PLAYER, "player_report")
+        .alias(CHAT, "chat_report")
+        .alias(APPEAL, "ban_appeal")
+        .alias(APPLICATION, "staff")
+        .alias(APPLICATION, "staff_application")
+        .alias(APPLICATION, "apply")
+        .alias(SUPPORT, "general_support")
+        .alias(PLAYER, "report");
 
     TicketCategory(String id, String displayName, String ticketPrefix) {
         this.id = id;
@@ -46,7 +39,7 @@ public enum TicketCategory {
     }
 
     public static List<String> categoryIdsForBucket(String bucket) {
-        return switch (normalize(bucket)) {
+        return switch (CanonicalAliasIndex.normalize(bucket)) {
             case "bug" -> List.of(BUG.id);
             case "report" -> List.of(PLAYER.id, CHAT.id);
             case "appeal" -> List.of(APPEAL.id);
@@ -54,16 +47,6 @@ public enum TicketCategory {
             case "support" -> List.of(SUPPORT.id);
             default -> List.of();
         };
-    }
-
-    private static String normalize(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.trim()
-            .toLowerCase(Locale.ROOT)
-            .replaceAll("[^a-z0-9]+", "_")
-            .replaceAll("^_+|_+$", "");
     }
 
     public static boolean isCanonicalBucket(String value) {
@@ -79,15 +62,7 @@ public enum TicketCategory {
     }
 
     public static TicketCategory fromCanonicalId(String value) {
-        TicketCategory category = BY_CANONICAL_ID.get(normalize(value));
-        if (category == null) {
-            throw new IllegalArgumentException("Unknown ticket category: " + value);
-        }
-        return category;
-    }
-
-    private static void registerAlias(TicketCategory category, String alias) {
-        BY_CANONICAL_ID.put(normalize(alias), category);
+        return INDEX.resolve(value);
     }
 
     @JsonValue

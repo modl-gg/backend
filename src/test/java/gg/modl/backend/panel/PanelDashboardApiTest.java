@@ -16,7 +16,7 @@ class PanelDashboardApiTest {
     static void setUp() {
         Assumptions.assumeTrue(StagingCredentials.isPanelApiAvailable(), StagingCredentials.panelApiUnavailableReason());
         api = new ApiClient();
-        TestDataProvider.getPlayers(); // triggers DB cleanup of corrupted data
+        TestDataProvider.repairCorruptedUsernames(); // explicit, server-filtered repair of corrupt staging usernames
     }
 
     @Test

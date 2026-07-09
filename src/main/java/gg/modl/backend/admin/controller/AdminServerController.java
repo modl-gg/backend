@@ -1,18 +1,21 @@
 package gg.modl.backend.admin.controller;
 
-import gg.modl.backend.admin.dto.request.UpdateServerRequest;
+import com.google.protobuf.Timestamp;
 import gg.modl.backend.admin.service.AdminServerService;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
+import gg.modl.proto.modl.v1.AdminServerBulkOperationRequest;
+import gg.modl.proto.modl.v1.AdminServerCreateRequest;
+import gg.modl.proto.modl.v1.AdminServerExportRequest;
+import gg.modl.proto.modl.v1.AdminServerSearchRequest;
+import gg.modl.proto.modl.v1.AdminServerUpdateStatsRequest;
+import gg.modl.proto.modl.v1.UpdateServerRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Size;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -56,44 +59,32 @@ public class AdminServerController {
         List<Server> servers = serverService.findServers(search, plan, status, sort, order, skip, limitNum);
         long total = serverService.countServers(search, plan, status);
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of(
-                "servers", servers,
-                "pagination", Map.of(
-                    "page", pageNum,
-                    "limit", limitNum,
-                    "total", total,
-                    "pages", PaginationHelper.calculateTotalPages(total, limitNum)
-                )
-            )
-        ));
+        return ResponseEntity.ok(AdminServerProtoMapper.toListResponse(
+            servers, pageNum, limitNum, total, PaginationHelper.calculateTotalPages(total, limitNum)));
     }
 
     @PostMapping("/usage/batch")
-    public ResponseEntity<?> getUsageBatch(@RequestBody @Valid UsageBatchRequest request) {
-        if (request.serverIds() == null || request.serverIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Missing required field: serverIds"));
+    public ResponseEntity<?> getUsageBatch(@RequestBody gg.modl.proto.modl.v1.AdminServerUsageBatchRequest request) {
+        List<String> serverIds = request.getServerIdsList();
+        if (serverIds.isEmpty()) {
+            throw new ValidationException("Missing required field: serverIds");
         }
 
-        if (request.serverIds().size() > 50) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Maximum 50 server IDs per request"));
+        if (serverIds.size() > 50) {
+            throw new ValidationException("Maximum 50 server IDs per request");
         }
 
-        boolean forceRefresh = Boolean.TRUE.equals(request.forceRefresh());
-        Map<String, AdminServerService.UsageSummary> usage = serverService.getUsageStatsForServerIds(request.serverIds(), forceRefresh);
+        boolean forceRefresh = request.getForceRefresh();
+        Map<String, AdminServerService.UsageSummary> usage = serverService.getUsageStatsForServerIds(serverIds, forceRefresh);
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of("usage", usage)
-        ));
+        return ResponseEntity.ok(AdminServerProtoMapper.toUsageBatchResponse(usage));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<?> getServer(@PathVariable String id) {
         return serverService.findById(id)
-            .map(server -> ResponseEntity.ok(Map.of("success", true, "data", server)))
-            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> ResponseEntity.ok((Object) AdminServerProtoMapper.toDetailResponse(server)))
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
     }
 
     @GetMapping("/{id}/stats")
@@ -101,113 +92,113 @@ public class AdminServerController {
         return serverService.findById(id)
             .map(server -> {
                 Map<String, Object> stats = serverService.getServerStats(server);
-                return ResponseEntity.ok(Map.of("success", true, "data", stats));
+                return ResponseEntity.ok((Object) AdminServerProtoMapper.toStatsResponse(stats));
             })
-            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
     }
 
     @PostMapping
-    public ResponseEntity<?> createServer(@RequestBody @Valid CreateServerRequest request) {
-        Server saved = serverService.createServer(request.serverName(), request.customDomain(), request.adminEmail(), request.plan());
-        return ResponseEntity.status(201).body(Map.of(
-            "success", true,
-            "data", saved,
-            "message", "Server created successfully"
-        ));
+    public ResponseEntity<?> createServer(@RequestBody AdminServerCreateRequest request) {
+        Server saved = serverService.createServer(
+            request.getServerName(),
+            request.getCustomDomain(),
+            request.getAdminEmail(),
+            request.hasPlan() ? request.getPlan() : null);
+        return ResponseEntity.status(201).body(
+            AdminServerProtoMapper.toMutationResponse(saved, "Server created successfully"));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateServer(@PathVariable String id, @RequestBody @Valid UpdateServerRequest request) {
-        if (!serverService.findById(id).isPresent()) {
-            return ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found"));
+    public ResponseEntity<?> updateServer(@PathVariable String id, @RequestBody UpdateServerRequest request) {
+        Server server = serverService.findById(id)
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+
+        if (request.hasAdminEmail()) {
+            serverService.changeAdminEmail(server, request.getAdminEmail());
         }
 
         Map<String, Object> updateData = new HashMap<>();
-        if (request.adminEmail() != null) {
-            updateData.put("adminEmail", request.adminEmail());
+        if (request.hasEmailVerified()) {
+            updateData.put("emailVerified", request.getEmailVerified());
         }
-        if (request.emailVerified() != null) {
-            updateData.put("emailVerified", request.emailVerified());
+        if (request.hasProvisioningStatus()) {
+            updateData.put("provisioningStatus", request.getProvisioningStatus());
         }
-        if (request.provisioningStatus() != null) {
-            updateData.put("provisioningStatus", request.provisioningStatus());
+        if (request.hasProvisioningNotes()) {
+            updateData.put("provisioningNotes", request.getProvisioningNotes());
         }
-        if (request.provisioningNotes() != null) {
-            updateData.put("provisioningNotes", request.provisioningNotes());
+        if (request.hasPlan()) {
+            updateData.put("plan", request.getPlan());
         }
-        if (request.plan() != null) {
-            updateData.put("plan", request.plan());
+        if (request.hasSubscriptionStatus()) {
+            updateData.put("subscriptionStatus", request.getSubscriptionStatus());
         }
-        if (request.subscriptionStatus() != null) {
-            updateData.put("subscriptionStatus", request.subscriptionStatus());
-        }
-        if (request.lastActivityAt() != null) {
-            updateData.put("lastActivityAt", request.lastActivityAt());
+        if (request.hasLastActivityAt()) {
+            updateData.put("lastActivityAt", request.getLastActivityAt());
         }
         updateData.put("updatedAt", new Date());
 
         Server updated = serverService.updateById(id, updateData);
         if (updated != null) {
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Server updated successfully"));
+            return ResponseEntity.ok(AdminServerProtoMapper.toMutationResponse(updated, "Server updated successfully"));
         }
-        return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update server"));
+        throw new ValidationException("Failed to update server");
     }
 
     @PutMapping("/{id}/stats")
-    public ResponseEntity<?> updateServerStats(@PathVariable String id, @RequestBody @Valid UpdateStatsRequest request) {
-        if (!serverService.findById(id).isPresent()) {
-            return ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found"));
+    public ResponseEntity<?> updateServerStats(@PathVariable String id, @RequestBody AdminServerUpdateStatsRequest request) {
+        if (serverService.findById(id).isEmpty()) {
+            throw new ResourceNotFoundException("Server not found");
         }
 
         Map<String, Object> updateData = new HashMap<>();
-        if (request.lastActivityAt() != null) {
-            updateData.put("lastActivityAt", request.lastActivityAt());
+        if (request.hasLastActivityAt()) {
+            updateData.put("lastActivityAt", toDate(request.getLastActivityAt()));
         }
         updateData.put("updatedAt", new Date());
 
         Server updated = serverService.updateById(id, updateData);
         if (updated != null) {
-            return ResponseEntity.ok(Map.of("success", true, "data", updated, "message", "Server activity updated successfully"));
+            return ResponseEntity.ok(AdminServerProtoMapper.toMutationResponse(updated, "Server activity updated successfully"));
         }
-        return ResponseEntity.status(500).body(Map.of("success", false, "error", "Failed to update server"));
+        throw new ValidationException("Failed to update server");
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteServer(@PathVariable String id) {
         if (serverService.deleteById(id)) {
-            return ResponseEntity.ok(Map.of("success", true, "message", "Server deleted successfully"));
+            return ResponseEntity.ok(AdminServerProtoMapper.toMutationResponse(null, "Server deleted successfully"));
         }
-        return ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found"));
+        throw new ResourceNotFoundException("Server not found");
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<?> bulkOperation(@RequestBody @Valid BulkOperationRequest request) {
-        if (request.action() == null || request.serverIds() == null || request.serverIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Missing required fields: action, serverIds"));
+    public ResponseEntity<?> bulkOperation(@RequestBody AdminServerBulkOperationRequest request) {
+        List<String> serverIds = request.getServerIdsList();
+        if (request.getAction().isEmpty() || serverIds.isEmpty()) {
+            throw new ValidationException("Missing required fields: action, serverIds");
         }
 
-        long affectedCount = switch (request.action()) {
-            case "delete" -> serverService.bulkDelete(request.serverIds());
-            case "suspend" -> serverService.bulkSuspend(request.serverIds());
-            case "activate" -> serverService.bulkActivate(request.serverIds());
+        String action = request.getAction();
+        long affectedCount = switch (action) {
+            case "delete" -> serverService.bulkDelete(serverIds);
+            case "suspend" -> serverService.bulkSuspend(serverIds);
+            case "activate" -> serverService.bulkActivate(serverIds);
             case "update-plan" -> {
-                if (request.parameters() == null || !request.parameters().containsKey("plan")) {
+                if (!request.hasParameters() || !request.getParameters().hasPlan()) {
                     yield -1L;
                 }
-                yield serverService.bulkUpdatePlan(request.serverIds(), (String) request.parameters().get("plan"));
+                yield serverService.bulkUpdatePlan(serverIds, request.getParameters().getPlan());
             }
             default -> -1L;
         };
 
         if (affectedCount < 0) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid action or missing parameters"));
+            throw new ValidationException("Invalid action or missing parameters");
         }
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of("action", request.action(), "affectedCount", affectedCount, "serverIds", request.serverIds()),
-            "message", "Bulk operation '" + request.action() + "' completed successfully"
-        ));
+        return ResponseEntity.ok(AdminServerProtoMapper.toBulkOperationResponse(
+            action, affectedCount, serverIds, "Bulk operation '" + action + "' completed successfully"));
     }
 
     @PostMapping("/{id}/reset-database")
@@ -216,51 +207,37 @@ public class AdminServerController {
             .map(server -> {
                 serverService.resetServerDatabase(server);
                 log.info("Server {} reset to provisioning state by admin", server.getServerName());
-                return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "Server reset to provisioning state. The provisioning system will reinitialize the database."
-                ));
+                return ResponseEntity.ok((Object) AdminServerProtoMapper.toMutationResponse(null,
+                    "Server reset to provisioning state. The provisioning system will reinitialize the database."));
             })
-            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
     }
 
     @PostMapping("/{id}/export-data")
     public ResponseEntity<?> exportData(@PathVariable String id) {
         return serverService.findById(id)
-            .map(server -> ResponseEntity.ok(Map.of(
-                "success", true,
-                "message", "Data export initiated. You will receive an email with the download link."
-            )))
-            .orElse(ResponseEntity.status(404).body(Map.of("success", false, "error", "Server not found")));
+            .map(server -> ResponseEntity.ok((Object) AdminServerProtoMapper.toMutationResponse(null,
+                "Data export initiated. You will receive an email with the download link.")))
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
     }
 
     @PostMapping("/search")
-    public ResponseEntity<?> searchServers(@RequestBody @Valid SearchRequest request) {
-        String query = request.query() != null ? request.query() : "";
-        Map<String, Object> filters = request.filters() != null ? request.filters() : Map.of();
-
-        String plan = filters.get("plan") != null ? filters.get("plan").toString() : null;
-        String status = filters.get("status") != null ? filters.get("status").toString() : null;
+    public ResponseEntity<?> searchServers(@RequestBody AdminServerSearchRequest request) {
+        String query = request.hasQuery() ? request.getQuery() : "";
+        String plan = request.hasFilters() && request.getFilters().hasPlan() ? request.getFilters().getPlan() : null;
+        String status = request.hasFilters() && request.getFilters().hasStatus() ? request.getFilters().getStatus() : null;
 
         List<Server> servers = serverService.findServers(query, plan, status, "createdAt", "desc", 0, 50);
         long total = serverService.countServers(query, plan, status);
 
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of(
-                "servers", servers,
-                "total", total
-            )
-        ));
+        return ResponseEntity.ok(AdminServerProtoMapper.toSearchResponse(servers, total));
     }
 
     @PostMapping("/export")
-    public ResponseEntity<?> exportServers(@RequestBody @Valid ExportRequest request) {
-        String format = request.format() != null ? request.format() : "json";
-        Map<String, Object> filters = request.filters() != null ? request.filters() : Map.of();
-
-        String plan = filters.get("plan") != null ? filters.get("plan").toString() : null;
-        String status = filters.get("status") != null ? filters.get("status").toString() : null;
+    public ResponseEntity<?> exportServers(@RequestBody AdminServerExportRequest request) {
+        String format = request.hasFormat() ? request.getFormat() : "json";
+        String plan = request.hasFilters() && request.getFilters().hasPlan() ? request.getFilters().getPlan() : null;
+        String status = request.hasFilters() && request.getFilters().hasStatus() ? request.getFilters().getStatus() : null;
 
         if ("csv".equalsIgnoreCase(format)) {
             return ResponseEntity.ok()
@@ -270,48 +247,10 @@ public class AdminServerController {
         }
 
         List<Server> servers = serverService.findServers(null, plan, status, "createdAt", "desc", 0, 10000);
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "data", Map.of(
-                "servers", servers,
-                "exportedAt", new Date(),
-                "format", format,
-                "count", servers.size()
-            )
-        ));
+        return ResponseEntity.ok(AdminServerProtoMapper.toExportResponse(servers, new Date(), format, servers.size()));
     }
 
-    public record SearchRequest(
-        @Size(max = RequestValidationLimits.ADMIN_SEARCH_QUERY_MAX_LENGTH) String query,
-        Map<String, Object> filters
-    ) {}
-
-    public record ExportRequest(
-        @Size(max = RequestValidationLimits.EXPORT_FORMAT_MAX_LENGTH) String format,
-        Map<String, Object> filters
-    ) {}
-
-    public record UsageBatchRequest(
-        @NotEmpty @Size(max = RequestValidationLimits.ADMIN_BULK_SERVER_IDS_MAX_ENTRIES) List<@NotBlank String> serverIds,
-        Boolean forceRefresh
-    ) {}
-
-    public record CreateServerRequest(
-        @NotBlank @Size(max = RequestValidationLimits.ADMIN_SERVER_NAME_MAX_LENGTH) String serverName,
-        @NotBlank @Size(max = RequestValidationLimits.DOMAIN_MAX_LENGTH) String customDomain,
-        @Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String adminEmail,
-        @Size(max = RequestValidationLimits.ADMIN_PLAN_MAX_LENGTH) String plan
-    ) {}
-
-    public record UpdateStatsRequest(
-        @Min(0) Integer userCount,
-        @Min(0) Integer ticketCount,
-        Date lastActivityAt
-    ) {}
-
-    public record BulkOperationRequest(
-        @NotBlank @Size(max = RequestValidationLimits.ADMIN_BULK_ACTION_MAX_LENGTH) String action,
-        @NotEmpty @Size(max = RequestValidationLimits.ADMIN_BULK_SERVER_IDS_MAX_ENTRIES) List<@NotBlank String> serverIds,
-        Map<String, Object> parameters
-    ) {}
+    private static Date toDate(Timestamp timestamp) {
+        return new Date(timestamp.getSeconds() * 1000L + timestamp.getNanos() / 1_000_000L);
+    }
 }

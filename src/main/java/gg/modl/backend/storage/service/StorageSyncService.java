@@ -1,20 +1,22 @@
 package gg.modl.backend.storage.service;
 
 import com.mongodb.client.result.UpdateResult;
+import gg.modl.backend.database.mongo.fields.StorageFileDocumentFields;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.storage.config.StorageExecutorConfig;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -27,24 +29,28 @@ public class StorageSyncService {
 
     private final Set<String> syncsInProgress = ConcurrentHashMap.newKeySet();
 
+    @Async(StorageExecutorConfig.STORAGE_TASK_EXECUTOR)
     public void triggerAsyncSync(Server server) {
         String serverId = server.getId();
         if (!syncsInProgress.add(serverId)) {
             return;
         }
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                syncServerFiles(server);
-            } catch (Exception e) {
-                log.warn("Async sync failed for server {}", server.getDatabaseName(), e);
-            } finally {
-                syncsInProgress.remove(serverId);
-            }
-        });
+        try {
+            syncServerFiles(server, false);
+        } catch (Exception e) {
+            log.warn("Async sync failed for server {}", server.getDatabaseName(), e);
+        } finally {
+            syncsInProgress.remove(serverId);
+        }
     }
 
-    public int syncServerFiles(Server server) {
+    public int syncServerFiles(Server server, boolean authoritative) {
+        if (!s3StorageService.isConfigured()) {
+            log.warn("Skipping storage sync for server {}: S3 is not configured", server.getDatabaseName());
+            return 0;
+        }
+
         List<S3StorageService.S3ObjectInfo> objects = s3StorageService.listAllObjects(server);
 
         int inserted = 0;
@@ -53,14 +59,14 @@ public class StorageSyncService {
             String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1);
             String category = S3StorageService.categorizeFile(obj.key());
 
-            Query query = Query.query(Criteria.where("key").is(obj.key()));
+            Query query = Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(obj.key()));
             Update update = new Update()
-                .setOnInsert("key", obj.key())
-                .setOnInsert("fileName", fileName)
-                .set("size", obj.size())
-                .setOnInsert("contentType", "application/octet-stream")
-                .setOnInsert("category", category)
-                .setOnInsert("createdAt", Date.from(obj.lastModified()));
+                .setOnInsert(StorageFileDocumentFields.KEY, obj.key())
+                .setOnInsert(StorageFileDocumentFields.FILE_NAME, fileName)
+                .set(StorageFileDocumentFields.SIZE, obj.size())
+                .setOnInsert(StorageFileDocumentFields.CONTENT_TYPE, "application/octet-stream")
+                .setOnInsert(StorageFileDocumentFields.CATEGORY, category)
+                .setOnInsert(StorageFileDocumentFields.CREATED_AT, Date.from(obj.lastModified()));
 
             UpdateResult result = storageFileRepository.upsert(server, query, update);
             if (result.getUpsertedId() != null) {
@@ -75,7 +81,11 @@ public class StorageSyncService {
         }
         storageFileRepository.deleteByKeyNotIn(server, s3Keys);
 
-        serverRepository.setStorageUsed(server.getId(), totalSize);
+        if (authoritative) {
+            serverRepository.setStorageUsed(server.getId(), totalSize);
+        } else {
+            serverRepository.setStorageUsedIfBelow(server.getId(), totalSize);
+        }
 
         log.info("Synced {} files ({} new) for server {}", objects.size(), inserted, server.getDatabaseName());
         return objects.size();

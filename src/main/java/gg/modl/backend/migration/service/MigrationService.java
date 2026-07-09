@@ -2,10 +2,14 @@ package gg.modl.backend.migration.service;
 
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.migration.data.MigrationStatus;
-import gg.modl.backend.migration.dto.MigrationStatusResponse;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.SyncMigrationTask;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,10 +17,12 @@ import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import gg.modl.backend.migration.config.MigrationConfiguration;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,50 +32,45 @@ import org.springframework.web.multipart.MultipartFile;
 public class MigrationService {
     private final MigrationMongoRepository migrationRepository;
     private final MigrationConfiguration migrationConfiguration;
+    private final RealtimeEventPublisher publisher;
+    private final ServerLimitPolicy serverLimitPolicy;
+
+    public record CooldownState(boolean onCooldown, @Nullable Long remainingTime) {}
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
         "idle", "building_json", "uploading_json", "processing_data", "completed", "failed"
     );
     private static final long COOLDOWN_MS = 60 * 60 * 1000;
-    private static final long DEFAULT_FILE_SIZE_LIMIT = 500 * 1024 * 1024;
+    private static final long STALE_MIGRATION_MS = 30 * 60 * 1000;
     private static final int MAX_MESSAGE_LENGTH = 1000;
 
-    public MigrationStatusResponse getMigrationStatus(Server server) {
-        MigrationStatus status = migrationRepository.findLatest(server).orElse(null);
-
-        MigrationStatusResponse.CurrentMigration currentMigration = null;
-        if (status != null) {
-            currentMigration = new MigrationStatusResponse.CurrentMigration(
-                status.getTaskId(),
-                status.getType(),
-                status.getStatus(),
-                status.getProgress(),
-                status.getStartedAt(),
-                status.getCompletedAt(),
-                status.getError()
-            );
-        }
-
-        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
-
-        return new MigrationStatusResponse(currentMigration, cooldown);
+    public Optional<MigrationStatus> getLatestMigration(Server server) {
+        Date now = new Date();
+        Date staleBefore = new Date(now.getTime() - STALE_MIGRATION_MS);
+        migrationRepository.failStaleMigrations(server, staleBefore, now,
+            "Migration timed out and was automatically cancelled.");
+        return migrationRepository.findLatest(server);
     }
 
-    public MigrationStatusResponse.CooldownInfo checkCooldown(Server server) {
+    public boolean isActiveMigrationPresent(Server server) {
+        return migrationRepository.existsActiveMigration(server);
+    }
+
+    public CooldownState checkCooldown(Server server) {
         MigrationStatus lastMigration = migrationRepository.findLatestCompletedOrFailed(server).orElse(null);
 
         if (lastMigration == null || lastMigration.getCompletedAt() == null) {
-            return new MigrationStatusResponse.CooldownInfo(false, null);
+            return new CooldownState(false, null);
         }
 
         long timeSinceCompletion = System.currentTimeMillis() - lastMigration.getCompletedAt().getTime();
 
         if (timeSinceCompletion < COOLDOWN_MS) {
-            return new MigrationStatusResponse.CooldownInfo(true, COOLDOWN_MS - timeSinceCompletion);
+            return new CooldownState(true, COOLDOWN_MS - timeSinceCompletion);
         }
 
-        return new MigrationStatusResponse.CooldownInfo(false, null);
+        return new CooldownState(false, null);
     }
 
     public Map<String, Object> startMigration(Server server, String migrationType) {
@@ -77,21 +78,26 @@ public class MigrationService {
             return Map.of("success", false, "error", "Invalid migration type");
         }
 
-        if (migrationRepository.existsActiveMigration(server)) {
+        Date now = new Date();
+        Date staleBefore = new Date(now.getTime() - STALE_MIGRATION_MS);
+        migrationRepository.failStaleMigrations(server, staleBefore, now,
+            "Migration timed out and was automatically cancelled.");
+
+        if (migrationRepository.existsActiveMigration(server, staleBefore)) {
             return Map.of("success", false, "error", "A migration is already in progress");
         }
 
-        MigrationStatusResponse.CooldownInfo cooldown = checkCooldown(server);
+        CooldownState cooldown = checkCooldown(server);
         if (cooldown.onCooldown()) {
             return Map.of("success", false, "error", "Migration on cooldown. Please wait before starting another migration.");
         }
 
         String taskId = UUID.randomUUID().toString();
-        Date now = new Date();
+        String type = migrationType.toLowerCase();
 
         MigrationStatus status = MigrationStatus.builder()
             .taskId(taskId)
-            .type(migrationType.toLowerCase())
+            .type(type)
             .status("building_json")
             .progress(MigrationStatus.MigrationProgress.builder()
                 .message("Waiting for Minecraft server to build migration file...")
@@ -102,6 +108,11 @@ public class MigrationService {
             .build();
 
         migrationRepository.saveEntity(server, status);
+
+        publisher.pushMigrationTask(server, SyncMigrationTask.newBuilder()
+            .setTaskId(taskId)
+            .setType(type)
+            .build());
 
         return Map.of(
             "success", true,
@@ -117,8 +128,10 @@ public class MigrationService {
             return Map.of("success", false, "error", "No active migration to cancel");
         }
 
+        boolean cooldownExempt = "building_json".equals(activeMigration.getStatus());
+
         migrationRepository.cancelMigration(server, activeMigration.getId(),
-            "Cancelled by administrator", new Date(), "Migration cancelled by administrator");
+            "Cancelled by administrator", new Date(), "Migration cancelled by administrator", cooldownExempt);
 
         return Map.of("success", true, "message", "Migration cancelled successfully");
     }
@@ -144,45 +157,49 @@ public class MigrationService {
         );
     }
 
-    public Map<String, Object> updateProgress(Server server, UpdateProgressRequest request) {
+    public void updateProgress(Server server, UpdateProgressRequest request) {
         if (request.status() == null || !VALID_STATUSES.contains(request.status())) {
-            return Map.of("success", false, "error", "Invalid status value");
+            throw new ValidationException("Invalid status value");
         }
 
-        if (request.message() == null || request.message().length() > MAX_MESSAGE_LENGTH) {
-            return Map.of("success", false, "error", "Invalid or too long message");
+        if (request.message() == null) {
+            throw new ValidationException("Message is required");
         }
 
         if (request.recordsProcessed() != null && request.recordsProcessed() < 0) {
-            return Map.of("success", false, "error", "Invalid recordsProcessed value");
+            throw new ValidationException("Invalid recordsProcessed value");
         }
 
         if (request.totalRecords() != null && request.totalRecords() < 0) {
-            return Map.of("success", false, "error", "Invalid totalRecords value");
+            throw new ValidationException("Invalid totalRecords value");
         }
+
+        String message = clampMessage(request.message());
 
         MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);
 
         if (activeMigration == null) {
-            return Map.of("success", false, "error", "No active migration found");
+            throw new ResourceNotFoundException("No active migration found");
         }
 
         Date completedAt = ("completed".equals(request.status()) || "failed".equals(request.status()))
             ? new Date() : null;
 
         migrationRepository.updateProgress(server, activeMigration.getId(),
-            request.status(), request.message(),
+            request.status(), message,
             request.recordsProcessed(), request.recordsSkipped(),
             request.totalRecords(), completedAt);
+    }
 
-        return Map.of("success", true);
+    private static String clampMessage(String message) {
+        if (message == null || message.length() <= MAX_MESSAGE_LENGTH) {
+            return message;
+        }
+        return message.substring(0, MAX_MESSAGE_LENGTH - 1) + "…";
     }
 
     public long getFileSizeLimit(Server server) {
-        if (server.getMigrationFileSizeLimit() != null) {
-            return server.getMigrationFileSizeLimit();
-        }
-        return DEFAULT_FILE_SIZE_LIMIT;
+        return serverLimitPolicy.resolve(server).getMigrationFileSizeLimit();
     }
 
     public Path saveUploadedFile(MultipartFile file) {
@@ -195,6 +212,25 @@ public class MigrationService {
             return filePath;
         } catch (IOException e) {
             throw new ExternalServiceException("Failed to save migration file", e);
+        }
+    }
+
+    public void requireActiveMigrationForUpload(Server server) {
+        if (!migrationRepository.existsActiveMigration(server)) {
+            throw new ResourceNotFoundException("No active migration found for upload");
+        }
+    }
+
+    public void discardUpload(Server server, Path filePath, String reason) {
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.warn("Failed to delete orphaned migration upload {}", filePath, e);
+        }
+        try {
+            updateProgress(server, new UpdateProgressRequest("failed", reason, 0, 0, null));
+        } catch (Exception e) {
+            log.warn("Failed to mark migration failed after discarding upload {}", filePath, e);
         }
     }
 }

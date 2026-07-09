@@ -30,7 +30,7 @@ public class FilterConfig {
             corsProperties.getSystemOrigins()
         ));
         registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
-        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 1);
+        registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);
 
         return registrationBean;
     }

@@ -57,7 +57,6 @@ class AdminAnalyticsServiceTest {
     @Test
     void getUsageReadsStorageStatsFromMongo() {
         when(serverRepository.countActiveSince(org.mockito.ArgumentMatchers.any())).thenReturn(2L);
-        when(serverRepository.countAll()).thenReturn(4L);
         when(globalMongoAdminRepository.getStorageSize()).thenReturn(2048L);
 
         @SuppressWarnings("unchecked")
@@ -68,5 +67,6 @@ class AdminAnalyticsServiceTest {
         Map<String, Object> resourceUtilization = (Map<String, Object>) data.get("resourceUtilization");
 
         assertEquals(2048L, resourceUtilization.get("storage"));
+        assertEquals(0.0, resourceUtilization.get("storagePercent"));
     }
 }

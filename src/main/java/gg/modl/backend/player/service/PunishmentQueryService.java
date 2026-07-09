@@ -1,5 +1,7 @@
 package gg.modl.backend.player.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
@@ -11,25 +13,30 @@ import gg.modl.backend.player.data.punishment.PunishmentEvidence;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.player.dto.response.PunishmentPreviewResponse;
+import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentDurationResolver;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.storage.service.EvidenceUploadTokenService;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -50,6 +57,8 @@ public class PunishmentQueryService {
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
     private final TicketMongoRepository ticketRepository;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int RECENT_PUNISHMENT_SCAN_LIMIT = 500;
 
     public List<PunishmentResponse> getActivePunishments(Server server, UUID playerUuid) {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString()).orElse(null);
@@ -57,19 +66,29 @@ public class PunishmentQueryService {
             return new ArrayList<>();
         }
 
-        return player.getPunishments()
+        List<Punishment> activePunishments = player.getPunishments()
             .stream()
             .filter(statusCalculator::isPunishmentActive)
-            .map(p -> toPunishmentResponse(server, p))
+            .toList();
+        return toPunishmentResponses(server, activePunishments);
+    }
+
+    public List<PunishmentResponse> getPlayerPunishmentResponses(Server server, Player player) {
+        return toPunishmentResponses(server, player.getPunishments());
+    }
+
+    private List<PunishmentResponse> toPunishmentResponses(Server server, List<Punishment> punishments) {
+        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, punishments);
+        return punishments.stream()
+            .map(punishment -> buildPunishmentResponse(server, punishment, null, resolvedIssuers))
             .toList();
     }
 
-    private PunishmentResponse toPunishmentResponse(Server server, Punishment punishment) {
-        return toPunishmentResponseWithPlayer(server, punishment, null);
+    private PunishmentResponse toPunishmentResponseWithPlayer(Server server, Punishment punishment, Player player) {
+        return buildPunishmentResponse(server, punishment, player, resolveIssuersForPunishment(server, punishment));
     }
 
-    private PunishmentResponse toPunishmentResponseWithPlayer(Server server, Punishment punishment, Player player) {
-        Map<String, String> resolvedIssuers = resolveIssuersForPunishment(server, punishment);
+    private PunishmentResponse buildPunishmentResponse(Server server, Punishment punishment, Player player, Map<String, String> resolvedIssuers) {
         Map<String, Object> data = punishment.getData();
         boolean active = statusCalculator.isPunishmentActive(punishment);
         Date expires = statusCalculator.getEffectiveExpiry(punishment);
@@ -117,7 +136,9 @@ public class PunishmentQueryService {
 
     private static String resolveOffenderStatus(Map<String, Object> data) {
         String status = PunishmentData.getStatus(data);
-        if (status != null) {
+        if (status != null
+            && !PunishmentStatus.UNSTARTED.equals(status)
+            && !PunishmentStatus.PARDONED.equals(status)) {
             return status;
         }
         // Backward compat: map legacy offenseLevel to display status
@@ -263,32 +284,27 @@ public class PunishmentQueryService {
 
     public List<Map<String, Object>> getRecentPunishments(Server server, int hours) {
         Date cutoff = new Date(System.currentTimeMillis() - (hours * 60L * 60L * 1000L));
-        List<Player> players = punishmentRepository.findWithPunishmentsIssuedAfter(server, cutoff);
+        List<Player> players = punishmentRepository.findWithPunishmentsIssuedAfter(server, cutoff, RECENT_PUNISHMENT_SCAN_LIMIT);
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
 
-        List<Punishment> recentPunishments = new ArrayList<>();
+        List<PunishmentContext> recent = new ArrayList<>();
+        Set<String> issuerIds = new HashSet<>();
         for (Player player : players) {
             for (Punishment punishment : player.getPunishments()) {
                 if (punishment.getIssued() != null && punishment.getIssued().after(cutoff)) {
-                    recentPunishments.add(punishment);
+                    recent.add(new PunishmentContext(player, punishment));
+                    issuerIds.addAll(collectIssuerIds(punishment));
                 }
             }
         }
-        Map<String, String> resolvedIssuers = resolveIssuersForPunishments(server, recentPunishments);
+        Map<String, String> resolvedIssuers = issuerIds.isEmpty() ? Map.of() : issuerNameResolver.batchResolve(issuerIds, server);
 
         List<Map<String, Object>> punishments = new ArrayList<>();
-        for (Player player : players) {
-            String username = getLatestUsername(player);
-            for (Punishment punishment : player.getPunishments()) {
-                if (punishment.getIssued() == null || !punishment.getIssued().after(cutoff)) {
-                    continue;
-                }
-
-                Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(punishment, types, resolvedIssuers);
-                punishmentMap.put("playerName", username);
-                punishmentMap.put("playerUuid", player.getMinecraftUuid().toString());
-                punishments.add(punishmentMap);
-            }
+        for (PunishmentContext entry : recent) {
+            Map<String, Object> punishmentMap = PunishmentMapper.toPunishmentMap(entry.punishment(), types, resolvedIssuers);
+            punishmentMap.put("playerName", getLatestUsername(entry.player()));
+            punishmentMap.put("playerUuid", entry.player().getMinecraftUuid().toString());
+            punishments.add(punishmentMap);
         }
 
         punishments.sort((left, right) -> ((Date) right.get("issued")).compareTo((Date) left.get("issued")));
@@ -331,8 +347,8 @@ public class PunishmentQueryService {
         return results;
     }
 
-    public PunishmentPreviewResponse previewPunishment(Server server, String playerUuid, int typeOrdinal) {
-        Player player = playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
+    public PunishmentPreviewView previewPunishment(Server server, String playerUuid, int typeOrdinal) {
+        Player player = playerRepository.findByMinecraftUuid(server, normalizeUuid(playerUuid)).orElse(null);
         if (player == null) {
             return PunishmentPreviewResponse.error("Player not found");
         }
@@ -394,17 +410,13 @@ public class PunishmentQueryService {
         OffenderThresholdSettings thresholds
     ) {
         int points = type.getPointsForSeverity(severity);
-        DurationDetail durationDetail = type.getDurationDetail(severity, offenseLevel);
+        DurationDetail durationDetail = PunishmentDurationResolver.resolveDetail(type, severity, offenseLevel);
 
-        PunishmentType defaultType = null;
-        if (durationDetail == null || points == 0) {
-            defaultType = PunishmentTypeIndex.byOrdinal(DefaultPunishmentTypes.getAll()).get(type.getOrdinal());
-        }
-        if (durationDetail == null && defaultType != null) {
-            durationDetail = defaultType.getDurationDetail(severity, offenseLevel);
-        }
-        if (points == 0 && defaultType != null) {
-            points = defaultType.getPointsForSeverity(severity);
+        if (points == 0) {
+            PunishmentType defaultType = PunishmentTypeIndex.byOrdinal(DefaultPunishmentTypes.getAll()).get(type.getOrdinal());
+            if (defaultType != null) {
+                points = defaultType.getPointsForSeverity(severity);
+            }
         }
 
         long durationMs = durationDetail != null ? durationDetail.toMilliseconds() : 0L;
@@ -459,7 +471,7 @@ public class PunishmentQueryService {
         response.put("expires", punishment.expires());
         response.put("active", punishment.active());
         response.put("appealable", punishment.isAppealable());
-        response.put("playerUuid", punishment.playerUuid());
+        response.put("playerUuid", context.player().getMinecraftUuid().toString());
 
         List<Ticket> existingAppeals = ticketRepository.findAppealsByPunishmentId(server, punishmentId);
         if (!existingAppeals.isEmpty()) {
@@ -482,16 +494,20 @@ public class PunishmentQueryService {
             Map<String, Object> existingAppeal = new HashMap<>();
             existingAppeal.put("id", latestAppeal.getId());
             existingAppeal.put("submittedDate", latestAppeal.getCreated());
-            String workflowStatus = latestAppeal.getAppealWorkflowStatus() != null
-                                    ? latestAppeal.getAppealWorkflowStatus().getId()
-                                    : latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : "open";
-            existingAppeal.put("status", workflowStatus);
-            existingAppeal.put("appealWorkflowStatus", workflowStatus);
+            existingAppeal.put("status", latestAppeal.getStatus() != null ? latestAppeal.getStatus().getId() : TicketStatus.OPEN.getId());
+            if (latestAppeal.getAppealWorkflowStatus() != null) {
+                existingAppeal.put("appealWorkflowStatus", latestAppeal.getAppealWorkflowStatus().getId());
+            }
+            existingAppeal.put("locked", latestAppeal.isLocked());
             response.put("existingAppeal", existingAppeal);
         }
 
         Optional<PunishmentType> punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.typeOrdinal());
-        response.put("appealForm", punishmentType.map(pt -> pt.getAppealForm()).orElse(null));
+        response.put("appealForm", punishmentType
+            .map(PunishmentType::getAppealForm)
+            .filter(form -> form.getFields() != null && !form.getFields().isEmpty())
+            .map(form -> OBJECT_MAPPER.convertValue(form, new TypeReference<Map<String, Object>>() {}))
+            .orElse(null));
 
         return Optional.of(response);
     }
@@ -532,5 +548,9 @@ public class PunishmentQueryService {
         boolean success,
         int affectedCount
     ) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

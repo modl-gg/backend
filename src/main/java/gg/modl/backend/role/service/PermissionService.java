@@ -11,9 +11,15 @@ import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -55,6 +61,7 @@ public class PermissionService {
         new Permission("admin.audit.view.logs", "View Logs", "View audit trail of staff actions", "admin", "admin.audit.view"),
 
         // Punishment permissions
+        new Permission("punishment.view", "View Punishments", "View player profiles, punishments, and linked accounts", "punishment"),
         new Permission("punishment.modify", "Modify Punishments", "Full control over existing punishments (includes all sub-permissions)", "punishment"),
         new Permission("punishment.modify.pardon", "Pardon Punishments", "Pardon punishments and clear associated points", "punishment", "punishment.modify"),
         new Permission("punishment.modify.duration", "Modify Duration", "Change punishment duration", "punishment", "punishment.modify"),
@@ -77,6 +84,7 @@ public class PermissionService {
         new Permission("ticket.view.all.notes", "View Staff Notes", "View internal staff notes on tickets", "ticket", "ticket.view.all"),
         new Permission("ticket.reply.all", "Reply to All Tickets", "Reply to all ticket types (includes all sub-permissions)", "ticket"),
         new Permission("ticket.reply.all.notes", "Add Staff Notes", "Add staff-only internal notes", "ticket", "ticket.reply.all"),
+        new Permission("appeal.modify", "Modify Appeals", "Reply to and update appeals", "ticket"),
         new Permission("ticket.close.all", "Close/Reopen All Tickets", "Close and reopen all ticket types (includes all sub-permissions)", "ticket"),
         new Permission("ticket.close.all.lock", "Lock Tickets", "Lock tickets to prevent further replies", "ticket", "ticket.close.all"),
         new Permission("ticket.manage", "Manage Tickets", "Advanced ticket management (includes all sub-permissions)", "ticket"),
@@ -116,7 +124,7 @@ public class PermissionService {
         List<Permission> permissions = new ArrayList<>();
 
         punishmentTypes.forEach(type -> {
-            String permId = "punishment.apply." + type.getName().toLowerCase().replace(" ", "-");
+            String permId = punishmentApplyPermissionId(type.getName());
             permissions.add(new Permission(
                 permId,
                 "Apply " + type.getName(),
@@ -128,36 +136,80 @@ public class PermissionService {
         return permissions;
     }
 
-    public boolean hasPermission(Server server, String staffRole, String permission) {
-        if (staffRole == null || staffRole.isBlank()) {
+    public static String punishmentApplyPermissionId(String typeName) {
+        return "punishment.apply." + typeName.toLowerCase().replace(" ", "-");
+    }
+
+    public void renamePunishmentApplyPermission(Server server, String oldName, String newName) {
+        if (oldName == null || newName == null) {
+            return;
+        }
+        String oldId = punishmentApplyPermissionId(oldName);
+        String newId = punishmentApplyPermissionId(newName);
+        if (oldId.equals(newId)) {
+            return;
+        }
+
+        boolean changed = false;
+        for (StaffRole role : staffRoleRepository.findAllOrdered(server)) {
+            List<String> permissions = role.getPermissions();
+            if (permissions == null || !permissions.contains(oldId)) {
+                continue;
+            }
+            List<String> migrated = new ArrayList<>();
+            for (String permission : permissions) {
+                String replacement = permission.equals(oldId) ? newId : permission;
+                if (!migrated.contains(replacement)) {
+                    migrated.add(replacement);
+                }
+            }
+            role.setPermissions(migrated);
+            staffRoleRepository.upsertRole(server, role);
+            changed = true;
+        }
+
+        if (changed) {
+            permissionCache.invalidateAll();
+        }
+    }
+
+    public boolean hasPermission(Server server, String roleId, String permission) {
+        if (roleId == null || roleId.isBlank()) {
             return false;
         }
 
-        String trimmedRole = staffRole.trim();
+        String trimmedRole = roleId.trim();
         String cacheKey = server.getId() + ":" + trimmedRole + ":" + permission;
         return permissionCache.get(cacheKey, key -> computeHasPermission(server, trimmedRole, permission));
     }
 
-    private boolean computeHasPermission(Server server, String staffRole, String permission) {
-        StaffRole role = staffRoleRepository.findByName(server, staffRole).orElse(null);
-
+    private boolean computeHasPermission(Server server, String roleId, String permission) {
+        StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
         if (role == null) {
             return false;
         }
+        return RoleAuthorization.roleGrants(role, permission);
+    }
 
-        if ("super-admin".equals(role.getId()) || "Super Admin".equals(role.getName())) {
+    public boolean hasAnyPermissionWithPrefix(Server server, String roleId, String prefix) {
+        if (roleId == null || roleId.isBlank()) {
+            return false;
+        }
+
+        String trimmedRole = roleId.trim();
+        String cacheKey = server.getId() + ":" + trimmedRole + ":prefix:" + prefix;
+        return permissionCache.get(cacheKey, key -> computeHasPermissionWithPrefix(server, trimmedRole, prefix));
+    }
+
+    private boolean computeHasPermissionWithPrefix(Server server, String roleId, String prefix) {
+        StaffRole role = staffRoleRepository.findById(server, roleId).orElse(null);
+        if (role == null) {
+            return false;
+        }
+        if (RoleAuthorization.isSuperAdminRole(role)) {
             return true;
         }
-
-        for (String perm : role.getPermissions()) {
-            if (perm.equals(permission)) {
-                return true;
-            }
-            if (permission.startsWith(perm + ".")) {
-                return true;
-            }
-        }
-        return false;
+        return role.getPermissions().stream().anyMatch(p -> p.startsWith(prefix));
     }
 
     public void evictPermissionCache() {
@@ -169,12 +221,46 @@ public class PermissionService {
             return Optional.empty();
         }
 
-        return staffRoleRepository.findByName(server, roleName.trim());
+        return staffRoleRepository.findAllByName(server, roleName.trim()).stream()
+            .min(Comparator.comparingInt(StaffRole::getOrder)
+                .thenComparing(StaffRole::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(StaffRole::getId));
+    }
+
+    public Optional<StaffRole> getRoleById(Server server, String roleId) {
+        if (roleId == null || roleId.isBlank()) {
+            return Optional.empty();
+        }
+
+        return staffRoleRepository.findById(server, roleId.trim());
+    }
+
+    public Map<String, StaffRole> getRolesByIds(Server server, Collection<String> roleIds) {
+        Set<String> ids = roleIds.stream()
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return staffRoleRepository.findByIds(server, ids).stream()
+            .collect(Collectors.toMap(StaffRole::getId, Function.identity(), (left, right) -> left, LinkedHashMap::new));
+    }
+
+    public Map<String, String> resolveRoleNames(Server server, Collection<String> roleIds) {
+        Map<String, String> names = new LinkedHashMap<>();
+        getRolesByIds(server, roleIds).forEach((id, role) -> names.put(id, role.getName()));
+        return names;
+    }
+
+    public String resolveRoleName(Server server, String roleId) {
+        if (roleId == null || roleId.isBlank()) {
+            return "";
+        }
+        return getRoleById(server, roleId).map(StaffRole::getName).orElse(roleId);
     }
 
     public boolean isSuperAdmin(Server server, String staffEmail) {
-        return server.getAdminEmail() != null &&
-               server.getAdminEmail().equalsIgnoreCase(staffEmail);
+        return RoleAuthorization.isSuperAdminEmail(server, staffEmail);
     }
 
     public boolean isAuthorizedEmail(Server server, String email) {

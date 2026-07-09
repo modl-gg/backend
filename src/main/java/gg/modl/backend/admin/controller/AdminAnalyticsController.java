@@ -1,12 +1,14 @@
 package gg.modl.backend.admin.controller;
 
-import gg.modl.backend.admin.dto.request.ExportAnalyticsRequest;
-import gg.modl.backend.admin.dto.request.GenerateReportRequest;
 import gg.modl.backend.admin.service.AdminAnalyticsService;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import jakarta.validation.Valid;
+import gg.modl.proto.modl.v1.AdminAnalyticsReportResponse;
+import gg.modl.proto.modl.v1.ExportAnalyticsRequest;
+import gg.modl.proto.modl.v1.GenerateReportRequest;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,17 +25,17 @@ public class AdminAnalyticsController {
 
     @GetMapping("/dashboard")
     public ResponseEntity<?> getDashboard(@RequestParam(defaultValue = "30d") String range) {
-        return ResponseEntity.ok(adminAnalyticsService.getDashboard(range));
+        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toDashboardResponse(adminAnalyticsService.getDashboard(range)));
     }
 
     @GetMapping("/activity")
     public ResponseEntity<?> getActivity(@RequestParam(defaultValue = "30d") String range) {
-        return ResponseEntity.ok(adminAnalyticsService.getActivity(range));
+        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toActivityResponse(adminAnalyticsService.getActivity(range)));
     }
 
     @GetMapping("/usage")
     public ResponseEntity<?> getUsage() {
-        return ResponseEntity.ok(adminAnalyticsService.getUsage());
+        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toUsageResponse(adminAnalyticsService.getUsage()));
     }
 
     @GetMapping("/historical")
@@ -42,15 +44,15 @@ public class AdminAnalyticsController {
         @RequestParam(defaultValue = "30d") String range) {
         Map<String, Object> response = adminAnalyticsService.getHistorical(metric, range);
         if (Boolean.FALSE.equals(response.get("success"))) {
-            return ResponseEntity.badRequest().body(response);
+            throw new ValidationException(String.valueOf(response.get("error")));
         }
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toHistoricalResponse(response));
     }
 
     @PostMapping("/export")
-    public ResponseEntity<?> exportAnalytics(@RequestBody @Valid ExportAnalyticsRequest request) {
-        String type = request.type() != null ? request.type() : "json";
-        String range = request.range() != null ? request.range() : "30d";
+    public ResponseEntity<?> exportAnalytics(@RequestBody ExportAnalyticsRequest request) {
+        String type = request.hasType() ? request.getType() : "json";
+        String range = request.hasRange() ? request.getRange() : "30d";
 
         Object result = adminAnalyticsService.exportAnalytics(type, range);
 
@@ -60,14 +62,19 @@ public class AdminAnalyticsController {
                 .header("Content-Disposition", "attachment; filename=\"modl-analytics-" + range + ".csv\"")
                 .body(result);
         } else if ("json".equals(type)) {
-            return ResponseEntity.ok(result);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> jsonResult = (Map<String, Object>) result;
+            return ResponseEntity.ok(AdminAnalyticsProtoMapper.toExportResponse(jsonResult));
         }
 
-        return ResponseEntity.badRequest().body(Map.of("success", false, "error", "Invalid export type"));
+        throw new ValidationException("Invalid export type");
     }
 
     @PostMapping("/report")
-    public ResponseEntity<?> generateReport(@RequestBody @Valid GenerateReportRequest request) {
-        return ResponseEntity.status(501).body(Map.of("success", false, "error", "Report generation not implemented"));
+    public ResponseEntity<?> generateReport(@RequestBody GenerateReportRequest request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(AdminAnalyticsReportResponse.newBuilder()
+            .setSuccess(false)
+            .setError("Report generation not implemented")
+            .build());
     }
 }

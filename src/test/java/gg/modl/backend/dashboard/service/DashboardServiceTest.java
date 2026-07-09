@@ -16,6 +16,7 @@ import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.staff.service.StaffService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -43,6 +44,9 @@ class DashboardServiceTest {
     private StaffMongoRepository staffRepository;
 
     @Mock
+    private StaffService staffService;
+
+    @Mock
     private PunishmentTypeService punishmentTypeService;
 
     @Mock
@@ -60,6 +64,7 @@ class DashboardServiceTest {
             playerRepository,
             punishmentRepository,
             staffRepository,
+            staffService,
             punishmentTypeService,
             statusCalculator
         );
@@ -96,6 +101,16 @@ class DashboardServiceTest {
         when(statusCalculator.isPunishmentActive(any(Punishment.class))).thenAnswer(invocation ->
             !((Punishment) invocation.getArgument(0)).getId().startsWith("inactive")
         );
+        when(statusCalculator.getEffectiveCategory(any(Punishment.class), any(Map.class))).thenAnswer(invocation -> {
+            Punishment p = invocation.getArgument(0);
+            if (p.getId().contains("ban")) {
+                return "BAN";
+            }
+            if (p.getId().contains("mute")) {
+                return "MUTE";
+            }
+            return null;
+        });
 
         MinecraftDashboardStatsResponse response = dashboardService.getMinecraftStats(server);
 
@@ -107,6 +122,52 @@ class DashboardServiceTest {
         assertEquals(1L, response.activeMutes());
         assertEquals(2L, response.totalActivePunishments());
         assertEquals(50L, response.totalPlayers());
+    }
+
+    @Test
+    void getMetricsComputesPunishmentAndPlayerTrends() {
+        when(server.getId()).thenReturn("test-server-id");
+
+        Player punishedPlayer = Player.builder()
+            .minecraftUuid(UUID.fromString("33333333-3333-3333-3333-333333333333"))
+            .punishments(List.of(
+                punishment("active-ban", 2, "spam"),
+                punishment("active-mute", 1, "toxicity")
+            ))
+            .build();
+
+        when(ticketRepository.countAll(server)).thenReturn(40L);
+        when(ticketRepository.countByStatus(eq(server), any())).thenReturn(5L);
+        when(playerRepository.countAll(server)).thenReturn(100L);
+        when(staffService.countStaffIncludingSuperAdmin(server)).thenReturn(8L);
+        when(ticketRepository.countCreatedAfter(eq(server), any(Date.class))).thenReturn(12L);
+        when(ticketRepository.countCreatedBetween(eq(server), any(Date.class), any(Date.class))).thenReturn(10L);
+        when(punishmentRepository.countAllPunishments(server)).thenReturn(77L);
+        when(playerRepository.countFirstJoinedAfter(eq(server), any(Date.class))).thenReturn(15L);
+        when(playerRepository.countFirstJoinedBetween(eq(server), any(Date.class), any(Date.class))).thenReturn(10L);
+
+        when(punishmentRepository.findWithPunishmentsProjected(server)).thenReturn(List.of(punishedPlayer));
+        when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of(
+            punishmentType("Mute", 1, "Social"),
+            punishmentType("Ban", 2, "Administrative")
+        ));
+        when(statusCalculator.isPunishmentActive(any(Punishment.class))).thenReturn(true);
+        when(statusCalculator.getEffectiveCategory(any(Punishment.class), any(Map.class))).thenAnswer(invocation -> {
+            Punishment p = invocation.getArgument(0);
+            if (p.getId().contains("ban")) {
+                return "BAN";
+            }
+            if (p.getId().contains("mute")) {
+                return "MUTE";
+            }
+            return null;
+        });
+
+        var metrics = dashboardService.getMetrics(server, "7d");
+
+        assertEquals(77L, metrics.totalPunishments());
+        assertEquals(2L, metrics.activePunishments());
+        assertEquals(50, metrics.playersTrend());
     }
 
     private static Punishment punishment(String id, int ordinal, String reason) {

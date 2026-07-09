@@ -6,6 +6,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.service.StaffTwoFactorService;
 import jakarta.servlet.http.HttpServletRequest;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
+import gg.modl.backend.infrastructure.validation.ValidIpAddress;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -45,6 +46,6 @@ public class MinecraftStaff2faController {
 
     public record Generate2faRequest(
         @NotBlank @Pattern(regexp = RegExpConstants.UUID) String minecraftUuid,
-        @NotBlank @Pattern(regexp = RegExpConstants.IP) String ip
+        @NotBlank @ValidIpAddress String ip
     ) {}
 }

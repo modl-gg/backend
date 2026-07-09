@@ -1,5 +1,9 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractLong;
+
+import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 
@@ -10,6 +14,7 @@ import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -17,13 +22,17 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationExpression;
+import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
 import org.springframework.data.mongodb.core.aggregation.DateOperators;
 import org.springframework.data.mongodb.core.aggregation.ProjectionOperation;
+import org.springframework.data.mongodb.core.aggregation.SetOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -114,8 +123,43 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return findOne(Query.query(Criteria.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token)));
     }
 
+    public Optional<Server> verifyEmailTokenAtomically(String token) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.EMAIL_VERIFICATION_TOKEN).is(token),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(false),
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.PENDING),
+            noCleanupClaimCriteria()
+        ));
+
+        Update update = new Update()
+            .set(ServerFields.EMAIL_VERIFIED, true)
+            .unset(ServerFields.EMAIL_VERIFICATION_TOKEN)
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.IN_PROGRESS)
+            .set(ServerFields.UPDATED_AT, new Date());
+
+        return Optional.ofNullable(findAndModify(
+            query,
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
+    }
+
     public Optional<Server> findByProvisioningSignInToken(String token) {
         return findOne(Query.query(Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token)));
+    }
+
+    public Optional<Server> consumeProvisioningSignInToken(String token, Date now) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN).is(token),
+            Criteria.where(ServerFields.PROVISIONING_SIGN_IN_TOKEN_EXPIRES_AT).gt(now),
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(true),
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.COMPLETED)
+        ));
+        Update update = new Update()
+            .unset(ServerFields.PROVISIONING_SIGN_IN_TOKEN)
+            .unset(ServerFields.PROVISIONING_SIGN_IN_TOKEN_EXPIRES_AT)
+            .set(ServerFields.UPDATED_AT, now);
+        return Optional.ofNullable(findAndModify(query, update, FindAndModifyOptions.options().returnNew(true)));
     }
 
     public Optional<Server> findByCliSetupToken(String token) {
@@ -123,6 +167,9 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
     }
 
     public Optional<Server> findByStripeCustomerId(String customerId) {
+        if (customerId == null) {
+            return Optional.empty();
+        }
         return findOne(Query.query(Criteria.where(ServerFields.STRIPE_CUSTOMER_ID).is(customerId)));
     }
 
@@ -174,15 +221,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
         Document result = aggregate(aggregation, Document.class).getUniqueMappedResult();
         return extractLong(result, ALIAS_TOTAL);
-    }
-
-    private long extractLong(Document document, String fieldName) {
-        if (document == null) {
-            return 0L;
-        }
-
-        Object value = document.get(fieldName);
-        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     public UsageTotals getUsageTotals() {
@@ -339,6 +377,93 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return find(query);
     }
 
+    public List<Server> findExpiredRegistrationCleanupCandidates(Date cutoff, int limit) {
+        return findExpiredRegistrationCleanupCandidates(cutoff, new Date(0), limit);
+    }
+
+    public List<Server> findExpiredRegistrationCleanupCandidates(Date cutoff, Date claimCutoff, int limit) {
+        Query query = Query.query(expiredRegistrationCriteria(cutoff, claimCutoff));
+        query.with(Sort.by(Sort.Direction.ASC, ServerFields.CREATED_AT));
+        query.limit(limit);
+        query.fields()
+            .include(ServerFields.SERVER_NAME)
+            .include(ServerFields.CUSTOM_DOMAIN)
+            .include(ServerFields.DATABASE_NAME)
+            .include(ServerFields.ADMIN_EMAIL)
+            .include(ServerFields.EMAIL_VERIFIED)
+            .include(ServerFields.EMAIL_VERIFICATION_TOKEN)
+            .include(ServerFields.PROVISIONING_STATUS)
+            .include(ServerFields.API_KEY)
+            .include(ServerFields.ONLINE_PLAYER_COUNT)
+            .include(ServerFields.USER_COUNT)
+            .include(ServerFields.TICKET_COUNT)
+            .include(ServerFields.LAST_ACTIVITY_AT)
+            .include(ServerFields.CREATED_AT)
+            .include(ServerFields.UPDATED_AT)
+            .include(ServerFields.CLEANUP_CLAIM_ID)
+            .include(ServerFields.CLEANUP_CLAIMED_AT);
+        return find(query);
+    }
+
+    public Optional<Server> claimExpiredRegistrationForCleanup(String serverId, Date cutoff, Instant claimedAt) {
+        return claimExpiredRegistrationForCleanup(serverId, cutoff, new Date(0), claimedAt);
+    }
+
+    public Optional<Server> claimExpiredRegistrationForCleanup(String serverId, Date cutoff, Date claimCutoff, Instant claimedAt) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            expiredRegistrationCriteria(cutoff, claimCutoff)
+        ));
+        Update update = new Update()
+            .set(ServerFields.CLEANUP_CLAIM_ID, UUID.randomUUID().toString())
+            .set(ServerFields.CLEANUP_CLAIMED_AT, Date.from(claimedAt))
+            .set(ServerFields.UPDATED_AT, Date.from(claimedAt));
+
+        return Optional.ofNullable(findAndModify(
+            query,
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
+    }
+
+    public boolean deleteClaimedExpiredRegistration(String serverId, String cleanupClaimId, Date cutoff) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).is(cleanupClaimId),
+            explicitExpiredRegistrationCriteria(cutoff)
+        ));
+        return remove(query).getDeletedCount() > 0;
+    }
+
+    public Optional<Server> confirmRegistrationCleanupClaim(String serverId, String cleanupClaimId, Date cutoff, Instant confirmedAt) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).is(cleanupClaimId),
+            explicitExpiredRegistrationCriteria(cutoff)
+        ));
+        Update update = new Update()
+            .set(ServerFields.CLEANUP_CLAIMED_AT, Date.from(confirmedAt))
+            .set(ServerFields.UPDATED_AT, Date.from(confirmedAt));
+
+        return Optional.ofNullable(findAndModify(
+            query,
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
+    }
+
+    public boolean releaseRegistrationCleanupClaim(String serverId, String cleanupClaimId) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).is(cleanupClaimId)
+        ));
+        Update update = new Update()
+            .unset(ServerFields.CLEANUP_CLAIM_ID)
+            .unset(ServerFields.CLEANUP_CLAIMED_AT)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return updateFirst(query, update).getModifiedCount() > 0;
+    }
+
     public List<Server> findUsageTargetsByIds(List<String> serverIds) {
         Query query = Query.query(Criteria.where(ServerFields.ID).in(serverIds));
         query.fields()
@@ -354,6 +479,66 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             .include(ServerFields.LAST_ACTIVITY_AT)
             .include(ServerFields.UPDATED_AT);
         return find(query);
+    }
+
+    private Criteria expiredRegistrationCriteria(Date cutoff, Date claimCutoff) {
+        return new Criteria().andOperator(
+            explicitExpiredRegistrationCriteria(cutoff),
+            cleanupClaimEligibleCriteria(claimCutoff)
+        );
+    }
+
+    private Criteria explicitExpiredRegistrationCriteria(Date cutoff) {
+        return new Criteria().andOperator(
+            Criteria.where(ServerFields.EMAIL_VERIFIED).is(false),
+            Criteria.where(ServerFields.PROVISIONING_STATUS).is(ProvisioningStatus.PENDING),
+            Criteria.where(ServerFields.EMAIL_VERIFICATION_TOKEN).exists(true).nin(null, ""),
+            Criteria.where(ServerFields.CREATED_AT).exists(true).lt(cutoff),
+            Criteria.where(ServerFields.DATABASE_NAME).regex("^server_.+"),
+            notPresentOrBlank(ServerFields.API_KEY),
+            notPresent(ServerFields.LAST_ACTIVITY_AT),
+            notPositive(ServerFields.USER_COUNT),
+            notPositive(ServerFields.TICKET_COUNT),
+            notPositive(ServerFields.ONLINE_PLAYER_COUNT)
+        );
+    }
+
+    private Criteria cleanupClaimEligibleCriteria(Date claimCutoff) {
+        return new Criteria().orOperator(
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).exists(false),
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).is(null),
+            Criteria.where(ServerFields.CLEANUP_CLAIMED_AT).lt(claimCutoff)
+        );
+    }
+
+    private Criteria noCleanupClaimCriteria() {
+        return new Criteria().orOperator(
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).exists(false),
+            Criteria.where(ServerFields.CLEANUP_CLAIM_ID).is(null)
+        );
+    }
+
+    private Criteria notPresent(String field) {
+        return new Criteria().orOperator(
+            Criteria.where(field).exists(false),
+            Criteria.where(field).is(null)
+        );
+    }
+
+    private Criteria notPresentOrBlank(String field) {
+        return new Criteria().orOperator(
+            Criteria.where(field).exists(false),
+            Criteria.where(field).is(null),
+            Criteria.where(field).is("")
+        );
+    }
+
+    private Criteria notPositive(String field) {
+        return new Criteria().orOperator(
+            Criteria.where(field).exists(false),
+            Criteria.where(field).is(null),
+            Criteria.where(field).lte(0)
+        );
     }
 
     public List<Server> findProvisioningCandidatesByIds(List<String> serverIds) {
@@ -372,13 +557,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return find(new Query(criteria));
     }
 
-    public void incrementCdnUsage(String serverId, double additionalGb) {
-        updateFirst(
-            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
-            new Update().inc(ServerFields.CDN_USAGE_CURRENT_PERIOD, additionalGb)
-        );
-    }
-
     public void incrementAiRequests(String serverId, long additionalRequests) {
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
@@ -393,11 +571,38 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         );
     }
 
+    public boolean tryIncrementStorageUsedWithinLimit(String serverId, long bytes, long maxBytes) {
+        long maxCurrentBytes = maxBytes - bytes;
+        if (bytes < 0 || maxCurrentBytes < 0) {
+            return false;
+        }
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).lte(maxCurrentBytes),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).exists(false),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).is(null)
+            )
+        ));
+        UpdateResult result = updateFirst(query, new Update().inc(ServerFields.STORAGE_USED_BYTES, bytes));
+        return result.getMatchedCount() == 1;
+    }
+
     public void decrementStorageUsed(String serverId, long bytes) {
-        updateFirst(
-            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
-            new Update().inc(ServerFields.STORAGE_USED_BYTES, -bytes)
+        AggregationUpdate update = AggregationUpdate.update().set(
+            SetOperation.set(ServerFields.STORAGE_USED_BYTES).toValueOf(flooredStorageAfterDecrement(bytes))
         );
+        globalTemplate().updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            entityType(),
+            collectionName()
+        );
+    }
+
+    private AggregationExpression flooredStorageAfterDecrement(long bytes) {
+        return context -> new Document("$max", List.of(0L, new Document("$subtract",
+            List.of("$" + ServerFields.STORAGE_USED_BYTES, bytes))));
     }
 
     public void setStorageUsed(String serverId, long bytes) {
@@ -405,6 +610,18 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().set(ServerFields.STORAGE_USED_BYTES, bytes)
         );
+    }
+
+    public boolean setStorageUsedIfBelow(String serverId, long bytes) {
+        Query query = Query.query(new Criteria().andOperator(
+            Criteria.where(ServerFields.ID).is(serverId),
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).lt(bytes),
+                Criteria.where(ServerFields.STORAGE_USED_BYTES).exists(false)
+            )
+        ));
+        UpdateResult result = updateFirst(query, new Update().set(ServerFields.STORAGE_USED_BYTES, bytes));
+        return result.getModifiedCount() == 1;
     }
 
     public Optional<AIUsageSnapshot> findAIUsageSnapshotById(String serverId) {
@@ -428,9 +645,65 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
-                .set(ServerFields.CDN_USAGE_CURRENT_PERIOD, 0.0)
                 .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
         );
+    }
+
+    public void resetUsageAndStatsCounters(String serverId) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update()
+                .set(ServerFields.STORAGE_USED_BYTES, 0L)
+                .set(ServerFields.USER_COUNT, 0L)
+                .set(ServerFields.TICKET_COUNT, 0L)
+                .set(ServerFields.ONLINE_PLAYER_COUNT, 0L)
+                .set(ServerFields.AI_REQUESTS_CURRENT_PERIOD, 0L)
+                .set(ServerFields.UPDATED_AT, new Date())
+        );
+    }
+
+    public List<Server> findBetaTesters(String search, int skip, int limit) {
+        Query query = buildBetaTesterQuery(search);
+        query.with(Sort.by(Sort.Direction.DESC, ServerFields.BETA_TESTER_CREATED_AT));
+        query.skip(skip).limit(limit);
+        return find(query);
+    }
+
+    public long countBetaTesters(String search) {
+        return count(buildBetaTesterQuery(search));
+    }
+
+    public List<Server> findAllBetaTesters() {
+        return find(Query.query(Criteria.where(ServerFields.BETA_TESTER).is(true)));
+    }
+
+    private Query buildBetaTesterQuery(String search) {
+        Criteria betaCriteria = Criteria.where(ServerFields.BETA_TESTER_CREATED_AT).exists(true);
+        if (search == null || search.trim().isEmpty()) {
+            return new Query(betaCriteria);
+        }
+        String escapedSearch = Pattern.quote(search.trim());
+        return new Query(new Criteria().andOperator(
+            betaCriteria,
+            new Criteria().orOperator(
+                Criteria.where(ServerFields.SERVER_NAME).regex(escapedSearch, "i"),
+                Criteria.where(ServerFields.CUSTOM_DOMAIN).regex(escapedSearch, "i"),
+                Criteria.where(ServerFields.ADMIN_EMAIL).regex(escapedSearch, "i")
+            )
+        ));
+    }
+
+    public Optional<Server> updateBetaState(String serverId, ServerPlan plan, SubscriptionStatus subscriptionStatus, boolean betaTester) {
+        Update update = new Update()
+            .set(ServerFields.PLAN, plan)
+            .set(ServerFields.SUBSCRIPTION_STATUS, subscriptionStatus)
+            .set(ServerFields.BETA_TESTER, betaTester)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return Optional.ofNullable(findAndModify(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
     }
 
     public void updateAdminEmail(String serverId, String adminEmail) {
@@ -446,6 +719,13 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         updateFirst(
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update().set(ServerFields.API_KEY, apiKey)
+        );
+    }
+
+    public void clearApiKey(String serverId) {
+        updateFirst(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            new Update().unset(ServerFields.API_KEY)
         );
     }
 
@@ -486,11 +766,11 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
                     hasChanges = true;
                 }
                 case ServerFields.LAST_ACTIVITY_AT -> {
-                    update.set(ServerFields.LAST_ACTIVITY_AT, value);
+                    update.set(ServerFields.LAST_ACTIVITY_AT, normalizeDate(value));
                     hasChanges = true;
                 }
                 case ServerFields.UPDATED_AT -> {
-                    update.set(ServerFields.UPDATED_AT, value);
+                    update.set(ServerFields.UPDATED_AT, normalizeDate(value));
                     hasChanges = true;
                 }
                 default -> {
@@ -531,6 +811,23 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         return SubscriptionStatus.valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
     }
 
+    private Date normalizeDate(Object value) {
+        if (value instanceof Date d) {
+            return d;
+        }
+        if (value instanceof Instant i) {
+            return Date.from(i);
+        }
+        if (value instanceof Number n) {
+            return new Date(n.longValue());
+        }
+        if (value instanceof String s) {
+            return Date.from(Instant.parse(s.trim()));
+        }
+        throw new IllegalArgumentException("Unsupported value type for date field: "
+            + (value == null ? "null" : value.getClass()));
+    }
+
     public boolean deleteByServerId(String serverId) {
         return remove(Query.query(Criteria.where(ServerFields.ID).is(serverId))).getDeletedCount() > 0;
     }
@@ -548,10 +845,42 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
 
     public long bulkActivate(List<String> serverIds, Date updatedAt) {
         Update update = new Update()
-            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.IN_PROGRESS)
             .set(ServerFields.EMAIL_VERIFIED, true)
             .set(ServerFields.UPDATED_AT, updatedAt);
         return updateMulti(Query.query(Criteria.where(ServerFields.ID).in(serverIds)), update).getModifiedCount();
+    }
+
+    public boolean markProvisioningCompleted(String serverId) {
+        Query query = Query.query(Criteria.where(ServerFields.ID).is(serverId)
+            .and(ServerFields.PROVISIONING_STATUS).in(
+                ProvisioningStatus.IN_PROGRESS, ProvisioningStatus.PENDING, ProvisioningStatus.FAILED));
+        Update update = new Update()
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED)
+            .unset(ServerFields.PROVISIONING_NOTES)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return updateFirst(query, update).getModifiedCount() > 0;
+    }
+
+    public boolean markProvisioningFailed(String serverId, String notes) {
+        String safeNotes = notes != null && notes.length() > 500 ? notes.substring(0, 500) : notes;
+        Update update = new Update()
+            .set(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.FAILED)
+            .set(ServerFields.PROVISIONING_NOTES, safeNotes)
+            .set(ServerFields.UPDATED_AT, new Date());
+        return updateFirst(Query.query(Criteria.where(ServerFields.ID).is(serverId)), update)
+            .getModifiedCount() > 0;
+    }
+
+    public Optional<Server> applyFieldUpdate(String serverId, Update update) {
+        if (update.getUpdateObject().isEmpty()) {
+            return findById(serverId);
+        }
+        return Optional.ofNullable(findAndModify(
+            Query.query(Criteria.where(ServerFields.ID).is(serverId)),
+            update,
+            FindAndModifyOptions.options().returnNew(true)
+        ));
     }
 
     public long bulkUpdatePlan(List<String> serverIds, ServerPlan plan, Date updatedAt) {
@@ -599,7 +928,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.STAFF_PERMISSIONS_UPDATED_AT, timestamp)
-                .set(ServerFields.UPDATED_AT, timestamp)
+                .set(ServerFields.UPDATED_AT, new Date())
         );
     }
 
@@ -608,7 +937,7 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
             Query.query(Criteria.where(ServerFields.ID).is(serverId)),
             new Update()
                 .set(ServerFields.PUNISHMENT_TYPES_UPDATED_AT, timestamp)
-                .set(ServerFields.UPDATED_AT, timestamp)
+                .set(ServerFields.UPDATED_AT, new Date())
         );
     }
 
@@ -671,28 +1000,28 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         Document facet = new Document()
             .append("total", List.of(new Document("$count", "n")))
             .append("active", List.of(
-                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
-                    .append("emailVerified", true)),
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED.name())
+                    .append(ServerFields.EMAIL_VERIFIED, true)),
                 new Document("$count", "n")
             ))
             .append("withUsers", List.of(
-                new Document("$match", new Document("provisioningStatus", ProvisioningStatus.COMPLETED.name())
-                    .append("userCount", new Document("$gt", 0))),
+                new Document("$match", new Document(ServerFields.PROVISIONING_STATUS, ProvisioningStatus.COMPLETED.name())
+                    .append(ServerFields.USER_COUNT, new Document("$gt", 0))),
                 new Document("$count", "n")
             ))
             .append("currentPeriod", List.of(
-                new Document("$match", new Document("createdAt", new Document("$gte", startDate))),
+                new Document("$match", new Document(ServerFields.CREATED_AT, new Document("$gte", startDate))),
                 new Document("$count", "n")
             ))
             .append("previousPeriod", List.of(
-                new Document("$match", new Document("createdAt",
+                new Document("$match", new Document(ServerFields.CREATED_AT,
                     new Document("$gte", previousStartDate).append("$lt", startDate))),
                 new Document("$count", "n")
             ))
             .append("usage", List.of(
                 new Document("$group", new Document("_id", null)
-                    .append("totalUsers", new Document("$sum", "$userCount"))
-                    .append("totalTickets", new Document("$sum", "$ticketCount")))
+                    .append("totalUsers", new Document("$sum", "$" + ServerFields.USER_COUNT))
+                    .append("totalTickets", new Document("$sum", "$" + ServerFields.TICKET_COUNT)))
             ));
 
         List<Document> pipeline = List.of(new Document("$facet", facet));
@@ -720,19 +1049,6 @@ public class ServerMongoRepository extends AbstractGlobalMongoRepository<Server>
         }
 
         return new DashboardStats(total, active, withUsers, currentPeriod, previousPeriod, totalUsers, totalTickets);
-    }
-
-    private long extractFacetCount(Document facets, String key) {
-        List<?> list = facets.getList(key, Document.class, List.of());
-        if (list.isEmpty()) {
-            return 0;
-        }
-        Object first = list.getFirst();
-        if (first instanceof Document doc) {
-            Number n = doc.get("n", Number.class);
-            return n != null ? n.longValue() : 0;
-        }
-        return 0;
     }
 
     public MonitoringServerStats aggregateMonitoringServerStats(Date fiveMinutesAgo, Date oneWeekAgo) {

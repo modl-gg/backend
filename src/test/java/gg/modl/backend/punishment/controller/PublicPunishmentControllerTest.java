@@ -3,10 +3,12 @@ package gg.modl.backend.punishment.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
+import com.google.protobuf.Struct;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.proto.modl.v1.PublicPunishmentAppealInfoResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import java.util.Optional;
@@ -51,9 +53,9 @@ class PublicPunishmentControllerTest {
         ResponseEntity<?> response = controller.getAppealInfo("punishment-1", request);
 
         assertEquals(200, response.getStatusCode().value());
-        Map<?, ?> body = (Map<?, ?>) response.getBody();
-        Map<?, ?> existingAppeal = (Map<?, ?>) body.get("existingAppeal");
-        assertEquals("rejected", existingAppeal.get("status"));
-        assertEquals("rejected", existingAppeal.get("appealWorkflowStatus"));
+        PublicPunishmentAppealInfoResponse body = (PublicPunishmentAppealInfoResponse) response.getBody();
+        Struct existingAppeal = body.getExistingAppeal();
+        assertEquals("rejected", existingAppeal.getFieldsOrThrow("status").getStringValue());
+        assertEquals("rejected", existingAppeal.getFieldsOrThrow("appealWorkflowStatus").getStringValue());
     }
 }

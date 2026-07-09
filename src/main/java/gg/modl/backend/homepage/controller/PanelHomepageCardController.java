@@ -1,18 +1,19 @@
 package gg.modl.backend.homepage.controller;
 
 import gg.modl.backend.homepage.data.HomepageCard;
-import gg.modl.backend.homepage.dto.request.CreateCardRequest;
-import gg.modl.backend.homepage.dto.request.UpdateCardRequest;
 import gg.modl.backend.homepage.service.HomepageCardService;
-import gg.modl.backend.knowledgebase.dto.request.ReorderRequest;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.CreateCardRequest;
+import gg.modl.proto.modl.v1.HomepageCardMutationResponse;
+import gg.modl.proto.modl.v1.PanelHomepageCardResponse;
+import gg.modl.proto.modl.v1.PanelHomepageCardsResponse;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.ReorderRequest;
+import gg.modl.proto.modl.v1.UpdateCardRequest;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,98 +31,63 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class PanelHomepageCardController {
     private final HomepageCardService cardService;
+    private final HomepageProtoMapper mapper;
+    private final RealtimeEventPublisher publisher;
 
     @GetMapping
-    public ResponseEntity<List<HomepageCardResponse>> getCards(HttpServletRequest request) {
+    public ResponseEntity<PanelHomepageCardsResponse> getCards(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<HomepageCardService.EnrichedCard> enrichedCards = cardService.getAllCardsEnriched(server);
-
-        List<HomepageCardResponse> response = enrichedCards.stream()
-            .map(enriched -> {
-                HomepageCard card = enriched.card();
-                return new HomepageCardResponse(
-                    card.getId(),
-                    card.getTitle(),
-                    card.getDescription(),
-                    card.getIcon(),
-                    card.getIconColor(),
-                    card.getActionType(),
-                    card.getActionUrl(),
-                    card.getActionButtonText(),
-                    card.getCategoryId(),
-                    card.getBackgroundColor(),
-                    card.isEnabled(),
-                    card.getOrdinal(),
-                    card.getCreatedAt(),
-                    card.getUpdatedAt(),
-                    enriched.category()
-                );
-            })
-            .toList();
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(mapper.toPanelCardsResponse(cardService.getAllCardsEnriched(server)));
     }
 
     @PostMapping
-    public ResponseEntity<HomepageCard> createCard(
-        @RequestBody @Valid CreateCardRequest createRequest,
+    public ResponseEntity<PanelHomepageCardResponse> createCard(
+        @RequestBody CreateCardRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         HomepageCard card = cardService.createCard(server, createRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(card);
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_HOMEPAGE, card.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toPanelCardResponse(card));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<HomepageCard> updateCard(
+    public ResponseEntity<PanelHomepageCardResponse> updateCard(
         @PathVariable String id,
-        @RequestBody @Valid UpdateCardRequest updateRequest,
+        @RequestBody UpdateCardRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return cardService.updateCard(server, id, updateRequest)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+            .map(card -> {
+                publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_HOMEPAGE, card.getId());
+                return ResponseEntity.ok(mapper.toPanelCardResponse(card));
+            })
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteCard(
+    public ResponseEntity<HomepageCardMutationResponse> deleteCard(
         @PathVariable String id,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean deleted = cardService.deleteCard(server, id);
         if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Card deleted"));
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_HOMEPAGE, id);
+            return ResponseEntity.ok(mapper.message("Card deleted"));
         }
         return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/reorder")
-    public ResponseEntity<?> reorderCards(
-        @RequestBody @Valid ReorderRequest reorderRequest,
+    public ResponseEntity<HomepageCardMutationResponse> reorderCards(
+        @RequestBody ReorderRequest reorderRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        cardService.reorderCards(server, reorderRequest.ids());
-        return ResponseEntity.ok(Map.of("message", "Cards reordered"));
+        cardService.reorderCards(server, reorderRequest.getIdsList());
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_HOMEPAGE);
+        return ResponseEntity.ok(mapper.message("Cards reordered"));
     }
-
-    public record HomepageCardResponse(
-        String id,
-        String title,
-        String description,
-        String icon,
-        String iconColor,
-        String actionType,
-        String actionUrl,
-        String actionButtonText,
-        String categoryId,
-        String backgroundColor,
-        boolean isEnabled,
-        int ordinal,
-        Date createdAt,
-        Date updatedAt,
-        HomepageCardService.EmbeddedCategory category
-    ) {}
 }

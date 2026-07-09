@@ -3,11 +3,13 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
+import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.service.PlayerDataUtils;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -15,10 +17,12 @@ import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -37,6 +41,7 @@ public class PlayerLookupService {
     private final PlayerStatusCalculator statusCalculator;
     private final IssuerNameResolver issuerNameResolver;
     private final StaffMongoRepository staffRepository;
+    private final PlayerService playerService;
 
     public MinecraftPlayerService.ServiceResponse getPlayerByUuid(Server server, String uuid, Integer punishmentLimit, Integer noteLimit) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
@@ -181,6 +186,11 @@ public class PlayerLookupService {
     }
 
     Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes, Integer punishmentLimit, Integer noteLimit) {
+        return toPlayerProfile(server, player, punishmentTypes, punishmentLimit, noteLimit,
+            resolveIssuersForPunishments(server, safePunishments(player)));
+    }
+
+    Map<String, Object> toPlayerProfile(Server server, Player player, List<PunishmentType> punishmentTypes, Integer punishmentLimit, Integer noteLimit, Map<String, String> resolvedIssuers) {
         List<Map<String, Object>> usernames = safeUsernames(player).stream()
             .map(username -> {
                 Map<String, Object> entry = new LinkedHashMap<>();
@@ -190,7 +200,10 @@ public class PlayerLookupService {
             })
             .toList();
 
-        List<Map<String, Object>> notes = safeNotes(player).stream()
+        List<NoteEntry> allNotes = safeNotes(player);
+        List<NoteEntry> limitedNotes = limitNewestFirst(allNotes, noteLimit,
+            Comparator.comparing(NoteEntry::getDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<Map<String, Object>> notes = limitedNotes.stream()
             .map(note -> {
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("id", note.getId());
@@ -216,8 +229,10 @@ public class PlayerLookupService {
             })
             .toList();
 
-        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
-        List<Map<String, Object>> punishments = player.getPunishments().stream()
+        List<Punishment> allPunishments = safePunishments(player);
+        List<Punishment> limitedPunishments = limitNewestFirst(allPunishments, punishmentLimit,
+            Comparator.comparing(Punishment::getIssued, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<Map<String, Object>> punishments = limitedPunishments.stream()
             .map(punishment -> PunishmentMapper.toPunishmentMap(punishment, punishmentTypes, resolvedIssuers))
             .toList();
 
@@ -233,10 +248,10 @@ public class PlayerLookupService {
         profile.put("pendingNotifications", pendingNotifications);
         profile.put("data", player.getData());
         if (punishmentLimit != null) {
-            profile.put("punishmentCount", punishments.size());
+            profile.put("punishmentCount", allPunishments.size());
         }
         if (noteLimit != null) {
-            profile.put("noteCount", notes.size());
+            profile.put("noteCount", allNotes.size());
         }
         return profile;
     }
@@ -266,12 +281,15 @@ public class PlayerLookupService {
         int warnings = 0;
         for (Punishment punishment : player.getPunishments()) {
             PunishmentType type = typesByOrdinal.get(punishment.getTypeOrdinal());
-            if (type != null && type.isBan()) {
-                bans++;
-            } else if (type != null && type.isMute()) {
-                mutes++;
-            } else if (type != null && type.isKick()) {
+            if (type != null && type.isKick()) {
                 kicks++;
+                continue;
+            }
+            String category = statusCalculator.getEffectiveCategory(punishment, typesByOrdinal);
+            if (EnforcementCategory.BAN.name().equals(category)) {
+                bans++;
+            } else if (EnforcementCategory.MUTE.name().equals(category)) {
+                mutes++;
             } else {
                 warnings++;
             }
@@ -279,7 +297,7 @@ public class PlayerLookupService {
 
         List<Map<String, Object>> recentPunishments = player.getPunishments()
             .stream()
-            .sorted((left, right) -> right.getIssued().compareTo(left.getIssued()))
+            .sorted(Comparator.comparing(Punishment::getIssued, Comparator.nullsLast(Comparator.reverseOrder())))
             .limit(5)
             .map(punishment -> {
                 PunishmentType matchedType = typesByOrdinal.get(punishment.getTypeOrdinal());
@@ -332,16 +350,26 @@ public class PlayerLookupService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findByMinecraftUuid(server, uuid);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(uuid));
     }
 
     private Optional<Player> findByUsername(Server server, String username) {
-        return playerRepository.findByUsernameIgnoreCase(server, username);
+        return playerService.findBestByUsername(server, username);
     }
 
-    private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
+    private Map<String, String> resolveIssuersForPlayers(Server server, List<Player> players) {
         Set<String> ids = new HashSet<>();
-        for (Punishment p : player.getPunishments()) {
+        for (Player player : players) {
+            for (Punishment punishment : safePunishments(player)) {
+                ids.addAll(PunishmentQueryService.collectIssuerIds(punishment));
+            }
+        }
+        return ids.isEmpty() ? Map.of() : issuerNameResolver.batchResolve(ids, server);
+    }
+
+    private Map<String, String> resolveIssuersForPunishments(Server server, List<Punishment> punishments) {
+        Set<String> ids = new HashSet<>();
+        for (Punishment p : punishments) {
             ids.addAll(PunishmentQueryService.collectIssuerIds(p));
         }
         if (ids.isEmpty()) {
@@ -358,8 +386,22 @@ public class PlayerLookupService {
         return player.getNotes() != null ? player.getNotes() : List.of();
     }
 
+    private List<Punishment> safePunishments(Player player) {
+        return player.getPunishments() != null ? player.getPunishments() : List.of();
+    }
+
     private List<IPEntry> safeIpAddresses(Player player) {
         return player.getIpAddresses() != null ? player.getIpAddresses() : List.of();
+    }
+
+    private <T> List<T> limitNewestFirst(List<T> values, Integer limit, Comparator<? super T> newestFirst) {
+        if (limit == null) {
+            return values;
+        }
+        return values.stream()
+            .sorted(newestFirst)
+            .limit(Math.max(0, limit))
+            .toList();
     }
 
     private List<Map<String, Object>> extractPendingNotifications(Player player) {
@@ -421,12 +463,11 @@ public class PlayerLookupService {
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         Set<String> addedUuids = new HashSet<>();
-        List<Map<String, Object>> linkedAccounts = new ArrayList<>();
+        List<Player> linkedPlayers = new ArrayList<>();
 
         if (!ips.isEmpty()) {
-            List<Player> relatedPlayers = playerRepository.findByIpAddressesExcludingUuid(server, ips, uuid, 20);
-            for (Player related : relatedPlayers) {
-                linkedAccounts.add(toPlayerProfile(server, related, types));
+            for (Player related : playerRepository.findByIpAddressesExcludingUuid(server, ips, normalizeUuid(uuid), 20)) {
+                linkedPlayers.add(related);
                 addedUuids.add(related.getMinecraftUuid().toString());
             }
         }
@@ -441,17 +482,23 @@ public class PlayerLookupService {
                 .filter(linkedUuid -> !addedUuids.contains(linkedUuid))
                 .toList();
             if (!missingUuids.isEmpty()) {
-                List<Player> linkedPlayers = playerRepository.findByMinecraftUuids(server, missingUuids);
-                for (Player linkedPlayer : linkedPlayers) {
-                    linkedAccounts.add(toPlayerProfile(server, linkedPlayer, types));
-                }
+                linkedPlayers.addAll(playerRepository.findByMinecraftUuids(server, missingUuids));
             }
         }
+
+        Map<String, String> resolvedIssuers = resolveIssuersForPlayers(server, linkedPlayers);
+        List<Map<String, Object>> linkedAccounts = linkedPlayers.stream()
+            .map(linked -> toPlayerProfile(server, linked, types, null, null, resolvedIssuers))
+            .toList();
 
         return ok(Map.of("status", 200, "linkedAccounts", linkedAccounts));
     }
 
     private MinecraftPlayerService.ServiceResponse badRequest(String message) {
         return new MinecraftPlayerService.ServiceResponse(HttpStatus.BAD_REQUEST, Map.of("status", 400, "message", message));
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

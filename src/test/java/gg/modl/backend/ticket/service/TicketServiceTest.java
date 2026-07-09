@@ -1,9 +1,13 @@
 package gg.modl.backend.ticket.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -76,9 +80,14 @@ class TicketServiceTest {
     @Test
     void createMinecraftTicketMapsPluginTypeAndPersistsReply() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("CHAT-123456");
-        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
-            .thenAnswer(invocation -> invocation.getArgument(1));
+        when(ticketIdGenerator.insertWithUniqueId(any(Server.class), any(String.class), any(Ticket.class)))
+            .thenAnswer(invocation -> {
+                Ticket t = invocation.getArgument(2);
+                if (t.getId() == null) {
+                    t.setId("CHAT-123456");
+                }
+                return t;
+            });
 
         Ticket ticket = minecraftTicketService.createMinecraftTicket(server, new MinecraftCreateTicketRequest(
             "uuid-1",
@@ -105,9 +114,14 @@ class TicketServiceTest {
     @Test
     void createTicketAcceptsLegacyTypeSpacingAndPriorityAliases() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
-        when(ticketIdGenerator.generate(any(Server.class), any(TicketCategory.class))).thenReturn("STAFF-123456");
-        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
-            .thenAnswer(invocation -> invocation.getArgument(1));
+        when(ticketIdGenerator.insertWithUniqueId(any(Server.class), any(String.class), any(Ticket.class)))
+            .thenAnswer(invocation -> {
+                Ticket t = invocation.getArgument(2);
+                if (t.getId() == null) {
+                    t.setId("STAFF-123456");
+                }
+                return t;
+            });
 
         ticketService.createTicket(server, new CreateTicketRequest(
             "staff application",
@@ -129,7 +143,7 @@ class TicketServiceTest {
         ));
 
         ArgumentCaptor<Ticket> savedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
-        verify(ticketRepository).saveEntity(any(Server.class), savedTicketCaptor.capture());
+        verify(ticketIdGenerator).insertWithUniqueId(any(Server.class), any(String.class), savedTicketCaptor.capture());
         Ticket savedTicket = savedTicketCaptor.getValue();
 
         assertEquals(TicketCategory.APPLICATION, savedTicket.getType());
@@ -274,7 +288,8 @@ class TicketServiceTest {
                 List.of(),
                 "creator-1",
                 null
-            )
+            ),
+            true
         );
 
         assertNotNull(response);
@@ -285,9 +300,72 @@ class TicketServiceTest {
         assertEquals(TicketStatus.OPEN, updatedTicket.getStatus());
         assertEquals("Updated subject", updatedTicket.getSubject());
         assertTrue(updatedTicket.isEmailAuthEnabled());
+        assertEquals(true, updatedTicket.getData().get("emailAuthEnabled"));
+        assertEquals(true, updatedTicket.getFormData().get("emailAuthEnabled"));
         assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));
         assertEquals("creator-1", updatedTicket.getData().get("creatorIdentifier"));
         assertEquals(1, updatedTicket.getReplies().size());
         assertTrue(updatedTicket.getReplies().get(0).getContent().contains("Issue Type"));
+    }
+
+    @Test
+    void getMinecraftTicketsByCreatorLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.findRecentByCreator(any(Server.class), any(), anyInt())).thenReturn(List.of());
+
+        minecraftTicketService.getMinecraftTicketsByCreator(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", 25);
+
+        verify(ticketRepository).findRecentByCreator(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", 25);
+    }
+
+    @Test
+    void getMinecraftReportsForPlayerLowercasesUuidBeforeQueryingRepository() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        when(ticketRepository.findReports(any(Server.class), any(), any(), anyInt(), anyBoolean())).thenReturn(List.of());
+
+        minecraftTicketService.getMinecraftReportsForPlayer(server, "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "open", 10);
+
+        verify(ticketRepository).findReports(eq(server), eq("open"), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), eq(10), eq(false));
+    }
+
+    @Test
+    void submitTicketFormCannotDisableExistingEmailAuthWhileSavingEmail() {
+        Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
+        Ticket ticket = Ticket.builder()
+            .id("SUPPORT-3")
+            .type(TicketCategory.SUPPORT)
+            .status(TicketStatus.UNFINISHED)
+            .emailAuthEnabled(true)
+            .creatorName("PlayerOne")
+            .replies(new ArrayList<>())
+            .notes(new ArrayList<>())
+            .data(new HashMap<>())
+            .build();
+
+        when(ticketRepository.findById(server, "SUPPORT-3")).thenReturn(Optional.of(ticket));
+        when(ticketRepository.saveEntity(any(Server.class), any(Ticket.class)))
+            .thenAnswer(invocation -> invocation.getArgument(1));
+
+        ticketService.submitTicketForm(
+            server,
+            "SUPPORT-3",
+            new SubmitTicketFormRequest(
+                "Updated subject",
+                "player@example.com",
+                java.util.Map.of("issue_type", "Bug report", "emailAuthEnabled", false),
+                List.of(),
+                "creator-1",
+                null
+            ),
+            false
+        );
+
+        ArgumentCaptor<Ticket> updatedTicketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(ticketRepository).saveEntity(any(Server.class), updatedTicketCaptor.capture());
+        Ticket updatedTicket = updatedTicketCaptor.getValue();
+        assertTrue(updatedTicket.isEmailAuthEnabled());
+        assertEquals(true, updatedTicket.getData().get("emailAuthEnabled"));
+        assertEquals("player@example.com", updatedTicket.getData().get("creatorEmail"));
+        assertEquals(false, updatedTicket.getFormData().get("emailAuthEnabled"));
     }
 }

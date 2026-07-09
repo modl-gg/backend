@@ -4,7 +4,7 @@ import org.jetbrains.annotations.NotNull;
 
 public interface LLMProvider {
     @NotNull
-    String generate(@NotNull String prompt);
+    String generate(@NotNull String systemInstruction, @NotNull String userContent);
 
     boolean isConnected();
 }

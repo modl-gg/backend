@@ -5,18 +5,13 @@ import gg.modl.backend.database.mongo.repository.AuthCodeMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeCodec;
 import gg.modl.backend.server.data.Server;
-import jakarta.mail.MessagingException;
-import java.io.UnsupportedEncodingException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.util.Base64;
 import java.util.Date;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,9 +21,10 @@ public class AuthService {
     private final EmailService emailService;
     private final AuthCodeMongoRepository authCodeRepository;
     private final AuthConfiguration authConfiguration;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private final OneTimeCodeCodec oneTimeCodeCodec;
 
-    public void sendUserLoginCode(Server server, String email) throws MessagingException, UnsupportedEncodingException {
+    @Async("emailTaskExecutor")
+    public void sendUserLoginCode(Server server, String email) {
         String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
             authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
 
@@ -39,41 +35,35 @@ public class AuthService {
         emailService.send(email, EmailHTMLTemplate.USER_CODE.build(server.getServerName(), code));
     }
 
+    @Async("emailTaskExecutor")
+    public void sendEmailChangeCode(Server server, String newEmail) {
+        String code = prepareAndStoreCode(newEmail, (normalizedEmail, codeHash, expiresAt) ->
+            authCodeRepository.replaceForServer(server, normalizedEmail, codeHash, expiresAt));
+
+        if (code == null) {
+            return;
+        }
+
+        emailService.send(newEmail, EmailHTMLTemplate.EMAIL_CHANGE_CODE.build(server.getServerName(), code));
+    }
+
     private String prepareAndStoreCode(String email, CodeStorageAction storageAction) {
-        String code = generateNumericCode(authConfiguration.getEmailCodeLength());
-        String codeHash = hashCode(code);
+        String code = oneTimeCodeCodec.generateNumericCode(authConfiguration.getEmailCodeLength());
+        String codeHash = hash(code);
         String normalizedEmail = EmailAddressUtil.normalize(email);
         Date expiresAt = new Date(System.currentTimeMillis() + (authConfiguration.getEmailCodeExpiry() * 1000L));
 
         storageAction.store(normalizedEmail, codeHash, expiresAt);
 
-        if (authConfiguration.isDevelopmentMode()) {
-            log.info("DEV MODE: Login code for {} is: {}", email, code);
-            return null;
-        }
-
         return code;
     }
 
-    private String generateNumericCode(int length) {
-        StringBuilder code = new StringBuilder(length);
-        for (int i = 0; i < length; i++) {
-            code.append(SECURE_RANDOM.nextInt(10));
-        }
-        return code.toString();
+    private String hash(String code) {
+        return oneTimeCodeCodec.hash(code, authConfiguration.getCodeHashSecret());
     }
 
-    private String hashCode(String code) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(code.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
-    public void sendAdminLoginCode(String email) throws MessagingException, UnsupportedEncodingException {
+    @Async("emailTaskExecutor")
+    public void sendAdminLoginCode(String email) {
         String code = prepareAndStoreCode(email, (normalizedEmail, codeHash, expiresAt) ->
             authCodeRepository.replaceForGlobal(normalizedEmail, codeHash, expiresAt));
 
@@ -81,12 +71,12 @@ public class AuthService {
             return;
         }
 
-        emailService.send(email, EmailHTMLTemplate.ADMIN_CODE.build(code, null));
+        emailService.send(email, EmailHTMLTemplate.ADMIN_CODE.build(null, code));
     }
 
     public boolean verifyCode(Server server, String email, String code) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
-        String codeHash = hashCode(code);
+        String codeHash = hash(code);
         Date now = new Date();
 
         Optional<AuthCode> consumed = authCodeRepository.consumeIfHashMatchesForServer(server, normalizedEmail, codeHash, now);
@@ -100,7 +90,7 @@ public class AuthService {
 
     public boolean verifyAdminCode(String email, String code) {
         String normalizedEmail = EmailAddressUtil.normalize(email);
-        String codeHash = hashCode(code);
+        String codeHash = hash(code);
         Date now = new Date();
 
         Optional<AuthCode> consumed = authCodeRepository.consumeIfHashMatchesForGlobal(normalizedEmail, codeHash, now);

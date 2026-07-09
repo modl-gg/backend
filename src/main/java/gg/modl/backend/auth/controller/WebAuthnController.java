@@ -6,12 +6,14 @@ import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.exception.UnauthorizedException;
-import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.util.CookieUtil;
+import gg.modl.proto.modl.v1.RenameWebAuthnCredentialRequest;
+import gg.modl.proto.modl.v1.WebAuthnCredentialMutationResponse;
+import gg.modl.proto.modl.v1.WebAuthnCredentialsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
@@ -71,7 +73,7 @@ public class WebAuthnController {
     }
 
     @GetMapping("/credentials")
-    public ResponseEntity<?> listCredentials(HttpServletRequest request) {
+    public ResponseEntity<WebAuthnCredentialsResponse> listCredentials(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
             throw new UnauthorizedException("Not authenticated");
@@ -79,30 +81,30 @@ public class WebAuthnController {
 
         Server server = RequestUtil.getRequestServer(request);
         List<WebAuthnService.CredentialInfo> credentials = webAuthnService.listCredentials(server, email);
-        return ResponseEntity.ok(credentials);
+        return ResponseEntity.ok(WebAuthnProtoMapper.toCredentialsResponse(credentials));
     }
 
     @PatchMapping("/credentials/{id}")
-    public ResponseEntity<?> renameCredential(
+    public ResponseEntity<WebAuthnCredentialMutationResponse> renameCredential(
         HttpServletRequest request,
         @PathVariable String id,
-        @RequestBody @Valid RenameCredentialRequest body) {
+        @RequestBody RenameWebAuthnCredentialRequest body) {
         String email = RequestUtil.getSessionEmail(request);
         if (email == null) {
             throw new UnauthorizedException("Not authenticated");
         }
 
         Server server = RequestUtil.getRequestServer(request);
-        boolean updated = webAuthnService.renameCredential(server, email, id, body.name());
+        boolean updated = webAuthnService.renameCredential(server, email, id, body.getName());
         if (!updated) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(Map.of("success", true));
+        return ResponseEntity.ok(WebAuthnProtoMapper.toMutationResponse(true));
     }
 
 
     @DeleteMapping("/credentials/{id}")
-    public ResponseEntity<?> deleteCredential(
+    public ResponseEntity<WebAuthnCredentialMutationResponse> deleteCredential(
         HttpServletRequest request,
         @PathVariable String id) {
         String email = RequestUtil.getSessionEmail(request);
@@ -115,7 +117,7 @@ public class WebAuthnController {
         if (!deleted) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(Map.of("success", true));
+        return ResponseEntity.ok(WebAuthnProtoMapper.toMutationResponse(true));
     }
 
     @PostMapping("/login/start")
@@ -159,11 +161,8 @@ public class WebAuthnController {
         @RequestBody @Valid LoginVerifyRequest body) throws Exception {
         Server server = RequestUtil.getRequestServer(request);
 
-        String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response());
-
-        if (!permissionService.isAuthorizedEmail(server, email)) {
-            throw new ValidationException("Not authorized");
-        }
+        String email = webAuthnService.finishAuthentication(server, body.challengeId(), body.response(),
+            candidateEmail -> permissionService.isAuthorizedEmail(server, candidateEmail));
 
         AuthSessionData session = sessionService.createSession(server, email, RequestUtil.getClientIp(request), request.getHeader("User-Agent"));
         response.addCookie(cookieUtil.createSessionCookie(session.getId()));
@@ -177,8 +176,6 @@ public class WebAuthnController {
         @NotBlank @Size(max = 10_000) String response,
         @Size(max = 128) String name
     ) {}
-
-    public record RenameCredentialRequest(@NotBlank @Size(max = 128) String name) {}
 
     public record LoginOptionsRequest(@Email @NotBlank @Size(max = RequestValidationLimits.EMAIL_MAX_LENGTH) String email) {}
 

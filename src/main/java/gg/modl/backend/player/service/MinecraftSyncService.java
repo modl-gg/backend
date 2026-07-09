@@ -17,12 +17,14 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
 import java.net.URI;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -62,32 +64,16 @@ public class MinecraftSyncService {
     ) {
         Instant now = Instant.now();
 
-        serverRepository.updateFirst(
-            Query.query(Criteria.where("_id").is(server.getId())),
-            new Update()
-                .set("lastActivityAt", Date.from(now))
-                .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
-        );
+        applyPresence(server, onlinePlayers, serverName, now);
 
-        Instant lastSync = lastSyncTimestamp != null
-                           ? Instant.parse(lastSyncTimestamp)
-                           : now.minusSeconds(30);
+        Instant lastSync = parseLastSync(lastSyncTimestamp, now);
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Map<String, Object>> pendingPunishments = new ArrayList<>();
         List<Map<String, Object>> recentlyModifiedPunishments = new ArrayList<>();
         List<Map<String, Object>> playerNotifications = new ArrayList<>();
 
-        Set<String> onlineUuids = new HashSet<>();
-        if (onlinePlayers != null) {
-            for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
-                if (onlinePlayer.uuid() != null) {
-                    onlineUuids.add(onlinePlayer.uuid());
-                }
-            }
-        }
-
-        markOfflinePlayers(server, onlineUuids, serverName, Date.from(now));
+        Set<String> onlineUuids = collectOnlineUuids(onlinePlayers);
 
         if (!onlineUuids.isEmpty()) {
             List<Player> players = playerRepository.findByMinecraftUuids(server, onlineUuids);
@@ -181,7 +167,10 @@ public class MinecraftSyncService {
                         categoriesWithActiveStarted.add(category);
                     } else if (category != null && punishment.getStarted() == null) {
                         Punishment existing = oldestUnstartedPerCategory.get(category);
-                        if (existing == null || punishment.getIssued().before(existing.getIssued())) {
+                        if (existing == null
+                            || (punishment.getIssued() != null
+                                && (existing.getIssued() == null
+                                    || punishment.getIssued().before(existing.getIssued())))) {
                             oldestUnstartedPerCategory.put(category, punishment);
                         }
                     }
@@ -217,7 +206,8 @@ public class MinecraftSyncService {
                     }
                 }
 
-                Object rawPending = player.getData().get("pendingNotifications");
+                Map<String, Object> playerData = player.getData();
+                Object rawPending = playerData != null ? playerData.get("pendingNotifications") : null;
                 if (rawPending instanceof List<?> pendingList) {
                     for (Object item : pendingList) {
                         if (!(item instanceof Map<?, ?> notification)) {
@@ -240,35 +230,14 @@ public class MinecraftSyncService {
         if (onlinePlayers != null) {
             for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
                 if (onlinePlayer.uuid() != null && onlinePlayer.ipAddress() != null) {
-                    onlinePlayerIps.put(onlinePlayer.uuid(), onlinePlayer.ipAddress());
+                    onlinePlayerIps.put(normalizeUuid(onlinePlayer.uuid()), onlinePlayer.ipAddress());
                 }
             }
         }
 
         List<Map<String, Object>> activeStaffMembers = syncActiveStaffService.getActiveStaffMembers(server, onlinePlayerIps);
 
-        if (chatLogs != null && !chatLogs.isEmpty()) {
-            minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
-                .map(entry -> new MinecraftChatLogService.ChatLogCommand(
-                    entry.uuid(),
-                    entry.username(),
-                    entry.message(),
-                    entry.timestamp(),
-                    entry.server()
-                ))
-                .toList());
-        }
-        if (commandLogs != null && !commandLogs.isEmpty()) {
-            minecraftChatLogService.submitCommandLogs(server, commandLogs.stream()
-                .map(entry -> new MinecraftChatLogService.CommandLogCommand(
-                    entry.uuid(),
-                    entry.username(),
-                    entry.command(),
-                    entry.timestamp(),
-                    entry.server()
-                ))
-                .toList());
-        }
+        submitLogs(server, chatLogs, commandLogs);
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("pendingPunishments", pendingPunishments);
@@ -307,25 +276,7 @@ public class MinecraftSyncService {
             log.warn("Failed to check active migration during sync", e);
         }
 
-        if (serverStatus != null) {
-            try {
-                long epochSeconds = now.getEpochSecond();
-                Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
-                serverInstanceSnapshotRepository.upsertServerEntry(
-                    fiveMinBoundary,
-                    server.getId(),
-                    serverName,
-                    serverStatus.onlinePlayerCount(),
-                    serverStatus.platformType(),
-                    serverStatus.serverVersion(),
-                    clientIp,
-                    serverStatus.pluginVersion(),
-                    Date.from(now)
-                );
-            } catch (Exception e) {
-                log.warn("Failed to upsert server instance snapshot during sync", e);
-            }
-        }
+        applyServerStatus(server, serverStatus, serverName, clientIp, now);
 
         return Map.of(
             "timestamp", now.toString(),
@@ -333,8 +284,87 @@ public class MinecraftSyncService {
         );
     }
 
-    private void markOfflinePlayers(Server server, Set<String> onlineUuids, String serverName, Date logoutTime) {
-        playerRepository.markStalePlayersOffline(server, onlineUuids, serverName, logoutTime);
+    public void applyPresence(Server server, List<OnlinePlayerInput> onlinePlayers, String serverName, Instant now) {
+        serverRepository.updateFirst(
+            Query.query(Criteria.where("_id").is(server.getId())),
+            new Update()
+                .set("lastActivityAt", Date.from(now))
+                .set("onlinePlayerCount", onlinePlayers != null ? (long) onlinePlayers.size() : 0L)
+        );
+
+        playerRepository.markStalePlayersOffline(server, collectOnlineUuids(onlinePlayers), serverName, Date.from(now));
+    }
+
+    public void submitLogs(Server server, List<ChatLogInput> chatLogs, List<CommandLogInput> commandLogs) {
+        if (chatLogs != null && !chatLogs.isEmpty()) {
+            minecraftChatLogService.submitChatLogs(server, chatLogs.stream()
+                .map(entry -> new MinecraftChatLogService.ChatLogCommand(
+                    entry.uuid(),
+                    entry.username(),
+                    entry.message(),
+                    entry.timestamp(),
+                    entry.server()
+                ))
+                .toList());
+        }
+        if (commandLogs != null && !commandLogs.isEmpty()) {
+            minecraftChatLogService.submitCommandLogs(server, commandLogs.stream()
+                .map(entry -> new MinecraftChatLogService.CommandLogCommand(
+                    entry.uuid(),
+                    entry.username(),
+                    entry.command(),
+                    entry.timestamp(),
+                    entry.server()
+                ))
+                .toList());
+        }
+    }
+
+    public void applyServerStatus(Server server, ServerStatusInput serverStatus, String serverName, String clientIp, Instant now) {
+        if (serverStatus == null) {
+            return;
+        }
+        try {
+            long epochSeconds = now.getEpochSecond();
+            Date fiveMinBoundary = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
+            serverInstanceSnapshotRepository.upsertServerEntry(
+                fiveMinBoundary,
+                server.getId(),
+                serverName,
+                serverStatus.onlinePlayerCount(),
+                serverStatus.platformType(),
+                serverStatus.serverVersion(),
+                clientIp,
+                serverStatus.pluginVersion(),
+                Date.from(now)
+            );
+        } catch (Exception e) {
+            log.warn("Failed to upsert server instance snapshot during sync", e);
+        }
+    }
+
+    private Instant parseLastSync(String lastSyncTimestamp, Instant now) {
+        if (lastSyncTimestamp == null || lastSyncTimestamp.isBlank()) {
+            return now.minusSeconds(30);
+        }
+        try {
+            return Instant.parse(lastSyncTimestamp);
+        } catch (DateTimeParseException e) {
+            log.warn("Invalid lastSyncTimestamp '{}' during sync; falling back to default window", lastSyncTimestamp);
+            return now.minusSeconds(30);
+        }
+    }
+
+    private Set<String> collectOnlineUuids(List<OnlinePlayerInput> onlinePlayers) {
+        Set<String> onlineUuids = new HashSet<>();
+        if (onlinePlayers != null) {
+            for (OnlinePlayerInput onlinePlayer : onlinePlayers) {
+                if (onlinePlayer.uuid() != null) {
+                    onlineUuids.add(normalizeUuid(onlinePlayer.uuid()));
+                }
+            }
+        }
+        return onlineUuids;
     }
 
     private List<Map<String, Object>> deduplicatePendingPunishments(List<Map<String, Object>> punishments) {
@@ -449,5 +479,9 @@ public class MinecraftSyncService {
     }
 
     public record CommandLogInput(String uuid, String username, String command, long timestamp, String server) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

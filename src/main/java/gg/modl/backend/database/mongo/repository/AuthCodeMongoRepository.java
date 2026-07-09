@@ -4,6 +4,8 @@ import gg.modl.backend.auth.data.AuthCode;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuthCodeFields;
+import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeFieldNames;
+import gg.modl.backend.infrastructure.onetimecode.OneTimeCodeQueries;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
 import java.util.Optional;
@@ -18,7 +20,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 @RequiredArgsConstructor
 public class AuthCodeMongoRepository {
-    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final OneTimeCodeFieldNames FIELDS =
+        new OneTimeCodeFieldNames(AuthCodeFields.CODE_HASH, AuthCodeFields.EXPIRES_AT, AuthCodeFields.FAILED_ATTEMPTS);
     private final TenantMongoAccess tenantMongoAccess;
 
     public void replaceForServer(Server server, String normalizedEmail, String codeHash, Date expiresAt) {
@@ -26,7 +29,7 @@ public class AuthCodeMongoRepository {
     }
 
     private void replace(MongoTemplate template, String normalizedEmail, String codeHash, Date expiresAt) {
-        Query query = Query.query(Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail));
+        Query query = Query.query(emailCriteria(normalizedEmail));
         Update update = new Update()
             .set(AuthCodeFields.CODE_HASH, codeHash)
             .set(AuthCodeFields.EXPIRES_AT, expiresAt)
@@ -35,8 +38,8 @@ public class AuthCodeMongoRepository {
         template.upsert(query, update, AuthCode.class, CollectionName.AUTH_CODES);
     }
 
-    private Query emailQuery(String normalizedEmail) {
-        return Query.query(Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail));
+    private static Criteria emailCriteria(String normalizedEmail) {
+        return Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail);
     }
 
     public void replaceForGlobal(String normalizedEmail, String codeHash, Date expiresAt) {
@@ -48,10 +51,7 @@ public class AuthCodeMongoRepository {
     }
 
     private Optional<AuthCode> findActive(MongoTemplate template, String normalizedEmail, Date now) {
-        Query query = Query.query(new Criteria().andOperator(
-            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
-            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now)
-        ));
+        Query query = OneTimeCodeQueries.matchActive(emailCriteria(normalizedEmail), FIELDS, now);
         return Optional.ofNullable(template.findOne(query, AuthCode.class, CollectionName.AUTH_CODES));
     }
 
@@ -60,11 +60,15 @@ public class AuthCodeMongoRepository {
     }
 
     public void deleteForServer(Server server, String normalizedEmail) {
-        tenantMongoAccess.forServer(server).remove(emailQuery(normalizedEmail), AuthCode.class, CollectionName.AUTH_CODES);
+        tenantMongoAccess.forServer(server).remove(Query.query(emailCriteria(normalizedEmail)), AuthCode.class, CollectionName.AUTH_CODES);
     }
 
     public void deleteForGlobal(String normalizedEmail) {
-        tenantMongoAccess.global().remove(emailQuery(normalizedEmail), AuthCode.class, CollectionName.AUTH_CODES);
+        tenantMongoAccess.global().remove(Query.query(emailCriteria(normalizedEmail)), AuthCode.class, CollectionName.AUTH_CODES);
+    }
+
+    public void deleteAllForServer(Server server) {
+        tenantMongoAccess.forServer(server).remove(new Query(), AuthCode.class, CollectionName.AUTH_CODES);
     }
 
     public boolean incrementFailedAttemptsForServer(Server server, String normalizedEmail, Date now) {
@@ -72,11 +76,8 @@ public class AuthCodeMongoRepository {
     }
 
     private boolean incrementFailedAttempts(MongoTemplate template, String normalizedEmail, Date now) {
-        Query query = Query.query(new Criteria().andOperator(
-            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
-            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now)
-        ));
-        Update update = new Update().inc(AuthCodeFields.FAILED_ATTEMPTS, 1);
+        Query query = OneTimeCodeQueries.matchActive(emailCriteria(normalizedEmail), FIELDS, now);
+        Update update = OneTimeCodeQueries.incrementFailedAttempts(FIELDS);
         return template.findAndModify(query, update, FindAndModifyOptions.options().returnNew(true), AuthCode.class, CollectionName.AUTH_CODES) != null;
     }
 
@@ -93,12 +94,7 @@ public class AuthCodeMongoRepository {
     }
 
     private Optional<AuthCode> consumeIfHashMatches(MongoTemplate template, String normalizedEmail, String codeHash, Date now) {
-        Query query = Query.query(new Criteria().andOperator(
-            Criteria.where(AuthCodeFields.EMAIL).is(normalizedEmail),
-            Criteria.where(AuthCodeFields.EXPIRES_AT).gt(now),
-            Criteria.where(AuthCodeFields.CODE_HASH).is(codeHash),
-            Criteria.where(AuthCodeFields.FAILED_ATTEMPTS).lt(MAX_FAILED_ATTEMPTS)
-        ));
+        Query query = OneTimeCodeQueries.matchActiveUnlockedCode(emailCriteria(normalizedEmail), FIELDS, codeHash, now);
         return Optional.ofNullable(template.findAndRemove(query, AuthCode.class, CollectionName.AUTH_CODES));
     }
 }

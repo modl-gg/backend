@@ -19,7 +19,7 @@ public class IconUploadService {
     private final StorageQuotaService storageQuotaService;
     private final StorageMetadataService storageMetadataService;
     private static final Set<String> ALLOWED_IMAGE_TYPES = Set.of(
-        "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/svg+xml"
+        "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"
     );
     private static final long MAX_ICON_SIZE = 2 * 1024 * 1024;
 
@@ -34,7 +34,21 @@ public class IconUploadService {
             S3StorageService.UploadFileResult result = s3StorageService.uploadFile(
                 server, "icons/" + iconType, fileName, file.getContentType(), file.getBytes()
             );
-            storageMetadataService.recordFile(server, result.key(), file.getSize(), file.getContentType());
+            StorageQuotaService.ConfirmResult confirmResult = storageQuotaService.confirmAndRecordFile(
+                server, result.key(), file.getSize(), file.getContentType()
+            );
+            switch (confirmResult) {
+                case QUOTA_EXCEEDED -> {
+                    s3StorageService.deleteFile(result.key());
+                    return ResponseEntity.badRequest().body(Map.of("error", "Storage quota exceeded"));
+                }
+                case RECORD_FAILED -> {
+                    s3StorageService.deleteFile(result.key());
+                    return ResponseEntity.internalServerError().body(Map.of("error", "Failed to record upload"));
+                }
+                default -> {
+                }
+            }
             return ResponseEntity.ok(Map.of("url", result.cdnUrl()));
         } catch (IOException e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to read file"));
@@ -52,7 +66,7 @@ public class IconUploadService {
         }
         String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_IMAGE_TYPES.contains(contentType)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP, SVG"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file type. Allowed: PNG, JPEG, GIF, WebP"));
         }
         if (file.getSize() > MAX_ICON_SIZE) {
             return ResponseEntity.badRequest().body(Map.of("error", "File too large. Maximum size is 2MB."));

@@ -21,5 +21,6 @@ public class AuthConfiguration {
     private String cookieDomain = "";
     private boolean cookieSecure = true;
     private boolean developmentMode = false;
+    private String codeHashSecret = "";
     public static final long MIN_SESSION_DURATION_SECONDS = 14L * 24 * 60 * 60;
 }

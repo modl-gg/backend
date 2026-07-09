@@ -5,6 +5,9 @@ public final class CollectionName {
     public static final String MODL_SERVERS = "servers";
     public static final String METRIC_SNAPSHOTS = "metric_snapshots";
     public static final String SERVER_INSTANCE_SNAPSHOTS = "server_instance_snapshots";
+    public static final String STRIPE_WEBHOOK_EVENTS = "stripe_webhook_events";
+    public static final String BETA_AUDIT = "beta_audit";
+    public static final String SCHEDULER_LEASES = "scheduler_leases";
 
     // Core
     public static final String PLAYERS = "players";
@@ -37,15 +40,21 @@ public final class CollectionName {
 
     // System
     public static final String SYSTEM_LOGS = "system_logs";
+    public static final String SYSTEM_ALERTS = "system_alerts";
     public static final String SECURITY_EVENTS = "security_events";
     public static final String MIGRATIONS = "migrations";
+    public static final String TENANT_MIGRATIONS = "tenant_migrations";
 
     // Replays
     public static final String REPLAYS = "replays";
+    public static final String REPLAY_LITE_REPLAYS = "replay_lite_replays";
+    public static final String REPLAY_LITE_DAILY_QUOTAS = "replay_lite_daily_quotas";
 
     // Training
+    public static final String TRAINING_DATABASE = "training_data";
     public static final String TRAINING_SEGMENTS = "training_segments";
 
     // Storage
     public static final String STORAGE_FILES = "storage_files";
+    public static final String EVIDENCE_UPLOAD_TOKENS = "evidence_upload_tokens";
 }

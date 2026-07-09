@@ -2,6 +2,8 @@ package gg.modl.backend.player.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,19 +80,15 @@ class AccountLinkingServiceTest {
 
         assertTrue(result.success());
         assertEquals(1, result.linkedAccountsFound());
-        verify(playerRepository).replaceLinkedAccounts(eq(server), eq(player));
-        verify(playerRepository).replaceLinkedAccounts(eq(server), eq(linkedPlayer));
-        List<Player> savedPlayers = List.of(player, linkedPlayer);
-        assertTrue(savedPlayers.stream().anyMatch(saved -> containsLink(saved, linkedUuid.toString())));
-        assertTrue(savedPlayers.stream().anyMatch(saved -> containsLink(saved, playerUuid.toString())));
-    }
-
-    @SuppressWarnings("unchecked")
-    private boolean containsLink(Player player, String expectedUuid) {
-        Object rawLinks = player.getData() != null ? player.getData().get("linkedAccounts") : null;
-        if (!(rawLinks instanceof List<?> links)) {
-            return false;
-        }
-        return ((List<String>) links).contains(expectedUuid);
+        verify(playerRepository).addLinkedAccounts(
+            eq(server),
+            eq(playerUuid.toString()),
+            argThat(set -> set.contains(linkedUuid.toString())),
+            any(Date.class));
+        verify(playerRepository).addLinkedAccounts(
+            eq(server),
+            eq(linkedUuid.toString()),
+            argThat(set -> set.contains(playerUuid.toString())),
+            any(Date.class));
     }
 }

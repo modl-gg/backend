@@ -34,6 +34,10 @@ public class WebAuthnCredentialMongoRepository extends AbstractServerMongoReposi
         return find(server, emailQuery(email));
     }
 
+    public long deleteAllByEmail(Server server, String email) {
+        return remove(server, emailQuery(email)).getDeletedCount();
+    }
+
     public Optional<WebAuthnCredential> findByCredentialId(Server server, String credentialId) {
         return findOne(server, Query.query(Criteria.where(WebAuthnCredentialFields.CREDENTIAL_ID).is(credentialId)));
     }

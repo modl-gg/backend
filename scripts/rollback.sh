@@ -1,9 +1,12 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 APP_NAME="modl-backend"
+ENVIRONMENT=${1:-${SPRING_PROFILES_ACTIVE:-staging}}
 BLUE_PORT=8080
 GREEN_PORT=8081
+MODL_DEPLOY_DRAIN_GRACE_SECONDS=${MODL_DEPLOY_DRAIN_GRACE_SECONDS:-90}
+MODL_DEPLOY_STOP_TIMEOUT_SECONDS=${MODL_DEPLOY_STOP_TIMEOUT_SECONDS:-120}
 NGINX_UPSTREAM_CONF="/etc/nginx/conf.d/modl-backend-upstream.conf"
 
 log() {
@@ -34,7 +37,9 @@ update_nginx() {
     local active_port=$1
     log "Updating nginx to point to port $active_port..."
     echo "upstream modl_backend { server 127.0.0.1:${active_port}; keepalive 32; }" | sudo tee $NGINX_UPSTREAM_CONF > /dev/null
-    sudo nginx -t && sudo systemctl reload nginx
+    log "Validating nginx configuration..."
+    sudo nginx -t
+    sudo systemctl reload nginx
     log "Nginx updated and reloaded"
 }
 
@@ -58,16 +63,30 @@ if ! docker image inspect ${APP_NAME}:${ROLLBACK_COLOR} &>/dev/null; then
     exit 1
 fi
 
-log "Rolling back from $CURRENT_COLOR to $ROLLBACK_COLOR (port $ROLLBACK_PORT)"
+log "Rolling back $ENVIRONMENT from $CURRENT_COLOR to $ROLLBACK_COLOR (port $ROLLBACK_PORT)"
+
+log "Stopping and removing existing rollback container if exists..."
+docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$ROLLBACK_CONTAINER" 2>/dev/null || true
+docker rm "$ROLLBACK_CONTAINER" 2>/dev/null || true
+
+ENV_FILE="$(pwd)/.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+    log "ERROR: Config file not found at $ENV_FILE (expected a regular file)."
+    log "Create the .env file (see backend/.env.example) before rolling back; a missing .env would be bind-mounted as an empty directory and crash the container."
+    exit 1
+fi
 
 log "Starting rollback container: $ROLLBACK_CONTAINER"
 docker run -d \
     --name "$ROLLBACK_CONTAINER" \
+    --network modl \
     --restart unless-stopped \
     -p ${ROLLBACK_PORT}:8080 \
-    -v "$(pwd)/.env:/app/.env:ro" \
+    -v "$ENV_FILE:/app/.env:ro" \
     --add-host=host.docker.internal:host-gateway \
-    -e SPRING_PROFILES_ACTIVE=staging \
+    -e SPRING_PROFILES_ACTIVE=${ENVIRONMENT} \
+    -e MODL_TRUST_PROXY_HEADERS=true \
+    -e MODL_CLIENT_IP_HEADER=CF-Connecting-IP \
     ${APP_NAME}:${ROLLBACK_COLOR}
 
 log "Waiting for rollback container to be healthy..."
@@ -76,14 +95,15 @@ sleep 30
 if curl -sf "http://localhost:${ROLLBACK_PORT}/v1/health" > /dev/null 2>&1; then
     log "Rollback container is healthy"
     update_nginx $ROLLBACK_PORT
-    sleep 5
-    log "Stopping current container: $CURRENT_CONTAINER"
-    docker stop "$CURRENT_CONTAINER" 2>/dev/null || true
+    log "Draining current container for ${MODL_DEPLOY_DRAIN_GRACE_SECONDS}s: $CURRENT_CONTAINER"
+    sleep "$MODL_DEPLOY_DRAIN_GRACE_SECONDS"
+    log "Stopping current container with ${MODL_DEPLOY_STOP_TIMEOUT_SECONDS}s timeout: $CURRENT_CONTAINER"
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$CURRENT_CONTAINER" 2>/dev/null || true
     docker rm "$CURRENT_CONTAINER" 2>/dev/null || true
     log "Rollback complete!"
 else
     log "ERROR: Rollback container failed health check"
-    docker stop "$ROLLBACK_CONTAINER" 2>/dev/null || true
+    docker stop -t "$MODL_DEPLOY_STOP_TIMEOUT_SECONDS" "$ROLLBACK_CONTAINER" 2>/dev/null || true
     docker rm "$ROLLBACK_CONTAINER" 2>/dev/null || true
     exit 1
 fi

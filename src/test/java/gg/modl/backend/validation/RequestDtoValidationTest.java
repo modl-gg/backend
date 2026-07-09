@@ -6,6 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.player.dto.request.AddIpRequest;
+import gg.modl.backend.replay.dto.InitReplayUploadRequest;
+import gg.modl.backend.replaylite.data.ReplayLiteLabel;
+import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
+import gg.modl.backend.replaylite.dto.ReplayLiteLabelRequest;
+import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
 import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
 import gg.modl.backend.settings.dto.request.UpdateWebhookSettingsRequest;
 import jakarta.validation.ConstraintViolation;
@@ -116,5 +122,102 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "embedTemplates.newTickets.fields");
+    }
+
+    @Test
+    void replayLiteUploadRejectsInvalidMinecraftVersion() {
+        ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
+            1024,
+            "../1.21.4"
+        );
+
+        assertHasViolation(validator.validate(request), "mcVersion");
+    }
+
+    @Test
+    void replayLiteUploadRejectsOversizedRequest() {
+        ReplayLiteUploadInitRequest request = new ReplayLiteUploadInitRequest(
+            RequestValidationLimits.REPLAY_LITE_MAX_REQUESTED_SIZE_BYTES + 1,
+            "1.21.4"
+        );
+
+        assertHasViolation(validator.validate(request), "requestedSize");
+    }
+
+    @Test
+    void legacyReplayUploadRejectsInvalidTargetUuid() {
+        InitReplayUploadRequest request = new InitReplayUploadRequest(
+            "1.21.4",
+            1024,
+            "not-a-uuid",
+            "byteful"
+        );
+
+        assertHasViolation(validator.validate(request), "targetUuid");
+    }
+
+    @Test
+    void legacyReplayUploadRejectsLongTargetName() {
+        InitReplayUploadRequest request = new InitReplayUploadRequest(
+            "1.21.4",
+            1024,
+            "3f8c9c5a-6b6e-4f2c-9b7f-1a2b3c4d5e6f",
+            "x".repeat(RequestValidationLimits.LOG_USERNAME_MAX_LENGTH + 1)
+        );
+
+        assertHasViolation(validator.validate(request), "targetName");
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsTooManyLabels() {
+        List<ReplayLiteLabel> labels = new ArrayList<>();
+        for (int i = 0; i < RequestValidationLimits.REPLAY_LITE_LABELS_MAX_ENTRIES + 1; i++) {
+            labels.add(new ReplayLiteLabel("player" + i, "legit", List.of(), "notes"));
+        }
+
+        assertHasViolation(validator.validate(new ReplayLiteLabelRequest(labels)), "labels");
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsInvalidNestedRange() {
+        ReplayLiteLabel label = new ReplayLiteLabel(
+            "player",
+            "aimbot",
+            List.of(new ReplayLiteLabelRange(5000, 1000)),
+            "notes"
+        );
+
+        assertFalse(validator.validate(new ReplayLiteLabelRequest(List.of(label))).isEmpty());
+    }
+
+    @Test
+    void replayLiteLabelRequestRejectsUnsupportedVerdict() {
+        ReplayLiteLabel label = new ReplayLiteLabel(
+            "player",
+            "cheating",
+            List.of(),
+            "notes"
+        );
+
+        assertHasViolation(validator.validate(new ReplayLiteLabelRequest(List.of(label))), "labels[0].verdict");
+    }
+
+    @Test
+    void addIpRequestRejectsStructurallyInvalidAddresses() {
+        for (String invalid : List.of("....", "::::", "ffffff", "1.2.3.4.5.6", "999.1.1.1", "256.1.1.1", "01.02.03.04")) {
+            assertHasViolation(validator.validate(new AddIpRequest(invalid)), "ipAddress");
+        }
+    }
+
+    @Test
+    void addIpRequestAcceptsValidAddresses() {
+        for (String valid : List.of("192.168.1.1", "2001:db8::1", "::1", "::ffff:192.168.1.1")) {
+            Set<ConstraintViolation<AddIpRequest>> violations = validator.validate(new AddIpRequest(valid));
+            assertTrue(
+                violations.stream().noneMatch(v -> "ipAddress".equals(v.getPropertyPath().toString())),
+                () -> "Expected no ipAddress violation for '" + valid + "' but got " +
+                      violations.stream().map(v -> v.getPropertyPath() + ": " + v.getMessage()).toList()
+            );
+        }
     }
 }

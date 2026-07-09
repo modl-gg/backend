@@ -1,8 +1,10 @@
 package gg.modl.backend.infrastructure.filter;
 
+import gg.modl.backend.infrastructure.origin.OriginPolicy;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.util.HostExtractionUtil;
@@ -20,7 +22,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     private final ServerService serverService;
     private final boolean developmentMode;
     private final String devServerDomain;
-    private final Set<String> systemOrigins;
+    private final OriginPolicy originPolicy;
 
     private static final Set<String> EXCLUDED_PATHS = Set.of(
         RESTMappingV1.PUBLIC_REGISTRATION,
@@ -40,7 +42,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
         this.serverService = serverService;
         this.developmentMode = developmentMode;
         this.devServerDomain = devServerDomain;
-        this.systemOrigins = HostExtractionUtil.parseCommaSeparated(systemOrigins);
+        this.originPolicy = new OriginPolicy(HostExtractionUtil.parseCommaSeparated(systemOrigins), Set.of(), developmentMode);
     }
 
     @Override
@@ -60,10 +62,11 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
         String serverDomain = requestHost != null ? requestHost : legacyServerDomainHeader;
 
-        // In development mode, use the configured dev server domain for localhost requests.
+        boolean devHostOverrideApplied = false;
         if (developmentMode && devServerDomain != null && !devServerDomain.isBlank()) {
-            if (serverDomain == null || serverDomain.isBlank() || isLocalhost(serverDomain)) {
+            if (serverDomain == null || serverDomain.isBlank() || originPolicy.isDevLocalhost(serverDomain)) {
                 serverDomain = devServerDomain;
+                devHostOverrideApplied = true;
             }
         }
 
@@ -78,7 +81,8 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (requestHost != null && legacyServerDomainHeader != null
+        if (!devHostOverrideApplied
+            && requestHost != null && legacyServerDomainHeader != null
             && !requestHost.equalsIgnoreCase(legacyServerDomainHeader)) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Mismatched server domain headers");
             return;
@@ -102,9 +106,11 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
 
     @Nullable
     private String resolveRequestHost(HttpServletRequest request) {
-        String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
-        if (forwardedHost != null) {
-            return forwardedHost;
+        if (RequestUtil.trustsProxyHeaders()) {
+            String forwardedHost = extractFirstForwardedHost(request.getHeader(RequestHeader.FORWARDED_HOST));
+            if (forwardedHost != null) {
+                return forwardedHost;
+            }
         }
 
         String host = HostExtractionUtil.normalizeServerDomain(request.getHeader("Host"));
@@ -134,7 +140,7 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return true;
         }
 
-        if (systemOrigins.contains(origin)) {
+        if (originPolicy.isSystemOrigin(origin)) {
             return true;
         }
 
@@ -143,18 +149,11 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
             return false;
         }
 
-        if (developmentMode && isLocalhost(originHost)) {
+        if (originPolicy.isDevLocalhost(originHost)) {
             return true;
         }
 
-        String normalizedDomain = HostExtractionUtil.extractHost(serverDomain);
-        return normalizedDomain != null && originHost.equalsIgnoreCase(normalizedDomain);
-    }
-
-    private boolean isLocalhost(String host) {
-        String normalized = host.toLowerCase();
-        return "localhost".equals(normalized) || "0.0.0.0".equals(normalized)
-               || "::1".equals(normalized) || normalized.startsWith("127.");
+        return originPolicy.isTenantOwnOrigin(origin, serverDomain);
     }
 
 }

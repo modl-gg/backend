@@ -21,7 +21,6 @@ public class SessionService {
     private final IdGenerator idGenerator;
 
     public AuthSessionData createSession(Server server, String email, String ipAddress, String userAgent) {
-        sessionRepository.deleteByEmail(server, email);
         return createSessionInternal(email, ipAddress, userAgent, session -> sessionRepository.saveForServer(server, session));
     }
 
@@ -56,12 +55,20 @@ public class SessionService {
     }
 
     public AuthSessionData createAdminSession(String email) {
-        sessionRepository.deleteByEmailGlobal(email);
         return createSessionInternal(email, null, null, sessionRepository::saveForGlobal);
     }
 
     public List<AuthSessionData> findAllSessionsForEmail(Server server, String email) {
         return sessionRepository.findActiveByEmail(server, email, new Date());
+    }
+
+    public Optional<AuthSessionData> findSessionByPublicId(Server server, String email, String publicId) {
+        if (publicId == null || publicId.isBlank()) {
+            return Optional.empty();
+        }
+        return findAllSessionsForEmail(server, email).stream()
+            .filter(session -> publicId.equals(SessionPublicId.of(session.getId())))
+            .findFirst();
     }
 
     private static final long REFRESH_SKIP_THRESHOLD_MS = 10L * 60 * 1000;

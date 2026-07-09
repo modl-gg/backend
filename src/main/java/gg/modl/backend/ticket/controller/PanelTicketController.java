@@ -3,12 +3,10 @@ package gg.modl.backend.ticket.controller;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.log.service.PanelActionAuditor;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketReply;
-import gg.modl.backend.ticket.dto.request.AddNoteRequest;
-import gg.modl.backend.ticket.dto.request.AddReplyRequest;
-import gg.modl.backend.ticket.dto.request.AddTagRequest;
 import gg.modl.backend.ticket.dto.request.BulkTicketUpdateRequest;
 import gg.modl.backend.ticket.dto.request.CreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.QuickResponseRequest;
@@ -21,8 +19,16 @@ import gg.modl.backend.ticket.service.TicketSearchService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.ticket.service.TicketSubscriptionService;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.proto.modl.v1.AddNoteRequest;
+import gg.modl.proto.modl.v1.AddReplyRequest;
+import gg.modl.proto.modl.v1.AddTagRequest;
+import gg.modl.proto.modl.v1.AddTicketReplyResponse;
+import gg.modl.proto.modl.v1.BulkTicketUpdateResponse;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.TicketCountsResponse;
+import gg.modl.proto.modl.v1.TicketNote;
+import gg.modl.proto.modl.v1.TicketTagsResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.List;
@@ -50,9 +56,11 @@ public class PanelTicketController {
     private final TicketSearchService ticketSearchService;
     private final TicketReplyService ticketReplyService;
     private final TicketSubscriptionService subscriptionService;
+    private final RealtimeEventPublisher realtimeEventPublisher;
+    private final PanelActionAuditor panelActionAuditor;
 
     @GetMapping
-    public ResponseEntity<PaginatedTicketsResponse> searchTickets(
+    public ResponseEntity<gg.modl.proto.modl.v1.PaginatedTicketsResponse> searchTickets(
         @RequestParam(defaultValue = "1") @Min(RequestValidationLimits.PAGINATION_PAGE_MIN) int page,
         @RequestParam(defaultValue = "10") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         @RequestParam(required = false) String search,
@@ -67,11 +75,11 @@ public class PanelTicketController {
         Server server = RequestUtil.getRequestServer(request);
         PaginatedTicketsResponse response = ticketSearchService.searchTickets(
             server, page, limit, search, status, type, author, labels, assignee, sort);
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toPaginatedTicketsResponse(response));
     }
 
     @GetMapping("/counts")
-    public ResponseEntity<Map<String, Long>> getTicketCounts(
+    public ResponseEntity<TicketCountsResponse> getTicketCounts(
         @RequestParam(required = false) String search,
         @RequestParam(required = false) List<String> type,
         @RequestParam(required = false) String author,
@@ -81,27 +89,31 @@ public class PanelTicketController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         Map<String, Long> counts = ticketSearchService.getTicketCounts(server, search, type, author, labels, assignee);
-        return ResponseEntity.ok(counts);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toTicketCountsResponse(counts));
     }
 
     @PostMapping("/bulk")
-    public ResponseEntity<?> bulkUpdateTickets(
-        @RequestBody @Valid BulkTicketUpdateRequest bulkRequest,
+    public ResponseEntity<BulkTicketUpdateResponse> bulkUpdateTickets(
+        @RequestBody gg.modl.proto.modl.v1.BulkTicketUpdateRequest bulkRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        if (bulkRequest.ticketIds() == null || bulkRequest.ticketIds().isEmpty()) {
+        BulkTicketUpdateRequest command = PanelTicketProtoMapper.fromBulkTicketUpdateRequest(bulkRequest);
+        if (command.ticketIds() == null || command.ticketIds().isEmpty()) {
             throw new ValidationException("No ticket IDs provided");
         }
 
-        int updatedCount = ticketService.bulkUpdateTickets(server, bulkRequest, staffEmail);
-        return ResponseEntity.ok(Map.of("updated", updatedCount, "message", "Successfully updated " + updatedCount + " tickets"));
+        int updatedCount = ticketService.bulkUpdateTickets(server, command, staffEmail);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS);
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Bulk updated " + updatedCount + " ticket(s)");
+        return ResponseEntity.ok(PanelTicketProtoMapper.toBulkTicketUpdateResponse(
+            updatedCount, "Successfully updated " + updatedCount + " tickets"));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<TicketResponse> getTicket(
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketResponse> getTicket(
         @PathVariable String id,
         HttpServletRequest request
     ) {
@@ -112,90 +124,96 @@ public class PanelTicketController {
             subscriptionService.markTicketAsRead(server, id, staffEmail);
         }
 
-        return ResponseEntity.ok(ticketService.getTicketById(server, id));
+        return ResponseEntity.ok(PanelTicketProtoMapper.toTicketResponse(ticketService.getTicketById(server, id)));
     }
 
     @PostMapping
-    public ResponseEntity<TicketResponse> createTicket(
-        @RequestBody @Valid CreateTicketRequest createRequest,
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketResponse> createTicket(
+        @RequestBody gg.modl.proto.modl.v1.CreateTicketRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        TicketResponse ticket = ticketService.createTicket(server, createRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ticket);
+        TicketResponse ticket = ticketService.createTicket(server, PanelTicketProtoMapper.fromCreateTicketRequest(createRequest));
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, ticket.id());
+        return ResponseEntity.status(HttpStatus.CREATED).body(PanelTicketProtoMapper.toTicketResponse(ticket));
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<?> updateTicket(
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketResponse> updateTicket(
         @PathVariable String id,
-        @RequestBody @Valid UpdateTicketRequest updateRequest,
+        @RequestBody gg.modl.proto.modl.v1.UpdateTicketRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        TicketResponse ticket = ticketService.updateTicket(server, id, updateRequest, staffEmail);
-        return ResponseEntity.ok(Map.of(
-            "id", ticket.id(),
-            "status", ticket.status(),
-            "tags", ticket.tags(),
-            "notes", ticket.notes(),
-            "messages", ticket.messages(),
-            "data", ticket.data() != null ? ticket.data() : Map.of(),
-            "locked", ticket.locked(),
-            "assignedTo", ticket.assignedTo() != null ? ticket.assignedTo() : List.of()
-        ));
+        UpdateTicketRequest command = PanelTicketProtoMapper.fromUpdateTicketRequest(updateRequest);
+        TicketResponse ticket = ticketService.updateTicket(server, id, command, staffEmail);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, ticket.id());
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Updated ticket " + id);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toTicketResponse(ticket));
     }
 
     @PostMapping("/{id}/notes")
-    public ResponseEntity<?> addNote(
+    public ResponseEntity<TicketNote> addNote(
         @PathVariable String id,
-        @RequestBody @Valid AddNoteRequest noteRequest,
+        @RequestBody AddNoteRequest noteRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(ticketReplyService.addNote(server, id, noteRequest));
+        gg.modl.backend.ticket.data.TicketNote note =
+            ticketReplyService.addNote(server, id, PanelTicketProtoMapper.fromAddNoteRequest(noteRequest));
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(PanelTicketProtoMapper.toTicketNoteResponse(note));
     }
 
     @PostMapping("/{id}/replies")
-    public ResponseEntity<?> addReply(
+    public ResponseEntity<AddTicketReplyResponse> addReply(
         @PathVariable String id,
-        @RequestBody @Valid AddReplyRequest replyRequest,
+        @RequestBody AddReplyRequest replyRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         String staffEmail = RequestUtil.getSessionEmail(request);
 
-        TicketReply reply = ticketReplyService.addReply(server, id, replyRequest);
+        gg.modl.backend.ticket.dto.request.AddReplyRequest command =
+            PanelTicketProtoMapper.fromAddReplyRequest(replyRequest);
+        TicketReply reply = ticketReplyService.addReply(server, id, command);
 
-        if (replyRequest.staff() && staffEmail != null && !staffEmail.isBlank()) {
+        if (command.staff() && staffEmail != null && !staffEmail.isBlank()) {
             subscriptionService.ensureSubscription(server, id, staffEmail);
         }
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(reply);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        panelActionAuditor.recordStaffAction(server, staffEmail, "Replied to ticket " + id);
+        return ResponseEntity.status(HttpStatus.CREATED).body(PanelTicketProtoMapper.toAddReplyResponse(reply));
     }
 
     @PostMapping("/{id}/tags")
-    public ResponseEntity<?> addTag(
+    public ResponseEntity<TicketTagsResponse> addTag(
         @PathVariable String id,
-        @RequestBody @Valid AddTagRequest tagRequest,
+        @RequestBody AddTagRequest tagRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ResponseEntity.ok(ticketReplyService.addTag(server, id, tagRequest.tag()));
+        List<String> tags = ticketReplyService.addTag(server, id, tagRequest.getTag());
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toTagsResponse(tags));
     }
 
     @DeleteMapping("/{id}/tags/{tag}")
-    public ResponseEntity<?> removeTag(
+    public ResponseEntity<TicketTagsResponse> removeTag(
         @PathVariable String id,
         @PathVariable String tag,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        return ResponseEntity.ok(ticketReplyService.removeTag(server, id, tag));
+        List<String> tags = ticketReplyService.removeTag(server, id, tag);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toTagsResponse(tags));
     }
 
     @GetMapping("/player/{uuid}")
@@ -204,8 +222,7 @@ public class PanelTicketController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketSearchService.getTicketsByPlayer(server, uuid);
-        return ResponseEntity.ok(tickets);
+        return ResponseEntity.ok(ticketSearchService.getTicketsByPlayer(server, uuid));
     }
 
     @GetMapping("/tag/{tag}")
@@ -214,14 +231,13 @@ public class PanelTicketController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Ticket> tickets = ticketSearchService.getTicketsByTag(server, tag);
-        return ResponseEntity.ok(tickets);
+        return ResponseEntity.ok(ticketSearchService.getTicketsByTag(server, tag));
     }
 
     @PostMapping("/{id}/quick-response")
-    public ResponseEntity<?> quickResponse(
+    public ResponseEntity<gg.modl.proto.modl.v1.QuickResponseResult> quickResponse(
         @PathVariable String id,
-        @RequestBody @Valid QuickResponseRequest quickRequest,
+        @RequestBody gg.modl.proto.modl.v1.QuickResponseRequest quickRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -229,12 +245,14 @@ public class PanelTicketController {
 
         String staffUsername = staffEmail != null ? staffEmail.split("@")[0] : "System";
 
-        QuickResponseResult result = ticketService.processQuickResponse(server, id, quickRequest, staffUsername);
+        QuickResponseRequest command = PanelTicketProtoMapper.fromQuickResponseRequest(quickRequest);
+        QuickResponseResult result = ticketService.processQuickResponse(server, id, command, staffUsername);
 
         if (!result.success()) {
-            return ResponseEntity.badRequest().body(Map.of("error", result.message()));
+            return ResponseEntity.badRequest().body(PanelTicketProtoMapper.toQuickResponseResult(result));
         }
 
-        return ResponseEntity.ok(result);
+        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_TICKETS, id);
+        return ResponseEntity.ok(PanelTicketProtoMapper.toQuickResponseResult(result));
     }
 }

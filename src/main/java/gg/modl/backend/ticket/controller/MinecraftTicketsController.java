@@ -125,16 +125,7 @@ public class MinecraftTicketsController {
         Server server = RequestUtil.getRequestServer(httpRequest);
         List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
             .stream()
-            .map(ticket -> {
-                Map<String, Object> response = new LinkedHashMap<>();
-                response.put("id", ticket.getId());
-                response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-                response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-                response.put("subject", ticket.getSubject());
-                response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-                response.put("createdAt", ticket.getCreated());
-                return response;
-            })
+            .map(minecraftTicketService::toPlayerTicketItem)
             .toList();
 
         return ResponseEntity.ok(Map.of(
@@ -163,13 +154,18 @@ public class MinecraftTicketsController {
                 "success", false,
                 "message", "Ticket is already linked to a Minecraft account"
             ));
-            case SUCCESS -> ResponseEntity.ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "Ticket successfully linked to your account",
-                "ticketId", id,
-                "subject", result.ticket() != null ? result.ticket().getSubject() : null
-            ));
+            case SUCCESS -> {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("status", 200);
+                body.put("success", true);
+                body.put("message", "Ticket successfully linked to your account");
+                body.put("ticketId", id);
+                String subject = result.ticket().getSubject();
+                if (subject != null) {
+                    body.put("subject", subject);
+                }
+                yield ResponseEntity.ok(body);
+            }
         };
     }
 

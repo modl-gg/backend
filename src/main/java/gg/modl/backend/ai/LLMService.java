@@ -26,12 +26,12 @@ public class LLMService {
     }
 
     @NotNull
-    public String generate(@NotNull String prompt) {
+    public String generate(@NotNull String systemInstruction, @NotNull String userContent) {
         if (!isAvailable()) {
             throw new IllegalStateException("LLM provider not initialized. Check API key configuration.");
         }
 
-        return llmProvider.generate(prompt);
+        return llmProvider.generate(systemInstruction, userContent);
     }
 
     public boolean isAvailable() {

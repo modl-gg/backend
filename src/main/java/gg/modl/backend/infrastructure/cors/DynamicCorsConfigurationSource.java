@@ -1,6 +1,8 @@
 package gg.modl.backend.infrastructure.cors;
 
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
+import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.origin.OriginPolicy;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
@@ -22,6 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
     private final ModlCorsProperties corsProperties;
+    private final ModlProperties modlProperties;
     private final Map<String, CachedOrigin> originCache = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -30,8 +33,8 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             }
         }
     );
-    private volatile Set<String> parsedSystemOrigins = Set.of();
-    private volatile Set<String> parsedAppDomains = Set.of();
+    private volatile OriginPolicy originPolicy = new OriginPolicy(Set.of(), Set.of(), false);
+    private volatile Set<String> parsedReplayLiteOrigins = Set.of();
     private static final int MAX_CACHE_SIZE = 10_000;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -45,11 +48,11 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         String path = request.getRequestURI();
         boolean adminPath = isAdminPath(path);
 
-        if (adminPath && !isSystemOrigin(origin)) {
+        if (adminPath && !originPolicy.isSystemOrigin(origin)) {
             return null;
         }
 
-        if (!isOriginAllowed(origin)) {
+        if (!isOriginAllowed(path, origin)) {
             return null;
         }
 
@@ -75,19 +78,31 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         );
     }
 
-    private boolean isOriginAllowed(String origin) {
-        CachedOrigin cached = originCache.get(origin);
+    private boolean isReplayLitePath(String path) {
+        return path != null && (
+            path.startsWith(RESTMappingV1.PREFIX_REPLAY_LITE + "/")
+            || path.startsWith(RESTMappingV1.PREFIX_PUBLIC + "/replay-lite/")
+        );
+    }
+
+    private boolean isOriginAllowed(String path, String origin) {
+        String cacheKey = (isReplayLitePath(path) ? "replay-lite" : "default") + ":" + origin;
+        CachedOrigin cached = originCache.get(cacheKey);
         if (cached != null && !cached.isExpired()) {
             return cached.allowed;
         }
 
-        boolean allowed = checkOriginAllowed(origin);
-        originCache.put(origin, new CachedOrigin(allowed, System.currentTimeMillis() + CACHE_TTL_MS));
+        boolean allowed = checkOriginAllowed(path, origin);
+        originCache.put(cacheKey, new CachedOrigin(allowed, System.currentTimeMillis() + CACHE_TTL_MS));
         return allowed;
     }
 
-    private boolean checkOriginAllowed(String origin) {
-        if (isSystemOrigin(origin)) {
+    private boolean checkOriginAllowed(String path, String origin) {
+        if (isReplayLitePath(path)) {
+            return parsedReplayLiteOrigins.contains(origin);
+        }
+
+        if (originPolicy.isSystemOrigin(origin)) {
             return true;
         }
 
@@ -96,7 +111,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
             return false;
         }
 
-        if (isAppDomainOrSubdomain(host)) {
+        if (originPolicy.isAppDomainOrSubdomain(host)) {
             return true;
         }
 
@@ -104,30 +119,31 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         return server != null;
     }
 
-    private boolean isAppDomainOrSubdomain(String host) {
-        return parsedAppDomains.stream()
-            .anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
-    }
-
-    private boolean isSystemOrigin(String origin) {
-        return parsedSystemOrigins.contains(origin);
-    }
-
     @PostConstruct
     void initParsedOrigins() {
-        parsedSystemOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins());
-        parsedAppDomains = HostExtractionUtil.parseCommaSeparated(corsProperties.getAppDomains());
+        originPolicy = new OriginPolicy(
+            HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()),
+            HostExtractionUtil.parseCommaSeparated(corsProperties.getAppDomains()),
+            modlProperties.isDevelopmentMode()
+        );
+        parsedReplayLiteOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getReplayLiteOrigins());
     }
 
     public void invalidateCache(String domain) {
         originCache.entrySet().removeIf(entry -> {
-            String host = HostExtractionUtil.extractHost(entry.getKey());
+            String host = HostExtractionUtil.extractHost(originFromCacheKey(entry.getKey()));
             return domain.equals(host);
         });
     }
 
     public void invalidateCacheForOrigin(String origin) {
-        originCache.remove(origin);
+        originCache.remove("default:" + origin);
+        originCache.remove("replay-lite:" + origin);
+    }
+
+    private String originFromCacheKey(String key) {
+        int separator = key.indexOf(':');
+        return separator >= 0 ? key.substring(separator + 1) : key;
     }
 
     private record CachedOrigin(boolean allowed, long expiresAt) {

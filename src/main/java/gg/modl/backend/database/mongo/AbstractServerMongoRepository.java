@@ -3,6 +3,7 @@ package gg.modl.backend.database.mongo;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.server.data.Server;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
@@ -32,16 +33,8 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
         return findOne(tenantMongoAccess.forServer(server), query);
     }
 
-    public Optional<T> findOne(String databaseName, Query query) {
-        return findOne(tenantMongoAccess.forDatabase(databaseName), query);
-    }
-
     public List<T> find(Server server, Query query) {
         return find(tenantMongoAccess.forServer(server), query);
-    }
-
-    public List<T> find(String databaseName, Query query) {
-        return find(tenantMongoAccess.forDatabase(databaseName), query);
     }
 
     public List<T> findAll(Server server) {
@@ -56,24 +49,16 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
         return exists(tenantMongoAccess.forServer(server), query);
     }
 
-    public boolean exists(String databaseName, Query query) {
-        return exists(tenantMongoAccess.forDatabase(databaseName), query);
-    }
-
     public T saveEntity(Server server, T entity) {
         return save(tenantMongoAccess.forServer(server), entity);
     }
 
-    public T saveEntity(String databaseName, T entity) {
-        return save(tenantMongoAccess.forDatabase(databaseName), entity);
+    public void insertAll(Server server, Collection<T> entities) {
+        insertAll(tenantMongoAccess.forServer(server), entities);
     }
 
     public UpdateResult updateFirst(Server server, Query query, Update update) {
         return updateFirst(tenantMongoAccess.forServer(server), query, update);
-    }
-
-    public UpdateResult updateFirst(String databaseName, Query query, Update update) {
-        return updateFirst(tenantMongoAccess.forDatabase(databaseName), query, update);
     }
 
     public UpdateResult updateMulti(Server server, Query query, Update update) {
@@ -92,16 +77,8 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
         return findAndModify(tenantMongoAccess.forServer(server), query, update, options);
     }
 
-    public T findAndModify(String databaseName, Query query, Update update, FindAndModifyOptions options) {
-        return findAndModify(tenantMongoAccess.forDatabase(databaseName), query, update, options);
-    }
-
     public T findAndRemove(Server server, Query query) {
         return findAndRemove(tenantMongoAccess.forServer(server), query);
-    }
-
-    public T findAndRemove(String databaseName, Query query) {
-        return findAndRemove(tenantMongoAccess.forDatabase(databaseName), query);
     }
 
     public <O> AggregationResults<O> aggregate(Server server, Aggregation aggregation, Class<O> outputType) {
@@ -110,9 +87,5 @@ public abstract class AbstractServerMongoRepository<T> extends AbstractTenantMon
 
     protected MongoTemplate serverTemplate(Server server) {
         return tenantMongoAccess.forServer(server);
-    }
-
-    protected MongoTemplate serverTemplate(String databaseName) {
-        return tenantMongoAccess.forDatabase(databaseName);
     }
 }

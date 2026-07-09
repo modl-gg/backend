@@ -53,9 +53,6 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         return exists(server, Query.query(criteria));
     }
 
-    public boolean existsByName(Server server, String roleName) {
-        return exists(server, Query.query(Criteria.where(StaffRoleFields.NAME).is(roleName)));
-    }
 
     public void updateOrder(Server server, String roleId, int order) {
         Update update = new Update();
@@ -76,6 +73,19 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         upsert(server, query, update);
     }
 
+    public void insertRoleIfAbsent(Server server, StaffRole role) {
+        Query query = Query.query(Criteria.where(StaffRoleFields.ID).is(role.getId()));
+        Update update = new Update();
+        update.setOnInsert(StaffRoleFields.NAME, role.getName());
+        update.setOnInsert(StaffRoleFields.DESCRIPTION, role.getDescription());
+        update.setOnInsert(StaffRoleFields.PERMISSIONS, role.getPermissions());
+        update.setOnInsert(StaffRoleFields.IS_DEFAULT, role.isDefault());
+        update.setOnInsert(StaffRoleFields.ORDER, role.getOrder());
+        update.setOnInsert(StaffRoleFields.CREATED_AT, role.getCreatedAt());
+        update.setOnInsert(StaffRoleFields.UPDATED_AT, role.getUpdatedAt());
+        upsert(server, query, update);
+    }
+
     public List<StaffRole> findCustomRolesWithOrderZero(Server server) {
         Query query = Query.query(Criteria.where(StaffRoleFields.IS_DEFAULT).is(false)
             .and(StaffRoleFields.ORDER).is(0));
@@ -86,15 +96,12 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         return remove(server, Query.query(Criteria.where(StaffRoleFields.ID).is(roleId))).getDeletedCount() > 0;
     }
 
-    public List<StaffRole> findByNames(Server server, Collection<String> roleNames) {
-        if (roleNames == null || roleNames.isEmpty()) {
-            return List.of();
-        }
-        return find(server, Query.query(Criteria.where(StaffRoleFields.NAME).in(roleNames)));
-    }
-
     public Optional<StaffRole> findByName(Server server, String roleName) {
         return findOne(server, Query.query(Criteria.where(StaffRoleFields.NAME).is(roleName)));
+    }
+
+    public List<StaffRole> findAllByName(Server server, String roleName) {
+        return find(server, Query.query(Criteria.where(StaffRoleFields.NAME).is(roleName)));
     }
 
     public List<StaffRole> findByIds(Server server, Collection<String> ids) {
@@ -111,6 +118,21 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
             Query query = Query.query(Criteria.where("_id").is(entry.getKey()));
+            Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
+            bulk.updateOne(query, update);
+        }
+        bulk.execute();
+    }
+
+    public void bulkRepairOrderFromZero(Server server, Map<String, Integer> orderById) {
+        if (orderById.isEmpty()) return;
+
+        MongoTemplate template = serverTemplate(server);
+        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
+        for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
+            Query query = Query.query(Criteria.where("_id").is(entry.getKey())
+                .and(StaffRoleFields.ORDER).is(0)
+                .and(StaffRoleFields.IS_DEFAULT).is(false));
             Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
             bulk.updateOne(query, update);
         }

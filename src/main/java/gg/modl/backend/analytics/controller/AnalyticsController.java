@@ -9,8 +9,8 @@ import gg.modl.backend.analytics.service.AnalyticsService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.AnalyticsOverviewResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,54 +25,54 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
 
     @GetMapping("/overview")
-    public ResponseEntity<Map<String, OverviewResponse>> getOverview(HttpServletRequest request) {
+    public ResponseEntity<AnalyticsOverviewResponse> getOverview(HttpServletRequest request) {
         final Server server = RequestUtil.getRequestServer(request);
         final OverviewResponse overview = analyticsService.getOverview(server);
 
-        return ResponseEntity.ok(Map.of("overview", overview));
+        return ResponseEntity.ok(AnalyticsProtoMapper.toOverviewResponse(overview));
     }
 
     @GetMapping("/tickets")
-    public ResponseEntity<TicketAnalyticsResponse> getTicketAnalytics(
+    public ResponseEntity<gg.modl.proto.modl.v1.TicketAnalyticsResponse> getTicketAnalytics(
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
         final Server server = RequestUtil.getRequestServer(request);
         final TicketAnalyticsResponse analytics = analyticsService.getTicketAnalytics(server, period);
 
-        return ResponseEntity.ok(analytics);
+        return ResponseEntity.ok(AnalyticsProtoMapper.toTicketAnalytics(analytics));
     }
 
     @GetMapping("/punishments")
-    public ResponseEntity<PunishmentAnalyticsResponse> getPunishmentAnalytics(
+    public ResponseEntity<gg.modl.proto.modl.v1.PunishmentAnalyticsResponse> getPunishmentAnalytics(
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
         final Server server = RequestUtil.getRequestServer(request);
         final PunishmentAnalyticsResponse analytics = analyticsService.getPunishmentAnalytics(server, period);
 
-        return ResponseEntity.ok(analytics);
+        return ResponseEntity.ok(AnalyticsProtoMapper.toPunishmentAnalytics(analytics));
     }
 
     @GetMapping("/audit-logs")
-    public ResponseEntity<AuditLogsAnalyticsResponse> getAuditLogsAnalytics(
+    public ResponseEntity<gg.modl.proto.modl.v1.AuditLogsAnalyticsResponse> getAuditLogsAnalytics(
         @RequestParam(defaultValue = "7d") String period,
         HttpServletRequest request
     ) {
         final Server server = RequestUtil.getRequestServer(request);
         final AuditLogsAnalyticsResponse analytics = analyticsService.getAuditLogsAnalytics(server, period);
 
-        return ResponseEntity.ok(analytics);
+        return ResponseEntity.ok(AnalyticsProtoMapper.toAuditLogsAnalytics(analytics));
     }
 
     @GetMapping("/player-activity")
-    public ResponseEntity<PlayerActivityResponse> getPlayerActivityAnalytics(
+    public ResponseEntity<gg.modl.proto.modl.v1.PlayerActivityResponse> getPlayerActivityAnalytics(
         @RequestParam(defaultValue = "30d") String period,
         HttpServletRequest request
     ) {
         final Server server = RequestUtil.getRequestServer(request);
         final PlayerActivityResponse analytics = analyticsService.getPlayerActivityAnalytics(server, period);
 
-        return ResponseEntity.ok(analytics);
+        return ResponseEntity.ok(AnalyticsProtoMapper.toPlayerActivity(analytics));
     }
 }

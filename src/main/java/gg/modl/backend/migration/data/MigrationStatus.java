@@ -1,5 +1,8 @@
 package gg.modl.backend.migration.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAlias;
+import gg.modl.backend.database.mongo.codegen.MongoFieldAliases;
 import java.util.Date;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,6 +17,13 @@ import org.springframework.data.mongodb.core.mapping.Field;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@GenerateMongoFields
+@MongoFieldAliases({
+    @MongoFieldAlias(name = "PROGRESS_MESSAGE", path = "progress.message"),
+    @MongoFieldAlias(name = "PROGRESS_RECORDS_PROCESSED", path = "progress.recordsProcessed"),
+    @MongoFieldAlias(name = "PROGRESS_RECORDS_SKIPPED", path = "progress.recordsSkipped"),
+    @MongoFieldAlias(name = "PROGRESS_TOTAL_RECORDS", path = "progress.totalRecords")
+})
 public class MigrationStatus {
     @Id
     private String id;
@@ -32,6 +42,8 @@ public class MigrationStatus {
     private Date completedAt;
     @Field("error")
     private String error;
+    @Field("cooldownExempt")
+    private Boolean cooldownExempt;
 
     @Data
     @NoArgsConstructor

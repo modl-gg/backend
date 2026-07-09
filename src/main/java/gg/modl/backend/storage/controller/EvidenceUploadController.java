@@ -7,16 +7,23 @@ import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.service.EvidenceUploadService;
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.MessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_EVIDENCE_UPLOAD)
@@ -97,6 +104,14 @@ public class EvidenceUploadController {
                 "status", 404,
                 "message", "Upload not found. File may not have been uploaded yet."
             ));
+            case QUOTA_EXCEEDED -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "status", 400,
+                "message", "Storage quota exceeded"
+            ));
+            case RECORD_FAILED -> ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
+                "status", 500,
+                "message", "Failed to record upload"
+            ));
             case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "key", result.upload().key(),
@@ -136,5 +151,30 @@ public class EvidenceUploadController {
                 "message", "Evidence uploaded successfully"
             ));
         };
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidBody(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getAllErrors().stream()
+            .map(err -> err instanceof FieldError fe ? fe.getField() + ": " + fe.getDefaultMessage() : err.getDefaultMessage())
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse("Invalid request body");
+        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", message));
+    }
+
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleHandlerValidation(HandlerMethodValidationException ex) {
+        String message = ex.getAllErrors().stream()
+            .map(MessageSourceResolvable::getDefaultMessage)
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse("Invalid request");
+        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", message));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadableBody(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", "Malformed request body"));
     }
 }

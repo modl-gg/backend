@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -35,6 +36,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.ObjectVersion;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
@@ -90,7 +92,7 @@ public class S3StorageService {
             List<ObjectIdentifier> toDelete = collectAllVersions(key);
 
             if (toDelete.isEmpty()) {
-                return false;
+                return true;
             }
 
             DeleteObjectsRequest request = DeleteObjectsRequest.builder()
@@ -98,7 +100,11 @@ public class S3StorageService {
                 .delete(Delete.builder().objects(toDelete).quiet(true).build())
                 .build();
 
-            s3Client.deleteObjects(request);
+            DeleteObjectsResponse response = s3Client.deleteObjects(request);
+            if (response.hasErrors()) {
+                log.warn("Failed to delete one or more S3 object versions for key {}: {}", key, describeDeleteErrors(response.errors()));
+                return false;
+            }
             return true;
         } catch (Exception e) {
             log.error("Error deleting file: {}", key, e);
@@ -320,11 +326,14 @@ public class S3StorageService {
     }
 
     public List<S3ObjectInfo> listAllObjects(Server server) {
+        return listObjectInfosByPrefix(server.getDatabaseName() + "/");
+    }
+
+    public List<S3ObjectInfo> listObjectInfosByPrefix(String prefix) {
         if (s3Client == null) {
             return Collections.emptyList();
         }
 
-        String prefix = server.getDatabaseName() + "/";
         List<S3ObjectInfo> objects = new ArrayList<>();
 
         ListObjectsV2Request request = ListObjectsV2Request.builder()
@@ -418,36 +427,52 @@ public class S3StorageService {
         List<ObjectIdentifier> identifiers = new ArrayList<>();
         String bucket = s3Configuration.getBucketName();
 
-        ListObjectVersionsRequest request = ListObjectVersionsRequest.builder()
-            .bucket(bucket)
-            .prefix(key)
-            .build();
+        String keyMarker = null;
+        String versionIdMarker = null;
+        ListObjectVersionsResponse response;
+        do {
+            ListObjectVersionsRequest request = ListObjectVersionsRequest.builder()
+                .bucket(bucket)
+                .prefix(key)
+                .keyMarker(keyMarker)
+                .versionIdMarker(versionIdMarker)
+                .build();
 
-        ListObjectVersionsResponse response = s3Client.listObjectVersions(request);
+            response = s3Client.listObjectVersions(request);
 
-        for (ObjectVersion version : response.versions()) {
-            if (version.key().equals(key)) {
-                identifiers.add(ObjectIdentifier.builder()
-                    .key(key)
-                    .versionId(version.versionId())
-                    .build());
+            for (ObjectVersion version : response.versions()) {
+                if (version.key().equals(key)) {
+                    identifiers.add(ObjectIdentifier.builder()
+                        .key(key)
+                        .versionId(version.versionId())
+                        .build());
+                }
             }
-        }
 
-        for (DeleteMarkerEntry marker : response.deleteMarkers()) {
-            if (marker.key().equals(key)) {
-                identifiers.add(ObjectIdentifier.builder()
-                    .key(key)
-                    .versionId(marker.versionId())
-                    .build());
+            for (DeleteMarkerEntry marker : response.deleteMarkers()) {
+                if (marker.key().equals(key)) {
+                    identifiers.add(ObjectIdentifier.builder()
+                        .key(key)
+                        .versionId(marker.versionId())
+                        .build());
+                }
             }
-        }
+
+            keyMarker = response.nextKeyMarker();
+            versionIdMarker = response.nextVersionIdMarker();
+        } while (Boolean.TRUE.equals(response.isTruncated()));
 
         return identifiers;
     }
 
+    private String describeDeleteErrors(List<S3Error> errors) {
+        return errors.stream()
+            .map(error -> error.key() + ":" + error.code())
+            .collect(Collectors.joining(", "));
+    }
+
     public int bulkDelete(List<String> keys) {
-        if (s3Client == null || keys.isEmpty()) {
+        if (s3Client == null || keys == null || keys.isEmpty()) {
             return 0;
         }
 
@@ -469,6 +494,9 @@ public class S3StorageService {
                 .build();
 
             DeleteObjectsResponse response = s3Client.deleteObjects(request);
+            if (response.hasErrors()) {
+                log.warn("Failed to delete one or more S3 object versions: {}", describeDeleteErrors(response.errors()));
+            }
             totalDeleted += response.deleted().size();
         }
 

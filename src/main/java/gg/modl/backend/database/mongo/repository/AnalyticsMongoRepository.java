@@ -1,5 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
+import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
+
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
@@ -16,6 +18,7 @@ import org.jetbrains.annotations.NotNull;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.stereotype.Repository;
 
@@ -72,24 +75,8 @@ public class AnalyticsMongoRepository {
         }
 
         final long totalPlayers = template.getCollection(CollectionName.PLAYERS).countDocuments();
-        final long totalStaff = template.getCollection(CollectionName.STAFF).countDocuments();
 
-        return new OverviewStats(totalTickets, totalPlayers, totalStaff, activeTickets, recentTickets, previousTickets);
-    }
-
-    private long extractFacetCount(Document facets, String key) {
-        final List<?> list = facets.getList(key, Document.class, List.of());
-        if (list.isEmpty()) {
-            return 0;
-        }
-
-        final Object first = list.getFirst();
-        if (first instanceof final Document doc) {
-            final Number n = doc.get(ALIAS_N, Number.class);
-            return n != null ? n.longValue() : 0;
-        }
-
-        return 0;
+        return new OverviewStats(totalTickets, totalPlayers, activeTickets, recentTickets, previousTickets);
     }
 
     public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {
@@ -124,15 +111,21 @@ public class AnalyticsMongoRepository {
             .getMappedResults();
     }
 
-    public List<IdCountResult> aggregateDailyTicketCounts(Server server, Date startDate) {
+    public List<IdCountResult> aggregateDailyTicketCounts(Server server, Date startDate, String timeZone) {
         Criteria criteria = Criteria.where(TicketFields.STATUS).ne(TicketStatus.UNFINISHED.getId());
         if (startDate != null) {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
 
+        final AggregationOperation dayProjection = context -> new Document("$project",
+            new Document(ALIAS_DATE, new Document("$dateToString",
+                new Document("format", "%Y-%m-%d")
+                    .append("date", "$" + TicketFields.CREATED)
+                    .append("timezone", timeZone))));
+
         final Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(criteria),
-            Aggregation.project().andExpression("dateToString('%Y-%m-%d', " + TicketFields.CREATED + ")").as(ALIAS_DATE),
+            dayProjection,
             Aggregation.group(ALIAS_DATE).count().as(ALIAS_COUNT),
             Aggregation.sort(Sort.Direction.ASC, "_id")
         );
@@ -159,7 +152,10 @@ public class AnalyticsMongoRepository {
             new Document("_id", "$" + PlayerFields.PUNISHMENT_TYPE_ORDINAL).append(ALIAS_COUNT, new Document("$sum", 1)));
         final Document sortByCountDesc = new Document("$sort", new Document(ALIAS_COUNT, -1));
         final Document byStaffFacet = new Document("$group",
-            new Document("_id", "$" + PlayerFields.PUNISHMENT_ISSUER_NAME).append(ALIAS_COUNT, new Document("$sum", 1)));
+            new Document("_id", new Document("$ifNull", List.of(
+                "$" + PlayerFields.PUNISHMENT_ISSUER_ID,
+                "$" + PlayerFields.PUNISHMENT_ISSUER_NAME)))
+                .append(ALIAS_COUNT, new Document("$sum", 1)));
         final Document byDayFacet = new Document("$group", new Document("_id",
             new Document("$dateToString",
                 new Document("format", "%Y-%m-%d")
@@ -296,7 +292,6 @@ public class AnalyticsMongoRepository {
     public record OverviewStats(
         long totalTickets,
         long totalPlayers,
-        long totalStaff,
         long activeTickets,
         long recentTickets,
         long previousTickets

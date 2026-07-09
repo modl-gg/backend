@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'gg.modl.backend'
-version = '2.2.0'
+version = '2.3.0'
 description = 'backend'
 
 java {
@@ -42,6 +42,7 @@ dependencies {
     // Spring Boot Starters
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
@@ -67,7 +68,11 @@ dependencies {
     implementation 'gg.modl.minecraft.replay:replay-format:1.1.0'
 
     // Shared protobuf types
-    implementation 'gg.modl:proto:1.0.0'
+    implementation 'gg.modl:proto:1.6.1'
+    // proto's gencode is stamped at protobuf-java 4.35.1 by the buf generator; pin the runtime to 4.35.1
+    // so a future proto POM declaring an older protobuf-java cannot downgrade the runtime below the gencode.
+    implementation 'com.google.protobuf:protobuf-java:4.35.1'
+    implementation 'com.google.protobuf:protobuf-java-util:4.35.1'
 
     // Caching
     implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'

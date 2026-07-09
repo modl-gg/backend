@@ -7,15 +7,18 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.dto.response.PlayerDetailResponse;
 import gg.modl.backend.player.dto.response.PlayerSearchResult;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
+import gg.modl.backend.player.service.PunishmentQueryService;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
+import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.proto.modl.v1.PanelResource;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
@@ -28,6 +31,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,6 +41,8 @@ public class PlayerService {
     private final PlayerMongoRepository playerRepository;
     private final PlayerStatusCalculator statusCalculator;
     private final PunishmentTypeService punishmentTypeService;
+    private final RealtimeEventPublisher realtimePublisher;
+    private final PunishmentQueryService punishmentQueryService;
     private static final int SEARCH_RESULT_LIMIT = 20;
     private static final int SEARCH_CANDIDATE_LIMIT = 100;
     private static final int RANK_EXACT_CURRENT_USERNAME = 0;
@@ -46,6 +52,9 @@ public class PlayerService {
     private static final int RANK_CONTAINS_CURRENT_USERNAME = 4;
     private static final int RANK_CONTAINS_PAST_USERNAME = 5;
     private static final int RANK_NO_MATCH = Integer.MAX_VALUE;
+    private static final int DETAIL_PUNISHMENT_CAP = 100;
+    private static final int DETAIL_NOTE_CAP = 100;
+    private static final int DETAIL_LOGIN_CAP = 50;
 
     public List<PlayerSearchResult> searchPlayers(Server server, String searchTerm) {
         String normalizedSearch = searchTerm == null ? "" : searchTerm.trim();
@@ -55,7 +64,7 @@ public class PlayerService {
 
         List<Player> players;
         if (isUuid(normalizedSearch)) {
-            players = playerRepository.findByMinecraftUuid(server, normalizedSearch)
+            players = playerRepository.findByMinecraftUuid(server, normalizeUuid(normalizedSearch))
                 .map(List::of)
                 .orElseGet(List::of);
         } else {
@@ -73,6 +82,26 @@ public class PlayerService {
         return players.stream()
             .map(player -> toPlayerSearchResult(server, player))
             .toList();
+    }
+
+    public Optional<Player> findBestByUsername(Server server, String username) {
+        String normalizedUsername = username == null ? "" : username.trim();
+        if (normalizedUsername.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String normalizedUsernameLower = normalizedUsername.toLowerCase(Locale.ROOT);
+        List<Player> candidates = playerRepository.searchByUsernamePattern(server, normalizedUsername, SEARCH_CANDIDATE_LIMIT);
+
+        return candidates.stream()
+            .filter(player -> hasExactUsernameMatch(player, normalizedUsernameLower))
+            .sorted(Comparator
+                .comparingInt((Player player) -> exactUsernameMatchRank(player, normalizedUsernameLower))
+                .thenComparing((Player a, Player b) -> Boolean.compare(isOnline(b), isOnline(a)))
+                .thenComparing((Player a, Player b) -> Long.compare(getLastLoginMillis(b), getLastLoginMillis(a)))
+                .thenComparing(player -> player.getMinecraftUuid().toString()))
+            .findFirst()
+            .or(() -> playerRepository.findByUsernameIgnoreCase(server, normalizedUsername));
     }
 
     private PlayerSearchResult toPlayerSearchResult(Server server, Player player) {
@@ -106,8 +135,7 @@ public class PlayerService {
             }
         }
 
-        Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
-        if (Boolean.TRUE.equals(isOnline)) {
+        if (isOnline(player)) {
             return "Online";
         }
         return "Offline";
@@ -153,6 +181,40 @@ public class PlayerService {
         return RANK_NO_MATCH;
     }
 
+    private boolean hasExactUsernameMatch(Player player, String normalizedSearchLower) {
+        List<UsernameEntry> usernames = player.getUsernames();
+        if (usernames == null || usernames.isEmpty()) {
+            return false;
+        }
+
+        for (UsernameEntry username : usernames) {
+            if (equalsIgnoreCase(username.username(), normalizedSearchLower)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int exactUsernameMatchRank(Player player, String normalizedSearchLower) {
+        List<UsernameEntry> usernames = player.getUsernames();
+        if (usernames == null || usernames.isEmpty()) {
+            return RANK_NO_MATCH;
+        }
+
+        String currentUsername = usernames.get(usernames.size() - 1).username();
+        if (equalsIgnoreCase(currentUsername, normalizedSearchLower)) {
+            return RANK_EXACT_CURRENT_USERNAME;
+        }
+
+        for (int i = 0; i < usernames.size() - 1; i++) {
+            if (equalsIgnoreCase(usernames.get(i).username(), normalizedSearchLower)) {
+                return RANK_EXACT_PAST_USERNAME;
+            }
+        }
+
+        return RANK_NO_MATCH;
+    }
+
     private boolean equalsIgnoreCase(String value, String normalizedSearchLower) {
         return value != null && value.toLowerCase(Locale.ROOT).equals(normalizedSearchLower);
     }
@@ -181,6 +243,11 @@ public class PlayerService {
         return null;
     }
 
+    private boolean isOnline(Player player) {
+        Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
+        return Boolean.TRUE.equals(isOnline);
+    }
+
     private boolean isUuid(String value) {
         try {
             UUID.fromString(value);
@@ -204,9 +271,8 @@ public class PlayerService {
         List<Punishment> punishments = player.getPunishments();
         PlayerStatusCalculator.PlayerStatus status = statusCalculator.calculateStatus(server, punishments);
 
-        List<PunishmentResponse> punishmentResponses = punishments.stream()
-            .map(p -> toPunishmentResponse(server, p))
-            .toList();
+        List<PunishmentResponse> punishmentResponses = capPunishments(
+            punishmentQueryService.getPlayerPunishmentResponses(server, player));
 
         List<IPEntry> sanitizedIps = (player.getIpAddresses() != null ? player.getIpAddresses() : List.<IPEntry>of()).stream()
             .map(ip -> IPEntry.builder()
@@ -217,7 +283,7 @@ public class PlayerService {
                 .proxy(ip.isProxy())
                 .hosting(ip.isHosting())
                 .firstLogin(ip.getFirstLogin())
-                .logins(ip.getLogins())
+                .logins(capLogins(ip.getLogins()))
                 .build())
             .toList();
 
@@ -236,7 +302,7 @@ public class PlayerService {
             player.getId(),
             player.getMinecraftUuid().toString(),
             player.getUsernames(),
-            player.getNotes(),
+            capNotes(player.getNotes()),
             sanitizedIps,
             punishmentResponses,
             player.getData(),
@@ -250,62 +316,57 @@ public class PlayerService {
         );
     }
 
-    private PunishmentResponse toPunishmentResponse(Server server, Punishment punishment) {
-        Map<String, Object> data = punishment.getData();
-        boolean active = statusCalculator.isPunishmentActive(punishment);
-        Date expires = statusCalculator.getEffectiveExpiry(punishment);
-        int ordinal = punishment.getTypeOrdinal();
-
-        PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal).orElse(null);
-        String effectiveCategory = statusCalculator.getEffectiveCategory(punishmentType, data);
-
-        return new PunishmentResponse(
-            punishment.getId(),
-            punishmentTypeService.getPunishmentTypeName(server, ordinal),
-            ordinal,
-            punishment.getIssuerName(),
-            punishment.getIssued(),
-            punishment.getStarted(),
-            punishmentTypeService.isAppealable(server, ordinal),
-            PunishmentData.getReason(data),
-            PunishmentData.getSeverity(data),
-            data != null ? resolveOffenderStatus(data) : null,
-            active,
-            expires,
-            null,
-            null,
-            data != null ? PunishmentData.isAltBlocking(data) : null,
-            data != null ? PunishmentData.isWipeAfterExpiry(data) : null,
-            effectiveCategory,
-            punishment.getModifications(),
-            punishment.getNotes(),
-            punishment.getEvidence(),
-            punishment.getAttachedTicketIds()
-        );
+    private List<PunishmentResponse> capPunishments(List<PunishmentResponse> punishments) {
+        if (punishments.size() <= DETAIL_PUNISHMENT_CAP) {
+            return punishments;
+        }
+        List<PunishmentResponse> active = new ArrayList<>();
+        List<PunishmentResponse> inactive = new ArrayList<>();
+        for (PunishmentResponse punishment : punishments) {
+            (punishment.active() ? active : inactive).add(punishment);
+        }
+        inactive.sort(Comparator.comparing(PunishmentResponse::issued, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
+        List<PunishmentResponse> capped = new ArrayList<>(active);
+        for (PunishmentResponse punishment : inactive) {
+            if (capped.size() >= DETAIL_PUNISHMENT_CAP) {
+                break;
+            }
+            capped.add(punishment);
+        }
+        return capped;
     }
 
-    private static String resolveOffenderStatus(Map<String, Object> data) {
-        String status = PunishmentData.getStatus(data);
-        if (status != null) {
-            return status;
+    private List<NoteEntry> capNotes(List<NoteEntry> notes) {
+        if (notes == null || notes.size() <= DETAIL_NOTE_CAP) {
+            return notes;
         }
-        String offenseLevel = PunishmentData.getOffenseLevel(data);
-        if (offenseLevel != null) {
-            return switch (offenseLevel.toLowerCase()) {
-                case "first" -> "low";
-                default -> offenseLevel; // "medium" and "habitual" stay as-is
-            };
+        return notes.stream()
+            .sorted(Comparator.comparing(NoteEntry::getDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+            .limit(DETAIL_NOTE_CAP)
+            .toList();
+    }
+
+    private List<Date> capLogins(List<Date> logins) {
+        if (logins == null || logins.size() <= DETAIL_LOGIN_CAP) {
+            return logins;
         }
-        return null;
+        return new ArrayList<>(logins.subList(logins.size() - DETAIL_LOGIN_CAP, logins.size()));
     }
 
     public Player createPlayer(Server server, UUID minecraftUuid, String username) {
-        return playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        Player player;
+        try {
+            player = playerRepository.saveEntity(server, newPlayer(minecraftUuid, username));
+        } catch (DuplicateKeyException alreadyExists) {
+            throw new ConflictException("A player with this Minecraft UUID already exists", alreadyExists);
+        }
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
+        return player;
     }
 
     private Player newPlayer(UUID minecraftUuid, String username) {
         return Player.builder()
-            .id(IdGenerator.generateShortId())
+            .id(PlayerDocumentIdGenerator.generate())
             .minecraftUuid(minecraftUuid)
             .usernames(new ArrayList<>(List.of(new UsernameEntry(username, new Date()))))
             .notes(new ArrayList<>())
@@ -331,18 +392,26 @@ public class PlayerService {
 
     public LoginResult loginPlayer(Server server, UUID minecraftUuid, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         Optional<Player> existingPlayer = findByMinecraftUuid(server, minecraftUuid);
-
         if (existingPlayer.isPresent()) {
-            Player player = existingPlayer.get();
-            boolean isNewIp = updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
-            playerRepository.updateLoginState(server, player);
-            return new LoginResult(player, isNewIp);
+            return applyLoginToExistingPlayer(server, existingPlayer.get(), username, ip, ipInfo, skinHash, serverName);
         }
 
         Player player = newPlayer(minecraftUuid, username);
         boolean isNewIp = addIpToPlayer(player, ip, ipInfo);
         updatePlayerDataOnLogin(player, skinHash, serverName);
-        return new LoginResult(playerRepository.saveEntity(server, player), isNewIp);
+        try {
+            return new LoginResult(playerRepository.saveEntity(server, player), isNewIp);
+        } catch (DuplicateKeyException raced) {
+            Player winner = findByMinecraftUuid(server, minecraftUuid).orElseThrow(() -> raced);
+            return applyLoginToExistingPlayer(server, winner, username, ip, ipInfo, skinHash, serverName);
+        }
+    }
+
+    private LoginResult applyLoginToExistingPlayer(Server server, Player player, String username, String ip,
+                                                   Map<String, Object> ipInfo, String skinHash, String serverName) {
+        boolean isNewIp = updatePlayerOnLogin(player, username, ip, ipInfo, skinHash, serverName);
+        playerRepository.updateLoginState(server, player);
+        return new LoginResult(player, isNewIp);
     }
 
     public Player addUsername(Server server, UUID minecraftUuid, String username) {
@@ -351,6 +420,7 @@ public class PlayerService {
 
         ensureUsernames(player).add(new UsernameEntry(username, new Date()));
         playerRepository.replaceUsernames(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 
@@ -375,6 +445,7 @@ public class PlayerService {
 
         ensureNotes(player).add(entry);
         playerRepository.replaceNotes(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 
@@ -390,6 +461,7 @@ public class PlayerService {
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
         addIpToPlayer(player, ipAddress, null);
         playerRepository.replaceIpAddresses(server, player);
+        realtimePublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_PLAYERS, minecraftUuid.toString());
         return player;
     }
 
@@ -460,7 +532,7 @@ public class PlayerService {
             return;
         }
 
-        Player player = playerRepository.findByMinecraftUuid(server, minecraftUuid).orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, normalizeUuid(minecraftUuid)).orElse(null);
         if (player == null) {
             return;
         }
@@ -479,11 +551,13 @@ public class PlayerService {
 
     private boolean updatePlayerOnLogin(Player player, String username, String ip, Map<String, Object> ipInfo, String skinHash, String serverName) {
         List<UsernameEntry> usernames = ensureUsernames(player);
-        String currentUsername = usernames.isEmpty() ? null :
-                                 usernames.get(usernames.size() - 1).username();
+        UsernameEntry currentEntry = usernames.isEmpty() ? null : usernames.get(usernames.size() - 1);
+        String currentUsername = currentEntry != null ? currentEntry.username() : null;
 
         if (!username.equals(currentUsername)) {
             usernames.add(new UsernameEntry(username, new Date()));
+        } else if (currentEntry != null && currentEntry.date() == null) {
+            usernames.set(usernames.size() - 1, new UsernameEntry(username, new Date()));
         }
 
         boolean isNewIp = addIpToPlayer(player, ip, ipInfo);
@@ -515,5 +589,9 @@ public class PlayerService {
             player.setData(new HashMap<>());
         }
         return player.getData();
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

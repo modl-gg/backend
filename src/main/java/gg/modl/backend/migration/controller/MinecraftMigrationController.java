@@ -12,6 +12,7 @@ import jakarta.validation.Valid;
 import java.nio.file.Path;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,15 +49,30 @@ public class MinecraftMigrationController {
             return ResponseEntity.status(413).body(sizeError);
         }
 
+        migrationService.requireActiveMigrationForUpload(server);
+
         Path filePath = migrationService.saveUploadedFile(file);
-
-        migrationService.updateProgress(server, new UpdateProgressRequest(
-            "uploading_json",
-            "Migration file uploaded successfully. Starting data processing...",
-            0, 0, null
-        ));
-
-        migrationProcessor.processFileAsync(server, filePath);
+        try {
+            migrationService.updateProgress(server, new UpdateProgressRequest(
+                "uploading_json",
+                "Migration file uploaded successfully. Starting data processing...",
+                0, 0, null
+            ));
+            migrationProcessor.processFileAsync(server, filePath);
+        } catch (TaskRejectedException e) {
+            migrationService.discardUpload(server, filePath,
+                "Migration processing is busy. Please try again shortly.");
+            return ResponseEntity.status(503).body(Map.of(
+                "error", "Migration processing is busy",
+                "message", "The server is processing other migrations. Please try again shortly."
+            ));
+        } catch (RuntimeException e) {
+            migrationService.discardUpload(server, filePath, "Migration failed to start.");
+            return ResponseEntity.status(503).body(Map.of(
+                "error", "Migration failed to start",
+                "message", "The migration could not be started. Please try again."
+            ));
+        }
 
         return ResponseEntity.ok(Map.of(
             "success", true,
@@ -72,11 +88,7 @@ public class MinecraftMigrationController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        Map<String, Object> result = migrationService.updateProgress(server, progressRequest);
-
-        if (Boolean.FALSE.equals(result.get("success"))) {
-            return ResponseEntity.badRequest().body(Map.of("error", result.get("error")));
-        }
+        migrationService.updateProgress(server, progressRequest);
 
         return ResponseEntity.ok(Map.of("success", true));
     }

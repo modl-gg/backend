@@ -2,6 +2,7 @@ package gg.modl.backend.server;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
@@ -9,9 +10,13 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -30,6 +35,11 @@ public class ServerService {
     private final Cache<String, Optional<Server>> serverCache = Caffeine.newBuilder()
         .maximumSize(500)
         .expireAfterWrite(Duration.ofMinutes(5))
+        .build();
+
+    private final Cache<String, Server> apiKeyCache = Caffeine.newBuilder()
+        .maximumSize(10_000)
+        .expireAfterWrite(Duration.ofSeconds(60))
         .build();
 
     public ServerService(
@@ -60,7 +70,12 @@ public class ServerService {
         Date now = new Date();
         String databaseName = generateDatabaseName(customDomain);
 
-        Server server = new Server(serverName, customDomain, databaseName, adminEmail, false, plan);
+        String normalizedEmail = EmailAddressUtil.normalize(adminEmail);
+        if (normalizedEmail == null) {
+            normalizedEmail = adminEmail;
+        }
+
+        Server server = new Server(serverName, customDomain, databaseName, normalizedEmail, false, plan);
         server.setProvisioningStatus(ProvisioningStatus.PENDING);
         server.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
         server.setCreatedAt(now);
@@ -98,49 +113,66 @@ public class ServerService {
 
     public void evictAllServerCaches() {
         serverCache.invalidateAll();
+        apiKeyCache.invalidateAll();
+    }
+
+    public void evictApiKey(@NotNull String apiKey) {
+        if (!apiKey.isBlank()) {
+            apiKeyCache.invalidate(hashApiKey(apiKey));
+        }
+    }
+
+    public boolean isAdminEmailInUse(String adminEmail, String excludingServerId) {
+        return serverRepository.existsByAdminEmailExcludingId(EmailAddressUtil.normalize(adminEmail), excludingServerId);
+    }
+
+    public void changeAdminEmail(Server server, String newAdminEmail) {
+        serverRepository.updateAdminEmail(server.getId(), EmailAddressUtil.normalize(newAdminEmail));
+        evictAllServerCaches();
     }
 
     @Nullable
     private String extractSubdomain(@NotNull String domain) {
-        for (String appDomain : appDomains) {
-            String suffix = "." + appDomain;
-            if (domain.endsWith(suffix)) {
-                String subdomain = domain.substring(0, domain.length() - suffix.length());
-                if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return subdomain;
-                }
-            }
-        }
-        return null;
+        AppDomainMatch match = matchAppDomain(domain);
+        return match != null ? match.subdomain() : null;
     }
 
-    /**
-     * Returns the matching app domain (e.g. "modl.gg") if the given domain is a subdomain of one,
-     * or null if it's a custom domain.
-     */
     @Nullable
     public String getAppDomain(@NotNull String domain) {
+        AppDomainMatch match = matchAppDomain(domain);
+        return match != null ? match.appDomain() : null;
+    }
+
+    @Nullable
+    private AppDomainMatch matchAppDomain(@NotNull String domain) {
         for (String appDomain : appDomains) {
             String suffix = "." + appDomain;
             if (domain.endsWith(suffix)) {
                 String subdomain = domain.substring(0, domain.length() - suffix.length());
                 if (!subdomain.isBlank() && !subdomain.contains(".")) {
-                    return appDomain;
+                    return new AppDomainMatch(appDomain, subdomain);
                 }
             }
         }
         return null;
     }
 
+    private record AppDomainMatch(String appDomain, String subdomain) {}
+
     public ServerExistResult doesServerExist(@NotNull String email, @NotNull String serverName, @NotNull String subdomain) {
-        Server found = serverRepository.findMatchingIdentity(email, serverName, subdomain).orElse(null);
+        String normalizedEmail = EmailAddressUtil.normalize(email);
+        if (normalizedEmail == null) {
+            normalizedEmail = email;
+        }
+
+        Server found = serverRepository.findMatchingIdentity(normalizedEmail, serverName, subdomain).orElse(null);
         if (found == null) {
             return new ServerExistResult(false, false, false);
         }
 
         boolean emailMatch = false, nameMatch = false, domainMatch = false;
 
-        if (found.getAdminEmail().equals(email)) {
+        if (found.getAdminEmail().equalsIgnoreCase(normalizedEmail)) {
             emailMatch = true;
         }
 
@@ -162,7 +194,30 @@ public class ServerService {
 
     @Nullable
     public Server getServerByApiKey(@NotNull String apiKey) {
-        return serverRepository.findByApiKey(apiKey).orElse(null);
+        if (apiKey.isBlank()) {
+            return null;
+        }
+
+        String cacheKey = hashApiKey(apiKey);
+        Server cached = apiKeyCache.getIfPresent(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
+        if (server != null) {
+            apiKeyCache.put(cacheKey, server);
+        }
+        return server;
+    }
+
+    private String hashApiKey(@NotNull String apiKey) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(apiKey.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", e);
+        }
     }
 
     @Nullable
@@ -172,27 +227,45 @@ public class ServerService {
 
     @Nullable
     public Server verifyEmailToken(@NotNull String token) {
-        Server server = serverRepository.findByEmailVerificationToken(token).orElse(null);
+        Server server = serverRepository.verifyEmailTokenAtomically(token).orElse(null);
 
         if (server == null) {
             return null;
         }
 
-        server.setEmailVerified(true);
-        server.setEmailVerificationToken(null);
-        server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
-        server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
+        boolean provisioned;
+        try {
+            provisioningService.provision(server);
+            provisioned = true;
+        } catch (Exception e) {
+            provisioned = false;
+        }
+
+        if (provisioned) {
+            serverRepository.markProvisioningCompleted(server.getId());
+            server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
+        } else {
+            serverRepository.markProvisioningFailed(server.getId(), "Provisioning failed; awaiting retry.");
+            server.setProvisioningStatus(ProvisioningStatus.FAILED);
+        }
+
         evictAllServerCaches();
 
-        provisioningService.provision(saved);
-
-        return saved;
+        return server;
     }
 
     @Nullable
     public Server getServerByAutoLoginToken(@NotNull String token) {
         return serverRepository.findByProvisioningSignInToken(token).orElse(null);
+    }
+
+    @Nullable
+    public Server consumeAutoLoginToken(@NotNull String token) {
+        Server server = serverRepository.consumeProvisioningSignInToken(token, new Date()).orElse(null);
+        if (server != null) {
+            evictAllServerCaches();
+        }
+        return server;
     }
 
     public Server setAutoLoginToken(@NotNull Server server, @NotNull String token, @NotNull Date expiresAt) {

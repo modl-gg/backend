@@ -1,6 +1,6 @@
 package gg.modl.backend.support;
 
-import static com.mongodb.client.model.Filters.eq;
+import static com.mongodb.client.model.Filters.*;
 
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.Updates;
@@ -63,9 +63,6 @@ public final class TestDataProvider {
     private static void loadFromDatabase() {
         TestDatabase db = TestDatabase.getInstance();
 
-        // Fix any corrupted usernames from previous test runs before loading data
-        cleanupCorruptedUsernames(db);
-
         // Load players
         players = new ArrayList<>();
         playerWithPunishments = null;
@@ -74,27 +71,11 @@ public final class TestDataProvider {
         try (MongoCursor<Document> cursor = db.players().find().limit(20).iterator()) {
             while (cursor.hasNext()) {
                 Document doc = cursor.next();
-                String uuid = doc.getString("minecraftUuid");
-                // Player model uses "usernames" array, not "username" field
-                String username = null;
-                Object usernamesObj = doc.get("usernames");
-                if (usernamesObj instanceof List<?> usernamesList && !usernamesList.isEmpty()) {
-                    // Iterate from end to find the last valid Document entry
-                    for (int i = usernamesList.size() - 1; i >= 0; i--) {
-                        Object entry = usernamesList.get(i);
-                        if (entry instanceof Document d) {
-                            username = d.getString("username");
-                            if (username != null) {
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (uuid == null || username == null) {
+                PlayerInfo info = toPlayerInfo(doc);
+                if (info == null) {
                     continue;
                 }
 
-                PlayerInfo info = new PlayerInfo(uuid, username);
                 players.add(info);
 
                 List<Document> punishments = doc.getList("punishments", Document.class);
@@ -118,9 +99,17 @@ public final class TestDataProvider {
             players = List.of(new PlayerInfo(DEFAULT_UUID, DEFAULT_USERNAME));
         }
         if (playerWithPunishments == null) {
+            playerWithPunishments = toPlayerInfo(db.players().find(elemMatch("punishments", new Document())).first());
+        }
+        if (playerWithoutPunishments == null) {
+            playerWithoutPunishments = toPlayerInfo(db.players().find(or(exists("punishments", false), size("punishments", 0))).first());
+        }
+        if (playerWithPunishments == null) {
+            System.err.println("[TestDataProvider] WARNING: no player with punishments found in staging DB; falling back to players.get(0) — tests requiring a punished player may be unreliable.");
             playerWithPunishments = players.get(0);
         }
         if (playerWithoutPunishments == null) {
+            System.err.println("[TestDataProvider] WARNING: no player without punishments found in staging DB; falling back to players.get(0).");
             playerWithoutPunishments = players.get(0);
         }
 
@@ -179,8 +168,43 @@ public final class TestDataProvider {
 
     // ── Public accessors ──
 
-    private static void cleanupCorruptedUsernames(TestDatabase db) {
-        try (MongoCursor<Document> cursor = db.players().find().iterator()) {
+    private static PlayerInfo toPlayerInfo(Document doc) {
+        if (doc == null) {
+            return null;
+        }
+        String uuid = doc.getString("minecraftUuid");
+        String username = lastUsername(doc.get("usernames"));
+        if (uuid == null || username == null) {
+            return null;
+        }
+        return new PlayerInfo(uuid, username);
+    }
+
+    private static String lastUsername(Object usernamesObj) {
+        if (usernamesObj instanceof List<?> list && !list.isEmpty()) {
+            for (int i = list.size() - 1; i >= 0; i--) {
+                if (list.get(i) instanceof Document d) {
+                    String u = d.getString("username");
+                    if (u != null) {
+                        return u;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Repairs corrupted (nested-array) {@code usernames} entries in the shared staging players
+     * collection. This MUTATES shared staging data, so it is opt-in and must NEVER run as a side
+     * effect of a read path. The query is server-filtered to only touch genuinely-corrupt documents.
+     */
+    public static synchronized void repairCorruptedUsernames() {
+        if (!TestDatabase.isAvailable()) {
+            return;
+        }
+        TestDatabase db = TestDatabase.getInstance();
+        try (MongoCursor<Document> cursor = db.players().find(elemMatch("usernames", new Document("$type", "array"))).iterator()) {
             while (cursor.hasNext()) {
                 Document player = cursor.next();
                 Object usernamesObj = player.get("usernames");

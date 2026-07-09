@@ -27,7 +27,7 @@ public class Invitation {
     private String email;
 
     @Field("role")
-    private String role;
+    private String roleId;
 
 
     @Field("token")

@@ -15,6 +15,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class TicketSubscriptionService {
     private final TicketMongoRepository ticketRepository;
     private static final int MAX_UPDATES_LIMIT = 25;
     private static final int MAX_TICKETS_TO_SCAN = 250;
+    private static final long ASSIGNED_NO_CURSOR_WINDOW_MS = 7L * 24 * 60 * 60 * 1000;
 
     public List<TicketSubscriptionResponse> getSubscriptions(Server server, String staffEmail) {
         Staff staff = staffRepository.findByEmailExact(server, staffEmail).orElse(null);
@@ -34,13 +37,26 @@ public class TicketSubscriptionService {
             return Collections.emptyList();
         }
 
+        List<String> activeTicketIds = staff.getSubscribedTickets()
+            .stream()
+            .filter(Staff.TicketSubscription::isActive)
+            .map(Staff.TicketSubscription::getTicketId)
+            .toList();
+        if (activeTicketIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<String, Ticket> ticketsById = ticketRepository.findByIds(server, activeTicketIds)
+            .stream()
+            .collect(Collectors.toMap(Ticket::getId, Function.identity()));
+
         List<TicketSubscriptionResponse> subscriptions = new ArrayList<>();
         for (Staff.TicketSubscription subscription : staff.getSubscribedTickets()) {
             if (!subscription.isActive()) {
                 continue;
             }
 
-            Ticket ticket = ticketRepository.findByTicketId(server, subscription.getTicketId()).orElse(null);
+            Ticket ticket = ticketsById.get(subscription.getTicketId());
             if (ticket != null) {
                 String title = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
                 subscriptions.add(new TicketSubscriptionResponse(
@@ -205,6 +221,9 @@ public class TicketSubscriptionService {
             }
 
             Date lastSeen = lastSeenMap.get(ticket.getId());
+            Date unreadFloor = lastSeen != null
+                ? lastSeen
+                : new Date(System.currentTimeMillis() - ASSIGNED_NO_CURSOR_WINDOW_MS);
             List<TicketReply> unreadReplies = ticket.getReplies()
                 .stream()
                 .filter(reply -> reply.getCreated() != null)
@@ -215,7 +234,7 @@ public class TicketSubscriptionService {
                     String replyName = TicketAssigneeUtil.normalizeSingle(reply.getName());
                     return !staffIdentifier.equals(replyName);
                 })
-                .filter(reply -> lastSeen == null || reply.getCreated().after(lastSeen))
+                .filter(reply -> reply.getCreated().after(unreadFloor))
                 .sorted((a, b) -> b.getCreated().compareTo(a.getCreated()))
                 .toList();
 

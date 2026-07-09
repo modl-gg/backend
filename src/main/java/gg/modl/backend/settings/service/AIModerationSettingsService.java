@@ -3,7 +3,6 @@ package gg.modl.backend.settings.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
-import gg.modl.backend.settings.data.Settings;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -14,42 +13,32 @@ import org.springframework.stereotype.Service;
 @Slf4j
 @RequiredArgsConstructor
 public class AIModerationSettingsService {
-    private final SettingsRepositoryAccess settingsRepositoryAccess;
+    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_AI_MODERATION = "aiModerationSettings";
 
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
-        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_AI_MODERATION, data);
-        return getAIModerationSettings(server);
+        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION);
+
+        AIModerationSettings toPersist = AIModerationSettings.builder()
+            .enableAIReview(newSettings.isEnableAIReview())
+            .enableAutomatedActions(newSettings.isEnableAutomatedActions())
+            .aiPunishmentConfigs(newSettings.getAiPunishmentConfigs() != null
+                ? newSettings.getAiPunishmentConfigs()
+                : new HashMap<>())
+            .build();
+
+        SettingsDocumentService.RawSettingsState saved =
+            settingsDocumentService.saveRawState(server, SETTINGS_TYPE_AI_MODERATION, current.version(), codec().encode(toPersist));
+        return codec().decode(saved.data());
     }
 
     public AIModerationSettings getAIModerationSettings(Server server) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_AI_MODERATION).orElse(null);
+        return codec().decode(settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION).data());
+    }
 
-        if (settings == null || settings.getData() == null) {
-            AIModerationSettings defaults = createDefaultSettings();
-            try {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = objectMapper.convertValue(defaults, Map.class);
-                settingsRepositoryAccess.saveEntity(server, new Settings(null, SETTINGS_TYPE_AI_MODERATION, data));
-            } catch (Exception e) {
-                log.warn("Failed to create default AI moderation settings for server {}", server.getDatabaseName(), e);
-            }
-            return defaults;
-        }
-
-        try {
-            return objectMapper.convertValue(settings.getData(), AIModerationSettings.class);
-        } catch (Exception e) {
-            log.error("Error converting AI moderation settings", e);
-            return AIModerationSettings.builder()
-                .enableAIReview(false)
-                .enableAutomatedActions(false)
-                .aiPunishmentConfigs(new HashMap<>())
-                .build();
-        }
+    private SettingsCodec<AIModerationSettings> codec() {
+        return SettingsCodec.of(objectMapper, AIModerationSettings.class, this::createDefaultSettings);
     }
 
     private AIModerationSettings createDefaultSettings() {

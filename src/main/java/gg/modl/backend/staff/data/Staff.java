@@ -40,7 +40,7 @@ public class Staff {
     private String username;
 
     @Field("role")
-    private String role;
+    private String roleId;
 
 
     @Field("assignedMinecraftUuid")

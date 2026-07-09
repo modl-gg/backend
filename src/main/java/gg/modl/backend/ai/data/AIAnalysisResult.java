@@ -15,6 +15,8 @@ public class AIAnalysisResult {
     private final Date createdAt;
     @NotNull
     private final String rawResponse;
+    @Nullable
+    private Double confidence;
     private boolean wasAppliedAutomatically;
     private boolean dismissed = false;
 

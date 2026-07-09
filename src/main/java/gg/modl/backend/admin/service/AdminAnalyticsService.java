@@ -15,6 +15,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -158,16 +159,16 @@ public class AdminAnalyticsService {
         long totalServers = serverRepository.countAll();
         long totalPlayers = serverRepository.getUsageTotals().totalUsers();
 
-        Map<String, Integer> playersByHour = new HashMap<>();
+        Map<String, Integer> playersByBucket = new HashMap<>();
         for (ServerInstanceSnapshot inst : instanceSnapshots) {
-            String hourKey = inst.getDate().toInstant().truncatedTo(ChronoUnit.HOURS).toString();
+            String bucketKey = inst.getDate().toInstant().toString();
             int players = sumPlayerCount(inst);
-            playersByHour.merge(hourKey, players, Math::max);
+            playersByBucket.merge(bucketKey, players, Math::max);
         }
 
         List<Map<String, Object>> activityData = snapshots.stream().map(s -> {
             String dateKey = s.getDate().toInstant().toString();
-            int onlinePlayers = playersByHour.getOrDefault(dateKey, 0);
+            int onlinePlayers = playersByBucket.getOrDefault(dateKey, 0);
             return Map.<String, Object>of(
                 "date", dateKey,
                 "activeServers", s.getActiveServers(),
@@ -183,7 +184,6 @@ public class AdminAnalyticsService {
         Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
 
         long activeServers = serverRepository.countActiveSince(thirtyDaysAgo);
-        long totalServers = serverRepository.countAll();
         long storageSize = globalMongoAdminRepository.getStorageSize();
 
         return Map.of(
@@ -192,7 +192,7 @@ public class AdminAnalyticsService {
                 "userEngagement", Map.of("monthlyActiveServers", activeServers),
                 "resourceUtilization", Map.of(
                     "storage", storageSize,
-                    "storagePercent", totalServers > 0 ? (storageSize / (totalServers * 104857600.0)) * 100 : 0,
+                    "storagePercent", 0.0,
                     "apiCalls", 0,
                     "databaseQueries", 0
                 )
@@ -223,14 +223,51 @@ public class AdminAnalyticsService {
         String normalizedType = type != null ? type : "json";
         String normalizedRange = range != null && !range.isBlank() ? range : "30d";
 
+        int days = DateRangeUtil.resolveRangeDays(normalizedRange);
+        Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
+
         if ("csv".equals(normalizedType)) {
-            return "Date,Servers,Users,Tickets\n2024-01-01,100,1500,820";
+            return buildCsv(startDate);
         }
+
+        long totalServers = serverRepository.countAll();
+        ServerMongoRepository.UsageTotals totals = serverRepository.getUsageTotals();
 
         return Map.of(
             "exportDate", new Date().toString(),
             "range", normalizedRange,
-            "data", Map.of("servers", 100, "users", 1500, "tickets", 820)
+            "data", Map.of(
+                "servers", totalServers,
+                "users", totals.totalUsers(),
+                "tickets", totals.totalTickets()
+            )
         );
+    }
+
+    private String buildCsv(Date startDate) {
+        List<DateValueResult> servers = serverRepository.aggregateHistoricalMetric("servers", startDate);
+        List<DateValueResult> users = serverRepository.aggregateHistoricalMetric("users", startDate);
+        List<DateValueResult> tickets = serverRepository.aggregateHistoricalMetric("tickets", startDate);
+
+        TreeMap<String, long[]> byDate = new TreeMap<>();
+        for (DateValueResult r : servers) {
+            byDate.computeIfAbsent(r.date(), k -> new long[3])[0] = r.value();
+        }
+        for (DateValueResult r : users) {
+            byDate.computeIfAbsent(r.date(), k -> new long[3])[1] = r.value();
+        }
+        for (DateValueResult r : tickets) {
+            byDate.computeIfAbsent(r.date(), k -> new long[3])[2] = r.value();
+        }
+
+        StringBuilder sb = new StringBuilder("Date,Servers,Users,Tickets\n");
+        for (Map.Entry<String, long[]> entry : byDate.entrySet()) {
+            long[] v = entry.getValue();
+            sb.append(entry.getKey()).append(",")
+                .append(v[0]).append(",")
+                .append(v[1]).append(",")
+                .append(v[2]).append("\n");
+        }
+        return sb.toString();
     }
 }

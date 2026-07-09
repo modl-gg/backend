@@ -2,7 +2,6 @@ package gg.modl.backend.settings.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.data.Settings;
 import gg.modl.backend.settings.data.WebhookSettings;
 import java.net.URI;
 import java.util.ArrayList;
@@ -23,34 +22,24 @@ import org.springframework.web.client.RestTemplate;
 @Slf4j
 @RequiredArgsConstructor
 public class WebhookSettingsService {
-    private final SettingsRepositoryAccess settingsRepositoryAccess;
+    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private static final String SETTINGS_TYPE_WEBHOOKS = "webhookSettings";
     private static final int DEFAULT_EMBED_COLOR = 3447003;
 
     public WebhookSettings updateWebhookSettings(Server server, WebhookSettings newSettings) {
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(newSettings, Map.class);
-
-        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_WEBHOOKS, data);
-
+        long expectedVersion = settingsDocumentService.getRawState(server, SETTINGS_TYPE_WEBHOOKS).version();
+        settingsDocumentService.saveRawState(server, SETTINGS_TYPE_WEBHOOKS, expectedVersion, codec().encode(newSettings));
         return getWebhookSettings(server);
     }
 
     public WebhookSettings getWebhookSettings(Server server) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_WEBHOOKS).orElse(null);
+        return codec().decode(settingsDocumentService.getRawState(server, SETTINGS_TYPE_WEBHOOKS).data());
+    }
 
-        if (settings == null || settings.getData() == null) {
-            return getDefaultWebhookSettings();
-        }
-
-        try {
-            return objectMapper.convertValue(settings.getData(), WebhookSettings.class);
-        } catch (Exception e) {
-            log.error("Error converting webhook settings", e);
-            return getDefaultWebhookSettings();
-        }
+    private SettingsCodec<WebhookSettings> codec() {
+        return SettingsCodec.of(objectMapper, WebhookSettings.class, this::getDefaultWebhookSettings);
     }
 
     private WebhookSettings getDefaultWebhookSettings() {

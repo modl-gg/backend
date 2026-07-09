@@ -1,6 +1,8 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
+import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
@@ -16,15 +18,70 @@ import org.springframework.stereotype.Service;
 public class StorageQuotaService {
     private final StorageMetadataService storageMetadataService;
     private final UsageTrackingService usageTrackingService;
-    public static final long MAX_PREMIUM_BYTES = 2200L * 1024L * 1024 * 1024; // 2200 GB (200 base + 2000 max overage)
-    private static final long FREE_TIER_BYTES = 1024L * 1024 * 1024; // 1 GB
-    private static final long DEFAULT_PREMIUM_BYTES = 200L * 1024 * 1024 * 1024; // 200 GB
+    private final ServerMongoRepository serverRepository;
+    private final StorageSyncService storageSyncService;
+    private final ServerLimitPolicy serverLimitPolicy;
+
+    private static final long BYTES_PER_GB = 1024L * 1024 * 1024;
+    public static final long PREMIUM_BASE_BYTES = 200L * BYTES_PER_GB;
+    public static final long MAX_STORAGE_OVERAGE_BYTES = 2000L * BYTES_PER_GB;
+    public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES;
+    public static final long MAX_AI_OVERAGE_REQUESTS = 5000L;
     private static final double AI_OVERAGE_RATE = 0.02;
 
+    public enum ConfirmResult {
+        SUCCESS,
+        QUOTA_EXCEEDED,
+        RECORD_FAILED
+    }
+
     public boolean canUpload(Server server, long fileSize) {
-        long used = storageMetadataService.getStorageUsedBytes(server);
+        if (fileSize < 0) {
+            return false;
+        }
+        long used = currentTrackedUsage(server);
         long max = getMaxBytesForServer(server);
         return used + fileSize <= max;
+    }
+
+    public boolean isWithinQuota(Server server) {
+        long used = currentTrackedUsage(server);
+        long max = getMaxBytesForServer(server);
+        return used <= max;
+    }
+
+    private long currentTrackedUsage(Server server) {
+        Long tracked = server.getStorageUsedBytes();
+        if (tracked != null) {
+            return tracked;
+        }
+        storageSyncService.triggerAsyncSync(server);
+        return 0L;
+    }
+
+    public ConfirmResult confirmAndRecordFile(Server server, String key, long size, String contentType) {
+        if (size < 0) {
+            return ConfirmResult.RECORD_FAILED;
+        }
+        if (storageMetadataService.hasFile(server, key)) {
+            return ConfirmResult.SUCCESS;
+        }
+
+        long maxBytes = getMaxBytesForServer(server);
+        if (!serverRepository.tryIncrementStorageUsedWithinLimit(server.getId(), size, maxBytes)) {
+            return ConfirmResult.QUOTA_EXCEEDED;
+        }
+
+        StorageMetadataService.RecordFileResult recordResult =
+            storageMetadataService.recordReservedFile(server, key, size, contentType);
+        if (recordResult == StorageMetadataService.RecordFileResult.INSERTED) {
+            return ConfirmResult.SUCCESS;
+        }
+
+        serverRepository.decrementStorageUsed(server.getId(), size);
+        return recordResult == StorageMetadataService.RecordFileResult.ALREADY_EXISTS
+               ? ConfirmResult.SUCCESS
+               : ConfirmResult.RECORD_FAILED;
     }
 
     public StorageQuotaResponse getQuota(Server server) {
@@ -56,7 +113,7 @@ public class StorageQuotaService {
         long includedLimit = usageTrackingService.getAiBaseLimitRequests();
         long requestLimit = usageTrackingService.getAiRequestLimit(server);
         boolean usageBillingEnabled = Boolean.TRUE.equals(server.getUsageBillingEnabled());
-        long overageUsed = usageBillingEnabled ? Math.max(0, totalUsed - includedLimit) : 0L;
+        long overageUsed = Math.max(0, totalUsed - includedLimit);
         double overageCost = usageBillingEnabled ? overageUsed * AI_OVERAGE_RATE : 0.0;
         double usagePercentage = requestLimit > 0 ? (double) totalUsed / requestLimit * 100 : 0;
 
@@ -72,14 +129,7 @@ public class StorageQuotaService {
     }
 
     private long getMaxBytesForServer(Server server) {
-        if (server.getPlan() == ServerPlan.PREMIUM) {
-            if (server.getMaxStorageLimitBytes() != null && server.getMaxStorageLimitBytes() > 0) {
-                // Trust the database value directly â€” support can set values above MAX_PREMIUM_BYTES
-                return server.getMaxStorageLimitBytes();
-            }
-            return DEFAULT_PREMIUM_BYTES;
-        }
-        return FREE_TIER_BYTES;
+        return serverLimitPolicy.resolve(server).getMaxStorageBytes();
     }
 
 }

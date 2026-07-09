@@ -1,22 +1,25 @@
 package gg.modl.backend.knowledgebase.controller;
 
-import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
-import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
-import gg.modl.backend.knowledgebase.dto.request.CreateArticleRequest;
-import gg.modl.backend.knowledgebase.dto.request.CreateCategoryRequest;
-import gg.modl.backend.knowledgebase.dto.request.ReorderRequest;
-import gg.modl.backend.knowledgebase.dto.request.UpdateArticleRequest;
-import gg.modl.backend.knowledgebase.dto.request.UpdateCategoryRequest;
-import gg.modl.backend.knowledgebase.service.KnowledgebaseArticleService;
-import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
+import gg.modl.backend.knowledgebase.service.KnowledgebaseArticleService;
+import gg.modl.backend.knowledgebase.service.KnowledgebaseCategoryService;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.CreateArticleRequest;
+import gg.modl.proto.modl.v1.CreateCategoryRequest;
+import gg.modl.proto.modl.v1.KnowledgebaseArticleResponse;
+import gg.modl.proto.modl.v1.KnowledgebaseArticlesResponse;
+import gg.modl.proto.modl.v1.KnowledgebaseCategoryResponse;
+import gg.modl.proto.modl.v1.KnowledgebaseMessageResponse;
+import gg.modl.proto.modl.v1.PanelKnowledgebaseCategoriesResponse;
+import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.ReorderRequest;
+import gg.modl.proto.modl.v1.UpdateArticleRequest;
+import gg.modl.proto.modl.v1.UpdateCategoryRequest;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.util.Collections;
-import java.util.Date;
-import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -36,143 +39,124 @@ import org.springframework.web.bind.annotation.RestController;
 public class PanelKnowledgebaseController {
     private final KnowledgebaseCategoryService categoryService;
     private final KnowledgebaseArticleService articleService;
+    private final KnowledgebaseProtoMapper mapper;
+    private final RealtimeEventPublisher publisher;
 
     @GetMapping("/categories")
-    public ResponseEntity<List<CategoryWithArticlesResponse>> getCategories(HttpServletRequest request) {
+    public ResponseEntity<PanelKnowledgebaseCategoriesResponse> getCategories(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<KnowledgebaseCategory> categories = categoryService.getAllCategories(server);
-        Map<String, List<KnowledgebaseArticle>> articlesByCategory = articleService.getAllArticlesGroupedByCategory(server);
+        var categories = categoryService.getAllCategories(server);
+        Map<String, java.util.List<KnowledgebaseArticle>> articlesByCategory =
+            articleService.getAllArticlesGroupedByCategory(server);
 
-        List<CategoryWithArticlesResponse> response = categories.stream()
-            .map(category -> new CategoryWithArticlesResponse(
-                category.getId(),
-                category.getName(),
-                category.getSlug(),
-                category.getDescription(),
-                category.getOrdinal(),
-                category.isVisible(),
-                articlesByCategory.getOrDefault(category.getId(), Collections.emptyList())
-                    .stream()
-                    .map(this::toArticleResponse)
-                    .toList()
-            ))
-            .toList();
-
-        return ResponseEntity.ok(response);
-    }
-
-    private ArticleResponse toArticleResponse(KnowledgebaseArticle article) {
-        return new ArticleResponse(
-            article.getId(),
-            article.getTitle(),
-            article.getSlug(),
-            article.getContent(),
-            article.getCategoryId(),
-            article.getOrdinal(),
-            article.isVisible(),
-            article.getCreatedAt(),
-            article.getUpdatedAt()
-        );
+        return ResponseEntity.ok(mapper.toPanelCategoriesResponse(
+            categories,
+            category -> articlesByCategory.getOrDefault(category.getId(), Collections.emptyList())));
     }
 
     @PostMapping("/categories")
-    public ResponseEntity<KnowledgebaseCategory> createCategory(
-        @RequestBody @Valid CreateCategoryRequest createRequest,
+    public ResponseEntity<KnowledgebaseCategoryResponse> createCategory(
+        @RequestBody CreateCategoryRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        KnowledgebaseCategory category = categoryService.createCategory(server, createRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(category);
+        var category = categoryService.createCategory(server, createRequest);
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, category.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toCategoryResponse(category));
     }
 
     @PutMapping("/categories/{id}")
-    public ResponseEntity<KnowledgebaseCategory> updateCategory(
+    public ResponseEntity<KnowledgebaseCategoryResponse> updateCategory(
         @PathVariable String id,
-        @RequestBody @Valid UpdateCategoryRequest updateRequest,
+        @RequestBody UpdateCategoryRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return categoryService.updateCategory(server, id, updateRequest)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+            .map(category -> {
+                publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, category.getId());
+                return ResponseEntity.ok(mapper.toCategoryResponse(category));
+            })
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/categories/{id}")
-    public ResponseEntity<?> deleteCategory(
+    public ResponseEntity<KnowledgebaseMessageResponse> deleteCategory(
         @PathVariable String id,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         boolean deleted = categoryService.deleteCategory(server, id);
         if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Category deleted"));
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, id);
+            return ResponseEntity.ok(mapper.message("Category deleted"));
         }
         return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/categories/reorder")
-    public ResponseEntity<?> reorderCategories(
-        @RequestBody @Valid ReorderRequest reorderRequest,
+    public ResponseEntity<KnowledgebaseMessageResponse> reorderCategories(
+        @RequestBody ReorderRequest reorderRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        categoryService.reorderCategories(server, reorderRequest.ids());
-        return ResponseEntity.ok(Map.of("message", "Categories reordered"));
+        categoryService.reorderCategories(server, reorderRequest.getIdsList());
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE);
+        return ResponseEntity.ok(mapper.message("Categories reordered"));
     }
 
     @GetMapping("/categories/{categoryId}/articles")
-    public ResponseEntity<List<ArticleResponse>> getArticles(
+    public ResponseEntity<KnowledgebaseArticlesResponse> getArticles(
         @PathVariable String categoryId,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<ArticleResponse> articles = articleService.getArticlesByCategory(server, categoryId)
-            .stream()
-            .map(this::toArticleResponse)
-            .toList();
-        return ResponseEntity.ok(articles);
+        return ResponseEntity.ok(mapper.toArticlesResponse(
+            articleService.getArticlesByCategory(server, categoryId)));
     }
 
     @GetMapping("/categories/{categoryId}/articles/{articleId}")
-    public ResponseEntity<ArticleResponse> getArticle(
+    public ResponseEntity<KnowledgebaseArticleResponse> getArticle(
         @PathVariable String categoryId,
         @PathVariable String articleId,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return articleService.getArticleById(server, articleId)
-            .map(this::toArticleResponse)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+            .map(article -> ResponseEntity.ok(mapper.toArticleResponse(article)))
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/categories/{categoryId}/articles")
-    public ResponseEntity<ArticleResponse> createArticle(
+    public ResponseEntity<KnowledgebaseArticleResponse> createArticle(
         @PathVariable String categoryId,
-        @RequestBody @Valid CreateArticleRequest createRequest,
+        @RequestBody CreateArticleRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         KnowledgebaseArticle article = articleService.createArticle(server, categoryId, createRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).body(toArticleResponse(article));
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, article.getId());
+        return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toArticleResponse(article));
     }
 
     @PutMapping("/categories/{categoryId}/articles/{articleId}")
-    public ResponseEntity<ArticleResponse> updateArticle(
+    public ResponseEntity<KnowledgebaseArticleResponse> updateArticle(
         @PathVariable String categoryId,
         @PathVariable String articleId,
-        @RequestBody @Valid UpdateArticleRequest updateRequest,
+        @RequestBody UpdateArticleRequest updateRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return articleService.updateArticle(server, articleId, updateRequest)
-            .map(this::toArticleResponse)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+            .map(article -> {
+                publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, article.getId());
+                return ResponseEntity.ok(mapper.toArticleResponse(article));
+            })
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @DeleteMapping("/categories/{categoryId}/articles/{articleId}")
-    public ResponseEntity<?> deleteArticle(
+    public ResponseEntity<KnowledgebaseMessageResponse> deleteArticle(
         @PathVariable String categoryId,
         @PathVariable String articleId,
         HttpServletRequest request
@@ -180,41 +164,21 @@ public class PanelKnowledgebaseController {
         Server server = RequestUtil.getRequestServer(request);
         boolean deleted = articleService.deleteArticle(server, articleId);
         if (deleted) {
-            return ResponseEntity.ok(Map.of("message", "Article deleted"));
+            publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE, articleId);
+            return ResponseEntity.ok(mapper.message("Article deleted"));
         }
         return ResponseEntity.notFound().build();
     }
 
     @PutMapping("/categories/{categoryId}/articles/reorder")
-    public ResponseEntity<?> reorderArticles(
+    public ResponseEntity<KnowledgebaseMessageResponse> reorderArticles(
         @PathVariable String categoryId,
-        @RequestBody @Valid ReorderRequest reorderRequest,
+        @RequestBody ReorderRequest reorderRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        articleService.reorderArticles(server, categoryId, reorderRequest.ids());
-        return ResponseEntity.ok(Map.of("message", "Articles reordered"));
+        articleService.reorderArticles(server, categoryId, reorderRequest.getIdsList());
+        publisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_KNOWLEDGEBASE);
+        return ResponseEntity.ok(mapper.message("Articles reordered"));
     }
-
-    public record ArticleResponse(
-        String id,
-        String title,
-        String slug,
-        String content,
-        String categoryId,
-        int ordinal,
-        boolean isVisible,
-        Date createdAt,
-        Date updatedAt
-    ) {}
-
-    public record CategoryWithArticlesResponse(
-        String id,
-        String name,
-        String slug,
-        String description,
-        int ordinal,
-        boolean isVisible,
-        List<ArticleResponse> articles
-    ) {}
 }

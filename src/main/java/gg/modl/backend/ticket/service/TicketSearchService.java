@@ -8,6 +8,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
+import gg.modl.backend.ticket.dto.response.PlayerTicketResponse;
 import gg.modl.backend.ticket.dto.response.TicketListItemResponse;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -105,11 +106,38 @@ public class TicketSearchService {
         return result;
     }
 
-    public List<Ticket> getTicketsByPlayer(Server server, String playerUuid) {
-        return ticketRepository.findByPlayer(server, playerUuid);
+    public List<PlayerTicketResponse> getTicketsByPlayer(Server server, String playerUuid) {
+        return ticketRepository.findByPlayer(server, normalizeUuid(playerUuid))
+            .stream()
+            .map(this::toPlayerTicketResponse)
+            .toList();
     }
 
-    public List<Ticket> getTicketsByTag(Server server, String tag) {
-        return ticketRepository.findByTag(server, tag);
+    private PlayerTicketResponse toPlayerTicketResponse(Ticket ticket) {
+        return new PlayerTicketResponse(
+            ticket.getId(),
+            ticket.getSubject(),
+            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
+            ticket.getCreated(),
+            ticket.getCreatorName(),
+            ticket.getCreatorUuid(),
+            ticket.getReportedPlayer(),
+            ticket.getReportedPlayerUuid(),
+            ticket.isLocked(),
+            ticket.getTags() != null ? ticket.getTags() : List.of(),
+            ticket.getAssignedTo() != null ? ticket.getAssignedTo() : List.of()
+        );
+    }
+
+    public List<PlayerTicketResponse> getTicketsByTag(Server server, String tag) {
+        return ticketRepository.findByTag(server, tag)
+            .stream()
+            .map(this::toPlayerTicketResponse)
+            .toList();
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

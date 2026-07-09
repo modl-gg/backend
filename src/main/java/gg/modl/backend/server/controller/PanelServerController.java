@@ -2,10 +2,9 @@ package gg.modl.backend.server.controller;
 
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.ProvisioningStatusResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
@@ -25,13 +24,8 @@ public class PanelServerController {
     }
 
     @GetMapping("/provisioning-status")
-    public ResponseEntity<Map<String, Object>> getProvisioningStatus(HttpServletRequest request) {
+    public ResponseEntity<ProvisioningStatusResponse> getProvisioningStatus(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-
-        return ResponseEntity.ok(Map.of(
-            "status", server.getProvisioningStatus() != null ? server.getProvisioningStatus().name() : ProvisioningStatus.PENDING.name(),
-            "serverName", server.getServerName(),
-            "emailVerified", server.getEmailVerified() != null && server.getEmailVerified()
-        ));
+        return ResponseEntity.ok(PanelServerProtoMapper.toProvisioningStatusResponse(server));
     }
 }

@@ -30,7 +30,7 @@ public class AdminSecurityController {
         @RequestParam(required = false) String search,
         @RequestParam(required = false) String startDate,
         @RequestParam(required = false) String endDate) {
-        return ResponseEntity.ok(adminSecurityService.getSecurityEvents(
+        return ResponseEntity.ok(AdminSecurityProtoMapper.toEventsResponse(adminSecurityService.getSecurityEvents(
             page,
             limit,
             type,
@@ -39,12 +39,12 @@ public class AdminSecurityController {
             search,
             startDate,
             endDate
-        ));
+        )));
     }
 
     @GetMapping("/summary")
     public ResponseEntity<?> getSecuritySummary() {
-        return ResponseEntity.ok(adminSecurityService.getSecuritySummary());
+        return ResponseEntity.ok(AdminSecurityProtoMapper.toSummaryResponse(adminSecurityService.getSecuritySummary()));
     }
 
 }

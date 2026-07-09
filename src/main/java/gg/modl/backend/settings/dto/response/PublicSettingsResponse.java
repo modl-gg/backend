@@ -9,6 +9,7 @@ public record PublicSettingsResponse(
     String homepageIconUrl,
     Map<String, Object> ticketForms,
     boolean maintenanceMode,
-    String maintenanceMessage
+    String maintenanceMessage,
+    String defaultLanguage
 ) {
 }

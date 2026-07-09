@@ -8,6 +8,7 @@ public final class RESTMappingV1 {
     public static final String ADMIN_AUTH = PREFIX_ADMIN + "/auth";
     public static final String PREFIX_PUBLIC = V1 + "/public";
     public static final String PREFIX_MINECRAFT = V1 + "/minecraft";
+    public static final String PREFIX_REPLAY_LITE = V1 + "/replay-lite";
     // Health check
     public static final String HEALTH = V1 + "/health";
     // Server
@@ -97,6 +98,8 @@ public final class RESTMappingV1 {
     public static final String PUBLIC_EVIDENCE_UPLOAD = PREFIX_PUBLIC + EVIDENCE_UPLOAD;
     private static final String SERVERS = "/servers";
     public static final String ADMIN_SERVERS = PREFIX_ADMIN + SERVERS;
+    private static final String BETA_TESTERS = "/beta-testers";
+    public static final String ADMIN_BETA_TESTERS = PREFIX_ADMIN + BETA_TESTERS;
     private static final String MONITORING = "/monitoring";
     public static final String ADMIN_MONITORING = PREFIX_ADMIN + MONITORING;
 
@@ -106,8 +109,17 @@ public final class RESTMappingV1 {
     private static final String SECURITY = "/security";
     public static final String ADMIN_SECURITY = PREFIX_ADMIN + SECURITY;
 
+    private static final String ALERTS = "/alerts";
+    public static final String ADMIN_ALERTS = PREFIX_ADMIN + ALERTS;
+
+    private static final String REALTIME = "/realtime";
+    public static final String REALTIME_WS = V1 + REALTIME + "/ws";
+
     // Replays
     private static final String REPLAYS = "/replays";
     public static final String MINECRAFT_REPLAYS = PREFIX_MINECRAFT + REPLAYS;
     public static final String PUBLIC_REPLAYS = PREFIX_PUBLIC + REPLAYS;
+    public static final String PANEL_REPLAYS = PREFIX_PANEL + REPLAYS;
+    public static final String REPLAY_LITE_REPLAYS = PREFIX_REPLAY_LITE + REPLAYS;
+    public static final String PUBLIC_REPLAY_LITE_REPLAYS = PREFIX_PUBLIC + "/replay-lite" + REPLAYS;
 }

@@ -139,6 +139,13 @@ public final class RequestValidationLimits {
     public static final int ROLE_ORDER_MAX_ENTRIES = 200;
     public static final int DOMAIN_MAX_LENGTH = 255;
     public static final int PROMPT_MAX_LENGTH = 50_000;
+    public static final long REPLAY_LITE_MAX_REQUESTED_SIZE_BYTES = 10 * 1024 * 1024L;
+    public static final int REPLAY_LITE_MC_VERSION_MAX_LENGTH = 32;
+    public static final int REPLAY_LITE_LABELS_MAX_ENTRIES = 20;
+    public static final int REPLAY_LITE_LABEL_PLAYER_NAME_MAX_LENGTH = 64;
+    public static final int REPLAY_LITE_LABEL_VERDICT_MAX_LENGTH = 32;
+    public static final int REPLAY_LITE_LABEL_RANGES_MAX_ENTRIES = 100;
+    public static final int REPLAY_LITE_LABEL_NOTES_MAX_LENGTH = 1_000;
     public static final int GENERAL_SETTINGS_DISPLAY_NAME_MAX_LENGTH = 128;
     public static final int GENERAL_SETTINGS_URL_MAX_LENGTH = 2_048;
     public static final int STAFF_USERNAME_MAX_LENGTH = 64;
@@ -146,10 +153,7 @@ public final class RequestValidationLimits {
     public static final int STAFF_EMAILS_MAX_ENTRIES = 50;
     public static final int STAFF_TOKEN_MAX_LENGTH = 512;
     public static final int STORAGE_KEY_MAX_LENGTH = 1_024;
-    public static final int STORAGE_BULK_DELETE_MAX_KEYS = 100;
-    public static final int STORAGE_UPLOAD_TYPE_MAX_LENGTH = 64;
-    public static final int STORAGE_ACCESS_TOKEN_MAX_LENGTH = 512;
-    public static final int STORAGE_ENTITY_ID_MAX_LENGTH = 256;
+    public static final int STORAGE_BULK_DELETE_MAX_KEYS = 1_000;
     public static final int QUICK_RESPONSE_ACTION_ID_MAX_LENGTH = 64;
     public static final int QUICK_RESPONSE_CATEGORY_ID_MAX_LENGTH = 64;
     public static final int QUICK_RESPONSE_SEVERITY_MAX_LENGTH = 32;

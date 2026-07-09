@@ -1,16 +1,19 @@
 package gg.modl.backend.billing.service;
 
+import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
+import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.data.ServerBillingUpdate;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.Date;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,16 +26,27 @@ public class StripeWebhookService {
     private final ServerMongoRepository serverRepository;
     private final UsageTrackingService usageTrackingService;
     private final ServerMutationHelper serverMutationHelper;
+    private final StripeWebhookEventMongoRepository webhookEventRepository;
 
     public void processEvent(Event event) {
-        switch (event.getType()) {
-            case "checkout.session.completed" -> handleCheckoutCompleted(event);
-            case "customer.subscription.created" -> handleSubscriptionCreated(event);
-            case "customer.subscription.updated" -> handleSubscriptionUpdated(event);
-            case "customer.subscription.deleted" -> handleSubscriptionDeleted(event);
-            case "invoice.payment_failed" -> handlePaymentFailed(event);
-            case "invoice.payment_succeeded" -> handlePaymentSucceeded(event);
-            default -> log.debug("Unhandled event type: {}", event.getType());
+        if (!webhookEventRepository.markProcessing(event.getId(), event.getType(), new Date())) {
+            log.info("Ignoring duplicate Stripe webhook event {}", event.getId());
+            return;
+        }
+        try {
+            switch (event.getType()) {
+                case "checkout.session.completed" -> handleCheckoutCompleted(event);
+                case "customer.subscription.created" -> handleSubscriptionCreated(event);
+                case "customer.subscription.updated" -> handleSubscriptionUpdated(event);
+                case "customer.subscription.deleted" -> handleSubscriptionDeleted(event);
+                case "invoice.payment_failed" -> handlePaymentFailed(event);
+                case "invoice.payment_succeeded" -> handlePaymentSucceeded(event);
+                default -> log.debug("Unhandled event type: {}", event.getType());
+            }
+            webhookEventRepository.markProcessed(event.getId(), new Date());
+        } catch (RuntimeException exception) {
+            webhookEventRepository.markFailed(event.getId(), new Date(), exception.getMessage());
+            throw exception;
         }
     }
 
@@ -52,17 +66,21 @@ public class StripeWebhookService {
             return;
         }
 
-        try {
-            Subscription subscription = stripeService.retrieveSubscription(session.getSubscription());
-            serverMutationHelper.mutate(server, current -> {
-                current.setStripeSubscriptionId(session.getSubscription());
-                current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-                current.setPlan(ServerPlan.PREMIUM);
-                current.setCurrentPeriodStart(stripeService.extractPeriodStart(subscription));
-                current.setCurrentPeriodEnd(stripeService.extractPeriodEnd(subscription));
-            });
-        } catch (Exception exception) {
-            log.error("Error retrieving subscription details", exception);
+        serverMutationHelper.mutate(server, current -> {
+            current.setStripeSubscriptionId(session.getSubscription());
+            current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+            current.setPlan(ServerPlan.PREMIUM);
+        });
+    }
+
+    private void applyPeriodDates(ServerBillingUpdate current, Subscription subscription) {
+        Date periodStart = stripeService.extractPeriodStart(subscription);
+        Date periodEnd = stripeService.extractPeriodEnd(subscription);
+        if (periodStart != null) {
+            current.setCurrentPeriodStart(periodStart);
+        }
+        if (periodEnd != null) {
+            current.setCurrentPeriodEnd(periodEnd);
         }
     }
 
@@ -70,9 +88,29 @@ public class StripeWebhookService {
         return serverRepository.findByStripeCustomerId(customerId).orElse(null);
     }
 
+    private Server resolveServer(Subscription subscription) {
+        Server server = findServerBySubscriptionId(subscription.getId());
+        if (server != null) {
+            return server;
+        }
+        String customerId = subscription.getCustomer();
+        if (customerId == null) {
+            return null;
+        }
+        server = findServerByCustomerId(customerId);
+        if (server != null && server.getStripeSubscriptionId() == null) {
+            serverMutationHelper.mutate(server, current -> current.setStripeSubscriptionId(subscription.getId()));
+        }
+        return server;
+    }
+
     private void handleSubscriptionCreated(Event event) {
         StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
         if (!(stripeObject instanceof Subscription subscription)) {
+            return;
+        }
+
+        if (subscription.getCustomer() == null) {
             return;
         }
 
@@ -83,10 +121,9 @@ public class StripeWebhookService {
 
         serverMutationHelper.mutate(server, current -> {
             current.setStripeSubscriptionId(subscription.getId());
-            current.setSubscriptionStatus(parseSubscriptionStatus(subscription.getStatus()));
+            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(subscription.getStatus()));
             current.setPlan(planForSubscriptionStatus(subscription.getStatus()));
-            current.setCurrentPeriodStart(stripeService.extractPeriodStart(subscription));
-            current.setCurrentPeriodEnd(stripeService.extractPeriodEnd(subscription));
+            applyPeriodDates(current, subscription);
         });
     }
 
@@ -101,22 +138,13 @@ public class StripeWebhookService {
                || "incomplete_expired".equals(status);
     }
 
-    private SubscriptionStatus parseSubscriptionStatus(String status) {
-        try {
-            return SubscriptionStatus.valueOf(status.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException exception) {
-            log.warn("Unknown subscription status from Stripe: {}, defaulting to inactive", status);
-            return SubscriptionStatus.INACTIVE;
-        }
-    }
-
     private void handleSubscriptionUpdated(Event event) {
         StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
         if (!(stripeObject instanceof Subscription subscription)) {
             return;
         }
 
-        Server server = findServerBySubscriptionId(subscription.getId());
+        Server server = resolveServer(subscription);
         if (server == null) {
             log.warn("No server found for subscription: {}", subscription.getId());
             return;
@@ -124,21 +152,14 @@ public class StripeWebhookService {
 
         String effectiveStatus = stripeService.getEffectiveStatus(subscription);
         serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(parseSubscriptionStatus(effectiveStatus));
+            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(effectiveStatus));
             if (isPremiumStatus(effectiveStatus)) {
                 current.setPlan(ServerPlan.PREMIUM);
             } else if (isFreeStatus(effectiveStatus)) {
                 current.setPlan(ServerPlan.FREE);
             }
 
-            Date periodStartDate = stripeService.extractPeriodStart(subscription);
-            Date periodEndDate = stripeService.extractPeriodEnd(subscription);
-            if (periodStartDate != null) {
-                current.setCurrentPeriodStart(periodStartDate);
-            }
-            if (periodEndDate != null) {
-                current.setCurrentPeriodEnd(periodEndDate);
-            }
+            applyPeriodDates(current, subscription);
         });
     }
 
@@ -156,13 +177,13 @@ public class StripeWebhookService {
             return;
         }
 
-        Server server = findServerBySubscriptionId(subscription.getId());
+        Server server = resolveServer(subscription);
         if (server == null) {
             return;
         }
 
         serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.CANCELED);
+            current.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
             current.setPlan(ServerPlan.FREE);
             current.setCurrentPeriodEnd(null);
         });
@@ -193,13 +214,60 @@ public class StripeWebhookService {
         }
 
         Server server = findServerByCustomerId(invoice.getCustomer());
-        if (server == null || server.getSubscriptionStatus() != SubscriptionStatus.PAST_DUE) {
+        if (server == null) {
             return;
         }
 
-        serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-            current.setPlan(ServerPlan.PREMIUM);
-        });
+        String subscriptionId = extractInvoiceSubscriptionId(invoice);
+        if (subscriptionId == null) {
+            subscriptionId = server.getStripeSubscriptionId();
+        }
+
+        if (subscriptionId == null) {
+            unstickPastDue(server);
+            return;
+        }
+
+        boolean alreadyActive = server.getSubscriptionStatus() == SubscriptionStatus.ACTIVE
+                                && server.getPlan() == ServerPlan.PREMIUM;
+        if (alreadyActive) {
+            return;
+        }
+
+        try {
+            Subscription subscription = stripeService.retrieveSubscription(subscriptionId);
+            String effectiveStatus = stripeService.getEffectiveStatus(subscription);
+            if (isPremiumStatus(effectiveStatus)) {
+                serverMutationHelper.mutate(server, current -> {
+                    current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+                    current.setPlan(ServerPlan.PREMIUM);
+                    applyPeriodDates(current, subscription);
+                    if (current.getStripeSubscriptionId() == null) {
+                        current.setStripeSubscriptionId(subscription.getId());
+                    }
+                });
+            } else {
+                unstickPastDue(server);
+            }
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to sync subscription state on Stripe payment success", exception);
+        }
+    }
+
+    private void unstickPastDue(Server server) {
+        if (server.getSubscriptionStatus() == SubscriptionStatus.PAST_DUE) {
+            serverMutationHelper.mutate(server, current -> {
+                current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+                current.setPlan(ServerPlan.PREMIUM);
+            });
+        }
+    }
+
+    private String extractInvoiceSubscriptionId(Invoice invoice) {
+        Invoice.Parent parent = invoice.getParent();
+        if (parent == null || parent.getSubscriptionDetails() == null) {
+            return null;
+        }
+        return parent.getSubscriptionDetails().getSubscription();
     }
 }

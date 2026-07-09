@@ -1,6 +1,5 @@
 package gg.modl.backend.database.mongo.repository;
 
-import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.analytics.data.ServerInstanceSnapshot;
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
@@ -9,6 +8,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.ServerInstanceSnapshotFields;
 import java.util.Date;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -17,6 +17,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRepository<ServerInstanceSnapshot> {
+    private static final int UPSERT_MAX_ATTEMPTS = 3;
+
     public ServerInstanceSnapshotMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(ServerInstanceSnapshot.class, CollectionName.SERVER_INSTANCE_SNAPSHOTS, tenantMongoAccess);
     }
@@ -26,29 +28,43 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
                                    String pluginVersion, Date createdAt) {
         ServerInstanceSnapshot.ServerEntry entry =
             new ServerInstanceSnapshot.ServerEntry(serverId, serverName, playerCount, platform, version, ipAddress, pluginVersion);
+        for (int attempt = 0; attempt < UPSERT_MAX_ATTEMPTS; attempt++) {
+            if (tryPersistServerEntry(date, entry, createdAt)) {
+                return;
+            }
+        }
+    }
 
-        // Try to update existing server entry in the array
+    private boolean tryPersistServerEntry(Date date, ServerInstanceSnapshot.ServerEntry entry, Date createdAt) {
         Query updateQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
-                .and("servers.serverId").is(serverId)
-                .and("servers.serverName").is(serverName)
+                .and("servers").elemMatch(
+                    Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
         );
         Update updateExisting = new Update()
-            .set("servers.$.playerCount", playerCount)
-            .set("servers.$.platform", platform)
-            .set("servers.$.version", version)
-            .set("servers.$.ipAddress", ipAddress)
-            .set("servers.$.pluginVersion", pluginVersion);
+            .set("servers.$.playerCount", entry.getPlayerCount())
+            .set("servers.$.platform", entry.getPlatform())
+            .set("servers.$.version", entry.getVersion())
+            .set("servers.$.ipAddress", entry.getIpAddress())
+            .set("servers.$.pluginVersion", entry.getPluginVersion());
 
-        UpdateResult result = updateFirst(updateQuery, updateExisting);
+        if (updateFirst(updateQuery, updateExisting).getMatchedCount() > 0) {
+            return true;
+        }
 
-        if (result.getMatchedCount() == 0) {
-            // Entry doesn't exist yet — upsert document and push to array
-            Query upsertQuery = Query.query(Criteria.where(ServerInstanceSnapshotFields.DATE).is(date));
-            Update pushNew = new Update()
-                .push(ServerInstanceSnapshotFields.SERVERS, entry)
-                .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
-            upsert(upsertQuery, pushNew);
+        Query insertQuery = Query.query(
+            Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
+                .and("servers").not().elemMatch(
+                    Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
+        );
+        Update pushNew = new Update()
+            .push(ServerInstanceSnapshotFields.SERVERS, entry)
+            .setOnInsert(ServerInstanceSnapshotFields.CREATED_AT, createdAt);
+        try {
+            upsert(insertQuery, pushNew);
+            return true;
+        } catch (DuplicateKeyException raced) {
+            return false;
         }
     }
 

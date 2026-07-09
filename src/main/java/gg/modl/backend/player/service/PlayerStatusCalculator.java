@@ -9,6 +9,7 @@ import gg.modl.backend.player.data.punishment.PunishmentStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DurationDetail;
 import gg.modl.backend.settings.data.OffenderThresholdSettings;
+import gg.modl.backend.settings.data.PunishmentDurationResolver;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -40,7 +41,7 @@ public class PlayerStatusCalculator {
         int gameplayPoints = 0;
 
         for (Punishment punishment : punishments) {
-            if (!isPunishmentActive(punishment)) {
+            if (!isPunishmentEligible(punishment)) {
                 continue;
             }
 
@@ -53,12 +54,11 @@ public class PlayerStatusCalculator {
                 continue;
             }
 
-            // Check if this punishment's points have expired
             Date effectiveExpiry = getEffectiveExpiry(punishment);
             if (effectiveExpiry != null) {
                 long expiryMs = type.isSocial() ? socialExpiryMs : gameplayExpiryMs;
                 if (effectiveExpiry.getTime() + expiryMs < now) {
-                    continue; // Points have expired past the configured window
+                    continue;
                 }
             }
 
@@ -71,16 +71,22 @@ public class PlayerStatusCalculator {
             }
         }
 
-        String socialStatus = getStatusFromPoints(socialPoints);
-        String gameplayStatus = getStatusFromPoints(gameplayPoints);
+        String socialStatus = thresholdSettings.getSocialOffenderLevel(socialPoints);
+        String gameplayStatus = thresholdSettings.getGameplayOffenderLevel(gameplayPoints);
 
         return new PlayerStatus(socialStatus, gameplayStatus, socialPoints, gameplayPoints);
     }
 
     public boolean isPunishmentActive(Punishment punishment) {
-        String pId = punishment.getId();
+        if (!isPunishmentEligible(punishment)) {
+            return false;
+        }
 
-        // Kicks (ordinal 0) are instant and never considered "active"
+        Date effectiveExpiry = getEffectiveExpiry(punishment);
+        return effectiveExpiry == null || !effectiveExpiry.before(new Date());
+    }
+
+    private boolean isPunishmentEligible(Punishment punishment) {
         if (punishment.getTypeOrdinal() == 0) {
             return false;
         }
@@ -90,22 +96,20 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        String status = PunishmentData.getStatus(data);
-        if (PunishmentStatus.UNSTARTED.equals(status)) {
+        if (PunishmentStatus.UNSTARTED.equals(PunishmentData.getStatus(data))) {
             return false;
         }
 
+        return !isPardoned(punishment);
+    }
+
+    private boolean isPardoned(Punishment punishment) {
         for (PunishmentModification mod : punishment.getModifications()) {
-            String type = mod.type();
-            if (PunishmentModificationType.isPardon(type)) {
-                return false;
+            if (PunishmentModificationType.isPardon(mod.type())) {
+                return true;
             }
         }
-
-        // Check duration-based expiry
-        Date effectiveExpiry = getEffectiveExpiry(punishment);
-
-        return effectiveExpiry == null || !effectiveExpiry.before(new Date());
+        return false;
     }
 
     public Date getEffectiveExpiry(Punishment punishment) {
@@ -114,27 +118,25 @@ public class PlayerStatusCalculator {
             return null;
         }
 
-        Long duration = null;
-        Date durationBase = null;
+        PunishmentModification latestDurationChange = null;
         for (PunishmentModification mod : punishment.getModifications()) {
-            if (mod.effectiveDuration() != null) {
-                duration = mod.effectiveDuration();
-                durationBase = mod.date();
+            if (PunishmentModificationType.isDurationChange(mod.type())) {
+                latestDurationChange = mod;
             }
         }
 
-        if (duration == null) {
-            duration = PunishmentData.getDuration(data);
+        if (latestDurationChange != null) {
+            Long eff = latestDurationChange.effectiveDuration();
+            if (eff == null || eff <= 0) {
+                return null;
+            }
+            return new Date(latestDurationChange.date().getTime() + eff);
         }
 
+        Long duration = PunishmentData.getDuration(data);
         // null, 0, or negative (-1L) indicates permanent (no expiry)
         if (duration == null || duration <= 0) {
             return null;
-        }
-
-        // If duration came from a modification, count from the modification date
-        if (durationBase != null) {
-            return new Date(durationBase.getTime() + duration);
         }
 
         // Count from started date, or current time if not yet started
@@ -146,18 +148,6 @@ public class PlayerStatusCalculator {
 
     private Optional<PunishmentType> findTypeByOrdinal(Map<Integer, PunishmentType> typesByOrdinal, int ordinal) {
         return Optional.ofNullable(typesByOrdinal.get(ordinal));
-    }
-
-    private String getStatusFromPoints(int points) {
-        if (points == 0) {
-            return "Good";
-        } else if (points <= 2) {
-            return "Warning";
-        } else if (points <= 5) {
-            return "Restricted";
-        } else {
-            return "Banned";
-        }
     }
 
     /**
@@ -185,6 +175,10 @@ public class PlayerStatusCalculator {
         if (pt == null) {
             return null;
         }
+        String storedCategory = PunishmentData.getEnforcementCategory(data);
+        if (storedCategory != null) {
+            return storedCategory;
+        }
         if (pt.isKick()) {
             return null;
         }
@@ -203,15 +197,21 @@ public class PlayerStatusCalculator {
             if (rawOffenseLevel != null) {
                 offenseLevel = rawOffenseLevel;
             } else {
-                String statusVal = PunishmentData.getStatus(data) != null ? PunishmentData.getStatus(data).toLowerCase() : "";
-                offenseLevel = switch (statusVal) {
-                    case "low" -> "first";
-                    case "medium" -> "medium";
-                    case "habitual" -> "habitual";
-                    default -> "first";
-                };
+                String status = PunishmentData.getStatus(data);
+                if (status == null
+                    || PunishmentStatus.UNSTARTED.equals(status)
+                    || PunishmentStatus.PARDONED.equals(status)) {
+                    offenseLevel = "first";
+                } else {
+                    offenseLevel = switch (status.toLowerCase()) {
+                        case "low" -> "first";
+                        case "medium" -> "medium";
+                        case "habitual" -> "habitual";
+                        default -> "first";
+                    };
+                }
             }
-            DurationDetail detail = pt.getDurationDetail(severity, offenseLevel);
+            DurationDetail detail = PunishmentDurationResolver.resolveDetail(pt, severity, offenseLevel);
             if (detail != null) {
                 if (detail.isBan()) {
                     return EnforcementCategory.BAN.name();
@@ -239,12 +239,8 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        // Must not have been pardoned
-        for (PunishmentModification mod : punishment.getModifications()) {
-            String type = mod.type();
-            if (PunishmentModificationType.isPardon(type)) {
-                return false;
-            }
+        if (isPardoned(punishment)) {
+            return false;
         }
 
         // Must have a finite expiry (not permanent)

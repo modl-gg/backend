@@ -33,7 +33,6 @@ import org.springframework.data.mongodb.core.mapping.FieldType;
 })
 public class Ticket {
     @Id
-    @NotNull
     private String id;
 
     @Field(targetType = FieldType.STRING)
@@ -95,6 +94,9 @@ public class Ticket {
     @Nullable
     private String replayUrl;
 
+    @Nullable
+    private String replayId;
+
     private boolean emailAuthEnabled;
     private boolean hidden;
 
@@ -118,11 +120,16 @@ public class Ticket {
     }
 
     @Data
+    @Builder
+    @NoArgsConstructor
     @AllArgsConstructor
     public static class ChatMessage {
         @NotNull
         private String content;
 
         private Date timestamp;
+
+        @Nullable
+        private String sender;
     }
 }

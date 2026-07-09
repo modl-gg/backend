@@ -3,6 +3,7 @@ package gg.modl.backend.role.controller;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.dto.response.RoleResponse;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class MinecraftRolesController {
     private final RoleService roleService;
+    private final RoleAuthorization roleAuthorization;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getAllRoles(HttpServletRequest httpRequest) {
@@ -85,7 +87,10 @@ public class MinecraftRolesController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        if (!roleService.updateRolePermissions(server, id, request.permissions())) {
+        String actingStaffId = RequestUtil.getActingStaffId(httpRequest);
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.minecraftPerformer(server, actingStaffId);
+
+        if (!roleService.updateRolePermissions(server, id, request.permissions(), performer)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
                 "message", "Role not found"
@@ -94,8 +99,7 @@ public class MinecraftRolesController {
 
         return ResponseEntity.ok(Map.of(
             "status", 200,
-            "success", true,
-            "message", "Role permissions updated"
+            "success", true
         ));
     }
 

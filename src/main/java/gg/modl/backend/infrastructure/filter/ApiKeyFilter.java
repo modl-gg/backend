@@ -1,12 +1,15 @@
 package gg.modl.backend.infrastructure.filter;
 
+import gg.modl.backend.infrastructure.config.StagingEnvironment;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV2;
+import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
+import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.settings.service.ApiKeySettingsService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,13 +27,18 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 @RequiredArgsConstructor
 public class ApiKeyFilter extends OncePerRequestFilter {
-    private final ApiKeySettingsService apiKeyService;
+    private final ServerService serverService;
+    private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
+    private final StagingEnvironment stagingEnvironment;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         final String path = request.getRequestURI();
 
-        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT) && !path.startsWith(RESTMappingV2.PREFIX_MINECRAFT);
+        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT)
+            && !path.startsWith(RESTMappingV1.PREFIX_REPLAY_LITE)
+            && !path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)
+            && !path.startsWith(RESTMappingV3.PREFIX_MINECRAFT);
     }
 
     @Override
@@ -42,13 +50,18 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         final String apiKey = request.getHeader(RequestHeader.API_KEY);
 
         if (apiKey == null || apiKey.isBlank()) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            writeUnauthorized(request, response);
             return;
         }
 
-        final Server server = apiKeyService.findServerByApiKey(apiKey);
+        final Server server = serverService.getServerByApiKey(apiKey);
         if (server == null) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            writeUnauthorized(request, response);
+            return;
+        }
+
+        if (stagingEnvironment.isStaging() && !Boolean.TRUE.equals(server.getBetaTester())) {
+            writeUnauthorized(request, response);
             return;
         }
 
@@ -60,5 +73,13 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         authentication.setDetails(server);
         SecurityContextHolder.getContext().setAuthentication(authentication);
         chain.doFilter(request, response);
+    }
+
+    private void writeUnauthorized(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
+            protobufErrorResponseWriter.write(response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHENTICATED", "Unauthorized");
+            return;
+        }
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     }
 }

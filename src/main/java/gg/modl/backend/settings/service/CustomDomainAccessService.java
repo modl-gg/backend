@@ -1,13 +1,16 @@
 package gg.modl.backend.settings.service;
 
+import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.server.data.ServerPlan;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class CustomDomainAccessService {
+    private final ServerLimitPolicy serverLimitPolicy;
 
     public boolean canManageCustomDomain(Server server) {
-        return server.getPlan() == ServerPlan.PREMIUM || Boolean.TRUE.equals(server.getCustomDomainGrandfathered());
+        return serverLimitPolicy.resolve(server).isCustomDomainAllowed();
     }
 }

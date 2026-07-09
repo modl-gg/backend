@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.TicketFormSettings;
@@ -27,8 +28,7 @@ public class TicketFormSettingsService {
     ) {
         TicketFormSettings merged = newSettings != null ? newSettings : getDefaultTicketFormSettings();
         ensureFormDefaults(merged);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = objectMapper.convertValue(merged, Map.class);
+        Map<String, Object> data = codec().encode(merged);
 
         SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
             server,
@@ -69,18 +69,13 @@ public class TicketFormSettingsService {
     }
 
     private TicketFormSettings mapToTicketFormSettings(Map<String, Object> data) {
-        if (data == null || data.isEmpty()) {
-            return getDefaultTicketFormSettings();
-        }
+        TicketFormSettings mapped = codec().decode(data);
+        ensureFormDefaults(mapped);
+        return mapped;
+    }
 
-        try {
-            TicketFormSettings mapped = objectMapper.convertValue(data, TicketFormSettings.class);
-            ensureFormDefaults(mapped);
-            return mapped;
-        } catch (Exception e) {
-            log.error("Error converting ticket form settings", e);
-            return getDefaultTicketFormSettings();
-        }
+    private SettingsCodec<TicketFormSettings> codec() {
+        return SettingsCodec.of(objectMapper, TicketFormSettings.class, this::getDefaultTicketFormSettings);
     }
 
     private void ensureFormDefaults(TicketFormSettings settings) {
@@ -115,6 +110,9 @@ public class TicketFormSettingsService {
         if (form.getSections() == null) {
             form.setSections(new ArrayList<>());
         }
+        if (form.getAllowEmailNotifications() == null) {
+            form.setAllowEmailNotifications(true);
+        }
     }
 
     private TicketFormSettings getDefaultTicketFormSettings() {
@@ -129,6 +127,7 @@ public class TicketFormSettingsService {
 
     private TicketFormSettings.TicketForm emptyForm() {
         return TicketFormSettings.TicketForm.builder()
+            .allowEmailNotifications(true)
             .fields(new ArrayList<>())
             .sections(new ArrayList<>())
             .build();
@@ -163,7 +162,7 @@ public class TicketFormSettingsService {
 
     private void putFormIfNotNull(Map<String, Object> forms, String key, TicketFormSettings.TicketForm form) {
         if (form != null) {
-            forms.put(key, form);
+            forms.put(key, objectMapper.convertValue(form, new TypeReference<Map<String, Object>>() {}));
         }
     }
 }

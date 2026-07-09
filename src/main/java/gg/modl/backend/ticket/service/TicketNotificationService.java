@@ -6,10 +6,13 @@ import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.service.SyncProtoFactory;
+import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketReply;
+import gg.modl.proto.modl.v1.SyncPlayerNotification;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +31,8 @@ public class TicketNotificationService {
     private final PlayerMongoRepository playerRepository;
     private final EmailService emailService;
     private final ModlProperties modlProperties;
+    private final RealtimeEventPublisher realtimeEventPublisher;
+    private final SyncProtoFactory syncProtoFactory;
 
     @Async
     public void notifyTicketReply(Server server, Ticket ticket, TicketReply reply) {
@@ -118,23 +123,22 @@ public class TicketNotificationService {
     }
 
     private Player findPlayer(Server server, String playerUuid) {
-        return playerRepository.findByMinecraftUuid(server, playerUuid).orElse(null);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(playerUuid)).orElse(null);
     }
 
     private void appendNotification(Server server, Player player, Map<String, Object> notification) {
-        Map<String, Object> data = player.getData();
-        if (data == null) {
-            data = new LinkedHashMap<>();
-            player.setData(data);
+        if (player.getMinecraftUuid() != null) {
+            String playerUuid = player.getMinecraftUuid().toString();
+            notification.putIfAbsent("targetPlayerUuid", playerUuid);
+            playerRepository.pushPendingNotification(server, normalizeUuid(playerUuid), notification);
         }
 
-        Object rawPendingNotifications = data.get("pendingNotifications");
-        List<Object> pendingNotifications = rawPendingNotifications instanceof List<?> existing
-                                            ? new ArrayList<>(existing)
-                                            : new ArrayList<>();
-        pendingNotifications.add(notification);
-        data.put("pendingNotifications", pendingNotifications);
-        playerRepository.saveEntity(server, player);
+        pushPlayerNotification(server, notification);
+    }
+
+    private void pushPlayerNotification(Server server, Map<String, Object> notification) {
+        SyncPlayerNotification payload = syncProtoFactory.toPlayerNotification(notification);
+        realtimeEventPublisher.pushPlayerNotifications(server, List.of(payload));
     }
 
     private String buildNotificationMessage(Ticket ticket, TicketReply reply) {
@@ -239,5 +243,9 @@ public class TicketNotificationService {
             log.error("Failed to create in-game closed notification for player {} for ticket {}: {}",
                 playerUuid, ticket.getId(), exception.getMessage());
         }
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

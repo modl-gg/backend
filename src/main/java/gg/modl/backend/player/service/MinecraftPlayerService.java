@@ -25,6 +25,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -238,7 +239,7 @@ public class MinecraftPlayerService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findByMinecraftUuid(server, uuid);
+        return playerRepository.findByMinecraftUuid(server, normalizeUuid(uuid));
     }
 
     private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
@@ -253,12 +254,12 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
-        playerRepository.markDisconnected(server, minecraftUuid, sessionDurationMs);
+        playerRepository.markDisconnected(server, normalizeUuid(minecraftUuid), sessionDurationMs);
         return Map.of("status", 200, "success", true);
     }
 
     public Map<String, Object> updateServer(Server server, String minecraftUuid, String serverName) {
-        playerRepository.updateLastServer(server, minecraftUuid, serverName);
+        playerRepository.updateLastServer(server, normalizeUuid(minecraftUuid), serverName);
         return Map.of("status", 200, "success", true);
     }
 
@@ -266,7 +267,8 @@ public class MinecraftPlayerService {
         List<Map<String, Object>> players = playerRepository.findOnlinePlayers(server, 500)
             .stream()
             .map(player -> {
-                Date joinedAt = player.getData() != null ? (Date) player.getData().get("lastLogin") : null;
+                Object lastLoginObj = player.getData() != null ? player.getData().get("lastLogin") : null;
+                Date joinedAt = lastLoginObj instanceof Date date ? date : null;
                 Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
                 long totalPlaytimeMs = playtimeObj instanceof Number number ? number.longValue() * 1000 : 0L;
 
@@ -312,7 +314,16 @@ public class MinecraftPlayerService {
     }
 
     public ServiceResponse acknowledgeNotifications(Server server, AcknowledgeNotificationsRequest request) {
-        Player player = findPlayerByUuid(server, request.playerUuid()).orElse(null);
+        return acknowledgeNotifications(server, request.playerUuid(), request.notificationIds(), request.acknowledgedAt());
+    }
+
+    public ServiceResponse acknowledgeNotifications(
+        Server server,
+        String playerUuid,
+        List<String> notificationIds,
+        String acknowledgedAt
+    ) {
+        Player player = findPlayerByUuid(server, playerUuid).orElse(null);
         if (player == null) {
             return ok(Map.of(
                 "status", 200,
@@ -325,7 +336,7 @@ public class MinecraftPlayerService {
         List<Map<String, Object>> remainingNotifications = pendingNotifications.stream()
             .filter(notification -> {
                 Object notificationId = notification.get("id");
-                return notificationId == null || !request.notificationIds().contains(notificationId.toString());
+                return notificationId == null || !notificationIds.contains(notificationId.toString());
             })
             .toList();
 
@@ -404,7 +415,7 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> getPlayerReports(Server server, String uuid) {
-        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, uuid, 50)
+        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, normalizeUuid(uuid), 50)
             .stream()
             .map(ticket -> {
                 Map<String, Object> report = new LinkedHashMap<>();
@@ -433,7 +444,7 @@ public class MinecraftPlayerService {
         boolean proxy,
         boolean hosting
     ) {
-        playerService.updateIpGeoData(server, minecraftUuid, ip, Map.of(
+        playerService.updateIpGeoData(server, normalizeUuid(minecraftUuid), ip, Map.of(
             "country", country != null ? country : "",
             "region", region != null ? region : "",
             "asn", asn != null ? asn : "",
@@ -444,13 +455,13 @@ public class MinecraftPlayerService {
     }
 
     public Map<String, Object> pardonPlayer(Server server, String playerName, String punishmentType, String issuerName, String issuerId, String reason) {
-        Player player = playerRepository.findByUsernameIgnoreCase(server, playerName).orElse(null);
+        Player player = playerService.findBestByUsername(server, playerName).orElse(null);
         if (player == null) {
             return Map.of("status", 404, "message", "Player not found");
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        int pardoned = 0;
+        List<Punishment> targets = new ArrayList<>();
 
         for (Punishment punishment : player.getPunishments()) {
             if (isAlreadyPardoned(punishment)) {
@@ -471,21 +482,14 @@ public class MinecraftPlayerService {
                                || ("mute".equals(requestedType) && EnforcementCategory.MUTE.name().equals(effectiveCategory) && (isActive || isUnstarted));
             }
 
-            if (!shouldPardon) {
-                continue;
-            }
-
-            PunishmentQueryService.PunishmentOperationResult result = punishmentLifecycleService.pardonPunishment(
-                server,
-                punishment.getId(),
-                issuerName,
-                issuerId,
-                reason
-            );
-            if (result.status() == PunishmentQueryService.PunishmentOperationStatus.SUCCESS) {
-                pardoned++;
+            if (shouldPardon) {
+                targets.add(punishment);
             }
         }
+
+        int pardoned = targets.isEmpty()
+                       ? 0
+                       : punishmentLifecycleService.pardonPunishments(server, player, targets, issuerName, issuerId, reason);
 
         return Map.of(
             "status", 200,
@@ -513,5 +517,9 @@ public class MinecraftPlayerService {
     }
 
     public record ServiceResponse(HttpStatus status, Map<String, Object> body) {
+    }
+
+    private static String normalizeUuid(String value) {
+        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

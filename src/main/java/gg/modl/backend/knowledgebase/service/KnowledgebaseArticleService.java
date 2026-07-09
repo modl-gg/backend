@@ -3,9 +3,10 @@ package gg.modl.backend.knowledgebase.service;
 import com.github.slugify.Slugify;
 import gg.modl.backend.database.mongo.repository.KnowledgebaseArticleMongoRepository;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
-import gg.modl.backend.knowledgebase.dto.request.CreateArticleRequest;
-import gg.modl.backend.knowledgebase.dto.request.UpdateArticleRequest;
 import gg.modl.backend.server.data.Server;
+import gg.modl.proto.modl.v1.CreateArticleRequest;
+import gg.modl.proto.modl.v1.UpdateArticleRequest;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,12 @@ public class KnowledgebaseArticleService {
         return articleRepository.findVisibleByCategoryOrdered(server, categoryId);
     }
 
+    public Map<String, List<KnowledgebaseArticle>> getVisibleArticlesGroupedByCategoryIds(Server server, Collection<String> categoryIds) {
+        return articleRepository.findVisibleByCategoryIdsOrdered(server, categoryIds)
+            .stream()
+            .collect(Collectors.groupingBy(KnowledgebaseArticle::getCategoryId));
+    }
+
     public Optional<KnowledgebaseArticle> getArticleById(Server server, String id) {
         return articleRepository.findByArticleId(server, id);
     }
@@ -47,12 +54,12 @@ public class KnowledgebaseArticleService {
 
     public KnowledgebaseArticle createArticle(Server server, String categoryId, CreateArticleRequest request) {
         KnowledgebaseArticle article = KnowledgebaseArticle.builder()
-            .title(request.title())
-            .slug(generateUniqueSlug(server, slugify.slugify(request.title()), null))
-            .content(request.content())
+            .title(request.getTitle())
+            .slug(generateUniqueSlug(server, slugify.slugify(request.getTitle()), null))
+            .content(request.getContent())
             .categoryId(categoryId)
             .ordinal(articleRepository.findMaxOrdinalInCategory(server, categoryId) + 1)
-            .isVisible(request.isVisible() != null ? request.isVisible() : true)
+            .isVisible(!request.hasIsVisible() || request.getIsVisible())
             .createdAt(new Date())
             .updatedAt(new Date())
             .build();
@@ -73,17 +80,18 @@ public class KnowledgebaseArticleService {
     }
 
     public Optional<KnowledgebaseArticle> updateArticle(Server server, String id, UpdateArticleRequest request) {
-        String uniqueSlug = request.title() != null
-                            ? generateUniqueSlug(server, slugify.slugify(request.title()), id)
+        String title = request.hasTitle() ? request.getTitle() : null;
+        String uniqueSlug = title != null
+                            ? generateUniqueSlug(server, slugify.slugify(title), id)
                             : null;
 
         return articleRepository.updateArticle(
             server,
             id,
-            request.title(),
+            title,
             uniqueSlug,
-            request.content(),
-            request.isVisible(),
+            request.hasContent() ? request.getContent() : null,
+            request.hasIsVisible() ? request.getIsVisible() : null,
             new Date()
         );
     }

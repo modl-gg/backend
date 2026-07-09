@@ -31,6 +31,9 @@ public class TicketVerification {
     @Field("email")
     private String email;
 
+    @Field("failedAttempts")
+    private int failedAttempts;
+
     @Field("expiresAt")
     private Date expiresAt;
 }

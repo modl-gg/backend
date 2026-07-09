@@ -3,6 +3,7 @@ package gg.modl.backend.infrastructure.filter;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.origin.OriginPolicy;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
@@ -17,7 +18,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.net.URI;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
@@ -30,7 +30,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
     private final AuthConfiguration authConfiguration;
     private final ModlCorsProperties corsProperties;
     private final ModlProperties modlProperties;
-    private volatile Set<String> parsedSystemOrigins = Set.of();
+    private volatile OriginPolicy originPolicy = new OriginPolicy(Set.of(), Set.of(), false);
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -72,7 +72,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
         }
 
         String fetchSite = request.getHeader("Sec-Fetch-Site");
-        if (fetchSite != null && ("same-origin".equalsIgnoreCase(fetchSite) || "same-site".equalsIgnoreCase(fetchSite))) {
+        if (fetchSite != null && "same-origin".equalsIgnoreCase(fetchSite)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -94,40 +94,30 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
 
     @PostConstruct
     void initParsedOrigins() {
-        Set<String> origins = new HashSet<>(HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()));
-        if (modlProperties.isDevelopmentMode()) {
-            origins.add("http://localhost:3000");
-            origins.add("http://localhost:5173");
-        }
-        parsedSystemOrigins = origins;
+        originPolicy = new OriginPolicy(
+            HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()),
+            Set.of(),
+            modlProperties.isDevelopmentMode()
+        );
     }
 
     private void reject(HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("application/json");
-        response.getWriter().write("{\"success\":false,\"message\":\"Cross-site request blocked\"}");
+        response.getWriter().write("{\"success\":false,\"status\":403,\"error\":\"Cross-site request blocked\",\"message\":\"Cross-site request blocked\"}");
     }
 
     private boolean isAllowedOrigin(HttpServletRequest request, String origin) {
-        if (parsedSystemOrigins.contains(origin)) {
-            return true;
+        if (isPanelPath(request.getRequestURI())) {
+            String serverDomain = resolveRequestServerDomain(request);
+            if (originPolicy.isTenantOwnOrigin(origin, serverDomain)) {
+                return true;
+            }
+            return originPolicy.isDevLocalhost(HostExtractionUtil.extractHost(origin));
         }
 
-        if (!isPanelPath(request.getRequestURI())) {
-            return false;
-        }
-
-        String originHost = HostExtractionUtil.extractHost(origin);
-        if (originHost == null) {
-            return false;
-        }
-
-        String serverDomain = resolveRequestServerDomain(request);
-        if (serverDomain == null) {
-            return false;
-        }
-
-        return originHost.equalsIgnoreCase(serverDomain);
+        return originPolicy.isSystemOrigin(origin)
+               || originPolicy.isDevLocalhost(HostExtractionUtil.extractHost(origin));
     }
 
     private boolean isAllowedReferer(HttpServletRequest request, String referer) {

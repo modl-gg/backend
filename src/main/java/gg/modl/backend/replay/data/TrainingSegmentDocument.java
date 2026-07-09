@@ -1,5 +1,6 @@
 package gg.modl.backend.replay.data;
 
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.util.Date;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 @Data
 @NoArgsConstructor
 @Document
+@GenerateMongoFields
 public class TrainingSegmentDocument {
     @Id
     private String id;

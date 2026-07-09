@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.data.mongodb.core.BulkOperations;
+import org.springframework.data.mongodb.core.query.Collation;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -34,13 +35,9 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return findOne(server, Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)));
     }
 
-    public Optional<Player> findByMinecraftUuid(String databaseName, String minecraftUuid) {
-        return findOne(databaseName, Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid)));
-    }
-
     public Optional<Player> findByUsernameIgnoreCase(Server server, String username) {
-        String escapedUsername = Pattern.quote(username.trim());
-        Query query = Query.query(Criteria.where(PlayerFields.USERNAME).regex("^" + escapedUsername + "$", "i"));
+        Query query = Query.query(Criteria.where(PlayerFields.USERNAME).is(username.trim()))
+            .collation(Collation.of("en").strength(2));
         return findOne(server, query);
     }
 
@@ -138,6 +135,23 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         updateById(server, player.getId(), new Update().set(PlayerFields.DATA_PENDING_NOTIFICATIONS, notifications));
     }
 
+    public boolean pushPendingNotification(Server server, String minecraftUuid, Map<String, Object> notification) {
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
+        Update update = new Update().push(PlayerFields.DATA_PENDING_NOTIFICATIONS, notification);
+        return updateFirst(server, query, update).getMatchedCount() > 0;
+    }
+
+    public void addLinkedAccounts(Server server, String minecraftUuid, Collection<String> linkedUuids, Date when) {
+        if (linkedUuids == null || linkedUuids.isEmpty()) {
+            return;
+        }
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).is(minecraftUuid));
+        Update update = new Update()
+            .addToSet(PlayerFields.DATA_LINKED_ACCOUNTS).each(linkedUuids.toArray())
+            .set(PlayerFields.DATA_LAST_LINKED_UPDATE, when);
+        updateFirst(server, query, update);
+    }
+
     public void replaceData(Server server, Player player) {
         updateById(server, player.getId(), new Update().set(PlayerFields.DATA, player.getData()));
     }
@@ -197,10 +211,6 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return find(server, query);
     }
 
-    public void insertAll(Server server, List<Player> players) {
-        serverTemplate(server).insertAll(players);
-    }
-
     public BulkOperations bulkOps(Server server) {
         return serverTemplate(server).bulkOps(
             BulkOperations.BulkMode.UNORDERED,
@@ -229,6 +239,14 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
     public long countAll(Server server) {
         return count(server, new Query());
+    }
+
+    public long countFirstJoinedAfter(Server server, Date after) {
+        return count(server, Query.query(Criteria.where(PlayerFields.DATA_FIRST_JOIN).gte(after)));
+    }
+
+    public long countFirstJoinedBetween(Server server, Date from, Date to) {
+        return count(server, Query.query(Criteria.where(PlayerFields.DATA_FIRST_JOIN).gte(from).lt(to)));
     }
 
     public long countOnlineByUuids(Server server, Collection<String> uuids) {
