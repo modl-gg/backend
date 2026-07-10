@@ -21,7 +21,6 @@ import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -111,30 +110,14 @@ public class AnalyticsService {
             .map(result -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(result.id()), result.count()))
             .toList();
 
-        final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
         final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate, ANALYTICS_TIME_ZONE)
             .stream()
-            .map(result -> new TicketAnalyticsResponse.DailyTicket(
-                formatDateLabel(result.id(), dateFormatter),
-                result.count()
-            ))
+            .map(result -> new TicketAnalyticsResponse.DailyTicket(result.id(), result.count()))
             .toList();
 
         final List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
-    }
-
-    private String formatDateLabel(String dateKey, DateTimeFormatter formatter) {
-        if (dateKey == null || dateKey.isBlank()) {
-            return "Unknown";
-        }
-
-        try {
-            return LocalDate.parse(dateKey).format(formatter);
-        } catch (Exception ignored) {
-            return dateKey;
-        }
     }
 
     private String normalizeCategory(String category) {
@@ -208,7 +191,7 @@ public class AnalyticsService {
 
         Map<String, Integer> dailyPunishmentMap = new LinkedHashMap<>();
         for (Document document : toDocumentList(facetResults.get("daily"))) {
-            String dayLabel = formatPunishmentDay(document.getString("_id"));
+            String dayLabel = document.getString("_id");
             dailyPunishmentMap.merge(dayLabel, toInt(document.get("count")), Integer::sum);
         }
         List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyPunishmentMap.entrySet()
@@ -247,12 +230,6 @@ public class AnalyticsService {
 
         String normalized = rawStaffName.toString().trim();
         return normalized.isBlank() ? "Unknown" : normalized;
-    }
-
-    private static final DateTimeFormatter SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("MMM dd");
-
-    private String formatPunishmentDay(String dateKey) {
-        return formatDateLabel(dateKey, SHORT_DATE_FORMATTER);
     }
 
     public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
@@ -310,11 +287,9 @@ public class AnalyticsService {
                 new PlayerActivityResponse.SuspiciousActivity(0, 0));
         }
 
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
-
         List<PlayerActivityResponse.DailyCount> newPlayersTrend = toDocumentList(facetResults.get("newPlayers")).stream()
             .map(doc -> new PlayerActivityResponse.DailyCount(
-                formatDateLabel(doc.getString("_id"), dateFormatter),
+                doc.getString("_id"),
                 toInt(doc.get("count"))))
             .toList();
 

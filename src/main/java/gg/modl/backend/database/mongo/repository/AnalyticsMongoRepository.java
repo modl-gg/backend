@@ -42,6 +42,10 @@ public class AnalyticsMongoRepository {
 
     private final TenantMongoAccess tenantMongoAccess;
 
+    private static Document matchDateTyped(String field) {
+        return new Document("$match", new Document(field, new Document("$type", "date")));
+    }
+
     @NotNull
     public OverviewStats loadOverviewStats(@NotNull Server server, @NotNull Date thirtyDaysAgo, @NotNull Date sixtyDaysAgo) {
         final MongoTemplate template = tenantMongoAccess.forServer(server);
@@ -117,6 +121,8 @@ public class AnalyticsMongoRepository {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
 
+        final AggregationOperation createdDateTypeMatch = context -> matchDateTyped(TicketFields.CREATED);
+
         final AggregationOperation dayProjection = context -> new Document("$project",
             new Document(ALIAS_DATE, new Document("$dateToString",
                 new Document("format", "%Y-%m-%d")
@@ -125,6 +131,7 @@ public class AnalyticsMongoRepository {
 
         final Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(criteria),
+            createdDateTypeMatch,
             dayProjection,
             Aggregation.group(ALIAS_DATE).count().as(ALIAS_COUNT),
             Aggregation.sort(Sort.Direction.ASC, "_id")
@@ -142,7 +149,7 @@ public class AnalyticsMongoRepository {
         }
 
         pipeline.add(new Document("$unwind", "$" + PlayerFields.PUNISHMENTS));
-        pipeline.add(new Document("$match", new Document(PlayerFields.PUNISHMENT_ISSUED, new Document("$type", "date"))));
+        pipeline.add(matchDateTyped(PlayerFields.PUNISHMENT_ISSUED));
 
         if (startDate != null) {
             pipeline.add(new Document("$match", new Document(PlayerFields.PUNISHMENT_ISSUED, new Document("$gte", startDate))));
@@ -218,6 +225,7 @@ public class AnalyticsMongoRepository {
 
         final List<Document> newPlayerFacet = new ArrayList<>();
         newPlayerFacet.add(new Document("$addFields", new Document(EARLIEST_FIRST_LOGIN, new Document("$min", "$" + PlayerFields.IP_FIRST_LOGIN))));
+        newPlayerFacet.add(matchDateTyped(EARLIEST_FIRST_LOGIN));
 
         if (startDate != null) {
             newPlayerFacet.add(new Document("$match", new Document(EARLIEST_FIRST_LOGIN,
