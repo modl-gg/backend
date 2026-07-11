@@ -526,7 +526,7 @@ public class StaffService {
             hasChanges = true;
         }
 
-        if (newDateFormat != null && List.of("MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD").contains(newDateFormat)) {
+        if (newDateFormat != null && List.of(Staff.DEFAULT_DATE_FORMAT, "MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD").contains(newDateFormat)) {
             staff.setDateFormat(newDateFormat);
             hasChanges = true;
         }

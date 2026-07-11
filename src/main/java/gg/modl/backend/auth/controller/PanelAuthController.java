@@ -152,7 +152,7 @@ public class PanelAuthController {
             if (isSuperAdmin) {
                 String resolvedUsername = username != null ? username : "Admin";
                 String resolvedLanguage = language != null ? language : "en";
-                String resolvedDateFormat = dateFormat != null ? dateFormat : "MM/DD/YYYY";
+                String resolvedDateFormat = dateFormat != null ? dateFormat : Staff.DEFAULT_DATE_FORMAT;
                 return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
                     null, email, resolvedUsername, "Super Admin", resolvedUsername, resolvedLanguage, resolvedDateFormat));
             }
@@ -228,7 +228,7 @@ public class PanelAuthController {
 
         // Super Admin without a staff record - return default username
         if (isSuperAdmin) {
-            return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", "MM/DD/YYYY"));
+            return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", Staff.DEFAULT_DATE_FORMAT));
         }
 
         return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
