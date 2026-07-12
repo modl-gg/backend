@@ -1,13 +1,13 @@
 package gg.modl.backend.storage.service;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.dto.response.StorageQuotaResponse;
 import gg.modl.backend.infrastructure.util.ByteFormatUtil;
 import java.util.Map;
+import java.util.OptionalLong;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 public class StorageQuotaService {
     private final StorageMetadataService storageMetadataService;
     private final UsageTrackingService usageTrackingService;
-    private final ServerMongoRepository serverRepository;
+    private final StorageUsageAccountant storageUsageAccountant;
     private final StorageSyncService storageSyncService;
     private final ServerLimitPolicy serverLimitPolicy;
 
@@ -28,6 +28,7 @@ public class StorageQuotaService {
     public static final long MAX_PREMIUM_BYTES = PREMIUM_BASE_BYTES + MAX_STORAGE_OVERAGE_BYTES;
     public static final long MAX_AI_OVERAGE_REQUESTS = 5000L;
     private static final double AI_OVERAGE_RATE = 0.02;
+    private static final double STORAGE_OVERAGE_RATE = 0.08;
 
     public enum ConfirmResult {
         SUCCESS,
@@ -51,9 +52,9 @@ public class StorageQuotaService {
     }
 
     private long currentTrackedUsage(Server server) {
-        Long tracked = server.getStorageUsedBytes();
-        if (tracked != null) {
-            return tracked;
+        OptionalLong tracked = storageUsageAccountant.trackedBytes(server);
+        if (tracked.isPresent()) {
+            return tracked.getAsLong();
         }
         storageSyncService.triggerAsyncSync(server);
         return 0L;
@@ -68,7 +69,7 @@ public class StorageQuotaService {
         }
 
         long maxBytes = getMaxBytesForServer(server);
-        if (!serverRepository.tryIncrementStorageUsedWithinLimit(server.getId(), size, maxBytes)) {
+        if (!storageUsageAccountant.tryReserveWithinLimit(server, size, maxBytes)) {
             return ConfirmResult.QUOTA_EXCEEDED;
         }
 
@@ -78,7 +79,7 @@ public class StorageQuotaService {
             return ConfirmResult.SUCCESS;
         }
 
-        serverRepository.decrementStorageUsed(server.getId(), size);
+        storageUsageAccountant.recordRemoval(server, size);
         return recordResult == StorageMetadataService.RecordFileResult.ALREADY_EXISTS
                ? ConfirmResult.SUCCESS
                : ConfirmResult.RECORD_FAILED;
@@ -104,7 +105,7 @@ public class StorageQuotaService {
             byType,
             aiQuota,
             isPremium,
-            0.08
+            STORAGE_OVERAGE_RATE
         );
     }
 

@@ -1,6 +1,7 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
+import gg.modl.backend.player.dto.response.AcknowledgeResult;
 import gg.modl.backend.player.service.MinecraftPlayerService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -27,7 +28,11 @@ public class MinecraftNotificationController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(server, request);
-        return ResponseEntity.status(response.status()).body(response.body());
+        AcknowledgeResult result = minecraftPlayerService.acknowledgeNotifications(server, request);
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "success", true,
+            "message", result.message()
+        ));
     }
 }

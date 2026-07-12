@@ -2,7 +2,7 @@ package gg.modl.backend.log.service;
 
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class PanelActionAuditor {
     private final LogService logService;
-    private final StaffService staffService;
+    private final StaffLookupCache staffLookupCache;
 
     public void recordStaffAction(Server server, String actorEmail, String description) {
         logService.recordStaffAction(server, resolveActor(server, actorEmail), description);
@@ -24,7 +24,7 @@ public class PanelActionAuditor {
         if (actorEmail == null || actorEmail.isBlank()) {
             return "Unknown";
         }
-        return staffService.getStaffByEmail(server, actorEmail)
+        return staffLookupCache.findByEmail(server, actorEmail)
             .map(Staff::getUsername)
             .filter(username -> username != null && !username.isBlank())
             .orElse(actorEmail);

@@ -1,11 +1,12 @@
 package gg.modl.backend.migration.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
 import gg.modl.backend.migration.data.MigrationStatus;
+import gg.modl.backend.migration.service.MigrationService.MigrationOperationResult;
 import gg.modl.proto.modl.v1.MigrationOperationResponse;
 import gg.modl.proto.modl.v1.MigrationStatusResponse;
-import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -47,20 +48,17 @@ public class MigrationProtoMapper {
         return builder.build();
     }
 
-    public MigrationOperationResponse toOperationResponse(Map<String, Object> result) {
+    public MigrationOperationResponse toOperationResponse(MigrationOperationResult result) {
         MigrationOperationResponse.Builder builder = MigrationOperationResponse.newBuilder()
-            .setSuccess(Boolean.TRUE.equals(result.get("success")));
-        Object taskId = result.get("taskId");
-        if (taskId != null) {
-            builder.setTaskId(taskId.toString());
+            .setSuccess(result.success());
+        if (result.taskId() != null) {
+            builder.setTaskId(result.taskId());
         }
-        Object message = result.get("message");
-        if (message != null) {
-            builder.setMessage(message.toString());
+        if (result.message() != null) {
+            builder.setMessage(result.message());
         }
-        Object error = result.get("error");
-        if (error != null) {
-            builder.setError(error.toString());
+        if (result.error() != null) {
+            builder.setError(result.error());
         }
         return builder.build();
     }
@@ -79,9 +77,5 @@ public class MigrationProtoMapper {
             builder.setTotalRecords(progress.getTotalRecords());
         }
         return builder.build();
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

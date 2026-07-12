@@ -1,5 +1,7 @@
 package gg.modl.backend.appeal.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.valuesToObjects;
+
 import gg.modl.backend.appeal.service.AppealService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -13,8 +15,11 @@ import gg.modl.backend.ticket.service.PublicRecordAccessService;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.Access;
 import gg.modl.backend.ticket.service.PublicRecordAccessService.AccessResult;
 import gg.modl.backend.ticket.service.PublicRecordVerificationService;
+import gg.modl.proto.modl.v1.AddAppealReplyRequest;
+import gg.modl.proto.modl.v1.CreateAppealRequest;
 import gg.modl.proto.modl.v1.CreatePublicAppealResponse;
 import gg.modl.proto.modl.v1.PanelResource;
+import gg.modl.proto.modl.v1.VerifyTicketCodeRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -61,7 +66,7 @@ public class PublicAppealController {
 
     @PostMapping
     public ResponseEntity<CreatePublicAppealResponse> createAppeal(
-        @RequestBody gg.modl.proto.modl.v1.CreateAppealRequest createRequest,
+        @RequestBody CreateAppealRequest createRequest,
         @RequestParam(value = "token", required = false) String appealToken,
         HttpServletRequest request
     ) {
@@ -75,7 +80,7 @@ public class PublicAppealController {
     @PostMapping("/{id}/replies")
     public ResponseEntity<?> addReply(
         @PathVariable String id,
-        @RequestBody gg.modl.proto.modl.v1.AddAppealReplyRequest replyRequest,
+        @RequestBody AddAppealReplyRequest replyRequest,
         @RequestParam(value = "token", required = false) String appealToken,
         HttpServletRequest request
     ) {
@@ -91,7 +96,7 @@ public class PublicAppealController {
                 .body(PublicVerificationProtoMapper.toVerificationRequiredResponse(id, access.emailHint()));
         }
 
-        List<Object> attachments = PanelAppealProtoMapper.valueListToObjects(replyRequest.getAttachmentsList());
+        List<Object> attachments = valuesToObjects(replyRequest.getAttachmentsList());
         TicketReply reply = appealService.addPublicReply(server, id, replyRequest.getContent(), attachments);
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_APPEALS, id);
         return ResponseEntity.status(HttpStatus.CREATED).body(PublicAppealProtoMapper.toAddReplyResponse(reply));
@@ -113,7 +118,7 @@ public class PublicAppealController {
     @PostMapping("/{id}/verify")
     public ResponseEntity<?> verifyCode(
         @PathVariable String id,
-        @RequestBody gg.modl.proto.modl.v1.VerifyTicketCodeRequest body,
+        @RequestBody VerifyTicketCodeRequest body,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

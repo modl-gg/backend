@@ -52,7 +52,7 @@ class MinecraftV3ApiKeyFilterIntegrationTest {
         ApiKeyFilter apiKeyFilter = new ApiKeyFilter(serverService, new ProtobufErrorResponseWriter(), mock(StagingEnvironment.class));
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftDashboardV3Controller(dashboardService))
             .addFilters(apiKeyFilter)
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .build();
     }

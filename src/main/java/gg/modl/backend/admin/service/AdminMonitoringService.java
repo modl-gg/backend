@@ -3,10 +3,15 @@ package gg.modl.backend.admin.service;
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.ResolveLogRequest;
+import gg.modl.backend.admin.dto.response.AdminMonitoringDashboard;
+import gg.modl.backend.admin.dto.response.AdminMonitoringHealth;
+import gg.modl.backend.admin.dto.response.AdminMonitoringLogs;
+import gg.modl.backend.admin.dto.response.AdminMonitoringSources;
+import gg.modl.backend.admin.dto.response.AdminPagination;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.MonitoringServerStats;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository.MonitoringServerStats;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository.MonitoringLogStats;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.infrastructure.util.CsvUtil;
@@ -16,7 +21,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -30,75 +34,61 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class AdminMonitoringService {
     private final SystemLogMongoRepository systemLogRepository;
-    private final ServerMongoRepository serverRepository;
+    private final ServerMetricsRepository serverMetricsRepository;
     private final GlobalMongoAdminRepository globalMongoAdminRepository;
 
-    public Map<String, Object> getDashboard() {
+    public AdminMonitoringDashboard getDashboard() {
         Date oneDayAgo = Date.from(Instant.now().minus(1, ChronoUnit.DAYS));
         Date oneWeekAgo = Date.from(Instant.now().minus(7, ChronoUnit.DAYS));
         Date fiveMinutesAgo = Date.from(Instant.now().minus(5, ChronoUnit.MINUTES));
 
-        MonitoringServerStats serverStats = serverRepository.aggregateMonitoringServerStats(fiveMinutesAgo, oneWeekAgo);
+        MonitoringServerStats serverStats = serverMetricsRepository.aggregateMonitoringServerStats(fiveMinutesAgo, oneWeekAgo);
         MonitoringLogStats logStats = systemLogRepository.aggregateMonitoringLogStats(oneDayAgo);
 
-        int healthScore = calculateHealthScore(
-            serverStats.total(),
-            serverStats.active(),
-            serverStats.failed(),
-            logStats.critical24h(),
-            logStats.error24h(),
-            logStats.unresolvedCritical(),
-            logStats.unresolvedError()
-        );
+        int healthScore = calculateHealthScore(serverStats, logStats);
         String healthStatus = healthScore >= 95 ? "excellent"
                                                 : healthScore >= 85 ? "good"
                                                                     : healthScore >= 70 ? "fair"
                                                                                         : "poor";
 
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "servers", Map.of(
-                    "total", serverStats.total(),
-                    "active", serverStats.active(),
-                    "pending", serverStats.pending(),
-                    "failed", serverStats.failed(),
-                    "recentRegistrations", serverStats.recentRegistrations(),
-                    "concurrentServers", serverStats.concurrent(),
-                    "concurrentPlayers", serverStats.concurrentPlayers()
-                ),
-                "logs", Map.of(
-                    "last24h", Map.of(
-                        "total", logStats.total24h(),
-                        "critical", logStats.critical24h(),
-                        "error", logStats.error24h(),
-                        "warning", logStats.warning24h()
-                    ),
-                    "unresolved", Map.of(
-                        "critical", logStats.unresolvedCritical(),
-                        "error", logStats.unresolvedError()
-                    )
-                ),
-                "systemHealth", Map.of("score", healthScore, "status", healthStatus),
-                "trends", systemLogRepository.findLogTrends(oneWeekAgo),
-                "lastUpdated", new Date()
-            )
-        );
+        List<Map<String, Object>> trends = new ArrayList<>(systemLogRepository.findLogTrends(oneWeekAgo));
+
+        return new AdminMonitoringDashboard(
+            new AdminMonitoringDashboard.ServerMetrics(
+                serverStats.total(),
+                serverStats.active(),
+                serverStats.pending(),
+                serverStats.failed(),
+                serverStats.recentRegistrations(),
+                serverStats.concurrent(),
+                serverStats.concurrentPlayers()),
+            new AdminMonitoringDashboard.LogMetrics(
+                new AdminMonitoringDashboard.LogWindow(
+                    logStats.total24h(),
+                    logStats.critical24h(),
+                    logStats.error24h(),
+                    logStats.warning24h()),
+                new AdminMonitoringDashboard.UnresolvedLogs(
+                    logStats.unresolvedCritical(),
+                    logStats.unresolvedError())),
+            new AdminMonitoringDashboard.SystemHealth(healthScore, healthStatus),
+            trends,
+            new Date());
     }
 
-    private int calculateHealthScore(long total, long active, long failed, long critical, long errors, long unresolvedCritical, long unresolvedErrors) {
+    private int calculateHealthScore(MonitoringServerStats serverStats, MonitoringLogStats logStats) {
         int score = 100;
-        if (total > 0) {
-            score -= (int) ((failed / (double) total) * 30);
+        if (serverStats.total() > 0) {
+            score -= (int) ((serverStats.failed() / (double) serverStats.total()) * 30);
         }
-        score -= (int) Math.min(critical * 5, 25);
-        score -= (int) Math.min(errors, 20);
-        score -= (int) (unresolvedCritical * 10);
-        score -= (int) (unresolvedErrors * 3);
+        score -= (int) Math.min(logStats.critical24h() * 5, 25);
+        score -= (int) Math.min(logStats.error24h(), 20);
+        score -= (int) (logStats.unresolvedCritical() * 10);
+        score -= (int) (logStats.unresolvedError() * 3);
         return Math.max(0, score);
     }
 
-    public Map<String, Object> getLogs(
+    public AdminMonitoringLogs getLogs(
         int page,
         int limit,
         String level,
@@ -134,27 +124,10 @@ public class AdminMonitoringService {
         );
         long total = systemLogRepository.countLogs(level, source, serverId, category, resolved, search, start, end);
 
-        Map<String, Object> filters = new LinkedHashMap<>();
-        filters.put("level", level);
-        filters.put("source", source);
-        filters.put("serverId", serverId);
-        filters.put("category", category);
-        filters.put("resolved", resolved);
-        filters.put("search", search);
-
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "logs", logs,
-                "pagination", Map.of(
-                    "page", pageNum,
-                    "limit", limitNum,
-                    "total", total,
-                    "pages", PaginationHelper.calculateTotalPages(total, limitNum)
-                ),
-                "filters", filters
-            )
-        );
+        return new AdminMonitoringLogs(
+            logs,
+            new AdminPagination(pageNum, limitNum, total, PaginationHelper.calculateTotalPages(total, limitNum)),
+            new AdminMonitoringLogs.Filters(level, source, serverId, category, resolved, search));
     }
 
     public SystemLog createLog(CreateSystemLogRequest request) {
@@ -163,20 +136,14 @@ public class AdminMonitoringService {
         return systemLogRepository.saveEntity(logData);
     }
 
-    public Map<String, Object> getSources() {
+    public AdminMonitoringSources getSources() {
         List<String> sources = systemLogRepository.findDistinctSources();
         List<String> categories = systemLogRepository.findDistinctCategories();
 
         sources.removeIf(Objects::isNull);
         categories.removeIf(Objects::isNull);
 
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "sources", sources,
-                "categories", categories
-            )
-        );
+        return new AdminMonitoringSources(sources, categories);
     }
 
     public Optional<SystemLog> resolveLog(String id, ResolveLogRequest request) {
@@ -187,27 +154,25 @@ public class AdminMonitoringService {
         ));
     }
 
-    public Map<String, Object> getHealth() {
-        List<Map<String, Object>> checks = new ArrayList<>();
+    public AdminMonitoringHealth getHealth() {
+        List<AdminMonitoringHealth.HealthCheck> checks = new ArrayList<>();
         String overallStatus = "healthy";
 
         try {
             long start = System.currentTimeMillis();
             globalMongoAdminRepository.ping();
             long responseTime = System.currentTimeMillis() - start;
-            checks.add(Map.of(
-                "name", "Database Connectivity",
-                "status", "healthy",
-                "message", "MongoDB connection is responsive.",
-                "responseTime", responseTime
-            ));
+            checks.add(AdminMonitoringHealth.HealthCheck.responsive(
+                "Database Connectivity",
+                "healthy",
+                "MongoDB connection is responsive.",
+                responseTime));
         } catch (Exception exception) {
-            checks.add(Map.of(
-                "name", "Database Connectivity",
-                "status", "critical",
-                "message", "Failed to ping MongoDB.",
-                "error", exception.getMessage()
-            ));
+            checks.add(AdminMonitoringHealth.HealthCheck.failure(
+                "Database Connectivity",
+                "critical",
+                "Failed to ping MongoDB.",
+                exception.getMessage()));
             overallStatus = "critical";
         }
 
@@ -216,38 +181,29 @@ public class AdminMonitoringService {
             Date.from(Instant.now().minus(1, ChronoUnit.DAYS))
         );
         String logStatus = criticalCount > 5 ? "critical" : criticalCount > 0 ? "degraded" : "healthy";
-        checks.add(Map.of(
-            "name", "Critical System Logs",
-            "status", logStatus,
-            "message", criticalCount + " unresolved critical log(s) in the last 24 hours.",
-            "count", criticalCount
-        ));
+        checks.add(AdminMonitoringHealth.HealthCheck.counted(
+            "Critical System Logs",
+            logStatus,
+            criticalCount + " unresolved critical log(s) in the last 24 hours.",
+            criticalCount));
         if ("critical".equals(logStatus)) {
             overallStatus = "critical";
         } else if ("degraded".equals(logStatus) && !"critical".equals(overallStatus)) {
             overallStatus = "degraded";
         }
 
-        long failedCount = serverRepository.countByProvisioningStatus(ProvisioningStatus.FAILED);
+        long failedCount = serverMetricsRepository.countByProvisioningStatus(ProvisioningStatus.FAILED);
         String serverStatus = failedCount > 0 ? "degraded" : "healthy";
-        checks.add(Map.of(
-            "name", "Server Provisioning",
-            "status", serverStatus,
-            "message", failedCount + " server(s) failed to provision.",
-            "count", failedCount
-        ));
+        checks.add(AdminMonitoringHealth.HealthCheck.counted(
+            "Server Provisioning",
+            serverStatus,
+            failedCount + " server(s) failed to provision.",
+            failedCount));
         if ("degraded".equals(serverStatus) && !"critical".equals(overallStatus)) {
             overallStatus = "degraded";
         }
 
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "status", overallStatus,
-                "checks", checks,
-                "timestamp", new Date()
-            )
-        );
+        return new AdminMonitoringHealth(overallStatus, checks, new Date());
     }
 
     public long deleteLogs(List<String> logIds) {

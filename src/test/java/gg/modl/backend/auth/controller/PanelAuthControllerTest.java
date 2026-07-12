@@ -25,7 +25,8 @@ import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
+import gg.modl.backend.staff.service.StaffProfileService;
 import gg.modl.proto.modl.v1.PanelUpdateEmailWithCodeRequest;
 import jakarta.servlet.http.Cookie;
 import java.util.Date;
@@ -66,12 +67,12 @@ class PanelAuthControllerTest {
         authConfiguration.setSessionCookieName("MODL_SESSION");
         AuthService authService = mock(AuthService.class);
         SessionService sessionService = mock(SessionService.class);
-        StaffService staffService = mock(StaffService.class);
+        StaffProfileService staffProfileService = mock(StaffProfileService.class);
         PermissionService permissionService = mock(PermissionService.class);
         EmailChangeService emailChangeService = new EmailChangeService(
             permissionService,
             authService,
-            staffService,
+            staffProfileService,
             mock(ServerService.class),
             mock(WebAuthnService.class),
             mock(BillingService.class),
@@ -82,7 +83,8 @@ class PanelAuthControllerTest {
             authService,
             sessionService,
             authConfiguration,
-            staffService,
+            staffProfileService,
+            mock(StaffLookupCache.class),
             permissionService,
             new CookieUtil(authConfiguration),
             emailChangeService
@@ -98,9 +100,9 @@ class PanelAuthControllerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         when(permissionService.isSuperAdmin(server, "old@example.com")).thenReturn(false);
-        when(staffService.isStaffEmailInUse(server, "new@example.com", "old@example.com")).thenReturn(false);
+        when(staffProfileService.isStaffEmailInUse(server, "new@example.com", "old@example.com")).thenReturn(false);
         when(authService.verifyCode(server, "new@example.com", "123456")).thenReturn(true);
-        when(staffService.applyStaffEmailChange(server, "old@example.com", "new@example.com")).thenReturn(Optional.of(staff));
+        when(staffProfileService.applyStaffEmailChange(server, "old@example.com", "new@example.com")).thenReturn(Optional.of(staff));
         when(sessionService.createSession(server, "new@example.com", "127.0.0.1", null)).thenReturn(newSession);
 
         controller.updateEmail(request, response, PanelUpdateEmailWithCodeRequest.newBuilder()
@@ -198,7 +200,8 @@ class PanelAuthControllerTest {
             mock(AuthService.class),
             sessionService,
             authConfiguration,
-            mock(StaffService.class),
+            mock(StaffProfileService.class),
+            mock(StaffLookupCache.class),
             mock(PermissionService.class),
             new CookieUtil(authConfiguration),
             mock(EmailChangeService.class)

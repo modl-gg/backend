@@ -12,6 +12,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class EvidenceUploadTokenMongoRepository extends AbstractGlobalMongoRepository<EvidenceUploadTokenDocument> {
 
+    private static final String MONGO_ID = "_id";
+
     public EvidenceUploadTokenMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(EvidenceUploadTokenDocument.class, CollectionName.EVIDENCE_UPLOAD_TOKENS, tenantMongoAccess);
     }
@@ -21,6 +23,6 @@ public class EvidenceUploadTokenMongoRepository extends AbstractGlobalMongoRepos
     }
 
     public void deleteByTokenHash(String hash) {
-        remove(Query.query(Criteria.where("_id").is(hash)));
+        remove(Query.query(Criteria.where(MONGO_ID).is(hash)));
     }
 }

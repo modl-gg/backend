@@ -1,5 +1,6 @@
 package gg.modl.backend.replay.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.replay.service.ReplayService;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_REPLAYS)
+@RequiresPanelPermission("punishment.modify")
 @RequiredArgsConstructor
 public class PanelReplayController {
     private final ReplayService replayService;

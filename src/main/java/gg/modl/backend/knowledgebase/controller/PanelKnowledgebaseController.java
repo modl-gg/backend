@@ -1,5 +1,6 @@
 package gg.modl.backend.knowledgebase.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
@@ -20,6 +21,7 @@ import gg.modl.proto.modl.v1.UpdateArticleRequest;
 import gg.modl.proto.modl.v1.UpdateCategoryRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_KNOWLEDGEBASE)
+@RequiresPanelPermission(view = "admin.settings.view.content", modify = "admin.settings.modify.content")
 @RequiredArgsConstructor
 public class PanelKnowledgebaseController {
     private final KnowledgebaseCategoryService categoryService;
@@ -46,7 +49,7 @@ public class PanelKnowledgebaseController {
     public ResponseEntity<PanelKnowledgebaseCategoriesResponse> getCategories(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         var categories = categoryService.getAllCategories(server);
-        Map<String, java.util.List<KnowledgebaseArticle>> articlesByCategory =
+        Map<String, List<KnowledgebaseArticle>> articlesByCategory =
             articleService.getAllArticlesGroupedByCategory(server);
 
         return ResponseEntity.ok(mapper.toPanelCategoriesResponse(

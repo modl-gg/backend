@@ -9,7 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
-import lombok.RequiredArgsConstructor;
+import java.util.function.Predicate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -20,22 +20,37 @@ import org.springframework.web.client.RestTemplate;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class WebhookSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
-    private final RestTemplate restTemplate;
     private static final String SETTINGS_TYPE_WEBHOOKS = "webhookSettings";
     private static final int DEFAULT_EMBED_COLOR = 3447003;
 
+    private final ObjectMapper objectMapper;
+    private final RestTemplate restTemplate;
+    private final VersionedSettingsSupport<WebhookSettings> support;
+
+    public WebhookSettingsService(
+        SettingsDocumentService settingsDocumentService,
+        ObjectMapper objectMapper,
+        RestTemplate restTemplate
+    ) {
+        this.objectMapper = objectMapper;
+        this.restTemplate = restTemplate;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_WEBHOOKS, this::mapToWebhookSettings);
+    }
+
     public WebhookSettings updateWebhookSettings(Server server, WebhookSettings newSettings) {
-        long expectedVersion = settingsDocumentService.getRawState(server, SETTINGS_TYPE_WEBHOOKS).version();
-        settingsDocumentService.saveRawState(server, SETTINGS_TYPE_WEBHOOKS, expectedVersion, codec().encode(newSettings));
+        long expectedVersion = support.currentVersion(server);
+        support.save(server, expectedVersion, codec().encode(newSettings));
         return getWebhookSettings(server);
     }
 
     public WebhookSettings getWebhookSettings(Server server) {
-        return codec().decode(settingsDocumentService.getRawState(server, SETTINGS_TYPE_WEBHOOKS).data());
+        return support.get(server);
+    }
+
+    private WebhookSettings mapToWebhookSettings(Map<String, Object> data) {
+        return codec().decode(data);
     }
 
     private SettingsCodec<WebhookSettings> codec() {
@@ -159,7 +174,7 @@ public class WebhookSettingsService {
     }
 
     private void sendEventWebhook(Server server, Map<String, String> variables,
-            Function<WebhookSettings, Boolean> isEnabled,
+            Predicate<WebhookSettings> isEnabled,
             Function<WebhookSettings, WebhookSettings.EmbedTemplate> getTemplate) {
         try {
             WebhookSettings settings = getWebhookSettings(server);
@@ -173,7 +188,7 @@ public class WebhookSettingsService {
                 return;
             }
 
-            if (!Boolean.TRUE.equals(isEnabled.apply(settings))) {
+            if (!isEnabled.test(settings)) {
                 return;
             }
 

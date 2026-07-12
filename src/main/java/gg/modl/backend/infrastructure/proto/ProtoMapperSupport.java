@@ -48,6 +48,14 @@ public final class ProtoMapperSupport {
         return value == null ? "" : Objects.toString(value);
     }
 
+    public static String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    public static String emptyToNull(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
     public static String dateAwareString(Object value) {
         if (value instanceof Date date) {
             return date.toInstant().toString();
@@ -133,9 +141,21 @@ public final class ProtoMapperSupport {
         }
     }
 
-    public static void setOptionalDouble(Consumer<Double> setter, Object value) {
+    public static void setOptionalEpochMillis(Consumer<Long> setter, Date value) {
         if (value != null) {
-            setter.accept(doubleValue(value));
+            setter.accept(value.getTime());
+        }
+    }
+
+    public static void setOptionalTimestamp(Consumer<Timestamp> setter, Date value) {
+        if (value != null) {
+            setter.accept(toTimestamp(value));
+        }
+    }
+
+    public static void setOptionalStrings(Consumer<Iterable<String>> setter, Collection<String> values) {
+        if (values != null) {
+            setter.accept(values);
         }
     }
 
@@ -161,6 +181,24 @@ public final class ProtoMapperSupport {
         return result;
     }
 
+    public static List<Object> structListToObjects(List<Struct> structs) {
+        if (structs.isEmpty()) {
+            return null;
+        }
+        return structs.stream()
+            .map(struct -> (Object) structToMap(struct))
+            .toList();
+    }
+
+    public static List<Map<String, Object>> structListToMaps(List<Struct> structs) {
+        if (structs.isEmpty()) {
+            return null;
+        }
+        return structs.stream()
+            .map(ProtoMapperSupport::structToMap)
+            .toList();
+    }
+
     public static Timestamp toTimestamp(Object value) {
         long millis = longValue(value);
         return Timestamp.newBuilder()
@@ -183,6 +221,13 @@ public final class ProtoMapperSupport {
             .toList();
     }
 
+    public static <T> List<T> listOf(Object object, Class<T> elementType) {
+        return list(object).stream()
+            .filter(elementType::isInstance)
+            .map(elementType::cast)
+            .toList();
+    }
+
     public static Map<String, Object> map(Object object) {
         if (object instanceof Map<?, ?> rawMap) {
             return stringObjectMap(rawMap);
@@ -194,6 +239,14 @@ public final class ProtoMapperSupport {
         Map<String, Object> result = new LinkedHashMap<>();
         rawMap.forEach((key, value) -> result.put(Objects.toString(key), value));
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> asMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return Map.of();
     }
 
     public static <T, P> void addAll(Collection<T> source,
@@ -295,7 +348,16 @@ public final class ProtoMapperSupport {
             : builder.setNumberValue(value.doubleValue()).build();
     }
 
-    private static Object valueToObject(Value value) {
+    public static List<Object> valuesToObjects(List<Value> values) {
+        if (values.isEmpty()) {
+            return null;
+        }
+        return values.stream()
+            .map(ProtoMapperSupport::valueToObject)
+            .toList();
+    }
+
+    public static Object valueToObject(Value value) {
         return switch (value.getKindCase()) {
             case NULL_VALUE, KIND_NOT_SET -> null;
             case NUMBER_VALUE -> value.getNumberValue();

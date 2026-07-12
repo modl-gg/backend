@@ -1,15 +1,21 @@
 package gg.modl.backend.admin.service;
 
+import gg.modl.backend.database.mongo.fields.ServerFields;
+import gg.modl.backend.database.mongo.repository.ServerAdminRepository;
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerProvisioningRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.util.CsvUtil;
 import gg.modl.backend.server.ServerService;
+import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
+import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
 import gg.modl.backend.staff.service.StaffService;
+import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -19,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +33,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class AdminServerService {
-    private final ServerMongoRepository serverRepository;
+    private final ServerAdminRepository serverAdminRepository;
+    private final ServerProvisioningRepository serverProvisioningRepository;
+    private final ServerUsageRepository serverUsageRepository;
     private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerProvisioningService provisioningService;
     private final ServerService serverService;
@@ -35,7 +44,7 @@ public class AdminServerService {
     private static final int MAX_USAGE_BATCH_SIZE = 50;
 
     public long countServers(String search, String plan, String status) {
-        return serverRepository.countAdminServers(search, plan, status);
+        return serverAdminRepository.countAdminServers(search, plan, status);
     }
 
     @Async
@@ -44,7 +53,7 @@ public class AdminServerService {
         Date now = new Date();
         Date staleCutoff = new Date(now.getTime() - USAGE_STATS_TTL_MILLIS);
 
-        List<Server> servers = serverRepository.findUsageRefreshCandidates(staleCutoff, boundedLimit);
+        List<Server> servers = serverUsageRepository.findUsageRefreshCandidates(staleCutoff, boundedLimit);
         for (Server server : servers) {
             getOrComputeUsageStats(server, now, false);
         }
@@ -84,7 +93,7 @@ public class AdminServerService {
     }
 
     private void persistUsageStats(String serverId, long userCount, long ticketCount, Date updatedAt) {
-        serverRepository.updateUsageStats(serverId, userCount, ticketCount, updatedAt);
+        serverUsageRepository.updateUsageStats(serverId, userCount, ticketCount, updatedAt);
     }
 
     public Map<String, UsageSummary> getUsageStatsForServerIds(List<String> serverIds, boolean forceRefresh) {
@@ -105,7 +114,7 @@ public class AdminServerService {
         }
 
         Date now = new Date();
-        List<Server> servers = serverRepository.findUsageTargetsByIds(filteredIds);
+        List<Server> servers = serverUsageRepository.findUsageTargetsByIds(filteredIds);
         Map<String, UsageSummary> usageByServerId = new HashMap<>();
 
         for (Server server : servers) {
@@ -155,49 +164,106 @@ public class AdminServerService {
     }
 
     public List<Server> findServers(String search, String plan, String status, String sortField, String sortOrder, int skip, int limit) {
-        return serverRepository.findAdminServers(search, plan, status, sortField, sortOrder, skip, limit);
+        return serverAdminRepository.findAdminServers(search, plan, status, sortField, sortOrder, skip, limit);
     }
 
     public Optional<Server> findById(String id) {
-        return serverRepository.findById(id);
-    }
-
-    public Server save(Server server) {
-        Server saved = serverRepository.saveEntity(server);
-        serverService.evictAllServerCaches();
-        return saved;
+        return serverAdminRepository.findById(id);
     }
 
     public Server updateById(String id, Map<String, Object> updateData) {
-        return serverRepository.updateAllowedFields(id, updateData).orElse(null);
+        Update update = buildAllowedFieldsUpdate(updateData);
+        return serverAdminRepository.applyFieldUpdate(id, update).orElse(null);
+    }
+
+    private Update buildAllowedFieldsUpdate(Map<String, Object> updateData) {
+        Update update = new Update();
+        for (Map.Entry<String, Object> entry : updateData.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (value == null) {
+                continue;
+            }
+            switch (key) {
+                case ServerFields.ADMIN_EMAIL -> update.set(ServerFields.ADMIN_EMAIL, value);
+                case ServerFields.EMAIL_VERIFIED -> update.set(ServerFields.EMAIL_VERIFIED, value);
+                case ServerFields.PROVISIONING_STATUS -> update.set(ServerFields.PROVISIONING_STATUS, normalizeProvisioningStatus(value));
+                case ServerFields.PROVISIONING_NOTES -> update.set(ServerFields.PROVISIONING_NOTES, value);
+                case ServerFields.PLAN -> update.set(ServerFields.PLAN, normalizePlan(value));
+                case ServerFields.SUBSCRIPTION_STATUS -> update.set(ServerFields.SUBSCRIPTION_STATUS, normalizeSubscriptionStatus(value));
+                case ServerFields.LAST_ACTIVITY_AT -> update.set(ServerFields.LAST_ACTIVITY_AT, normalizeDate(value));
+                case ServerFields.UPDATED_AT -> update.set(ServerFields.UPDATED_AT, normalizeDate(value));
+                default -> {
+                }
+            }
+        }
+        return update;
+    }
+
+    private ServerPlan normalizePlan(Object value) {
+        if (value instanceof ServerPlan plan) {
+            return plan;
+        }
+        return ServerPlan.valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
+    }
+
+    private ProvisioningStatus normalizeProvisioningStatus(Object value) {
+        if (value instanceof ProvisioningStatus provisioningStatus) {
+            return provisioningStatus;
+        }
+        return ProvisioningStatus.valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
+    }
+
+    private SubscriptionStatus normalizeSubscriptionStatus(Object value) {
+        if (value instanceof SubscriptionStatus subscriptionStatus) {
+            return subscriptionStatus;
+        }
+        return SubscriptionStatus.valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
+    }
+
+    private Date normalizeDate(Object value) {
+        if (value instanceof Date d) {
+            return d;
+        }
+        if (value instanceof Instant i) {
+            return Date.from(i);
+        }
+        if (value instanceof Number n) {
+            return new Date(n.longValue());
+        }
+        if (value instanceof String s) {
+            return Date.from(Instant.parse(s.trim()));
+        }
+        throw new IllegalArgumentException("Unsupported value type for date field: "
+            + (value == null ? "null" : value.getClass()));
     }
 
     public boolean deleteById(String id) {
-        return serverRepository.deleteByServerId(id);
+        return serverAdminRepository.deleteByServerId(id);
     }
 
     public long bulkDelete(List<String> serverIds) {
-        return serverRepository.deleteByServerIds(serverIds);
+        return serverAdminRepository.deleteByServerIds(serverIds);
     }
 
     public long bulkSuspend(List<String> serverIds) {
-        return serverRepository.bulkSuspend(serverIds, new Date());
+        return serverAdminRepository.bulkSuspend(serverIds, new Date());
     }
 
     public long bulkActivate(List<String> serverIds) {
-        long modified = serverRepository.bulkActivate(serverIds, new Date());
+        long modified = serverAdminRepository.bulkActivate(serverIds, new Date());
 
-        List<Server> servers = serverRepository.findProvisioningCandidatesByIds(serverIds);
+        List<Server> servers = serverProvisioningRepository.findProvisioningCandidatesByIds(serverIds);
         for (Server server : servers) {
             if (server.getDatabaseName() == null) {
                 continue;
             }
             try {
                 provisioningService.provision(server);
-                serverRepository.markProvisioningCompleted(server.getId());
+                serverProvisioningRepository.markProvisioningCompleted(server.getId());
             } catch (Exception e) {
                 log.warn("Failed to provision server {}", server.getId(), e);
-                serverRepository.markProvisioningFailed(server.getId(), "Admin reprovision failed.");
+                serverProvisioningRepository.markProvisioningFailed(server.getId(), Server.boundProvisioningNotes("Admin reprovision failed."));
             }
         }
 
@@ -208,7 +274,7 @@ public class AdminServerService {
 
     public long bulkUpdatePlan(List<String> serverIds, String plan) {
         ServerPlan parsedPlan = ServerPlan.valueOf(plan.trim().toUpperCase(Locale.ROOT));
-        return serverRepository.bulkUpdatePlan(serverIds, parsedPlan, new Date());
+        return serverAdminRepository.bulkUpdatePlan(serverIds, parsedPlan, new Date());
     }
 
     public Map<String, Object> getServerStats(Server server) {
@@ -216,13 +282,7 @@ public class AdminServerService {
         Date now = new Date();
 
         if (server.getDatabaseName() == null || server.getDatabaseName().isBlank()) {
-            long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
-            long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
-            stats.put("totalPlayers", cachedUsers);
-            stats.put("totalTickets", cachedTickets);
-            stats.put("totalLogs", 0);
-            stats.put("lastActivity", server.getUpdatedAt());
-            stats.put("databaseSize", 0);
+            putCachedStats(stats, server);
             return stats;
         }
 
@@ -240,6 +300,11 @@ public class AdminServerService {
         }
 
         log.warn("Failed to get stats for server {}", server.getServerName());
+        putCachedStats(stats, server);
+        return stats;
+    }
+
+    private void putCachedStats(Map<String, Object> stats, Server server) {
         long cachedUsers = server.getUserCount() != null ? server.getUserCount() : 0L;
         long cachedTickets = server.getTicketCount() != null ? server.getTicketCount() : 0L;
         stats.put("totalPlayers", cachedUsers);
@@ -247,7 +312,6 @@ public class AdminServerService {
         stats.put("totalLogs", 0);
         stats.put("lastActivity", server.getUpdatedAt());
         stats.put("databaseSize", 0);
-        return stats;
     }
 
     public void resetServerDatabase(Server server) {
@@ -259,7 +323,7 @@ public class AdminServerService {
             }
         }
 
-        serverRepository.resetAfterDatabaseDrop(server.getId(), new Date());
+        serverProvisioningRepository.resetAfterDatabaseDrop(server.getId(), new Date());
     }
 
     private record ComputedUsage(long userCount, long ticketCount, Date updatedAt, boolean fromCache) {}

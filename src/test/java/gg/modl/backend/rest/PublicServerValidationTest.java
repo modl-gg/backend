@@ -8,6 +8,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.controller.PublicServerController;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,7 @@ class PublicServerValidationTest {
         validator.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders.standaloneSetup(new PublicServerController())
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setValidator(validator)
             .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .build();

@@ -8,6 +8,7 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.MediaAccessService;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageKeyUtils;
 import gg.modl.backend.storage.service.TempUploadKeys;
 import gg.modl.backend.storage.service.UploadOrchestrationService;
 import gg.modl.proto.modl.v1.ConfirmUploadRequest;
@@ -86,7 +87,7 @@ public class PublicMediaController {
 
         UploadOrchestrationService.PresignOutcome outcome = uploadOrchestrationService.presign(server,
             new UploadOrchestrationService.UploadPresignRequest(
-                normalizeUploadType(uploadType),
+                StorageKeyUtils.normalizeUploadType(uploadType),
                 presignRequest.getFileName(),
                 presignRequest.getContentType(),
                 presignRequest.getFileSize(),
@@ -146,10 +147,6 @@ public class PublicMediaController {
             case TEMP_LIMIT_EXCEEDED -> throw new ValidationException(TEMP_LIMIT_MESSAGE);
             case RECORD_FAILED -> ResponseEntity.status(500).body(Map.of("error", "Failed to record upload"));
         };
-    }
-
-    private String normalizeUploadType(String uploadType) {
-        return "tickets".equals(uploadType) ? "ticket" : uploadType;
     }
 
     private ResponseEntity<?> toResponse(MediaAccessService.AccessResult result) {

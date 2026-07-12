@@ -1,14 +1,17 @@
 package gg.modl.backend.admin.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
+import gg.modl.backend.admin.dto.response.AdminAnalyticsUsage;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import java.util.Map;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +22,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AdminAnalyticsServiceTest {
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerMetricsRepository serverMetricsRepository;
+
+    @Mock
+    private ServerUsageRepository serverUsageRepository;
 
     @Mock
     private MetricSnapshotMongoRepository metricSnapshotRepository;
@@ -38,7 +44,8 @@ class AdminAnalyticsServiceTest {
     @BeforeEach
     void setUp() {
         adminAnalyticsService = new AdminAnalyticsService(
-            serverRepository,
+            serverMetricsRepository,
+            serverUsageRepository,
             metricSnapshotRepository,
             serverInstanceSnapshotRepository,
             globalMongoAdminRepository,
@@ -48,25 +55,17 @@ class AdminAnalyticsServiceTest {
 
     @Test
     void getHistoricalRejectsUnknownMetric() {
-        Map<String, Object> response = adminAnalyticsService.getHistorical("unknown", "30d");
-
-        assertFalse((Boolean) response.get("success"));
-        assertEquals("Invalid metric type", response.get("error"));
+        assertThrows(ValidationException.class, () -> adminAnalyticsService.getHistorical("unknown", "30d"));
     }
 
     @Test
     void getUsageReadsStorageStatsFromMongo() {
-        when(serverRepository.countActiveSince(org.mockito.ArgumentMatchers.any())).thenReturn(2L);
+        when(serverMetricsRepository.countActiveSince(any())).thenReturn(2L);
         when(globalMongoAdminRepository.getStorageSize()).thenReturn(2048L);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> response = adminAnalyticsService.getUsage();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.get("data");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> resourceUtilization = (Map<String, Object>) data.get("resourceUtilization");
+        AdminAnalyticsUsage usage = adminAnalyticsService.getUsage();
 
-        assertEquals(2048L, resourceUtilization.get("storage"));
-        assertEquals(0.0, resourceUtilization.get("storagePercent"));
+        assertEquals(2048L, usage.storage());
+        assertEquals(0.0, usage.storagePercent());
     }
 }

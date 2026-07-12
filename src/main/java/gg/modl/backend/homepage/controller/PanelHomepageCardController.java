@@ -2,6 +2,7 @@ package gg.modl.backend.homepage.controller;
 
 import gg.modl.backend.homepage.data.HomepageCard;
 import gg.modl.backend.homepage.service.HomepageCardService;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_HOMEPAGE_CARDS)
+@RequiresPanelPermission(view = "admin.settings.view.content", modify = "admin.settings.modify.content")
 @RequiredArgsConstructor
 public class PanelHomepageCardController {
     private final HomepageCardService cardService;

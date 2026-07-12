@@ -1,6 +1,8 @@
 package gg.modl.backend.appeal.controller;
 
 import gg.modl.backend.appeal.service.AppealService;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
@@ -9,6 +11,7 @@ import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
+import gg.modl.proto.modl.v1.AddAppealReplyRequest;
 import gg.modl.proto.modl.v1.AddTicketReplyResponse;
 import gg.modl.proto.modl.v1.AppealTicketsResponse;
 import gg.modl.proto.modl.v1.PanelResource;
@@ -27,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_APPEALS)
+@RequiresPanelPermission(view = "ticket.view.all", modify = "appeal.modify")
 @RequiredArgsConstructor
 public class PanelAppealController {
     private final AppealService appealService;
@@ -58,9 +62,10 @@ public class PanelAppealController {
     }
 
     @PostMapping("/{id}/replies")
+    @RequiresPanelPermission(rule = PanelAccessRule.APPEAL_REPLY)
     public ResponseEntity<AddTicketReplyResponse> addReply(
         @PathVariable String id,
-        @RequestBody gg.modl.proto.modl.v1.AddAppealReplyRequest replyRequest,
+        @RequestBody AddAppealReplyRequest replyRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);

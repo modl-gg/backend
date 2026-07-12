@@ -8,35 +8,36 @@ import gg.modl.backend.settings.data.OffenderThresholdSettings;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class OffenderThresholdSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_STATUS_THRESHOLDS = "statusThresholds";
-
-    private final Cache<String, OffenderThresholdSettings> thresholdCache = Caffeine.newBuilder()
-        .expireAfterWrite(Duration.ofSeconds(45))
-        .maximumSize(500)
-        .build();
     private static final int MIN_THRESHOLD = 0;
     private static final int MAX_THRESHOLD = 10_000;
     private static final int MIN_POINT_EXPIRY_MONTHS = 1;
     private static final int MAX_POINT_EXPIRY_MONTHS = 60;
 
+    private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<OffenderThresholdSettings> support;
+
+    private final Cache<String, OffenderThresholdSettings> thresholdCache = Caffeine.newBuilder()
+        .expireAfterWrite(Duration.ofSeconds(45))
+        .maximumSize(500)
+        .build();
+
+    public OffenderThresholdSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_STATUS_THRESHOLDS, this::mapToThresholdSettings);
+    }
+
     public OffenderThresholdSettings getThresholdSettings(Server server) {
-        return thresholdCache.get(server.getId(), id -> getThresholdSettingsState(server).data());
+        return thresholdCache.get(server.getId(), id -> support.get(server));
     }
 
     public VersionedSettings<OffenderThresholdSettings> getThresholdSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_STATUS_THRESHOLDS);
-        OffenderThresholdSettings settings = mapToThresholdSettings(state.data());
-        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+        return support.state(server);
     }
 
     public VersionedSettings<OffenderThresholdSettings> patchThresholdSettings(
@@ -44,7 +45,7 @@ public class OffenderThresholdSettingsService {
         long expectedVersion,
         OffenderThresholdSettings patch
     ) {
-        OffenderThresholdSettings current = getThresholdSettingsState(server).data();
+        OffenderThresholdSettings current = support.state(server).data();
         if (patch != null) {
             if (patch.getSocial() != null) {
                 current.setSocial(sanitizeCategoryThresholds(patch.getSocial()));
@@ -57,23 +58,11 @@ public class OffenderThresholdSettingsService {
         current = normalizeSettings(current);
 
         Map<String, Object> data = codec().encode(current);
-        SettingsDocumentService.RawSettingsState updated;
         try {
-            updated = settingsDocumentService.saveRawState(
-                server,
-                SETTINGS_TYPE_STATUS_THRESHOLDS,
-                expectedVersion,
-                new LinkedHashMap<>(data)
-            );
+            return support.save(server, expectedVersion, new LinkedHashMap<>(data));
         } finally {
             thresholdCache.invalidate(server.getId());
         }
-        return new VersionedSettings<>(mapToThresholdSettings(updated.data()), updated.version(), updated.updatedAt());
-    }
-
-    public OffenderThresholdSettings updateThresholdSettings(Server server, OffenderThresholdSettings newSettings) {
-        long expectedVersion = getThresholdSettingsState(server).version();
-        return patchThresholdSettings(server, expectedVersion, newSettings).data();
     }
 
     private OffenderThresholdSettings mapToThresholdSettings(Map<String, Object> data) {

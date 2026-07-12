@@ -7,6 +7,14 @@ import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
+import gg.modl.backend.player.dto.response.LinkedAccountsResult;
+import gg.modl.backend.player.dto.response.PaginatedNotesResult;
+import gg.modl.backend.player.dto.response.PaginatedPunishmentsResult;
+import gg.modl.backend.player.dto.response.PlayerFetchResult;
+import gg.modl.backend.player.dto.response.PlayerLookupResult;
+import gg.modl.backend.player.dto.response.PlayerLoginResult;
+import gg.modl.backend.player.dto.response.PlayerProfileResult;
 import gg.modl.backend.player.service.MinecraftPlayerService;
 import gg.modl.backend.player.service.PlayerLookupService;
 import gg.modl.backend.server.data.Server;
@@ -37,7 +45,6 @@ import jakarta.validation.constraints.Min;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,7 +75,7 @@ public class MinecraftPlayerV3Controller {
             ? ProtoMapperSupport.structToMap(request.getIpInfo())
             : null;
 
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.login(
+        PlayerLoginResult result = minecraftPlayerService.login(
             server,
             UUID.fromString(request.getMinecraftUuid()),
             request.getUsername(),
@@ -78,8 +85,8 @@ public class MinecraftPlayerV3Controller {
             request.hasServerName() ? request.getServerName() : null
         );
 
-        return ResponseEntity.status(response.status())
-            .body(MinecraftPlayerProtoMapper.toPlayerLoginResponse(response.body()));
+        return ResponseEntity.status(result.status())
+            .body(MinecraftPlayerProtoMapper.toPlayerLoginResponse(result));
     }
 
     @PostMapping(
@@ -92,13 +99,13 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.disconnect(
+        boolean success = minecraftPlayerService.disconnect(
             server,
             request.getMinecraftUuid(),
             request.getSessionDurationMs()
-        );
+        ).success();
 
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(response));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(success));
     }
 
     @PostMapping(
@@ -111,13 +118,13 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.updateServer(
+        boolean success = minecraftPlayerService.updateServer(
             server,
             request.getMinecraftUuid(),
             request.getServerName()
-        );
+        ).success();
 
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(response));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(success));
     }
 
     @PostMapping(
@@ -130,7 +137,7 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.submitIpInfo(
+        boolean success = minecraftPlayerService.submitIpInfo(
             server,
             request.getMinecraftUuid(),
             request.getIp(),
@@ -139,9 +146,9 @@ public class MinecraftPlayerV3Controller {
             request.getAsn(),
             request.getProxy(),
             request.getHosting()
-        );
+        ).success();
 
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(response));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(success));
     }
 
     @GetMapping(
@@ -150,8 +157,7 @@ public class MinecraftPlayerV3Controller {
     )
     public ResponseEntity<OnlinePlayersResponse> getOnlinePlayers(HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.getOnlinePlayers(server);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toOnlinePlayersResponse(response));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toOnlinePlayersResponse(minecraftPlayerService.getOnlinePlayers(server)));
     }
 
     @GetMapping(
@@ -165,9 +171,11 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByUuid(server, uuid, punishmentLimit, noteLimit);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerProfileResponse(response.body()));
+        return switch (playerLookupService.getPlayerByUuid(server, uuid, punishmentLimit, noteLimit)) {
+            case PlayerProfileResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerProfileResponse(found.profile()));
+            case PlayerProfileResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @GetMapping(
@@ -180,9 +188,12 @@ public class MinecraftPlayerV3Controller {
     ) {
         requireNotBlank(minecraftUuid, "minecraftUuid parameter required");
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByMinecraftUuid(server, minecraftUuid, queryMojang);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerGetResponse(response.body()));
+        return switch (playerLookupService.getPlayerByMinecraftUuid(server, minecraftUuid, queryMojang)) {
+            case PlayerFetchResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerGetResponse(found));
+            case PlayerFetchResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+            case PlayerFetchResult.InvalidRequest invalid -> throw new ValidationException(invalid.message());
+        };
     }
 
     @GetMapping(
@@ -196,9 +207,12 @@ public class MinecraftPlayerV3Controller {
     ) {
         requireNotBlank(username, "username parameter required");
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByUsername(server, username, queryMojang);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerNameResponse(response.body()));
+        return switch (playerLookupService.getPlayerByUsername(server, username, queryMojang)) {
+            case PlayerFetchResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerNameResponse(found));
+            case PlayerFetchResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+            case PlayerFetchResult.InvalidRequest invalid -> throw new ValidationException(invalid.message());
+        };
     }
 
     @PostMapping(
@@ -212,13 +226,11 @@ public class MinecraftPlayerV3Controller {
     ) {
         requireNotBlank(request.getQuery(), "query is required");
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.lookupPlayer(
-            server,
-            request.getQuery(),
-            shouldQueryMojang(request)
-        );
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerLookupResponse(response.body()));
+        return switch (playerLookupService.lookupPlayer(server, request.getQuery(), shouldQueryMojang(request))) {
+            case PlayerLookupResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerLookupResponse(found));
+            case PlayerLookupResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @PostMapping(
@@ -234,15 +246,17 @@ public class MinecraftPlayerV3Controller {
     ) {
         requireNotBlank(request.getQuery(), "query is required");
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.lookupProfile(
+        return switch (playerLookupService.lookupProfile(
             server,
             request.getQuery(),
             shouldQueryMojang(request),
             punishmentLimit,
             noteLimit
-        );
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerProfileResponse(response.body()));
+        )) {
+            case PlayerProfileResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPlayerProfileResponse(found.profile()));
+            case PlayerProfileResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @PostMapping(
@@ -256,15 +270,15 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(
+        CreateNoteResult result = minecraftPlayerService.createNote(
             server,
             uuid,
             request.getText(),
             request.hasIssuerName() ? request.getIssuerName() : null,
             request.hasIssuerId() ? request.getIssuerId() : null
         );
-        return ResponseEntity.status(response.status())
-            .body(MinecraftPlayerProtoMapper.toPlayerNoteCreateResponse(response.body()));
+        PlayerNoteCreateResponse response = MinecraftPlayerProtoMapper.toPlayerNoteCreateResponse(result);
+        return ResponseEntity.status(response.getStatus()).body(response);
     }
 
     @GetMapping(
@@ -278,9 +292,11 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getLinkedAccounts(server, uuid, page, limit);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toLinkedAccountsResponse(response.body()));
+        return switch (playerLookupService.getLinkedAccounts(server, uuid, page, limit)) {
+            case LinkedAccountsResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toLinkedAccountsResponse(found));
+            case LinkedAccountsResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @GetMapping(
@@ -294,9 +310,11 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerPunishments(server, uuid, page, limit);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPaginatedPunishmentsResponse(response.body()));
+        return switch (minecraftPlayerService.getPlayerPunishments(server, uuid, page, limit)) {
+            case PaginatedPunishmentsResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPaginatedPunishmentsResponse(found));
+            case PaginatedPunishmentsResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @GetMapping(
@@ -310,9 +328,11 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerNotes(server, uuid, page, limit);
-        requireSuccess(response);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toPaginatedNotesResponse(response.body()));
+        return switch (minecraftPlayerService.getPlayerNotes(server, uuid, page, limit)) {
+            case PaginatedNotesResult.Found found ->
+                ResponseEntity.ok(MinecraftPlayerProtoMapper.toPaginatedNotesResponse(found));
+            case PaginatedNotesResult.NotFound notFound -> throw new ResourceNotFoundException(notFound.message());
+        };
     }
 
     @GetMapping(
@@ -324,8 +344,7 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.getPlayerReports(server, uuid);
-        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toReportsResponse(response));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toReportsResponse(minecraftPlayerService.getPlayerReports(server, uuid)));
     }
 
     @PostMapping(
@@ -338,48 +357,24 @@ public class MinecraftPlayerV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.pardonPlayer(
+        PardonResponse response = MinecraftPlayerProtoMapper.toPardonResponse(minecraftPlayerService.pardonPlayer(
             server,
             request.getPlayerName(),
             request.hasPunishmentType() ? request.getPunishmentType() : null,
             request.hasIssuerName() ? request.getIssuerName() : null,
             request.hasIssuerId() ? request.getIssuerId() : null,
             request.hasReason() ? request.getReason() : null
-        );
-        HttpStatus status = intStatus(response) == 404 ? HttpStatus.NOT_FOUND : HttpStatus.OK;
-        return ResponseEntity.status(status)
-            .body(MinecraftPlayerProtoMapper.toPardonResponse(response));
+        ));
+        return ResponseEntity.status(response.getStatus()).body(response);
     }
 
     private static boolean shouldQueryMojang(PlayerLookupRequest request) {
         return !request.hasQueryMojang() || request.getQueryMojang();
     }
 
-    private static int intStatus(Map<String, Object> response) {
-        Object status = response.get("status");
-        if (status instanceof Number number) {
-            return number.intValue();
-        }
-        return 200;
-    }
-
     private static void requireNotBlank(String value, String message) {
         if (value == null || value.isBlank()) {
             throw new ValidationException(message);
         }
-    }
-
-    private static void requireSuccess(MinecraftPlayerService.ServiceResponse response) {
-        if (response.status() == HttpStatus.OK) {
-            return;
-        }
-        Object message = response.body().get("message");
-        if (response.status() == HttpStatus.NOT_FOUND) {
-            throw new ResourceNotFoundException(message == null ? "Not found" : message.toString());
-        }
-        if (response.status() == HttpStatus.BAD_REQUEST) {
-            throw new ValidationException(message == null ? "Invalid request" : message.toString());
-        }
-        throw new IllegalStateException(message == null ? "Unexpected player lookup response" : message.toString());
     }
 }

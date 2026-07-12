@@ -33,13 +33,13 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -109,7 +109,7 @@ public class AppealService {
     }
 
     public TicketResponse createAppeal(Server server, CreateAppealRequest request, String presentedToken) {
-        String playerUuid = normalizeUuid(request.playerUuid());
+        String playerUuid = UuidUtils.normalize(request.playerUuid());
         Player player = findPlayerWithPunishment(server, playerUuid, request.punishmentId());
         if (player == null) {
             throw new ResourceNotFoundException("Punishment not found for the specified player");
@@ -356,7 +356,7 @@ public class AppealService {
         }
 
         String punishmentId = (String) data.get("punishmentId");
-        String playerUuid = normalizeUuid((String) data.get("playerUuid"));
+        String playerUuid = UuidUtils.normalize((String) data.get("playerUuid"));
 
         if (punishmentId == null || playerUuid == null) {
             return;
@@ -373,12 +373,7 @@ public class AppealService {
             null
         );
 
-        Map<String, Object> dataUpdates = Map.of(
-            "data.appealOutcome", "Rejected",
-            "data.appealTicketId", appeal.getId()
-        );
-
-        punishmentMutationService.addPunishmentNote(server, playerUuid, punishmentId, appealRejectedNote, dataUpdates);
+        punishmentMutationService.recordAppealRejection(server, playerUuid, punishmentId, appealRejectedNote, appeal.getId());
     }
 
     private void pardonPunishment(Server server, Ticket appeal, String staffUsername) {
@@ -388,7 +383,7 @@ public class AppealService {
         }
 
         String punishmentId = (String) data.get("punishmentId");
-        String playerUuid = normalizeUuid((String) data.get("playerUuid"));
+        String playerUuid = UuidUtils.normalize((String) data.get("playerUuid"));
 
         if (punishmentId == null || playerUuid == null) {
             return;
@@ -427,8 +422,7 @@ public class AppealService {
                     .filter(p -> punishmentId.equals(p.getId()))
                     .findFirst()
                     .orElse(null);
-                if (appealedPunishment != null && appealedPunishment.getData() != null
-                    && Boolean.TRUE.equals(appealedPunishment.getData().get("altBlocking"))) {
+                if (appealedPunishment != null && appealedPunishment.data().altBlocking()) {
                     punishmentLifecycleService.cascadePardonLinkedBans(server, punishmentId);
                 }
             });
@@ -444,9 +438,5 @@ public class AppealService {
             .staff(true)
             .action(action)
             .build();
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

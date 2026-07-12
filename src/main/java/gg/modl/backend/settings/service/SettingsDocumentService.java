@@ -60,6 +60,10 @@ public class SettingsDocumentService {
         return toRawState(settings);
     }
 
+    public void deleteState(Server server, String type) {
+        settingsRepository.removeByType(server, type);
+    }
+
     private void throwConflict(long currentVersion) {
         throw new SettingsConflictException(
             "Settings were modified by another user. Reload and retry.",

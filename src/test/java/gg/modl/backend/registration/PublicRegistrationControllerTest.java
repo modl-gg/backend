@@ -35,6 +35,7 @@ class PublicRegistrationControllerTest {
         ServerService serverService = mock(ServerService.class);
         RegistrationService registrationService = mock(RegistrationService.class);
         PublicRegistrationController controller = new PublicRegistrationController(
+            false,
             serverService,
             mock(SessionService.class),
             registrationService,
@@ -60,6 +61,7 @@ class PublicRegistrationControllerTest {
         ServerService serverService = mock(ServerService.class);
         RegistrationService registrationService = mock(RegistrationService.class);
         PublicRegistrationController controller = new PublicRegistrationController(
+            false,
             serverService,
             mock(SessionService.class),
             registrationService,
@@ -87,6 +89,7 @@ class PublicRegistrationControllerTest {
         ServerService serverService = mock(ServerService.class);
         RegistrationService registrationService = mock(RegistrationService.class);
         PublicRegistrationController controller = new PublicRegistrationController(
+            false,
             serverService,
             mock(SessionService.class),
             registrationService,
@@ -113,6 +116,7 @@ class PublicRegistrationControllerTest {
         ServerService serverService = mock(ServerService.class);
         RegistrationService registrationService = mock(RegistrationService.class);
         PublicRegistrationController controller = new PublicRegistrationController(
+            false,
             serverService,
             mock(SessionService.class),
             registrationService,

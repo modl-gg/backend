@@ -97,11 +97,11 @@ class PlayerServicePersistenceTest {
         assertEquals("Virginia", ipEntry.getRegion());
         assertEquals("AS123", ipEntry.getAsn());
         assertTrue(ipEntry.isProxy());
-        assertTrue(Boolean.TRUE.equals(savedPlayer.getData().get("isOnline")));
-        assertEquals("skin-hash", savedPlayer.getData().get("lastSkinHash"));
-        assertEquals("hub", savedPlayer.getData().get("lastServer"));
-        assertNotNull(savedPlayer.getData().get("firstJoin"));
-        assertNotNull(savedPlayer.getData().get("lastLogin"));
+        assertTrue(savedPlayer.data().isOnline());
+        assertEquals("skin-hash", savedPlayer.data().lastSkinHash());
+        assertEquals("hub", savedPlayer.data().lastServer());
+        assertNotNull(savedPlayer.data().firstJoin());
+        assertNotNull(savedPlayer.data().lastLogin());
     }
 
     @Test

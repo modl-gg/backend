@@ -10,10 +10,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.springframework.data.annotation.Id;
 
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -88,5 +91,15 @@ public class Player {
 
     @Field(name = "data")
     @Builder.Default
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private Map<String, Object> data = new HashMap<>();
+
+    public PlayerDataView data() {
+        return PlayerDataView.ownedBy(data, map -> data = map);
+    }
+
+    public void replaceData(Map<String, Object> replacement) {
+        this.data = replacement;
+    }
 }

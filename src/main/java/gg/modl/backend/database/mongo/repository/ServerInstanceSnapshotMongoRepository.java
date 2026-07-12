@@ -38,7 +38,7 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
     private boolean tryPersistServerEntry(Date date, ServerInstanceSnapshot.ServerEntry entry, Date createdAt) {
         Query updateQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
-                .and("servers").elemMatch(
+                .and(ServerInstanceSnapshotFields.SERVERS).elemMatch(
                     Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
         );
         Update updateExisting = new Update()
@@ -54,7 +54,7 @@ public class ServerInstanceSnapshotMongoRepository extends AbstractGlobalMongoRe
 
         Query insertQuery = Query.query(
             Criteria.where(ServerInstanceSnapshotFields.DATE).is(date)
-                .and("servers").not().elemMatch(
+                .and(ServerInstanceSnapshotFields.SERVERS).not().elemMatch(
                     Criteria.where("serverId").is(entry.getServerId()).and("serverName").is(entry.getServerName()))
         );
         Update pushNew = new Update()

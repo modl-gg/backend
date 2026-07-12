@@ -1,7 +1,9 @@
 package gg.modl.backend.storage.data;
 
 import gg.modl.backend.database.CollectionName;
+import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.time.Instant;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
@@ -9,6 +11,8 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 @Data
 @NoArgsConstructor
+@AllArgsConstructor
+@GenerateMongoFields
 @Document(collection = CollectionName.EVIDENCE_UPLOAD_TOKENS)
 public class EvidenceUploadTokenDocument {
     @Id
@@ -19,22 +23,4 @@ public class EvidenceUploadTokenDocument {
     private String issuerName;
     private Instant createdAt;
     private Instant expiresAt;
-
-    public EvidenceUploadTokenDocument(
-        String tokenHash,
-        String serverDatabaseName,
-        String punishmentId,
-        String playerUuid,
-        String issuerName,
-        Instant createdAt,
-        Instant expiresAt
-    ) {
-        this.tokenHash = tokenHash;
-        this.serverDatabaseName = serverDatabaseName;
-        this.punishmentId = punishmentId;
-        this.playerUuid = playerUuid;
-        this.issuerName = issuerName;
-        this.createdAt = createdAt;
-        this.expiresAt = expiresAt;
-    }
 }

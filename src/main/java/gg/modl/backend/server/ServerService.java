@@ -4,19 +4,18 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.infrastructure.util.DigestUtils;
+import gg.modl.backend.database.mongo.repository.ServerCredentialRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
+import gg.modl.backend.database.mongo.repository.ServerProvisioningRepository;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerProvisioningService;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HexFormat;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,7 +26,9 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class ServerService {
-    private final ServerMongoRepository serverRepository;
+    private final ServerLookupRepository serverLookupRepository;
+    private final ServerProvisioningRepository serverProvisioningRepository;
+    private final ServerCredentialRepository serverCredentialRepository;
     private final ServerProvisioningService provisioningService;
     private final Set<String> appDomains;
     public static final String SERVER_DATABASE_PREFIX = "server_";
@@ -43,11 +44,15 @@ public class ServerService {
         .build();
 
     public ServerService(
-        ServerMongoRepository serverRepository,
+        ServerLookupRepository serverLookupRepository,
+        ServerProvisioningRepository serverProvisioningRepository,
+        ServerCredentialRepository serverCredentialRepository,
         ServerProvisioningService provisioningService,
         ModlCorsProperties corsProperties
     ) {
-        this.serverRepository = serverRepository;
+        this.serverLookupRepository = serverLookupRepository;
+        this.serverProvisioningRepository = serverProvisioningRepository;
+        this.serverCredentialRepository = serverCredentialRepository;
         this.provisioningService = provisioningService;
         this.appDomains = Arrays.stream(corsProperties.getAppDomains().split(","))
             .map(String::trim)
@@ -57,7 +62,7 @@ public class ServerService {
 
     @Async
     public void createServer(@NotNull Server server) {
-        serverRepository.saveEntity(server);
+        serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
     }
 
@@ -85,7 +90,7 @@ public class ServerService {
             server.setEmailVerificationToken(emailVerificationToken);
         }
 
-        Server saved = serverRepository.saveEntity(server);
+        Server saved = serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
         return saved;
     }
@@ -100,10 +105,10 @@ public class ServerService {
             String subdomain = extractSubdomain(key);
 
             if (subdomain != null) {
-                return serverRepository.findByCustomDomain(subdomain);
+                return serverLookupRepository.findByCustomDomain(subdomain);
             }
 
-            return serverRepository.findByActiveCustomDomainOverride(key);
+            return serverLookupRepository.findByActiveCustomDomainOverride(key);
         }).orElse(null);
     }
 
@@ -123,11 +128,11 @@ public class ServerService {
     }
 
     public boolean isAdminEmailInUse(String adminEmail, String excludingServerId) {
-        return serverRepository.existsByAdminEmailExcludingId(EmailAddressUtil.normalize(adminEmail), excludingServerId);
+        return serverLookupRepository.existsByAdminEmailExcludingId(EmailAddressUtil.normalize(adminEmail), excludingServerId);
     }
 
     public void changeAdminEmail(Server server, String newAdminEmail) {
-        serverRepository.updateAdminEmail(server.getId(), EmailAddressUtil.normalize(newAdminEmail));
+        serverCredentialRepository.updateAdminEmail(server.getId(), EmailAddressUtil.normalize(newAdminEmail));
         evictAllServerCaches();
     }
 
@@ -165,7 +170,7 @@ public class ServerService {
             normalizedEmail = email;
         }
 
-        Server found = serverRepository.findMatchingIdentity(normalizedEmail, serverName, subdomain).orElse(null);
+        Server found = serverLookupRepository.findMatchingIdentity(normalizedEmail, serverName, subdomain).orElse(null);
         if (found == null) {
             return new ServerExistResult(false, false, false);
         }
@@ -189,7 +194,7 @@ public class ServerService {
 
     @Nullable
     public Server getServerByDatabaseName(@NotNull String databaseName) {
-        return serverRepository.findByDatabaseName(databaseName).orElse(null);
+        return serverLookupRepository.findByDatabaseName(databaseName).orElse(null);
     }
 
     @Nullable
@@ -199,35 +204,21 @@ public class ServerService {
         }
 
         String cacheKey = hashApiKey(apiKey);
-        Server cached = apiKeyCache.getIfPresent(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-
-        Server server = serverRepository.findByApiKey(apiKey).orElse(null);
-        if (server != null) {
-            apiKeyCache.put(cacheKey, server);
-        }
-        return server;
+        return apiKeyCache.get(cacheKey, key -> serverLookupRepository.findByApiKey(apiKey).orElse(null));
     }
 
     private String hashApiKey(@NotNull String apiKey) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(apiKey.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 algorithm is not available", e);
-        }
+        return DigestUtils.sha256Hex(apiKey);
     }
 
     @Nullable
     public Server getServerByEmailVerificationToken(@NotNull String token) {
-        return serverRepository.findByEmailVerificationToken(token).orElse(null);
+        return serverLookupRepository.findByEmailVerificationToken(token).orElse(null);
     }
 
     @Nullable
     public Server verifyEmailToken(@NotNull String token) {
-        Server server = serverRepository.verifyEmailTokenAtomically(token).orElse(null);
+        Server server = serverProvisioningRepository.verifyEmailTokenAtomically(token).orElse(null);
 
         if (server == null) {
             return null;
@@ -242,10 +233,10 @@ public class ServerService {
         }
 
         if (provisioned) {
-            serverRepository.markProvisioningCompleted(server.getId());
+            serverProvisioningRepository.markProvisioningCompleted(server.getId());
             server.setProvisioningStatus(ProvisioningStatus.COMPLETED);
         } else {
-            serverRepository.markProvisioningFailed(server.getId(), "Provisioning failed; awaiting retry.");
+            serverProvisioningRepository.markProvisioningFailed(server.getId(), Server.boundProvisioningNotes("Provisioning failed; awaiting retry."));
             server.setProvisioningStatus(ProvisioningStatus.FAILED);
         }
 
@@ -256,12 +247,12 @@ public class ServerService {
 
     @Nullable
     public Server getServerByAutoLoginToken(@NotNull String token) {
-        return serverRepository.findByProvisioningSignInToken(token).orElse(null);
+        return serverLookupRepository.findByProvisioningSignInToken(token).orElse(null);
     }
 
     @Nullable
     public Server consumeAutoLoginToken(@NotNull String token) {
-        Server server = serverRepository.consumeProvisioningSignInToken(token, new Date()).orElse(null);
+        Server server = serverProvisioningRepository.consumeProvisioningSignInToken(token, new Date()).orElse(null);
         if (server != null) {
             evictAllServerCaches();
         }
@@ -272,7 +263,7 @@ public class ServerService {
         server.setProvisioningSignInToken(token);
         server.setProvisioningSignInTokenExpiresAt(expiresAt);
         server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
+        Server saved = serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
         return saved;
     }
@@ -281,20 +272,20 @@ public class ServerService {
         server.setProvisioningSignInToken(null);
         server.setProvisioningSignInTokenExpiresAt(null);
         server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
+        Server saved = serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
         return saved;
     }
 
     @Nullable
     public Server getServerByCliSetupToken(@NotNull String token) {
-        return serverRepository.findByCliSetupToken(token).orElse(null);
+        return serverLookupRepository.findByCliSetupToken(token).orElse(null);
     }
 
     public Server setCliSetupToken(@NotNull Server server, @NotNull String token) {
         server.setCliSetupToken(token);
         server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
+        Server saved = serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
         return saved;
     }
@@ -302,7 +293,7 @@ public class ServerService {
     public Server clearCliSetupToken(@NotNull Server server) {
         server.setCliSetupToken(null);
         server.setUpdatedAt(new Date());
-        Server saved = serverRepository.saveEntity(server);
+        Server saved = serverLookupRepository.saveEntity(server);
         evictAllServerCaches();
         return saved;
     }

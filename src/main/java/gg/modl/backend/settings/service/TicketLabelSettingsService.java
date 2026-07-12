@@ -14,16 +14,12 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class TicketLabelSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_TICKET_LABELS = "ticketLabels";
     private static final int MAX_LABELS = 100;
     private static final int MAX_LABEL_ID_LENGTH = 64;
@@ -31,14 +27,21 @@ public class TicketLabelSettingsService {
     private static final int MAX_LABEL_DESCRIPTION_LENGTH = 512;
     private static final Pattern HEX_COLOR_PATTERN = Pattern.compile("^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$");
 
+    private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<TicketLabelSettings> support;
+
+    public TicketLabelSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_TICKET_LABELS, this::mapToTicketLabelSettings);
+    }
+
     public TicketLabelSettings getTicketLabelSettings(Server server) {
-        return getTicketLabelSettingsState(server).data();
+        return support.get(server);
     }
 
     public VersionedSettings<TicketLabelSettings> getTicketLabelSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_LABELS);
-        TicketLabelSettings settings = mapToTicketLabelSettings(state.data());
-        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+        return support.state(server);
     }
 
     public VersionedSettings<TicketLabelSettings> patchTicketLabelSettings(
@@ -46,8 +49,7 @@ public class TicketLabelSettingsService {
         long expectedVersion,
         List<Label> labels
     ) {
-        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_TICKET_LABELS);
-        Map<String, Object> data = new LinkedHashMap<>(current.data());
+        Map<String, Object> data = support.currentData(server);
 
         if (labels != null) {
             List<Map<String, Object>> normalizedLabels = normalizeLabels(labels).stream()
@@ -56,13 +58,7 @@ public class TicketLabelSettingsService {
             data.put("labels", normalizedLabels);
         }
 
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-            server,
-            SETTINGS_TYPE_TICKET_LABELS,
-            expectedVersion,
-            data
-        );
-        return new VersionedSettings<>(mapToTicketLabelSettings(updated.data()), updated.version(), updated.updatedAt());
+        return support.save(server, expectedVersion, data);
     }
 
     @SuppressWarnings("unchecked")

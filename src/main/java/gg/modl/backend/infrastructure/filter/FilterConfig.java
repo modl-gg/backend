@@ -1,8 +1,8 @@
 package gg.modl.backend.infrastructure.filter;
 
-import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.infrastructure.config.ModlDevProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.origin.OriginPolicyFactory;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.server.ServerService;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +18,7 @@ public class FilterConfig {
     private final ApiKeyFilter apiKeyFilter;
     private final ModlProperties modlProperties;
     private final ModlDevProperties devProperties;
-    private final ModlCorsProperties corsProperties;
+    private final OriginPolicyFactory originPolicyFactory;
 
     @Bean
     public FilterRegistrationBean<ServerHeaderFilter> serverDomainFilter() {
@@ -27,7 +27,7 @@ public class FilterConfig {
             serverService,
             modlProperties.isDevelopmentMode(),
             devProperties.getServerDomain(),
-            corsProperties.getSystemOrigins()
+            originPolicyFactory.systemOriginsOnly()
         ));
         registrationBean.addUrlPatterns(RESTMappingV1.PREFIX_PANEL + "/*", RESTMappingV1.PREFIX_PUBLIC + "/*");
         registrationBean.setOrder(Ordered.HIGHEST_PRECEDENCE + 2);

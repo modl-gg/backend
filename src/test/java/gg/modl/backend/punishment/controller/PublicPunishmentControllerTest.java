@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
 import com.google.protobuf.Struct;
+import gg.modl.backend.player.dto.response.AppealEligibility;
+import gg.modl.backend.player.dto.response.AppealInfoView;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.server.data.Server;
@@ -39,16 +41,15 @@ class PublicPunishmentControllerTest {
     void getAppealInfoUsesWorkflowStatusForExistingAppeals() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
-        Map<String, Object> serviceResult = new java.util.HashMap<>();
-        serviceResult.put("id", "punishment-1");
         Map<String, Object> existingAppealData = new java.util.HashMap<>();
         existingAppealData.put("status", "rejected");
         existingAppealData.put("appealWorkflowStatus", "rejected");
-        serviceResult.put("existingAppeal", existingAppealData);
+        AppealInfoView info = new AppealInfoView(
+            "punishment-1", null, null, null, false, false, null, existingAppealData, null);
 
         when(request.getAttribute(RequestAttribute.SERVER)).thenReturn(server);
         when(punishmentQueryService.getPublicPunishmentWithAppealEligibility(server, "punishment-1"))
-            .thenReturn(Optional.of(serviceResult));
+            .thenReturn(Optional.of(new AppealEligibility.Eligible(info)));
 
         ResponseEntity<?> response = controller.getAppealInfo("punishment-1", request);
 

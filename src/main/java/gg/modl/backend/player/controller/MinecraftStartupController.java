@@ -1,5 +1,6 @@
 package gg.modl.backend.player.controller;
 
+import gg.modl.backend.player.dto.request.StartupRequest;
 import gg.modl.backend.player.service.MinecraftStartupService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV2;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -8,7 +9,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV2.PREFIX_MINECRAFT)
 @RequiredArgsConstructor
-@Slf4j
 public class MinecraftStartupController {
     private final MinecraftStartupService minecraftStartupService;
 
@@ -32,12 +31,4 @@ public class MinecraftStartupController {
         return ResponseEntity.ok(minecraftStartupService.handleStartup(server, request, clientIp));
     }
 
-    public record StartupRequest(
-        String serverVersion,
-        String platformType,
-        String pluginVersion,
-        int maxPlayers,
-        String serverName
-    ) {
-    }
 }

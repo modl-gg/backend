@@ -4,9 +4,9 @@ import gg.modl.backend.database.mongo.repository.ChatLogMongoRepository;
 import gg.modl.backend.database.mongo.repository.CommandLogMongoRepository;
 import gg.modl.backend.player.data.log.ChatLogDocument;
 import gg.modl.backend.player.data.log.CommandLogDocument;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.server.data.Server;
 import java.util.List;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +24,7 @@ public class MinecraftChatLogService {
 
         chatLogRepository.insertAll(server, entries.stream()
             .map(entry -> ChatLogDocument.builder()
-                .uuid(normalizeUuid(entry.uuid()))
+                .uuid(UuidUtils.normalize(entry.uuid()))
                 .username(entry.username())
                 .message(entry.message())
                 .timestamp(entry.timestamp())
@@ -40,7 +40,7 @@ public class MinecraftChatLogService {
 
         commandLogRepository.insertAll(server, entries.stream()
             .map(entry -> CommandLogDocument.builder()
-                .uuid(normalizeUuid(entry.uuid()))
+                .uuid(UuidUtils.normalize(entry.uuid()))
                 .username(entry.username())
                 .command(entry.command())
                 .timestamp(entry.timestamp())
@@ -50,7 +50,7 @@ public class MinecraftChatLogService {
     }
 
     public List<ChatLogEntryView> getChatLogs(Server server, String uuid, int limit) {
-        return chatLogRepository.findByUuidRecent(server, normalizeUuid(uuid), Math.min(limit, MAX_FETCH_LIMIT))
+        return chatLogRepository.findByUuidRecent(server, UuidUtils.normalize(uuid), Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new ChatLogEntryView(
                 entry.getUuid(),
@@ -63,7 +63,7 @@ public class MinecraftChatLogService {
     }
 
     public List<CommandLogEntryView> getCommandLogs(Server server, String uuid, int limit) {
-        return commandLogRepository.findByUuidRecent(server, normalizeUuid(uuid), Math.min(limit, MAX_FETCH_LIMIT))
+        return commandLogRepository.findByUuidRecent(server, UuidUtils.normalize(uuid), Math.min(limit, MAX_FETCH_LIMIT))
             .stream()
             .map(entry -> new CommandLogEntryView(
                 entry.getUuid(),
@@ -85,9 +85,5 @@ public class MinecraftChatLogService {
     }
 
     public record CommandLogEntryView(String uuid, String username, String command, long timestamp, String server) {
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

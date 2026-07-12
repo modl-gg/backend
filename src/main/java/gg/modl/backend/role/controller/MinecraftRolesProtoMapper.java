@@ -1,13 +1,14 @@
 package gg.modl.backend.role.controller;
 
-import com.google.protobuf.Timestamp;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalStrings;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalTimestamp;
+
 import gg.modl.backend.role.dto.response.RoleResponse;
 import gg.modl.proto.modl.v1.MinecraftRole;
 import gg.modl.proto.modl.v1.MinecraftRoleDetailResponse;
 import gg.modl.proto.modl.v1.MinecraftRoleListResponse;
-import java.util.Date;
 import java.util.List;
-import java.util.function.Consumer;
 
 final class MinecraftRolesProtoMapper {
     private MinecraftRolesProtoMapper() {
@@ -38,40 +39,13 @@ final class MinecraftRolesProtoMapper {
             .setIsDefault(role.isDefault())
             .setOrder(role.order());
 
-        setIfNotNull(builder::setId, role.id());
-        setIfNotNull(builder::setName, role.name());
-        setIfNotNull(builder::setDescription, role.description());
-        addAllIfNotNull(builder::addAllPermissions, role.permissions());
-        setTimestampIfNotNull(builder::setCreatedAt, role.createdAt());
-        setTimestampIfNotNull(builder::setUpdatedAt, role.updatedAt());
+        setOptionalString(builder::setId, role.id());
+        setOptionalString(builder::setName, role.name());
+        setOptionalString(builder::setDescription, role.description());
+        setOptionalStrings(builder::addAllPermissions, role.permissions());
+        setOptionalTimestamp(builder::setCreatedAt, role.createdAt());
+        setOptionalTimestamp(builder::setUpdatedAt, role.updatedAt());
 
         return builder.build();
-    }
-
-    private static void setIfNotNull(Consumer<String> setter, String value) {
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    private static void addAllIfNotNull(
-        Consumer<Iterable<String>> setter,
-        List<String> values
-    ) {
-        if (values != null) {
-            setter.accept(values);
-        }
-    }
-
-    private static void setTimestampIfNotNull(
-        Consumer<Timestamp> setter,
-        Date date
-    ) {
-        if (date != null) {
-            setter.accept(Timestamp.newBuilder()
-                .setSeconds(date.getTime() / 1_000L)
-                .setNanos((int) (date.getTime() % 1_000L) * 1_000_000)
-                .build());
-        }
     }
 }

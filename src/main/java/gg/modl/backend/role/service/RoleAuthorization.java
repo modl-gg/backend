@@ -18,7 +18,7 @@ public class RoleAuthorization {
     public static final String MANAGE_MEMBERS_PERMISSION = "admin.staff.manage.members";
     public static final String MANAGE_ROLES_PERMISSION = "admin.staff.manage.roles";
 
-    private static final String SUPER_ADMIN_ROLE_NAME = "Super Admin";
+    public static final String SUPER_ADMIN_ROLE_NAME = "Super Admin";
     private static final String NO_AUTHORITY_MESSAGE = "You do not have authority to perform this action";
     private static final String NO_GRANT_AUTHORITY_MESSAGE = "You do not have authority to grant this role";
     private static final String HIGHER_AUTHORITY_MESSAGE = "You do not have authority over a role at or above your own level";

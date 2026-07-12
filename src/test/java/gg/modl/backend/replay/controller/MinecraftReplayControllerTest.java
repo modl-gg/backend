@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.infrastructure.exception.ErrorResponseDTO;
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
@@ -42,7 +43,7 @@ class MinecraftReplayControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftReplayController(replayService))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }

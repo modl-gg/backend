@@ -6,28 +6,29 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.ReplayRetentionSettings;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class ReplayRetentionSettingsService {
     private static final String SETTINGS_TYPE_REPLAY_RETENTION = "replayRetention";
     private static final int MIN_DAYS = 1;
     private static final int MAX_DAYS = 365;
 
-    private final SettingsDocumentService settingsDocumentService;
     private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<ReplayRetentionSettings> support;
+
+    public ReplayRetentionSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_REPLAY_RETENTION, this::mapToSettings);
+    }
 
     public ReplayRetentionSettings getReplayRetentionSettings(Server server) {
-        return getReplayRetentionSettingsState(server).data();
+        return support.get(server);
     }
 
     public VersionedSettings<ReplayRetentionSettings> getReplayRetentionSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_REPLAY_RETENTION);
-        return new VersionedSettings<>(mapToSettings(state.data()), state.version(), state.updatedAt());
+        return support.state(server);
     }
 
     public VersionedSettings<ReplayRetentionSettings> patchReplayRetentionSettings(
@@ -36,8 +37,7 @@ public class ReplayRetentionSettingsService {
         Boolean enabled,
         Integer days
     ) {
-        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_REPLAY_RETENTION);
-        Map<String, Object> data = new LinkedHashMap<>(current.data());
+        Map<String, Object> data = support.currentData(server);
 
         ReplayRetentionSettings merged = mapToSettings(data);
         if (enabled != null) {
@@ -51,13 +51,7 @@ public class ReplayRetentionSettingsService {
         data.put("enabled", normalized.isEnabled());
         data.put("days", normalized.getDays());
 
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-            server,
-            SETTINGS_TYPE_REPLAY_RETENTION,
-            expectedVersion,
-            data
-        );
-        return new VersionedSettings<>(mapToSettings(updated.data()), updated.version(), updated.updatedAt());
+        return support.save(server, expectedVersion, data);
     }
 
     private ReplayRetentionSettings mapToSettings(Map<String, Object> data) {

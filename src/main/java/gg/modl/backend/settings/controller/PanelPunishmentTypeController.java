@@ -1,22 +1,22 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.PunishmentCategory;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.proto.modl.v1.PanelPunishmentTypesResponse;
 import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PunishmentTypeRequest;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,12 +30,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS + "/punishment-types")
+@RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
 @RequiredArgsConstructor
 public class PanelPunishmentTypeController {
     private final PunishmentTypeService punishmentTypeService;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final PermissionService permissionService;
-    private final Validator validator;
+    private final BeanValidationRunner validationRunner;
 
     @GetMapping
     public PanelPunishmentTypesResponse getPunishmentTypes(HttpServletRequest request) {
@@ -64,7 +65,7 @@ public class PanelPunishmentTypeController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType updatedType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
-        validate(updatedType);
+        validationRunner.validate(updatedType);
 
         String previousName = punishmentTypeService.getPunishmentTypeByOrdinal(server, ordinal)
             .map(PunishmentType::getName)
@@ -87,7 +88,7 @@ public class PanelPunishmentTypeController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         PunishmentType newType = PanelSettingsProtoMapper.fromPunishmentTypeRequest(requestBody);
-        validate(newType);
+        validationRunner.validate(newType);
         PunishmentType created = punishmentTypeService.createPunishmentType(server, newType);
         invalidatePunishmentTypes(server, created.getOrdinal());
         return PanelSettingsProtoMapper.toPunishmentType(created);
@@ -108,7 +109,7 @@ public class PanelPunishmentTypeController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        if (ordinal < 6) {
+        if (ordinal <= PunishmentCategory.MAX_CORE_ORDINAL) {
             throw new ValidationException("Cannot delete core administrative punishment types");
         }
 
@@ -128,10 +129,4 @@ public class PanelPunishmentTypeController {
         );
     }
 
-    private <T> void validate(T target) {
-        Set<ConstraintViolation<T>> violations = validator.validate(target);
-        if (!violations.isEmpty()) {
-            throw new ValidationException(violations.iterator().next().getMessage());
-        }
-    }
 }

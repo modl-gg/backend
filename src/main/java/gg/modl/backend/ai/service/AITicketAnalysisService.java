@@ -1,14 +1,11 @@
 package gg.modl.backend.ai.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.ai.data.DefaultPrompts;
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -27,15 +24,11 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketNote;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
@@ -50,19 +43,18 @@ public class AITicketAnalysisService {
     private final LLMService llmService;
     private final AIModerationSettingsService aiModerationSettingsService;
     private final TicketMongoRepository ticketRepository;
-    private final ServerMongoRepository serverRepository;
+    private final ServerUsageRepository serverUsageRepository;
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentTypeService punishmentTypeService;
     private final UsageTrackingService usageTrackingService;
     private final ServerLimitPolicy serverLimitPolicy;
-    private final ObjectMapper objectMapper;
+    private final ChatModerationPromptBuilder promptBuilder;
+    private final AiAnalysisResponseParser responseParser;
     private final SystemPromptMongoRepository systemPromptRepository;
     private final StaffMongoRepository staffRepository;
-    public static final String AI_MODERATOR = "AI Moderator";
+    private static final String AI_MODERATOR = "AI Moderator";
     private static final String DEFAULT_ISSUER_NAME = "Staff";
     private static final double AUTOMATED_ACTION_CONFIDENCE_THRESHOLD = 0.85;
-    private static final String REPORTED_PLAYER_REFERENCE = "the reported player identified in the untrusted chat data";
-    private static final SecureRandom NONCE_RANDOM = new SecureRandom();
 
     @Async
     public void analyzeTicketAsync(@NotNull Server server, @NotNull String ticketId) {
@@ -89,7 +81,7 @@ public class AITicketAnalysisService {
             return;
         }
 
-        final ModerationPrompt prompt = buildModerationPrompt(ticket, settings);
+        final ChatModerationPromptBuilder.ModerationPrompt prompt = promptBuilder.buildModerationPrompt(ticket, settings, this::getSystemPrompt);
         if (prompt == null) {
             return;
         }
@@ -101,7 +93,7 @@ public class AITicketAnalysisService {
             log.error("LLM generation failed for ticket {}", ticketId, e);
             return;
         }
-        final AIAnalysisResult result = parseResponse(rawResponse);
+        final AIAnalysisResult result = responseParser.parseResponse(rawResponse);
         if (result == null) {
             return;
         }
@@ -135,7 +127,7 @@ public class AITicketAnalysisService {
             return null;
         }
 
-        final ServerMongoRepository.AIUsageSnapshot usageSnapshot = serverRepository.findAIUsageSnapshotById(server.getId()).orElse(null);
+        final ServerUsageRepository.AIUsageSnapshot usageSnapshot = serverUsageRepository.findAIUsageSnapshotById(server.getId()).orElse(null);
         if (usageSnapshot != null) {
             long currentUsage = usageSnapshot.aiRequestsCurrentPeriod();
             long limit = limits.getAiRequestLimit();
@@ -283,165 +275,6 @@ public class AITicketAnalysisService {
         return DefaultPrompts.MINECRAFT;
     }
 
-    @Nullable
-    private ModerationPrompt buildModerationPrompt(@NotNull Ticket ticket, @NotNull AIModerationSettings settings) {
-        final String nonce = generateNonce();
-        final String beginMarker = "===BEGIN_UNTRUSTED_CHAT_DATA:" + nonce + "===";
-        final String endMarker = "===END_UNTRUSTED_CHAT_DATA:" + nonce + "===";
-
-        final String chatJson;
-        try {
-            chatJson = objectMapper.writeValueAsString(buildChatPayload(ticket));
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize chat data for ticket {}", ticket.getId(), e);
-            return null;
-        }
-
-        final String userContent = beginMarker + "\n" + chatJson + "\n" + endMarker;
-        final String systemInstruction = getSystemPrompt()
-            .replace("{{REPORTED_PLAYER}}", REPORTED_PLAYER_REFERENCE)
-            .replace("{{PUNISHMENT_TYPES}}", formatPunishmentTypes(settings))
-            .replace("{{CHAT_LOG}}", "")
-            + "\n\n"
-            + DefaultPrompts.UNTRUSTED_DATA_DIRECTIVE.formatted(beginMarker, endMarker);
-
-        return new ModerationPrompt(systemInstruction, userContent);
-    }
-
-    @NotNull
-    private Map<String, Object> buildChatPayload(@NotNull Ticket ticket) {
-        final List<Map<String, Object>> messages = new ArrayList<>();
-        for (Ticket.ChatMessage message : ticket.getChatMessages()) {
-            final Map<String, Object> entry = new LinkedHashMap<>();
-            entry.put("sender", message.getSender());
-            entry.put("content", message.getContent());
-            messages.add(entry);
-        }
-
-        final Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("reportedPlayer", ticket.getReportedPlayer());
-        payload.put("messages", messages);
-        return payload;
-    }
-
-    @NotNull
-    private static String generateNonce() {
-        final byte[] bytes = new byte[16];
-        NONCE_RANDOM.nextBytes(bytes);
-        return HexFormat.of().formatHex(bytes);
-    }
-
-    @NotNull
-    private String formatPunishmentTypes(@NotNull AIModerationSettings settings) {
-        if (settings.getAiPunishmentConfigs() == null || settings.getAiPunishmentConfigs().isEmpty()) {
-            return "No punishment types configured";
-        }
-
-        return settings.getAiPunishmentConfigs().values()
-            .stream()
-            .filter(AIPunishmentConfig::isEnabled)
-            .map(config -> {
-                String description = config.getAiDescription();
-                return "%s: (%s) %s".formatted(
-                    config.getId(),
-                    config.getName(),
-                    description != null && !description.isBlank() ? description : config.getName()
-                );
-            })
-            .collect(Collectors.joining("\n"));
-    }
-
-    @Nullable
-    private AIAnalysisResult parseResponse(@NotNull String rawResponse) {
-        try {
-            final String jsonContent = extractJson(rawResponse);
-            final JsonNode json = objectMapper.readTree(jsonContent);
-            final String analysis = json.has("analysis") ? json.get("analysis").asText() : null;
-
-            if (analysis == null) {
-                return null;
-            }
-
-            AIAnalysisResult.SuggestedAction suggestedAction = null;
-            if (json.has("suggestedAction") && !json.get("suggestedAction").isNull()) {
-                JsonNode actionNode = json.get("suggestedAction");
-                final Integer punishmentTypeId = parseIntField(actionNode, "punishmentTypeId");
-                final JsonNode sevNode = actionNode.path("severity");
-                final String severity = (sevNode.isMissingNode() || sevNode.isNull()) ? null : sevNode.asText();
-
-                if (punishmentTypeId != null && severity != null) {
-                    suggestedAction = new AIAnalysisResult.SuggestedAction(punishmentTypeId, severity);
-                }
-            }
-
-            final AIAnalysisResult result = new AIAnalysisResult(analysis, suggestedAction, new Date(), rawResponse);
-            result.setConfidence(parseDoubleField(json, "confidence"));
-            return result;
-        } catch (Exception e) {
-            log.error("Failed to parse AI response: {}", rawResponse, e);
-            return null;
-        }
-    }
-
-    @Nullable
-    private Double parseDoubleField(@Nullable JsonNode node, @Nullable String field) {
-        if (node == null || field == null || !node.has(field) || node.get(field).isNull()) {
-            return null;
-        }
-
-        final JsonNode value = node.get(field);
-        if (value.isNumber()) {
-            return value.asDouble();
-        }
-
-        if (value.isTextual()) {
-            try {
-                return Double.parseDouble(value.asText());
-            } catch (NumberFormatException e) {
-                log.warn("Non-numeric value for {}: {}", field, value.asText());
-                return null;
-            }
-        }
-
-        return null;
-    }
-
-    @Nullable
-    private Integer parseIntField(@Nullable JsonNode node, @Nullable String field) {
-        if (node == null || field == null || !node.has(field) || node.get(field).isNull()) {
-            return null;
-        }
-
-        final JsonNode value = node.get(field);
-        if (value.isNumber()) {
-            return value.asInt();
-        }
-
-        if (value.isTextual()) {
-            try {
-                return Integer.parseInt(value.asText());
-            } catch (NumberFormatException e) {
-                log.warn("Non-numeric value for {}: {}", field, value.asText());
-                return null;
-            }
-        }
-
-        return null;
-    }
-
-    @NotNull
-    private String extractJson(@NotNull String response) {
-        final String trimmed = response.trim();
-        final int start = trimmed.indexOf('{');
-        final int end = trimmed.lastIndexOf('}');
-
-        if (start != -1 && end != -1 && end > start) {
-            return trimmed.substring(start, end + 1);
-        }
-
-        return trimmed;
-    }
-
     @NotNull
     public AISuggestionResult applyAISuggestion(@NotNull Server server, @NotNull String ticketId, @Nullable String actingEmail) {
         final Ticket ticket = ticketRepository.findById(server, ticketId).orElse(null);
@@ -507,6 +340,4 @@ public class AITicketAnalysisService {
     }
 
     public record AISuggestionResult(boolean success, String error) {}
-
-    private record ModerationPrompt(String systemInstruction, String userContent) {}
 }

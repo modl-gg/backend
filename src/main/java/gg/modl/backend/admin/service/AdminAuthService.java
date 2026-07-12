@@ -13,6 +13,7 @@ import java.util.Date;
 import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -77,7 +78,7 @@ public class AdminAuthService {
             .filter(cookie -> RESTSecurityRole.ADMIN_SESSION_COOKIE.equals(cookie.getName()))
             .map(Cookie::getValue)
             .filter(value -> value != null && !value.isBlank())
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     public boolean isAdminSessionExpired(AuthSessionData session) {

@@ -19,12 +19,12 @@ public class RealtimeUnauthenticatedConnectionLimiter {
     public Admission tryAcquire(String clientIp) {
         String ip = normalize(clientIp);
         synchronized (lock) {
-            if (totalCount >= properties.getMaxUnauthenticatedConnections()) {
-                return Admission.REJECTED_GLOBAL;
-            }
             int current = perIpCounts.getOrDefault(ip, 0);
             if (current >= properties.getMaxUnauthenticatedConnectionsPerIp()) {
                 return Admission.REJECTED_PER_IP;
+            }
+            if (totalCount >= properties.getMaxUnauthenticatedConnections()) {
+                return Admission.REJECTED_GLOBAL;
             }
             totalCount++;
             perIpCounts.put(ip, current + 1);

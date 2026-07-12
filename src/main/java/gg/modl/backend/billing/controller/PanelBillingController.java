@@ -2,6 +2,7 @@ package gg.modl.backend.billing.controller;
 
 import gg.modl.backend.billing.service.BillingService;
 import gg.modl.backend.billing.service.UsageTrackingService;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_BILLING)
+@RequiresPanelPermission(view = "admin.settings.view.billing", modify = "admin.settings.modify.billing")
 @RequiredArgsConstructor
 public class PanelBillingController {
     private final BillingService billingService;
@@ -72,6 +74,7 @@ public class PanelBillingController {
     @GetMapping("/status")
     public ResponseEntity<BillingStatusResponse> getBillingStatus(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
+        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
         billingService.reconcileBillingStatus(server);
         return ResponseEntity.ok(PanelBillingProtoMapper.toBillingStatusResponse(billingService.getBillingStatus(server)));
     }
@@ -79,6 +82,7 @@ public class PanelBillingController {
     @GetMapping("/usage")
     public ResponseEntity<UsageResponse> getUsage(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
+        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
         return ResponseEntity.ok(PanelBillingProtoMapper.toUsageResponse(usageTrackingService.getUsage(server)));
     }
 

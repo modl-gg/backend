@@ -9,6 +9,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.ticket.dto.response.MinecraftReportView;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
 import gg.modl.proto.modl.v1.AssignReportRequest;
 import gg.modl.proto.modl.v1.DismissReportRequest;
@@ -22,7 +23,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +52,7 @@ public class MinecraftReportsV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> reports = minecraftTicketService.getMinecraftReports(server, status, limit);
+        List<MinecraftReportView> reports = minecraftTicketService.getMinecraftReports(server, status, limit);
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toReportsResponse(200, reports));
     }
 
@@ -67,7 +67,7 @@ public class MinecraftReportsV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> reports = minecraftTicketService.getMinecraftReportsForPlayer(server, uuid, status, limit);
+        List<MinecraftReportView> reports = minecraftTicketService.getMinecraftReportsForPlayer(server, uuid, status, limit);
         return ResponseEntity.ok(MinecraftTicketProtoMapper.toReportsResponse(200, reports));
     }
 

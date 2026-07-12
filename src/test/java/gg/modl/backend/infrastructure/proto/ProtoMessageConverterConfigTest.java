@@ -1,5 +1,6 @@
 package gg.modl.backend.infrastructure.proto;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.http.converter.HttpMessageConverters;
 import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -43,9 +45,13 @@ class ProtoMessageConverterConfigTest {
         return list;
     }
 
-    private static void applyConfig(List<HttpMessageConverter<?>> converters) {
+    private static List<HttpMessageConverter<?>> configuredConverters() {
+        HttpMessageConverters.ServerBuilder builder = HttpMessageConverters.forServer().registerDefaults();
         new ProtoMessageConverterConfig(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter())
-            .extendMessageConverters(converters);
+            .configureMessageConverters(builder);
+        List<HttpMessageConverter<?>> list = new ArrayList<>();
+        builder.build().forEach(list::add);
+        return list;
     }
 
     private static int indexOfType(List<HttpMessageConverter<?>> list, Class<?> type) {
@@ -58,9 +64,8 @@ class ProtoMessageConverterConfigTest {
     }
 
     @Test
-    void extendMovesProtoJsonAheadOfJacksonWithoutDuplicating() {
-        List<HttpMessageConverter<?>> list = jacksonFirstList();
-        applyConfig(list);
+    void configPlacesProtoJsonAheadOfJacksonWithoutDuplicating() {
+        List<HttpMessageConverter<?>> list = configuredConverters();
 
         int protoIdx = indexOfType(list, ProtoJsonHttpMessageConverter.class);
         int jacksonIdx = indexOfType(list, JacksonJsonHttpMessageConverter.class);
@@ -78,14 +83,11 @@ class ProtoMessageConverterConfigTest {
 
     @Test
     void registrationJsonBodyIsParsedWhenConvertersAreReordered() throws Exception {
-        List<HttpMessageConverter<?>> converters = jacksonFirstList();
-        applyConfig(converters);
-
-        MockMvc mvc = buildMockMvc(converters);
+        MockMvc mvc = buildMockMvc(configuredConverters());
         mvc.perform(post(RESTMappingV1.PUBLIC_REGISTRATION)
                 .contentType(MediaType.APPLICATION_JSON).content(FORM_PAYLOAD))
             .andExpect(status().isBadRequest())
-            .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Security verification")));
+            .andExpect(jsonPath("$.message").value(containsString("Security verification")));
     }
 
     @Test
@@ -106,11 +108,11 @@ class ProtoMessageConverterConfigTest {
                     HttpStatus.BAD_REQUEST, "Security verification failed. Please try again.")));
 
         PublicRegistrationController controller = new PublicRegistrationController(
-            serverService, mock(SessionService.class), registrationService, mock(CookieUtil.class),
+            false, serverService, mock(SessionService.class), registrationService, mock(CookieUtil.class),
             new SubdomainValidator());
 
         return MockMvcBuilders.standaloneSetup(controller)
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(converters.toArray(new HttpMessageConverter<?>[0]))
             .build();
     }

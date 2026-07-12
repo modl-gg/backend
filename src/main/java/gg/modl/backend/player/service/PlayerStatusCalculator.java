@@ -2,7 +2,7 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentData;
+import gg.modl.backend.player.data.punishment.PunishmentDataView;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentStatus;
@@ -16,8 +16,8 @@ import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -46,8 +46,7 @@ public class PlayerStatusCalculator {
             }
 
             int typeOrdinal = punishment.getTypeOrdinal();
-            Map<String, Object> data = punishment.getData();
-            String severity = PunishmentData.getSeverity(data);
+            String severity = punishment.data().severity();
 
             PunishmentType type = typesByOrdinal.get(typeOrdinal);
             if (type == null) {
@@ -91,30 +90,22 @@ public class PlayerStatusCalculator {
             return false;
         }
 
-        Map<String, Object> data = punishment.getData();
-        if (data == null) {
+        PunishmentDataView data = punishment.data();
+        if (data.asMap() == null) {
             return false;
         }
 
-        if (PunishmentStatus.UNSTARTED.equals(PunishmentData.getStatus(data))) {
+        if (data.isUnstarted()) {
             return false;
         }
 
-        return !isPardoned(punishment);
+        return !punishment.isPardoned();
     }
 
-    private boolean isPardoned(Punishment punishment) {
-        for (PunishmentModification mod : punishment.getModifications()) {
-            if (PunishmentModificationType.isPardon(mod.type())) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     public Date getEffectiveExpiry(Punishment punishment) {
-        Map<String, Object> data = punishment.getData();
-        if (data == null) {
+        PunishmentDataView data = punishment.data();
+        if (data.asMap() == null) {
             return null;
         }
 
@@ -133,49 +124,29 @@ public class PlayerStatusCalculator {
             return new Date(latestDurationChange.date().getTime() + eff);
         }
 
-        Long duration = PunishmentData.getDuration(data);
-        // null, 0, or negative (-1L) indicates permanent (no expiry)
+        Long duration = data.duration();
         if (duration == null || duration <= 0) {
             return null;
         }
 
-        // Count from started date, or current time if not yet started
-        // (unstarted punishments use current time so the plugin receives a proper
-        // expiration for display â€” nothing is persisted until the plugin acknowledges)
         Date baseDate = punishment.getStarted() != null ? punishment.getStarted() : new Date();
         return new Date(baseDate.getTime() + duration);
     }
 
-    private Optional<PunishmentType> findTypeByOrdinal(Map<Integer, PunishmentType> typesByOrdinal, int ordinal) {
-        return Optional.ofNullable(typesByOrdinal.get(ordinal));
-    }
-
-    /**
-     * Determine the effective enforcement category for a punishment.
-     * Core types use isBan()/isMute()/isKick().
-     * Social/gameplay types use the DurationDetail for the stored severity and offense level.
-     *
-     * @return EnforcementCategory name, or null (for kicks and unknown types)
-     */
     public String getEffectiveCategory(Punishment punishment, List<PunishmentType> types) {
         return getEffectiveCategory(punishment, PunishmentTypeIndex.byOrdinal(types));
     }
 
     public String getEffectiveCategory(Punishment punishment, Map<Integer, PunishmentType> typesByOrdinal) {
         PunishmentType pt = typesByOrdinal.get(punishment.getTypeOrdinal());
-        return getEffectiveCategory(pt, punishment.getData());
+        return getEffectiveCategory(pt, punishment.data());
     }
 
-    /**
-     * Determine the effective enforcement category for a punishment type with given data.
-     *
-     * @return EnforcementCategory name, or null
-     */
-    public String getEffectiveCategory(PunishmentType pt, Map<String, Object> data) {
+    public String getEffectiveCategory(PunishmentType pt, PunishmentDataView data) {
         if (pt == null) {
             return null;
         }
-        String storedCategory = PunishmentData.getEnforcementCategory(data);
+        String storedCategory = data.enforcementCategory();
         if (storedCategory != null) {
             return storedCategory;
         }
@@ -189,21 +160,20 @@ public class PlayerStatusCalculator {
             return EnforcementCategory.MUTE.name();
         }
 
-        // Social/gameplay types: determine from DurationDetail
-        if (data != null) {
-            String severity = PunishmentData.getSeverity(data) != null ? PunishmentData.getSeverity(data) : "regular";
+        if (data.asMap() != null) {
+            String severity = data.severity() != null ? data.severity() : "regular";
             String offenseLevel;
-            String rawOffenseLevel = PunishmentData.getOffenseLevel(data);
+            String rawOffenseLevel = data.offenseLevel();
             if (rawOffenseLevel != null) {
                 offenseLevel = rawOffenseLevel;
             } else {
-                String status = PunishmentData.getStatus(data);
+                String status = data.status();
                 if (status == null
                     || PunishmentStatus.UNSTARTED.equals(status)
                     || PunishmentStatus.PARDONED.equals(status)) {
                     offenseLevel = "first";
                 } else {
-                    offenseLevel = switch (status.toLowerCase()) {
+                    offenseLevel = switch (status.toLowerCase(Locale.ROOT)) {
                         case "low" -> "first";
                         case "medium" -> "medium";
                         case "habitual" -> "habitual";
@@ -224,32 +194,24 @@ public class PlayerStatusCalculator {
         return null;
     }
 
-    /**
-     * Returns true when a punishment has naturally expired (not pardoned, not permanent, not a kick).
-     * Used to detect punishments eligible for stat-wipe execution.
-     */
     public boolean isPunishmentNaturallyExpired(Punishment punishment) {
-        // Must have been started
         if (punishment.getStarted() == null) {
             return false;
         }
 
-        // Kicks are instant, not expirable
         if (punishment.getTypeOrdinal() == 0) {
             return false;
         }
 
-        if (isPardoned(punishment)) {
+        if (punishment.isPardoned()) {
             return false;
         }
 
-        // Must have a finite expiry (not permanent)
         Date effectiveExpiry = getEffectiveExpiry(punishment);
         if (effectiveExpiry == null) {
             return false;
         }
 
-        // Must have expired
         return effectiveExpiry.before(new Date());
     }
 

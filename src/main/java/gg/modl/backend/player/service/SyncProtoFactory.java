@@ -2,6 +2,10 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.player.controller.MinecraftPlayerProtoMapper;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
+import gg.modl.backend.player.dto.response.SyncDataView;
+import gg.modl.backend.player.dto.response.SyncPunishmentEntry;
+import gg.modl.backend.player.dto.response.SyncResult;
 import gg.modl.proto.modl.v1.SyncActiveStaffMember;
 import gg.modl.proto.modl.v1.SyncData;
 import gg.modl.proto.modl.v1.SyncMigrationTask;
@@ -18,68 +22,71 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.springframework.stereotype.Component;
 
 @Component
 public class SyncProtoFactory {
 
-    public SyncResponse toSyncResponse(Map<String, Object> body) {
+    public SyncResponse toSyncResponse(SyncResult body) {
         return SyncResponse.newBuilder()
-            .setTimestamp(stringValue(body.get("timestamp")))
-            .setData(toSyncData(map(body.get("data"))))
+            .setTimestamp(stringValue(body.timestamp()))
+            .setData(toSyncData(body.data()))
             .build();
     }
 
-    public SyncData toSyncData(Map<String, Object> data) {
+    public SyncData toSyncData(SyncDataView data) {
         SyncData.Builder builder = SyncData.newBuilder();
 
-        listOfMaps(data.get("pendingPunishments")).stream()
+        data.pendingPunishments().stream()
             .map(this::toPendingPunishment)
             .forEach(builder::addPendingPunishments);
-        listOfMaps(data.get("recentlyStartedPunishments")).stream()
+        data.recentlyStartedPunishments().stream()
             .map(this::toPendingPunishment)
             .forEach(builder::addRecentlyStartedPunishments);
-        listOfMaps(data.get("recentlyModifiedPunishments")).stream()
+        data.recentlyModifiedPunishments().stream()
             .map(this::toModifiedPunishment)
             .forEach(builder::addRecentlyModifiedPunishments);
-        listOfMaps(data.get("playerNotifications")).stream()
+        data.playerNotifications().stream()
             .map(this::toPlayerNotification)
             .forEach(builder::addPlayerNotifications);
-        listOfMaps(data.get("activeStaffMembers")).stream()
+        data.activeStaffMembers().stream()
             .map(this::toActiveStaffMember)
             .forEach(builder::addActiveStaffMembers);
-        listOfMaps(data.get("staffNotifications")).stream()
+        data.staffNotifications().stream()
             .map(this::toStaffNotification)
             .forEach(builder::addStaffNotifications);
-        listOfMaps(data.get("pendingStatWipes")).stream()
+        data.pendingStatWipes().stream()
             .map(this::toPendingStatWipe)
             .forEach(builder::addPendingStatWipes);
-        listOfMaps(data.get("staff2faVerifications")).stream()
-            .map(this::toStaff2faVerification)
-            .forEach(builder::addStaff2FaVerifications);
-
-        if (data.get("migrationTask") instanceof Map<?, ?> migrationTask) {
-            builder.setMigrationTask(toMigrationTask(stringObjectMap(migrationTask)));
+        if (data.staff2faVerifications() != null) {
+            data.staff2faVerifications().stream()
+                .map(this::toStaff2faVerification)
+                .forEach(builder::addStaff2FaVerifications);
         }
-        setOptionalLong(builder::setStaffPermissionsUpdatedAt, data.get("staffPermissionsUpdatedAt"));
-        setOptionalLong(builder::setPunishmentTypesUpdatedAt, data.get("punishmentTypesUpdatedAt"));
+
+        if (data.migrationTask() != null) {
+            builder.setMigrationTask(toMigrationTask(data.migrationTask()));
+        }
+        setOptionalLong(builder::setStaffPermissionsUpdatedAt, data.staffPermissionsUpdatedAt());
+        setOptionalLong(builder::setPunishmentTypesUpdatedAt, data.punishmentTypesUpdatedAt());
         return builder.build();
     }
 
-    public SyncPendingPunishment toPendingPunishment(Map<String, Object> entry) {
+    public SyncPendingPunishment toPendingPunishment(SyncPunishmentEntry entry) {
         return SyncPendingPunishment.newBuilder()
-            .setMinecraftUuid(stringValue(entry.get("minecraftUuid")))
-            .setUsername(stringValue(entry.get("username")))
-            .setPunishment(MinecraftPlayerProtoMapper.toSimplePunishment(map(entry.get("punishment"))))
+            .setMinecraftUuid(stringValue(entry.minecraftUuid()))
+            .setUsername(stringValue(entry.username()))
+            .setPunishment(MinecraftPlayerProtoMapper.toSimplePunishment(entry.punishment()))
             .build();
     }
 
-    public SyncModifiedPunishment toModifiedPunishment(Map<String, Object> entry) {
+    public SyncModifiedPunishment toModifiedPunishment(SyncPunishmentEntry entry) {
         return SyncModifiedPunishment.newBuilder()
-            .setMinecraftUuid(stringValue(entry.get("minecraftUuid")))
-            .setUsername(stringValue(entry.get("username")))
-            .setPunishment(toPunishmentWithModifications(map(entry.get("punishment"))))
+            .setMinecraftUuid(stringValue(entry.minecraftUuid()))
+            .setUsername(stringValue(entry.username()))
+            .setPunishment(toPunishmentWithModifications(entry.punishment()))
             .build();
     }
 
@@ -149,22 +156,25 @@ public class SyncProtoFactory {
             .build();
     }
 
-    private SyncPunishmentWithModifications toPunishmentWithModifications(Map<String, Object> punishment) {
-        SyncPunishmentWithModifications.Builder builder = SyncPunishmentWithModifications.newBuilder()
-            .setId(stringValue(punishment.get("id")));
+    private SyncPunishmentWithModifications toPunishmentWithModifications(SimplePunishmentView punishment) {
+        SyncPunishmentWithModifications.Builder builder = SyncPunishmentWithModifications.newBuilder();
+        if (punishment == null) {
+            return builder.build();
+        }
 
-        listOfMaps(punishment.get("modifications")).stream()
+        builder.setId(stringValue(punishment.id()));
+        punishment.modifications().stream()
             .map(this::toPunishmentModification)
             .forEach(builder::addModifications);
         return builder.build();
     }
 
-    private SyncPunishmentModification toPunishmentModification(Map<String, Object> modification) {
+    private SyncPunishmentModification toPunishmentModification(SimplePunishmentView.Modification modification) {
         SyncPunishmentModification.Builder builder = SyncPunishmentModification.newBuilder()
-            .setType(stringValue(modification.get("type")));
+            .setType(stringValue(modification.type()));
 
-        setOptionalLong(builder::setTimestamp, modification.get("timestamp"));
-        setOptionalLong(builder::setEffectiveDuration, modification.get("effectiveDuration"));
+        setOptionalLong(builder::setTimestamp, modification.timestamp());
+        setOptionalLong(builder::setEffectiveDuration, modification.effectiveDuration());
         return builder.build();
     }
 
@@ -173,24 +183,6 @@ public class SyncProtoFactory {
             return values;
         }
         return List.of();
-    }
-
-    private static List<Map<String, Object>> listOfMaps(Object object) {
-        return list(object).stream()
-            .filter(Map.class::isInstance)
-            .map(value -> {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> map = (Map<String, Object>) value;
-                return map;
-            })
-            .toList();
-    }
-
-    private static Map<String, Object> map(Object object) {
-        if (object instanceof Map<?, ?> rawMap) {
-            return stringObjectMap(rawMap);
-        }
-        return Map.of();
     }
 
     private static Map<String, Object> stringObjectMap(Map<?, ?> rawMap) {
@@ -213,7 +205,7 @@ public class SyncProtoFactory {
         return 0L;
     }
 
-    private static void setOptionalString(java.util.function.Consumer<String> setter, Object value) {
+    private static void setOptionalString(Consumer<String> setter, Object value) {
         if (value != null) {
             setter.accept(Objects.toString(value));
         }
@@ -225,7 +217,7 @@ public class SyncProtoFactory {
         }
     }
 
-    private static void setOptionalBoolean(java.util.function.Consumer<Boolean> setter, Object value) {
+    private static void setOptionalBoolean(Consumer<Boolean> setter, Object value) {
         if (value instanceof Boolean bool) {
             setter.accept(bool);
         }

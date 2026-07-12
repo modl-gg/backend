@@ -1,5 +1,8 @@
 package gg.modl.backend.player.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.emptyToNull;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
+
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
@@ -17,6 +20,7 @@ import gg.modl.backend.player.dto.request.CreateNoteRequest;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
+import gg.modl.backend.player.dto.response.LinkedBanView;
 import gg.modl.backend.replay.dto.PlayerReplayResponse;
 import gg.modl.proto.modl.v1.ActivePunishmentsResponse;
 import gg.modl.proto.modl.v1.BackendNoteEntry;
@@ -32,7 +36,6 @@ import gg.modl.proto.modl.v1.PlayerSearchResultsResponse;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 
 final class PanelPlayerProtoMapper {
@@ -149,14 +152,14 @@ final class PanelPlayerProtoMapper {
         return builder.build();
     }
 
-    static PanelLinkedBansResponse toLinkedBans(List<Map<String, Object>> linkedBans) {
+    static PanelLinkedBansResponse toLinkedBans(List<LinkedBanView> linkedBans) {
         PanelLinkedBansResponse.Builder builder = PanelLinkedBansResponse.newBuilder();
-        for (Map<String, Object> entry : linkedBans) {
+        for (LinkedBanView entry : linkedBans) {
             builder.addLinkedBans(PanelLinkedBanEntry.newBuilder()
-                .setPunishmentId(string(entry.get("punishmentId")))
-                .setPlayerUuid(string(entry.get("playerUuid")))
-                .setPlayerName(string(entry.get("playerName")))
-                .setActive(Boolean.TRUE.equals(entry.get("active")))
+                .setPunishmentId(string(entry.punishmentId()))
+                .setPlayerUuid(string(entry.playerUuid()))
+                .setPlayerName(string(entry.playerName()))
+                .setActive(entry.active())
                 .build());
         }
         return builder.build();
@@ -393,13 +396,5 @@ final class PanelPlayerProtoMapper {
 
     private static String string(Object value) {
         return value == null ? "" : Objects.toString(value);
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
-    }
-
-    static String emptyToNull(String value) {
-        return value == null || value.isEmpty() ? null : value;
     }
 }

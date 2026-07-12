@@ -3,7 +3,7 @@ package gg.modl.backend.realtime.auth;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import gg.modl.proto.modl.v1.Topic;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class RealtimeTopicAuthorizer {
     private final PermissionService permissionService;
-    private final StaffService staffService;
+    private final StaffLookupCache staffLookupCache;
 
     public boolean canSubscribe(RealtimePrincipal principal, Topic topic) {
         if (topic == null || topic == Topic.TOPIC_UNSPECIFIED) {
@@ -57,7 +57,7 @@ public class RealtimeTopicAuthorizer {
             return true;
         }
 
-        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
+        Optional<Staff> staffOpt = staffLookupCache.findByEmail(server, email);
         String roleId = staffOpt.map(Staff::getRoleId).orElse(null);
         return roleId != null && permissionService.hasPermission(server, roleId, permission);
     }

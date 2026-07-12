@@ -8,9 +8,12 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.mongodb.core.mapping.Field;
@@ -69,5 +72,32 @@ public class Punishment {
     private List<String> attachedTicketIds = new ArrayList<>();
 
     @Nullable
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private Map<String, Object> data = new HashMap<>();
+
+    public PunishmentDataView data() {
+        return PunishmentDataView.ownedBy(data, map -> data = map);
+    }
+
+    public void replaceData(Map<String, Object> replacement) {
+        this.data = replacement;
+    }
+
+    public boolean isPardoned() {
+        return modifications.stream()
+            .anyMatch(modification -> PunishmentModificationType.isPardon(modification.type()));
+    }
+
+    public boolean isUnstarted() {
+        if (!data().isUnstarted()) {
+            return false;
+        }
+        return modifications.stream()
+            .noneMatch(modification -> PunishmentModificationType.isPardon(modification.type()));
+    }
+
+    public boolean hasUnstartedStatus() {
+        return data().isUnstarted();
+    }
 }

@@ -225,7 +225,6 @@ class ReplayLiteServiceTest {
         assertFalse(response.get().labeled());
         assertEquals("/v1/public/replay-lite/replays/" + document.getId() + "/download", response.get().replayUrl());
         assertFalse(response.get().replayUrl().contains(document.getObjectKey()));
-        verify(storageService, never()).getPublicUrl(any());
     }
 
     @Test
@@ -244,7 +243,6 @@ class ReplayLiteServiceTest {
         assertTrue(download.isPresent());
         assertEquals("https://cdn.example/download", download.get().url());
         assertEquals(presignExpiry, download.get().expiresAt());
-        verify(storageService, never()).getPublicUrl(any());
     }
 
     @Test

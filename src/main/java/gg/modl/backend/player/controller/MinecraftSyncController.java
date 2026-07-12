@@ -1,6 +1,7 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.service.MinecraftSyncService;
+import gg.modl.backend.player.dto.response.SyncResult;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -15,9 +16,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,43 +26,24 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
-@Slf4j
 public class MinecraftSyncController {
     private final MinecraftSyncService minecraftSyncService;
 
     @PostMapping("/sync")
-    public ResponseEntity<Map<String, Object>> sync(
+    public ResponseEntity<SyncResult> sync(
         @RequestBody @Valid SyncRequest syncRequest,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftSyncService.ServerStatusInput serverStatusInput = syncRequest.serverStatus() != null
-            ? new MinecraftSyncService.ServerStatusInput(
-                syncRequest.serverStatus().onlinePlayerCount(),
-                syncRequest.serverStatus().maxPlayers(),
-                syncRequest.serverStatus().serverVersion(),
-                syncRequest.serverStatus().platformType(),
-                syncRequest.serverStatus().pluginVersion()
-            )
-            : null;
         String clientIp = RequestUtil.getClientIp(httpRequest);
         return ResponseEntity.ok(minecraftSyncService.sync(
             server,
             syncRequest.lastSyncTimestamp(),
-            syncRequest.onlinePlayers() == null ? List.of() : syncRequest.onlinePlayers()
-                .stream()
-                .map(player -> new MinecraftSyncService.OnlinePlayerInput(player.uuid(), player.username(), player.ipAddress()))
-                .toList(),
+            SyncRequestMapper.toOnlinePlayers(syncRequest.onlinePlayers()),
             syncRequest.serverName(),
-            syncRequest.chatLogs() == null ? List.of() : syncRequest.chatLogs()
-                .stream()
-                .map(log -> new MinecraftSyncService.ChatLogInput(log.uuid(), log.username(), log.message(), log.timestamp(), log.server()))
-                .toList(),
-            syncRequest.commandLogs() == null ? List.of() : syncRequest.commandLogs()
-                .stream()
-                .map(log -> new MinecraftSyncService.CommandLogInput(log.uuid(), log.username(), log.command(), log.timestamp(), log.server()))
-                .toList(),
-            serverStatusInput,
+            SyncRequestMapper.toChatLogs(syncRequest.chatLogs()),
+            SyncRequestMapper.toCommandLogs(syncRequest.commandLogs()),
+            SyncRequestMapper.toServerStatus(syncRequest.serverStatus()),
             clientIp
         ));
     }

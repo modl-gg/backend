@@ -1,6 +1,15 @@
 package gg.modl.backend.player.controller;
 
 import gg.modl.backend.player.dto.request.CreateNoteRequest;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
+import gg.modl.backend.player.dto.response.LinkedAccountsResult;
+import gg.modl.backend.player.dto.response.PaginatedNotesResult;
+import gg.modl.backend.player.dto.response.PaginatedPunishmentsResult;
+import gg.modl.backend.player.dto.response.PardonResult;
+import gg.modl.backend.player.dto.response.PlayerFetchResult;
+import gg.modl.backend.player.dto.response.PlayerLookupResult;
+import gg.modl.backend.player.dto.response.PlayerLoginResult;
+import gg.modl.backend.player.dto.response.PlayerProfileResult;
 import gg.modl.backend.player.service.MinecraftPlayerService;
 import gg.modl.backend.player.service.PlayerLookupService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -16,11 +25,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +42,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping(RESTMappingV1.MINECRAFT_PLAYERS)
 @RequiredArgsConstructor
-@Slf4j
 @Validated
 public class MinecraftPlayerController {
     private final MinecraftPlayerService minecraftPlayerService;
@@ -46,7 +53,7 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.login(
+        PlayerLoginResult result = minecraftPlayerService.login(
             server,
             UUID.fromString(request.minecraftUUID()),
             request.username(),
@@ -55,7 +62,18 @@ public class MinecraftPlayerController {
             request.skinHash(),
             request.serverName()
         );
-        return ResponseEntity.status(response.status()).body(response.body());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", result.status());
+        body.put("activePunishments", result.activePunishments());
+        body.put("pendingNotifications", result.pendingNotifications());
+        if (!result.pendingIpLookups().isEmpty()) {
+            body.put("pendingIpLookups", result.pendingIpLookups());
+        }
+        if (!result.pendingStatWipes().isEmpty()) {
+            body.put("pendingStatWipes", result.pendingStatWipes());
+        }
+        return ResponseEntity.status(result.status()).body(body);
     }
 
     @PostMapping("/disconnect")
@@ -64,7 +82,8 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(minecraftPlayerService.disconnect(server, request.minecraftUuid(), request.sessionDurationMs()));
+        boolean success = minecraftPlayerService.disconnect(server, request.minecraftUuid(), request.sessionDurationMs()).success();
+        return ResponseEntity.ok(successBody(success));
     }
 
     @PostMapping("/update-server")
@@ -73,13 +92,17 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(minecraftPlayerService.updateServer(server, request.minecraftUuid(), request.serverName()));
+        boolean success = minecraftPlayerService.updateServer(server, request.minecraftUuid(), request.serverName()).success();
+        return ResponseEntity.ok(successBody(success));
     }
 
     @GetMapping("/online")
     public ResponseEntity<Map<String, Object>> getOnlinePlayers(HttpServletRequest httpRequest) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(minecraftPlayerService.getOnlinePlayers(server));
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "players", minecraftPlayerService.getOnlinePlayers(server).players()
+        ));
     }
 
     @GetMapping("/{uuid}")
@@ -90,8 +113,7 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByUuid(server, uuid, punishmentLimit, noteLimit);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return renderProfile(playerLookupService.getPlayerByUuid(server, uuid, punishmentLimit, noteLimit));
     }
 
     @GetMapping
@@ -101,8 +123,7 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByMinecraftUuid(server, minecraftUuid, queryMojang);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return renderFetch(playerLookupService.getPlayerByMinecraftUuid(server, minecraftUuid, queryMojang));
     }
 
     @GetMapping("/by-name")
@@ -112,8 +133,7 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getPlayerByUsername(server, username, queryMojang);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return renderFetch(playerLookupService.getPlayerByUsername(server, username, queryMojang));
     }
 
     @PostMapping("/lookup")
@@ -122,8 +142,14 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.lookupPlayer(server, request.query(), request.shouldQueryMojang());
-        return ResponseEntity.status(response.status()).body(response.body());
+        return switch (playerLookupService.lookupPlayer(server, request.query(), request.shouldQueryMojang())) {
+            case PlayerLookupResult.Found found -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", found.message(),
+                "data", found.data()
+            ));
+            case PlayerLookupResult.NotFound notFound -> notFound(notFound.message());
+        };
     }
 
     @PostMapping("/lookup-profile")
@@ -134,9 +160,8 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.lookupProfile(server, request.query(), request.shouldQueryMojang(),
-            punishmentLimit, noteLimit);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return renderProfile(playerLookupService.lookupProfile(server, request.query(), request.shouldQueryMojang(),
+            punishmentLimit, noteLimit));
     }
 
     @PostMapping("/{uuid}/notes")
@@ -146,9 +171,15 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(server, uuid, request.text(), request.issuerName(),
-            request.issuerId());
-        return ResponseEntity.status(response.status()).body(response.body());
+        return switch (minecraftPlayerService.createNote(server, uuid, request.text(), request.issuerName(),
+            request.issuerId())) {
+            case CreateNoteResult.Created created -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", true,
+                "message", created.message()
+            ));
+            case CreateNoteResult.NotFound notFound -> notFound(notFound.message());
+        };
     }
 
     @GetMapping("/{uuid}/linked-accounts")
@@ -159,8 +190,20 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = playerLookupService.getLinkedAccounts(server, uuid, page, limit);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return switch (playerLookupService.getLinkedAccounts(server, uuid, page, limit)) {
+            case LinkedAccountsResult.Found found -> {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("status", 200);
+                body.put("linkedAccounts", found.linkedAccounts());
+                if (found.totalCount() != null) {
+                    body.put("totalCount", found.totalCount());
+                    body.put("page", found.page());
+                    body.put("hasMore", found.hasMore());
+                }
+                yield ResponseEntity.ok(body);
+            }
+            case LinkedAccountsResult.NotFound notFound -> notFound(notFound.message());
+        };
     }
 
     @GetMapping("/{uuid}/punishments")
@@ -171,8 +214,18 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerPunishments(server, uuid, page, limit);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return switch (minecraftPlayerService.getPlayerPunishments(server, uuid, page, limit)) {
+            case PaginatedPunishmentsResult.Found found -> {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("status", 200);
+                body.put("punishments", found.punishments());
+                body.put("totalCount", found.totalCount());
+                body.put("page", found.page());
+                body.put("hasMore", found.hasMore());
+                yield ResponseEntity.ok(body);
+            }
+            case PaginatedPunishmentsResult.NotFound notFound -> notFound(notFound.message());
+        };
     }
 
     @GetMapping("/{uuid}/notes")
@@ -183,8 +236,18 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.getPlayerNotes(server, uuid, page, limit);
-        return ResponseEntity.status(response.status()).body(response.body());
+        return switch (minecraftPlayerService.getPlayerNotes(server, uuid, page, limit)) {
+            case PaginatedNotesResult.Found found -> {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("status", 200);
+                body.put("notes", found.notes());
+                body.put("totalCount", found.totalCount());
+                body.put("page", found.page());
+                body.put("hasMore", found.hasMore());
+                yield ResponseEntity.ok(body);
+            }
+            case PaginatedNotesResult.NotFound notFound -> notFound(notFound.message());
+        };
     }
 
     @GetMapping("/{uuid}/reports")
@@ -193,7 +256,10 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(minecraftPlayerService.getPlayerReports(server, uuid));
+        return ResponseEntity.ok(Map.of(
+            "status", 200,
+            "reports", minecraftPlayerService.getPlayerReports(server, uuid).reports()
+        ));
     }
 
     @PostMapping("/submit-ip-info")
@@ -202,7 +268,7 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        return ResponseEntity.ok(minecraftPlayerService.submitIpInfo(
+        boolean success = minecraftPlayerService.submitIpInfo(
             server,
             request.minecraftUUID(),
             request.ip(),
@@ -211,7 +277,8 @@ public class MinecraftPlayerController {
             request.asn(),
             request.proxy(),
             request.hosting()
-        ));
+        ).success();
+        return ResponseEntity.ok(successBody(success));
     }
 
     @PostMapping("/pardon")
@@ -220,19 +287,58 @@ public class MinecraftPlayerController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> response = minecraftPlayerService.pardonPlayer(
+        return switch (minecraftPlayerService.pardonPlayer(
             server,
             request.playerName(),
             request.punishmentType(),
             request.issuerName(),
             request.issuerId(),
             request.reason()
-        );
+        )) {
+            case PardonResult.Pardoned pardoned -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "success", pardoned.success(),
+                "pardonedCount", pardoned.pardonedCount(),
+                "message", pardoned.message()
+            ));
+            case PardonResult.PlayerNotFound notFound -> notFound(notFound.message());
+        };
+    }
 
-        if (Objects.equals(response.get("status"), 404)) {
-            return ResponseEntity.status(404).body(response);
-        }
-        return ResponseEntity.ok(response);
+    private ResponseEntity<Map<String, Object>> renderProfile(PlayerProfileResult result) {
+        return switch (result) {
+            case PlayerProfileResult.Found found -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "profile", found.profile()
+            ));
+            case PlayerProfileResult.NotFound notFound -> notFound(notFound.message());
+        };
+    }
+
+    private ResponseEntity<Map<String, Object>> renderFetch(PlayerFetchResult result) {
+        return switch (result) {
+            case PlayerFetchResult.Found found -> ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", found.message(),
+                "player", found.player()
+            ));
+            case PlayerFetchResult.NotFound notFound -> notFound(notFound.message());
+            case PlayerFetchResult.InvalidRequest invalid -> ResponseEntity.status(400).body(Map.of(
+                "status", 400,
+                "message", invalid.message()
+            ));
+        };
+    }
+
+    private ResponseEntity<Map<String, Object>> notFound(String message) {
+        return ResponseEntity.status(404).body(Map.of(
+            "status", 404,
+            "message", message
+        ));
+    }
+
+    private Map<String, Object> successBody(boolean success) {
+        return Map.of("status", 200, "success", success);
     }
 
     public record LoginRequest(

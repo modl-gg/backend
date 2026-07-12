@@ -1,12 +1,14 @@
 package gg.modl.backend.ticket.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.asMap;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structListToMaps;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structListToObjects;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.infrastructure.exception.ValidationException;
@@ -359,7 +361,7 @@ public final class PanelTicketProtoMapper {
             .setAction(stringValue(reply.getAction()))
             .setCreatorIdentifier(stringValue(reply.getCreatorIdentifier()));
         if (reply.getCreated() != null) {
-            builder.setCreated(gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp(reply.getCreated()));
+            builder.setCreated(toTimestamp(reply.getCreated()));
         }
         addAll(reply.getAttachments(), value -> toStruct(asMap(value)), builder::addAttachments);
         return builder.build();
@@ -399,25 +401,4 @@ public final class PanelTicketProtoMapper {
         return builder.build();
     }
 
-    private static List<Map<String, Object>> structListToMaps(List<com.google.protobuf.Struct> structs) {
-        if (structs.isEmpty()) {
-            return null;
-        }
-        return structs.stream().map(struct -> (Map<String, Object>) structToMap(struct)).toList();
-    }
-
-    private static List<Object> structListToObjects(List<com.google.protobuf.Struct> structs) {
-        if (structs.isEmpty()) {
-            return null;
-        }
-        return structs.stream().map(struct -> (Object) structToMap(struct)).toList();
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-        return Map.of();
-    }
 }

@@ -53,7 +53,7 @@ class GlobalExceptionHandlerProtoTest {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(new ProtoTestController())
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(
                 new ProtoBinaryHttpMessageConverter(),
                 new ProtoJsonHttpMessageConverter(),
@@ -163,7 +163,7 @@ class GlobalExceptionHandlerProtoTest {
             new MockHttpServletRequest("GET", RESTMappingV3.PREFIX_MINECRAFT + "/validated-hours");
         request.addHeader("Accept", ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE);
 
-        ResponseEntity<?> response = new GlobalExceptionHandler()
+        ResponseEntity<?> response = new GlobalExceptionHandler(new ProtobufErrorResponseWriter())
             .handleConstraintViolation(new ConstraintViolationException("invalid", Set.of()), request);
 
         assertEquals(400, response.getStatusCode().value());
@@ -180,7 +180,7 @@ class GlobalExceptionHandlerProtoTest {
             new MockHttpServletRequest("GET", RESTMappingV3.PREFIX_MINECRAFT + "/validated-hours");
         request.addHeader("Accept", ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE);
 
-        ResponseEntity<?> response = new GlobalExceptionHandler()
+        ResponseEntity<?> response = new GlobalExceptionHandler(new ProtobufErrorResponseWriter())
             .handleHandlerMethodValidation(null, request);
 
         assertEquals(400, response.getStatusCode().value());
@@ -212,7 +212,7 @@ class GlobalExceptionHandlerProtoTest {
             new MockHttpServletRequest("GET", RESTMappingV3.PREFIX_MINECRAFT + "/echo");
         request.addHeader("Accept", ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE);
 
-        ResponseEntity<?> response = new GlobalExceptionHandler().handleMethodNotSupported(
+        ResponseEntity<?> response = new GlobalExceptionHandler(new ProtobufErrorResponseWriter()).handleMethodNotSupported(
             new HttpRequestMethodNotSupportedException("GET"),
             request
         );
@@ -254,10 +254,10 @@ class GlobalExceptionHandlerProtoTest {
 
         assertEquals(401, response.getStatusCode().value());
         assertNull(response.getHeaders().getContentType());
-        assertTrue(response.getBody() instanceof CustomErrorController.ErrorResponse);
-        CustomErrorController.ErrorResponse error = (CustomErrorController.ErrorResponse) response.getBody();
-        assertEquals(401, error.getStatus());
-        assertEquals("Unauthorized", error.getError());
+        assertTrue(response.getBody() instanceof ErrorResponseDTO);
+        ErrorResponseDTO error = (ErrorResponseDTO) response.getBody();
+        assertEquals(401, error.status());
+        assertEquals("Unauthorized", error.error());
     }
 
     @Test

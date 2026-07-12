@@ -11,8 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.server.service.PanelDomainResolver;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
 import java.time.Instant;
@@ -24,9 +24,8 @@ class StaffTwoFactorServiceTest {
     @Test
     void generateTokenLowercasesUuidBeforeQueryingRepository() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        ModlProperties properties = mock(ModlProperties.class);
-        when(properties.getDomain()).thenReturn("example.com");
-        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, properties);
+        PanelDomainResolver panelDomainResolver = mock(PanelDomainResolver.class);
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, panelDomainResolver);
         Server server = server();
         when(staffRepository.createTwoFactorToken(eq(server), eq("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
             anyString(), anyString(), anyLong())).thenReturn(true);
@@ -40,7 +39,7 @@ class StaffTwoFactorServiceTest {
     @Test
     void verifyTokenAllowsInitialPublicVerificationWithoutSessionEmail() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(ModlProperties.class));
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(PanelDomainResolver.class));
         Server server = server();
         Staff staff = staff();
         when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff));
@@ -52,7 +51,7 @@ class StaffTwoFactorServiceTest {
     @Test
     void verifyTokenReturnsAssignedMinecraftUuidWhenPresent() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(ModlProperties.class));
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(PanelDomainResolver.class));
         Server server = server();
         Staff staff = staff();
         staff.setAssignedMinecraftUuid("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
@@ -68,7 +67,7 @@ class StaffTwoFactorServiceTest {
     @Test
     void verifyTokenRejectsMismatchedSessionEmailWhenSessionExists() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(ModlProperties.class));
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(PanelDomainResolver.class));
         Server server = server();
         when(staffRepository.findByTwoFactorToken(server, "token")).thenReturn(Optional.of(staff()));
 
@@ -79,7 +78,7 @@ class StaffTwoFactorServiceTest {
     @Test
     void verifyTokenRejectsExpiredToken() {
         StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
-        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(ModlProperties.class));
+        StaffTwoFactorService service = new StaffTwoFactorService(staffRepository, mock(PanelDomainResolver.class));
         Server server = server();
         Staff staff = staff();
         staff.setTwoFactorTokenCreatedAt(Instant.now().minusSeconds(601).toEpochMilli());

@@ -1,6 +1,12 @@
 package gg.modl.backend.admin.controller;
 
-import gg.modl.backend.server.data.Server;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsActivity;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsDashboard;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsExport;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsHistorical;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsUsage;
+import gg.modl.backend.admin.dto.response.AdminNameCount;
+import gg.modl.backend.admin.dto.response.AdminRegistrationPoint;
 import gg.modl.proto.modl.v1.AdminAnalyticsActivityPoint;
 import gg.modl.proto.modl.v1.AdminAnalyticsActivityResponse;
 import gg.modl.proto.modl.v1.AdminAnalyticsDashboardData;
@@ -15,6 +21,7 @@ import gg.modl.proto.modl.v1.AdminAnalyticsLiveServer;
 import gg.modl.proto.modl.v1.AdminAnalyticsNameValue;
 import gg.modl.proto.modl.v1.AdminAnalyticsOverview;
 import gg.modl.proto.modl.v1.AdminAnalyticsPlayerActivity;
+import gg.modl.proto.modl.v1.AdminAnalyticsResourceUtilization;
 import gg.modl.proto.modl.v1.AdminAnalyticsServerActivity;
 import gg.modl.proto.modl.v1.AdminAnalyticsServerMetrics;
 import gg.modl.proto.modl.v1.AdminAnalyticsSystemHealth;
@@ -22,17 +29,7 @@ import gg.modl.proto.modl.v1.AdminAnalyticsUsageData;
 import gg.modl.proto.modl.v1.AdminAnalyticsUsageResponse;
 import gg.modl.proto.modl.v1.AdminAnalyticsUsageStatistics;
 import gg.modl.proto.modl.v1.AdminAnalyticsUserEngagement;
-import gg.modl.proto.modl.v1.AdminAnalyticsResourceUtilization;
 
-import java.util.List;
-import java.util.Map;
-
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.doubleValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
 
 final class AdminAnalyticsProtoMapper {
@@ -40,50 +37,42 @@ final class AdminAnalyticsProtoMapper {
     private AdminAnalyticsProtoMapper() {
     }
 
-    static AdminAnalyticsDashboardResponse toDashboardResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> overview = map(data.get("overview"));
-        Map<String, Object> serverMetrics = map(data.get("serverMetrics"));
-        Map<String, Object> usageStatistics = map(data.get("usageStatistics"));
-
-        AdminAnalyticsDashboardData.Builder builder = AdminAnalyticsDashboardData.newBuilder()
-            .setOverview(toOverview(overview))
-            .setServerMetrics(toServerMetrics(serverMetrics))
-            .setUsageStatistics(toUsageStatistics(usageStatistics))
-            .setSystemHealth(AdminAnalyticsSystemHealth.newBuilder().build());
+    static AdminAnalyticsDashboardResponse toDashboardResponse(AdminAnalyticsDashboard data) {
+        AdminAnalyticsDashboardData dashboard = AdminAnalyticsDashboardData.newBuilder()
+            .setOverview(toOverview(data.overview()))
+            .setServerMetrics(toServerMetrics(data.serverMetrics()))
+            .setUsageStatistics(toUsageStatistics(data.usageStatistics()))
+            .setSystemHealth(AdminAnalyticsSystemHealth.newBuilder().build())
+            .build();
         return AdminAnalyticsDashboardResponse.newBuilder()
             .setSuccess(true)
-            .setData(builder.build())
+            .setData(dashboard)
             .build();
     }
 
-    static AdminAnalyticsActivityResponse toActivityResponse(Map<String, Object> response) {
+    static AdminAnalyticsActivityResponse toActivityResponse(AdminAnalyticsActivity response) {
         AdminAnalyticsActivityResponse.Builder builder = AdminAnalyticsActivityResponse.newBuilder()
             .setSuccess(true)
-            .setTotalPlayers(longValue(response.get("totalPlayers")))
-            .setTotalServers(longValue(response.get("totalServers")));
-        listOfMaps(response.get("data")).forEach(point -> builder.addData(AdminAnalyticsActivityPoint.newBuilder()
-            .setDate(stringValue(point.get("date")))
-            .setActiveServers(longValue(point.get("activeServers")))
-            .setOnlinePlayers(intValue(point.get("onlinePlayers")))
+            .setTotalPlayers(response.totalPlayers())
+            .setTotalServers(response.totalServers());
+        response.data().forEach(point -> builder.addData(AdminAnalyticsActivityPoint.newBuilder()
+            .setDate(stringValue(point.date()))
+            .setActiveServers(point.activeServers())
+            .setOnlinePlayers(point.onlinePlayers())
             .build()));
         return builder.build();
     }
 
-    static AdminAnalyticsUsageResponse toUsageResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> userEngagement = map(data.get("userEngagement"));
-        Map<String, Object> resourceUtilization = map(data.get("resourceUtilization"));
-
+    static AdminAnalyticsUsageResponse toUsageResponse(AdminAnalyticsUsage response) {
         AdminAnalyticsUsageData usageData = AdminAnalyticsUsageData.newBuilder()
             .setUserEngagement(AdminAnalyticsUserEngagement.newBuilder()
-                .setMonthlyActiveServers(longValue(userEngagement.get("monthlyActiveServers")))
+                .setMonthlyActiveServers(response.monthlyActiveServers())
                 .build())
             .setResourceUtilization(AdminAnalyticsResourceUtilization.newBuilder()
-                .setStorage(longValue(resourceUtilization.get("storage")))
-                .setStoragePercent(doubleValue(resourceUtilization.get("storagePercent")))
-                .setApiCalls(longValue(resourceUtilization.get("apiCalls")))
-                .setDatabaseQueries(longValue(resourceUtilization.get("databaseQueries")))
+                .setStorage(response.storage())
+                .setStoragePercent(response.storagePercent())
+                .setApiCalls(response.apiCalls())
+                .setDatabaseQueries(response.databaseQueries())
                 .build())
             .build();
         return AdminAnalyticsUsageResponse.newBuilder()
@@ -92,136 +81,100 @@ final class AdminAnalyticsProtoMapper {
             .build();
     }
 
-    static AdminAnalyticsHistoricalResponse toHistoricalResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
+    static AdminAnalyticsHistoricalResponse toHistoricalResponse(AdminAnalyticsHistorical response) {
         AdminAnalyticsHistoricalData.Builder dataBuilder = AdminAnalyticsHistoricalData.newBuilder()
-            .setMetric(stringValue(data.get("metric")))
-            .setRange(stringValue(data.get("range")));
-        list(data.get("data")).forEach(entry -> {
-            Map<String, Object> point = map(entry);
-            dataBuilder.addData(AdminAnalyticsDateValue.newBuilder()
-                .setDate(stringValue(readField(entry, point, "date")))
-                .setValue(longValue(readField(entry, point, "value")))
-                .build());
-        });
+            .setMetric(stringValue(response.metric()))
+            .setRange(stringValue(response.range()));
+        response.data().forEach(point -> dataBuilder.addData(AdminAnalyticsDateValue.newBuilder()
+            .setDate(stringValue(point.date()))
+            .setValue(point.value())
+            .build()));
         return AdminAnalyticsHistoricalResponse.newBuilder()
             .setSuccess(true)
             .setData(dataBuilder.build())
             .build();
     }
 
-    static AdminAnalyticsExportResponse toExportResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
+    static AdminAnalyticsExportResponse toExportResponse(AdminAnalyticsExport response) {
         return AdminAnalyticsExportResponse.newBuilder()
-            .setExportDate(stringValue(response.get("exportDate")))
-            .setRange(stringValue(response.get("range")))
+            .setExportDate(stringValue(response.exportDate()))
+            .setRange(stringValue(response.range()))
             .setData(AdminAnalyticsExportData.newBuilder()
-                .setServers(longValue(data.get("servers")))
-                .setUsers(longValue(data.get("users")))
-                .setTickets(longValue(data.get("tickets")))
+                .setServers(response.servers())
+                .setUsers(response.users())
+                .setTickets(response.tickets())
                 .build())
             .build();
     }
 
-    private static AdminAnalyticsOverview toOverview(Map<String, Object> overview) {
+    private static AdminAnalyticsOverview toOverview(AdminAnalyticsDashboard.Overview overview) {
         return AdminAnalyticsOverview.newBuilder()
-            .setTotalServers(longValue(overview.get("totalServers")))
-            .setActiveServers(longValue(overview.get("activeServers")))
-            .setTotalUsers(longValue(overview.get("totalUsers")))
-            .setTotalTickets(longValue(overview.get("totalTickets")))
-            .setServerGrowthRate(stringValue(overview.get("serverGrowthRate")))
-            .setUserGrowthRate(stringValue(overview.get("userGrowthRate")))
-            .setAvgPlayersPerServer(stringValue(overview.get("avgPlayersPerServer")))
-            .setAvgTicketsPerServer(stringValue(overview.get("avgTicketsPerServer")))
+            .setTotalServers(overview.totalServers())
+            .setActiveServers(overview.activeServers())
+            .setTotalUsers(overview.totalUsers())
+            .setTotalTickets(overview.totalTickets())
+            .setServerGrowthRate(overview.serverGrowthRate())
+            .setUserGrowthRate(overview.userGrowthRate())
+            .setAvgPlayersPerServer(overview.avgPlayersPerServer())
+            .setAvgTicketsPerServer(overview.avgTicketsPerServer())
             .build();
     }
 
-    private static AdminAnalyticsServerMetrics toServerMetrics(Map<String, Object> serverMetrics) {
+    private static AdminAnalyticsServerMetrics toServerMetrics(AdminAnalyticsDashboard.ServerMetrics serverMetrics) {
         AdminAnalyticsServerMetrics.Builder builder = AdminAnalyticsServerMetrics.newBuilder();
-        toNameValues(serverMetrics.get("byPlan")).forEach(builder::addByPlan);
-        toNameValues(serverMetrics.get("byStatus")).forEach(builder::addByStatus);
-        list(serverMetrics.get("registrationTrend")).forEach(entry ->
-            builder.addRegistrationTrend(toDateServers(entry)));
+        serverMetrics.byPlan().forEach(count -> builder.addByPlan(toNameValue(count)));
+        serverMetrics.byStatus().forEach(count -> builder.addByStatus(toNameValue(count)));
+        serverMetrics.registrationTrend().forEach(point -> builder.addRegistrationTrend(toDateServers(point)));
         return builder.build();
     }
 
-    private static AdminAnalyticsUsageStatistics toUsageStatistics(Map<String, Object> usageStatistics) {
+    private static AdminAnalyticsUsageStatistics toUsageStatistics(AdminAnalyticsDashboard.UsageStatistics usageStatistics) {
         AdminAnalyticsUsageStatistics.Builder builder = AdminAnalyticsUsageStatistics.newBuilder()
-            .setTotalPlayerCount(intValue(usageStatistics.get("totalPlayerCount")));
-        list(usageStatistics.get("topServersByUsers")).stream()
-            .filter(Server.class::isInstance)
-            .map(Server.class::cast)
-            .forEach(server -> builder.addTopServersByUsers(AdminServerProtoMapper.toRecord(server)));
-        listOfMaps(usageStatistics.get("serverActivity")).forEach(activity ->
+            .setTotalPlayerCount(usageStatistics.totalPlayerCount());
+        usageStatistics.topServersByUsers().forEach(server ->
+            builder.addTopServersByUsers(AdminServerProtoMapper.toRecord(server)));
+        usageStatistics.serverActivity().forEach(activity ->
             builder.addServerActivity(AdminAnalyticsServerActivity.newBuilder()
-                .setDate(stringValue(activity.get("date")))
-                .setActiveServers(longValue(activity.get("activeServers")))
+                .setDate(stringValue(activity.date()))
+                .setActiveServers(activity.activeServers())
                 .build()));
-        listOfMaps(usageStatistics.get("liveServers")).forEach(live ->
-            builder.addLiveServers(toLiveServer(live)));
-        listOfMaps(usageStatistics.get("playerActivity")).forEach(activity ->
+        usageStatistics.liveServers().forEach(live -> builder.addLiveServers(toLiveServer(live)));
+        usageStatistics.playerActivity().forEach(activity ->
             builder.addPlayerActivity(AdminAnalyticsPlayerActivity.newBuilder()
-                .setDate(stringValue(activity.get("date")))
-                .setPlayers(intValue(activity.get("players")))
+                .setDate(stringValue(activity.date()))
+                .setPlayers(activity.players())
                 .build()));
         return builder.build();
     }
 
-    private static AdminAnalyticsLiveServer toLiveServer(Map<String, Object> live) {
+    private static AdminAnalyticsLiveServer toLiveServer(AdminAnalyticsDashboard.LiveServer live) {
         AdminAnalyticsLiveServer.Builder builder = AdminAnalyticsLiveServer.newBuilder()
-            .setServerId(stringValue(live.get("serverId")))
-            .setServerName(stringValue(live.get("serverName")))
-            .setPlayerCount(intValue(live.get("playerCount")));
-        if (live.get("platform") != null) {
-            builder.setPlatform(stringValue(live.get("platform")));
+            .setServerId(stringValue(live.serverId()))
+            .setServerName(stringValue(live.serverName()))
+            .setPlayerCount(live.playerCount());
+        if (live.platform() != null) {
+            builder.setPlatform(live.platform());
         }
-        if (live.get("version") != null) {
-            builder.setVersion(stringValue(live.get("version")));
+        if (live.version() != null) {
+            builder.setVersion(live.version());
         }
-        if (live.get("pluginVersion") != null) {
-            builder.setPluginVersion(stringValue(live.get("pluginVersion")));
+        if (live.pluginVersion() != null) {
+            builder.setPluginVersion(live.pluginVersion());
         }
         return builder.build();
     }
 
-    private static List<AdminAnalyticsNameValue> toNameValues(Object source) {
-        return list(source).stream()
-            .map(AdminAnalyticsProtoMapper::toNameValue)
-            .toList();
-    }
-
-    private static AdminAnalyticsNameValue toNameValue(Object source) {
-        if (source instanceof gg.modl.backend.database.mongo.repository.ServerMongoRepository.NameValueResult result) {
-            return AdminAnalyticsNameValue.newBuilder()
-                .setName(stringValue(result.name()))
-                .setValue(result.value())
-                .build();
-        }
-        Map<String, Object> map = map(source);
+    private static AdminAnalyticsNameValue toNameValue(AdminNameCount count) {
         return AdminAnalyticsNameValue.newBuilder()
-            .setName(stringValue(map.get("name")))
-            .setValue(intValue(map.get("value")))
+            .setName(stringValue(count.name()))
+            .setValue(count.value())
             .build();
     }
 
-    private static AdminAnalyticsDateServers toDateServers(Object source) {
-        if (source instanceof gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateServersResult result) {
-            return AdminAnalyticsDateServers.newBuilder()
-                .setDate(stringValue(result.date()))
-                .setServers(result.servers())
-                .build();
-        }
-        Map<String, Object> map = map(source);
+    private static AdminAnalyticsDateServers toDateServers(AdminRegistrationPoint point) {
         return AdminAnalyticsDateServers.newBuilder()
-            .setDate(stringValue(map.get("date")))
-            .setServers(intValue(map.get("servers")))
+            .setDate(stringValue(point.date()))
+            .setServers(point.servers())
             .build();
-    }
-
-    private static Object readField(Object source, Map<String, Object> map, String field) {
-        if (source instanceof gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateValueResult result) {
-            return field.equals("date") ? result.date() : result.value();
-        }
-        return map.get(field);
     }
 }

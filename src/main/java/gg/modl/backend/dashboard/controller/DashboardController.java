@@ -7,6 +7,7 @@ import gg.modl.backend.dashboard.dto.response.DashboardMetricsResponse;
 import gg.modl.backend.dashboard.dto.response.RecentPunishmentResponse;
 import gg.modl.backend.dashboard.dto.response.RecentTicketResponse;
 import gg.modl.backend.dashboard.service.DashboardService;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_DASHBOARD)
+@RequiresPanelPermission("admin.audit.view.dashboard")
 @RequiredArgsConstructor
 @Validated
 public class DashboardController {

@@ -195,9 +195,7 @@ public class RealtimeWebSocketHandler extends BinaryWebSocketHandler {
         }
 
         switch (envelope.getPayloadCase()) {
-            case HEARTBEAT -> {
-                state.recordHeartbeat();
-            }
+            case HEARTBEAT -> state.recordHeartbeat();
             case ACK -> {
                 state.setLastAcknowledgedEventId(envelope.getAck().getEventId());
                 metrics.recordAck(state, envelope.getAck().getEventId());

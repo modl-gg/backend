@@ -7,12 +7,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.dto.response.PunishmentView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -40,7 +40,6 @@ class PlayerLookupServiceTest {
             mock(MojangApiService.class),
             mock(PlayerStatusCalculator.class),
             mock(IssuerNameResolver.class),
-            mock(StaffMongoRepository.class),
             mock(PlayerService.class)
         );
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
@@ -86,9 +85,9 @@ class PlayerLookupServiceTest {
         assertEquals(2, notes.size());
         assertEquals(5, profile.get("punishmentCount"));
         assertEquals(4, profile.get("noteCount"));
-        assertEquals("punishment-5", ((Map<?, ?>) punishments.get(0)).get("id"));
-        assertEquals("punishment-4", ((Map<?, ?>) punishments.get(1)).get("id"));
-        assertEquals("punishment-3", ((Map<?, ?>) punishments.get(2)).get("id"));
+        assertEquals("punishment-5", ((PunishmentView) punishments.get(0)).id());
+        assertEquals("punishment-4", ((PunishmentView) punishments.get(1)).id());
+        assertEquals("punishment-3", ((PunishmentView) punishments.get(2)).id());
         assertEquals("note-4", ((Map<?, ?>) notes.get(0)).get("id"));
         assertEquals("note-3", ((Map<?, ?>) notes.get(1)).get("id"));
     }

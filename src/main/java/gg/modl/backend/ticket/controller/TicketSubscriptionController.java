@@ -1,6 +1,7 @@
 package gg.modl.backend.ticket.controller;
 
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.UnauthorizedException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKET_SUBSCRIPTIONS)
+@RequiresPanelPermission(view = "ticket.view.all", modify = "ticket.reply.all")
 @RequiredArgsConstructor
 @Validated
 public class TicketSubscriptionController {
@@ -42,9 +44,8 @@ public class TicketSubscriptionController {
     @GetMapping
     public ResponseEntity<TicketSubscriptionsResponse> getSubscriptions(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             return ResponseEntity.status(401).build();
         }
 
@@ -58,9 +59,8 @@ public class TicketSubscriptionController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             throw new UnauthorizedException("Not authenticated");
         }
 
@@ -77,9 +77,8 @@ public class TicketSubscriptionController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             return ResponseEntity.status(401).build();
         }
 
@@ -93,9 +92,8 @@ public class TicketSubscriptionController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             throw new UnauthorizedException("Not authenticated");
         }
 
@@ -110,9 +108,8 @@ public class TicketSubscriptionController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             throw new UnauthorizedException("Not authenticated");
         }
 
@@ -127,13 +124,17 @@ public class TicketSubscriptionController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String staffEmail = RequestUtil.getSessionEmail(request);
-
-        if (staffEmail == null || staffEmail.isBlank()) {
+        String staffEmail = sessionEmail(request);
+        if (staffEmail == null) {
             return ResponseEntity.status(401).build();
         }
 
         List<SubscriptionUpdateResponse> updates = subscriptionService.getAssignedTicketUpdates(server, staffEmail, limit);
         return ResponseEntity.ok(PanelTicketProtoMapper.toSubscriptionUpdatesResponse(updates));
+    }
+
+    private String sessionEmail(HttpServletRequest request) {
+        String staffEmail = RequestUtil.getSessionEmail(request);
+        return staffEmail == null || staffEmail.isBlank() ? null : staffEmail;
     }
 }

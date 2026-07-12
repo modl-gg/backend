@@ -8,7 +8,8 @@ import gg.modl.backend.database.mongo.repository.CommandLogMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerLogMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerBetaTesterRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketVerificationMongoRepository;
@@ -45,7 +46,8 @@ public class BetaResetService {
     private final WebAuthnChallengeMongoRepository webAuthnChallengeRepository;
     private final AuthSessionMongoRepository authSessionRepository;
     private final AuthCodeMongoRepository authCodeRepository;
-    private final ServerMongoRepository serverRepository;
+    private final ServerBetaTesterRepository serverBetaTesterRepository;
+    private final ServerUsageRepository serverUsageRepository;
     private final ServerService serverService;
 
     private final Set<String> resetsInFlight = ConcurrentHashMap.newKeySet();
@@ -58,7 +60,7 @@ public class BetaResetService {
 
     @Async
     public CompletableFuture<List<ResetResult>> resetAll() {
-        List<Server> servers = serverRepository.findAllBetaTesters();
+        List<Server> servers = serverBetaTesterRepository.findAllBetaTesters();
         List<ResetResult> results = new ArrayList<>();
         boolean anyCleared = false;
         for (Server server : servers) {
@@ -98,7 +100,7 @@ public class BetaResetService {
                 log.error("Beta reset failed clearing {} for server {}", step.getKey(), server.getId(), e);
             }
         }
-        serverRepository.resetUsageAndStatsCounters(server.getId());
+        serverUsageRepository.resetUsageAndStatsCounters(server.getId());
         return cleared;
     }
 

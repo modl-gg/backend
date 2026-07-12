@@ -1,8 +1,10 @@
 package gg.modl.backend.audit.controller;
 
+import gg.modl.backend.audit.service.AdminDatabaseBrowserService;
 import gg.modl.backend.audit.service.AuditService;
 import gg.modl.backend.audit.service.StaffPerformanceService;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -43,10 +45,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_AUDIT)
+@RequiresPanelPermission("admin.audit.view.logs")
 @RequiredArgsConstructor
 @Validated
 public class AuditController {
     private final AuditService auditService;
+    private final AdminDatabaseBrowserService adminDatabaseBrowserService;
     private final StaffPerformanceService staffPerformanceService;
     private final PermissionService permissionService;
     private final RealtimeEventPublisher realtimeEventPublisher;
@@ -93,7 +97,26 @@ public class AuditController {
         return ResponseEntity.ok(AuditProtoMapper.toPunishmentAuditList(punishments));
     }
 
+    @GetMapping("/database/{table}")
+    public ResponseEntity<AuditDatabaseTableResponse> getDatabaseTable(
+        @PathVariable String table,
+        @RequestParam(defaultValue = "100") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
+        @RequestParam(defaultValue = "0") @Min(0) int skip,
+        HttpServletRequest request
+    ) {
+        Server server = RequestUtil.getRequestServer(request);
+        requireSuperAdmin(server, request);
+
+        if (!AdminDatabaseBrowserService.ALLOWED_TABLES.contains(table)) {
+            throw new ValidationException("Invalid table name");
+        }
+
+        Map<String, Object> result = adminDatabaseBrowserService.getDatabaseTable(server, table, limit, skip);
+        return ResponseEntity.ok(AuditProtoMapper.toDatabaseTableResponse(result));
+    }
+
     @PostMapping("/punishments/{id}/rollback")
+    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditRollbackResponse> rollbackPunishment(
         @PathVariable String id,
         @RequestBody(required = false) RollbackRequest rollbackRequest,
@@ -116,6 +139,7 @@ public class AuditController {
     }
 
     @PostMapping("/staff/{username}/rollback-all")
+    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> rollbackAllByStaff(
         @PathVariable String username,
         @RequestBody(required = false) RollbackRequest rollbackRequest,
@@ -135,6 +159,7 @@ public class AuditController {
     }
 
     @PostMapping("/staff/{username}/rollback-date-range")
+    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> rollbackByDateRange(
         @PathVariable String username,
         @RequestBody DateRangeRollbackRequest rollbackRequest,
@@ -166,6 +191,7 @@ public class AuditController {
     }
 
     @PostMapping("/punishments/bulk-pardon")
+    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> bulkPardon(
         @RequestBody BulkPunishmentActionRequest actionRequest,
         HttpServletRequest request
@@ -183,6 +209,7 @@ public class AuditController {
     }
 
     @PostMapping("/punishments/bulk-set-expiration")
+    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> bulkSetExpiration(
         @RequestBody BulkPunishmentActionRequest actionRequest,
         HttpServletRequest request
@@ -213,23 +240,5 @@ public class AuditController {
 
     private void invalidateAudit(Server server) {
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_AUDIT);
-    }
-
-    @GetMapping("/database/{table}")
-    public ResponseEntity<AuditDatabaseTableResponse> getDatabaseTable(
-        @PathVariable String table,
-        @RequestParam(defaultValue = "100") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
-        @RequestParam(defaultValue = "0") @Min(0) int skip,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-
-        if (!AuditService.ALLOWED_TABLES.contains(table)) {
-            throw new ValidationException("Invalid table name");
-        }
-
-        Map<String, Object> result = auditService.getDatabaseTable(server, table, limit, skip);
-        return ResponseEntity.ok(AuditProtoMapper.toDatabaseTableResponse(result));
     }
 }

@@ -2,7 +2,8 @@ package gg.modl.backend.billing.service;
 
 import gg.modl.backend.billing.dto.response.UsageBillingSettingsResponse;
 import gg.modl.backend.billing.dto.response.UsageResponse;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
+import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.limits.ServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
@@ -18,26 +19,27 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class UsageTrackingService {
-    private final ServerMongoRepository serverRepository;
+    private final ServerUsageRepository serverUsageRepository;
     private final ServerMutationHelper serverMutationHelper;
     private final ServerLimitPolicy serverLimitPolicy;
     public static final long AI_BASE_LIMIT_REQUESTS = 1000L;
     private static final double AI_OVERAGE_RATE = 0.02;
+    private static final long DEFAULT_PERIOD_MILLIS = 30L * 24 * 60 * 60 * 1000;
 
     public UsageResponse getUsage(Server server) {
         Server freshServer = getFreshServer(server.getId());
         if (freshServer == null) {
-            throw new IllegalStateException("Server not found in database.");
+            throw new ResourceNotFoundException("Server not found in database.");
         }
 
         Date currentPeriodStart = freshServer.getCurrentPeriodStart();
         if (currentPeriodStart == null) {
-            currentPeriodStart = new Date(System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000));
+            currentPeriodStart = new Date(System.currentTimeMillis() - DEFAULT_PERIOD_MILLIS);
         }
 
         Date currentPeriodEnd = freshServer.getCurrentPeriodEnd();
         if (currentPeriodEnd == null) {
-            currentPeriodEnd = new Date(System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000));
+            currentPeriodEnd = new Date(System.currentTimeMillis() + DEFAULT_PERIOD_MILLIS);
         }
 
         long aiRequestsUsed = freshServer.getAiRequestsCurrentPeriod() != null ? freshServer.getAiRequestsCurrentPeriod() : 0L;
@@ -71,12 +73,12 @@ public class UsageTrackingService {
     }
 
     private Server getFreshServer(String serverId) {
-        return serverRepository.findById(serverId).orElse(null);
+        return serverUsageRepository.findById(serverId).orElse(null);
     }
 
     public UsageBillingSettingsResponse updateUsageBillingSettings(Server server, boolean enabled) {
         if (enabled && (server.getStripeCustomerId() == null || server.getStripeCustomerId().isBlank())) {
-            throw new IllegalStateException("No Stripe customer ID found. Please ensure you have an active subscription.");
+            throw new ResourceNotFoundException("No Stripe customer ID found. Please ensure you have an active subscription.");
         }
 
         serverMutationHelper.mutate(server, current -> {
@@ -92,11 +94,11 @@ public class UsageTrackingService {
     }
 
     public void incrementAiRequests(String serverId, long additionalRequests) {
-        serverRepository.incrementAiRequests(serverId, additionalRequests);
+        serverUsageRepository.incrementAiRequests(serverId, additionalRequests);
     }
 
     public void resetUsageCounters(String serverId) {
-        serverRepository.resetUsageCounters(serverId);
+        serverUsageRepository.resetUsageCounters(serverId);
     }
 
     public void updateStorageLimit(Server server, long bytes) {

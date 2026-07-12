@@ -1,5 +1,6 @@
 package gg.modl.backend.ticket.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -49,6 +50,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_TICKETS)
+@RequiresPanelPermission(view = "ticket.view.all", modify = "ticket.reply.all")
 @RequiredArgsConstructor
 @Validated
 public class PanelTicketController {
@@ -93,6 +95,7 @@ public class PanelTicketController {
     }
 
     @PostMapping("/bulk")
+    @RequiresPanelPermission(view = "ticket.view.all", modify = "ticket.close.all")
     public ResponseEntity<BulkTicketUpdateResponse> bulkUpdateTickets(
         @RequestBody gg.modl.proto.modl.v1.BulkTicketUpdateRequest bulkRequest,
         HttpServletRequest request

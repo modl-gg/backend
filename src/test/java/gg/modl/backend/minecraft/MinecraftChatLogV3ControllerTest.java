@@ -15,6 +15,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
@@ -48,7 +49,7 @@ class MinecraftChatLogV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftChatLogV3Controller(minecraftChatLogService))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();

@@ -223,9 +223,9 @@ public class DashboardService {
                 continue;
             }
 
-            String reason = "";
-            if (punishment.getData() != null && punishment.getData().get("reason") != null) {
-                reason = String.valueOf(punishment.getData().get("reason"));
+            String reason = punishment.data().reason();
+            if (reason == null) {
+                reason = "";
             }
 
             String typeName = punishmentTypeNameByOrdinal.getOrDefault(punishment.getTypeOrdinal(), "Unknown");

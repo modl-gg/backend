@@ -2,7 +2,6 @@ package gg.modl.backend.storage.service;
 
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.mongo.fields.StorageFileDocumentFields;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.config.StorageExecutorConfig;
@@ -25,7 +24,7 @@ import org.springframework.stereotype.Service;
 public class StorageSyncService {
     private final S3StorageService s3StorageService;
     private final StorageFileMongoRepository storageFileRepository;
-    private final ServerMongoRepository serverRepository;
+    private final StorageUsageAccountant storageUsageAccountant;
 
     private final Set<String> syncsInProgress = ConcurrentHashMap.newKeySet();
 
@@ -56,8 +55,8 @@ public class StorageSyncService {
         int inserted = 0;
         long totalSize = 0;
         for (S3StorageService.S3ObjectInfo obj : objects) {
-            String fileName = obj.key().substring(obj.key().lastIndexOf("/") + 1);
-            String category = S3StorageService.categorizeFile(obj.key());
+            String fileName = StorageKeyUtils.extractFileName(obj.key());
+            String category = StorageKeyUtils.categorizeFile(obj.key());
 
             Query query = Query.query(Criteria.where(StorageFileDocumentFields.KEY).is(obj.key()));
             Update update = new Update()
@@ -82,9 +81,9 @@ public class StorageSyncService {
         storageFileRepository.deleteByKeyNotIn(server, s3Keys);
 
         if (authoritative) {
-            serverRepository.setStorageUsed(server.getId(), totalSize);
+            storageUsageAccountant.setAuthoritativeUsage(server, totalSize);
         } else {
-            serverRepository.setStorageUsedIfBelow(server.getId(), totalSize);
+            storageUsageAccountant.lowerUsageToActual(server, totalSize);
         }
 
         log.info("Synced {} files ({} new) for server {}", objects.size(), inserted, server.getDatabaseName());

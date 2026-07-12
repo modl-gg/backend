@@ -1,5 +1,7 @@
 package gg.modl.backend.staff.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
+
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -91,9 +93,5 @@ public class PublicStaffController {
                 .build()), token));
 
         return ResponseEntity.ok(Staff2faVerifyResponse.newBuilder().setStatus("verified").build());
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

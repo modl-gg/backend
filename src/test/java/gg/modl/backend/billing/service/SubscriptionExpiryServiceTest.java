@@ -7,7 +7,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
@@ -25,7 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class SubscriptionExpiryServiceTest {
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerLookupRepository serverRepository;
 
     @Mock
     private UsageTrackingService usageTrackingService;

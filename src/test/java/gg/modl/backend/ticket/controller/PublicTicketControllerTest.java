@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
@@ -60,7 +61,7 @@ class PublicTicketControllerTest {
 
         mockMvc = MockMvcBuilders
             .standaloneSetup(new PublicTicketController(ticketService, ticketReplyService, recordAccessService, recordVerificationService, realtimeEventPublisher))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .setMessageConverters(new ProtoJsonHttpMessageConverter(), new ProtoBinaryHttpMessageConverter(), new JacksonJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();

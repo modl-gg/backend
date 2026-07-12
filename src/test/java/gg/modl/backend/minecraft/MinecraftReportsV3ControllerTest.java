@@ -17,6 +17,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
@@ -24,6 +25,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.ticket.controller.MinecraftReportsV3Controller;
 import gg.modl.backend.ticket.data.Ticket;
+import gg.modl.backend.ticket.dto.response.MinecraftReportView;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.AssignReportRequest;
@@ -32,9 +34,7 @@ import gg.modl.proto.modl.v1.MinecraftReportOperationResponse;
 import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.ResolveReportRequest;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -54,7 +54,7 @@ class MinecraftReportsV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftReportsV3Controller(ticketService))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
@@ -211,22 +211,22 @@ class MinecraftReportsV3ControllerTest {
         );
     }
 
-    private static Map<String, Object> report() {
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("id", "report-1");
-        report.put("type", "player");
-        report.put("reporterName", "Reporter");
-        report.put("reporterUuid", "22222222-3333-4444-5555-666666666666");
-        report.put("reportedPlayerUuid", PLAYER_UUID);
-        report.put("reportedPlayerName", "BadPlayer");
-        report.put("subject", "Rule break");
-        report.put("content", "Evidence body");
-        report.put("status", "open");
-        report.put("priority", "normal");
-        report.put("createdAt", 1_700_000_000_000L);
-        report.put("assignedTo", List.of("Mod"));
-        report.put("chatMessages", List.of(Ticket.ChatMessage.builder().content("hello").timestamp(new Date(1_700_000_000_001L)).build()));
-        report.put("replayUrl", "https://cdn.example/replay.modlreplay");
-        return report;
+    private static MinecraftReportView report() {
+        return new MinecraftReportView(
+            "report-1",
+            "player",
+            "Reporter",
+            "22222222-3333-4444-5555-666666666666",
+            PLAYER_UUID,
+            "BadPlayer",
+            "Rule break",
+            "Evidence body",
+            "open",
+            "normal",
+            new Date(1_700_000_000_000L),
+            List.of("Mod"),
+            List.of(Ticket.ChatMessage.builder().content("hello").timestamp(new Date(1_700_000_000_001L)).build()),
+            "https://cdn.example/replay.modlreplay"
+        );
     }
 }

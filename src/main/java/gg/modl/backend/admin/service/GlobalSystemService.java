@@ -6,11 +6,12 @@ import gg.modl.backend.admin.dto.request.ToggleMaintenanceRequest;
 import gg.modl.backend.admin.dto.request.UpdatePromptRequest;
 import gg.modl.backend.admin.dto.request.UpdateRateLimitsRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
+import gg.modl.backend.admin.dto.response.AdminMaintenanceStatus;
+import gg.modl.backend.admin.dto.response.AdminRateLimitStatus;
 import gg.modl.backend.ai.service.AITicketAnalysisService;
 import gg.modl.backend.database.mongo.repository.SystemConfigMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import java.util.Date;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -38,15 +39,14 @@ public class GlobalSystemService {
             .orElseGet(() -> systemConfigRepository.saveEntity(new SystemConfig()));
     }
 
-    public Map<String, Object> getMaintenanceStatus() {
+    public AdminMaintenanceStatus getMaintenanceStatus() {
         SystemConfig config = getOrCreateConfig();
-        return Map.of(
-            "isActive", config.getGeneral().isMaintenanceMode(),
-            "message", config.getGeneral().getMaintenanceMessage()
-        );
+        return new AdminMaintenanceStatus(
+            config.getGeneral().isMaintenanceMode(),
+            config.getGeneral().getMaintenanceMessage());
     }
 
-    public Map<String, Object> toggleMaintenance(ToggleMaintenanceRequest request) {
+    public AdminMaintenanceStatus toggleMaintenance(ToggleMaintenanceRequest request) {
         SystemConfig config = getOrCreateConfig();
         config.getGeneral().setMaintenanceMode(request.enabled());
         if (request.message() != null) {
@@ -54,19 +54,17 @@ public class GlobalSystemService {
         }
         config.setUpdatedAt(new Date());
         SystemConfig saved = systemConfigRepository.saveEntity(config);
-        return Map.of(
-            "isActive", saved.getGeneral().isMaintenanceMode(),
-            "message", saved.getGeneral().getMaintenanceMessage()
-        );
+        return new AdminMaintenanceStatus(
+            saved.getGeneral().isMaintenanceMode(),
+            saved.getGeneral().getMaintenanceMessage());
     }
 
-    public Map<String, Object> getRateLimitStatus() {
+    public AdminRateLimitStatus getRateLimitStatus() {
         SystemConfig config = getOrCreateConfig();
-        return Map.of(
-            "current", config.getPerformance(),
-            "active", true,
-            "resetTime", new Date(System.currentTimeMillis() + 15 * 60 * 1000)
-        );
+        return new AdminRateLimitStatus(
+            config.getPerformance(),
+            true,
+            new Date(System.currentTimeMillis() + 15 * 60 * 1000));
     }
 
     public SystemConfig.PerformanceConfig updateRateLimits(UpdateRateLimitsRequest request) {

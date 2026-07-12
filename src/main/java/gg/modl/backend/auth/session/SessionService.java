@@ -81,21 +81,6 @@ public class SessionService {
         );
     }
 
-    public Optional<AuthSessionData> findValidSession(Server server, String sessionId) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return Optional.empty();
-        }
-        return sessionRepository.findActiveById(server, sessionId, new Date());
-    }
-
-    public void refreshSession(Server server, String sessionId) {
-        sessionRepository.refreshExpiresAt(server, sessionId, nextExpiryDate());
-    }
-
-    private Date nextExpiryDate() {
-        return nextExpiryDate(new Date());
-    }
-
     public Optional<AuthSessionData> findAndRefreshAdminSession(String sessionId) {
         return findAndRefreshInternal(
             sessionId,
@@ -126,10 +111,6 @@ public class SessionService {
             return Optional.empty();
         }
         return sessionRepository.findActiveByIdGlobal(sessionId, new Date());
-    }
-
-    public void refreshAdminSession(String sessionId) {
-        sessionRepository.refreshExpiresAtGlobal(sessionId, nextExpiryDate());
     }
 
     public void invalidateSession(Server server, String sessionId) {

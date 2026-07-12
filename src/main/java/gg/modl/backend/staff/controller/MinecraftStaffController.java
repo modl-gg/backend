@@ -6,7 +6,7 @@ import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.MinecraftStaffService;
 import jakarta.servlet.http.HttpServletRequest;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV1.MINECRAFT_STAFF)
 @RequiredArgsConstructor
 public class MinecraftStaffController {
-    private final StaffService staffService;
+    private final MinecraftStaffService staffService;
     private final RoleAuthorization roleAuthorization;
 
     @GetMapping

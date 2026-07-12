@@ -24,12 +24,7 @@ public class TicketReplyService {
     private final TicketContentService contentService;
 
     public TicketReply addReply(Server server, String ticketId, AddReplyRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId)
-            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
-
-        if (ticket.isLocked()) {
-            throw new ConflictException("Ticket is locked and cannot accept new replies");
-        }
+        Ticket ticket = loadWritableTicket(server, ticketId);
 
         TicketReply newReply = TicketReply.builder()
             .id(UUID.randomUUID().toString())
@@ -55,12 +50,7 @@ public class TicketReplyService {
     }
 
     public TicketReply addPublicReply(Server server, String ticketId, String content, List<Object> attachments) {
-        Ticket ticket = ticketRepository.findById(server, ticketId)
-            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
-
-        if (ticket.isLocked()) {
-            throw new ConflictException("Ticket is locked and cannot accept new replies");
-        }
+        Ticket ticket = loadWritableTicket(server, ticketId);
 
         TicketReply newReply = TicketReply.builder()
             .id(UUID.randomUUID().toString())
@@ -79,8 +69,7 @@ public class TicketReplyService {
     }
 
     public TicketNote addNote(Server server, String ticketId, AddNoteRequest request) {
-        Ticket ticket = ticketRepository.findById(server, ticketId)
-            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+        Ticket ticket = loadTicket(server, ticketId);
 
         TicketNote newNote = TicketNote.builder()
             .text(request.text())
@@ -96,8 +85,7 @@ public class TicketReplyService {
     }
 
     public List<String> addTag(Server server, String ticketId, String tag) {
-        Ticket ticket = ticketRepository.findById(server, ticketId)
-            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+        Ticket ticket = loadTicket(server, ticketId);
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (!tags.contains(tag)) {
@@ -111,8 +99,7 @@ public class TicketReplyService {
     }
 
     public List<String> removeTag(Server server, String ticketId, String tag) {
-        Ticket ticket = ticketRepository.findById(server, ticketId)
-            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+        Ticket ticket = loadTicket(server, ticketId);
 
         List<String> tags = ticket.getTags() != null ? new ArrayList<>(ticket.getTags()) : new ArrayList<>();
         if (tags.remove(tag)) {
@@ -124,4 +111,16 @@ public class TicketReplyService {
         return tags;
     }
 
+    private Ticket loadTicket(Server server, String ticketId) {
+        return ticketRepository.findById(server, ticketId)
+            .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
+    }
+
+    private Ticket loadWritableTicket(Server server, String ticketId) {
+        Ticket ticket = loadTicket(server, ticketId);
+        if (ticket.isLocked()) {
+            throw new ConflictException("Ticket is locked and cannot accept new replies");
+        }
+        return ticket;
+    }
 }

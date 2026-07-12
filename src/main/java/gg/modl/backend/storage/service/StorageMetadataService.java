@@ -1,6 +1,5 @@
 package gg.modl.backend.storage.service;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
 import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
@@ -10,7 +9,6 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -23,16 +21,12 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class StorageMetadataService {
     private final StorageFileMongoRepository storageFileRepository;
-    private final ServerMongoRepository serverRepository;
+    private final StorageUsageAccountant storageUsageAccountant;
     private final S3StorageService s3StorageService;
     private final StorageSyncService storageSyncService;
 
     public boolean hasFile(Server server, String key) {
         return storageFileRepository.findByKey(server, key).isPresent();
-    }
-
-    public Optional<StorageFileDocument> findConfirmedFile(Server server, String key) {
-        return storageFileRepository.findByKey(server, key);
     }
 
     public Map<String, StorageFileDocument> findConfirmedFiles(Server server, Collection<String> keys) {
@@ -53,7 +47,7 @@ public class StorageMetadataService {
     }
 
     public boolean isMetadataAuthoritative(Server server) {
-        return isServerSynced(server);
+        return storageUsageAccountant.isSynced(server);
     }
 
     public long sumTempUploadBytes(Server server, Date createdAfter) {
@@ -87,12 +81,12 @@ public class StorageMetadataService {
                 return RecordFileResult.ALREADY_EXISTS;
             }
 
-            String fileName = key.substring(key.lastIndexOf("/") + 1);
-            String category = S3StorageService.categorizeFile(key);
+            String fileName = StorageKeyUtils.extractFileName(key);
+            String category = StorageKeyUtils.categorizeFile(key);
             StorageFileDocument doc = new StorageFileDocument(key, fileName, size, contentType, category);
             storageFileRepository.saveEntity(server, doc);
             if (updateUsage) {
-                serverRepository.incrementStorageUsed(server.getId(), size);
+                storageUsageAccountant.recordAddition(server, size);
             }
             return RecordFileResult.INSERTED;
         } catch (DuplicateKeyException e) {
@@ -112,7 +106,7 @@ public class StorageMetadataService {
     public boolean removeFile(Server server, String key) {
         try {
             storageFileRepository.findAndRemoveByKey(server, key)
-                .ifPresent(doc -> serverRepository.decrementStorageUsed(server.getId(), doc.getSize()));
+                .ifPresent(doc -> storageUsageAccountant.recordRemoval(server, doc.getSize()));
             return true;
         } catch (Exception e) {
             log.warn("Failed to remove file metadata for key: {}", key, e);
@@ -125,7 +119,7 @@ public class StorageMetadataService {
             List<StorageFileDocument> removed = storageFileRepository.findAndRemoveByKeys(server, keys);
             long totalSize = removed.stream().mapToLong(StorageFileDocument::getSize).sum();
             if (totalSize > 0) {
-                serverRepository.decrementStorageUsed(server.getId(), totalSize);
+                storageUsageAccountant.recordRemoval(server, totalSize);
             }
         } catch (Exception e) {
             log.warn("Failed to remove file metadata for bulk delete", e);
@@ -133,22 +127,15 @@ public class StorageMetadataService {
     }
 
     public Map<String, Long> calculateStorageByType(Server server) {
-        if (!isServerSynced(server)) {
+        if (!storageUsageAccountant.isSynced(server)) {
             storageSyncService.triggerAsyncSync(server);
             return s3StorageService.calculateStorageByType(server);
         }
         return storageFileRepository.aggregateStorageByCategory(server);
     }
 
-    public long getStorageUsedBytes(Server server) {
-        if (!isServerSynced(server)) {
-            return s3StorageService.calculateStorageUsed(server);
-        }
-        return server.getStorageUsedBytes();
-    }
-
     public List<StorageFileResponse> listFiles(Server server, String prefix) {
-        if (!isServerSynced(server)) {
+        if (!storageUsageAccountant.isSynced(server)) {
             storageSyncService.triggerAsyncSync(server);
             return s3StorageService.listFiles(server, prefix);
         }
@@ -166,9 +153,5 @@ public class StorageMetadataService {
                 s3StorageService.getCdnUrl(doc.getKey())
             ))
             .toList();
-    }
-
-    private boolean isServerSynced(Server server) {
-        return server.getStorageUsedBytes() != null;
     }
 }

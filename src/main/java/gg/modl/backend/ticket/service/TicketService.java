@@ -1,11 +1,9 @@
 package gg.modl.backend.ticket.service;
 
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
-import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.QuickResponseSettings;
 import gg.modl.backend.settings.data.TicketFormSettings;
@@ -28,17 +26,16 @@ import gg.modl.backend.ticket.dto.response.QuickResponseResult;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import gg.modl.backend.infrastructure.util.MongoKeyUtils;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,104 +44,22 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TicketService {
     private final TicketMongoRepository ticketRepository;
-    private final StaffMongoRepository staffRepository;
+    private final TicketResponseAssembler ticketResponseAssembler;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final TicketFormSettingsService ticketFormSettingsService;
     private final TicketNotificationService notificationService;
     private final TicketIdGenerator ticketIdGenerator;
     private final TicketContentService contentService;
     private final WebhookSettingsService webhookSettingsService;
-    private static final String AVATAR_URL_FORMAT = "https://mc-heads.net/avatar/%s/32";
 
     public TicketResponse getTicketById(Server server, String ticketId) {
         Ticket ticket = ticketRepository.findById(server, ticketId)
             .orElseThrow(() -> new ResourceNotFoundException("Ticket not found"));
-        return toTicketResponse(server, ticket);
+        return ticketResponseAssembler.toTicketResponse(server, ticket);
     }
 
     public TicketResponse toResponse(Server server, Ticket ticket) {
-        return toTicketResponse(server, ticket);
-    }
-
-    private TicketResponse toTicketResponse(Server server, Ticket ticket) {
-        List<TicketReply> processedReplies = processRepliesWithNames(server, ticket);
-        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown";
-
-        return new TicketResponse(
-            ticket.getId(),
-            ticket.getType() != null ? ticket.getType().getId() : TicketCategory.SUPPORT.getId(),
-            ticket.getType() != null ? ticket.getType().getDisplayName() : TicketCategory.SUPPORT.getDisplayName(),
-            ticket.getSubject() != null ? ticket.getSubject() : "No Subject",
-            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
-            ticket.getAppealWorkflowStatus() != null ? ticket.getAppealWorkflowStatus().getId() : null,
-            creatorName,
-            ticket.getCreatorUuid(),
-            creatorName,
-            ticket.getReportedPlayer(),
-            ticket.getReportedPlayerUuid(),
-            ticket.getCreated(),
-            ticket.isLocked(),
-            processedReplies,
-            ticket.getNotes(),
-            ticket.getTags(),
-            ticket.getFormData(),
-            ticket.getData(),
-            ticket.getChatMessages(),
-            ticket.getAiAnalysis(),
-            ticket.isEmailAuthEnabled(),
-            ticket.isHidden(),
-            ticket.getReplayUrl(),
-            ticket.getAssignedTo()
-        );
-    }
-
-    private List<TicketReply> processRepliesWithNames(Server server, Ticket ticket) {
-        if (ticket.getReplies() == null || ticket.getReplies().isEmpty()) {
-            return ticket.getReplies();
-        }
-
-        String creatorName = ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player";
-
-        Set<String> staffUsernames = new HashSet<>();
-        for (TicketReply reply : ticket.getReplies()) {
-            if (reply.isStaff() && (reply.getAvatar() == null || reply.getAvatar().isBlank()) && reply.getName() != null && !reply.getName().isBlank()) {
-                staffUsernames.add(reply.getName());
-            }
-        }
-
-        Map<String, String> staffAvatarMap = new HashMap<>();
-        if (!staffUsernames.isEmpty()) {
-            Map<String, Staff> staffByUsername = staffRepository.findByUsernames(server, staffUsernames)
-                .stream()
-                .collect(Collectors.toMap(Staff::getUsername, Function.identity(), (a, b) -> a));
-
-            for (String username : staffUsernames) {
-                Staff staff = staffByUsername.get(username);
-                if (staff != null && staff.getAssignedMinecraftUuid() != null && !staff.getAssignedMinecraftUuid().isBlank()) {
-                    staffAvatarMap.put(username, String.format(AVATAR_URL_FORMAT, staff.getAssignedMinecraftUuid()));
-                }
-            }
-        }
-
-        return ticket.getReplies()
-            .stream().map(reply -> {
-                String name = reply.getName();
-                if (name == null || name.isBlank()) {
-                    name = reply.isStaff() ? "Staff" : creatorName;
-                }
-                String type = reply.getType();
-                if (type == null || type.isBlank()) {
-                    type = reply.isStaff() ? "staff" : "user";
-                }
-                String avatar = reply.getAvatar();
-                if (reply.isStaff() && (avatar == null || avatar.isBlank()) && name != null) {
-                    String staffAvatar = staffAvatarMap.get(name);
-                    if (staffAvatar != null) {
-                        avatar = staffAvatar;
-                    }
-                }
-                return reply.toBuilder().name(name).type(type).avatar(avatar).build();
-            }).toList();
+        return ticketResponseAssembler.toTicketResponse(server, ticket);
     }
 
     public Optional<Ticket> getTicketRaw(Server server, String ticketId) {
@@ -206,12 +121,7 @@ public class TicketService {
 
         String creatorDisplayName = request.creatorName() != null ? request.creatorName() : "API User";
 
-        boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
-
-        TicketFormSettings.TicketForm formSettings = ticketFormSettingsService.getFormByType(server, ticketCategory.getId());
-        if (formSettings != null && formSettings.isRequireEmailAuth()) {
-            emailAuth = true;
-        }
+        boolean emailAuth = resolveEmailAuth(server, ticketCategory, request);
 
         Ticket ticket = Ticket.builder()
             .type(ticketCategory)
@@ -219,9 +129,9 @@ public class TicketService {
             .status(ticketStatus)
             .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
             .creatorName(creatorDisplayName)
-            .creatorUuid(normalizeUuid(request.creatorUuid()))
+            .creatorUuid(UuidUtils.normalize(request.creatorUuid()))
             .reportedPlayer(request.reportedPlayerName())
-            .reportedPlayerUuid(normalizeUuid(request.reportedPlayerUuid()))
+            .reportedPlayerUuid(UuidUtils.normalize(request.reportedPlayerUuid()))
             .tags(tags)
             .replies(replies)
             .notes(new ArrayList<>())
@@ -248,7 +158,7 @@ public class TicketService {
             ));
         }
 
-        return toTicketResponse(server, saved);
+        return ticketResponseAssembler.toTicketResponse(server, saved);
     }
 
     public TicketResponse updateTicket(Server server, String ticketId, UpdateTicketRequest request, String staffEmail) {
@@ -322,7 +232,7 @@ public class TicketService {
             notificationService.notifyTicketClosed(server, saved);
         }
 
-        return toTicketResponse(server, saved);
+        return ticketResponseAssembler.toTicketResponse(server, saved);
     }
 
     public int bulkUpdateTickets(Server server, BulkTicketUpdateRequest request, String staffEmail) {
@@ -462,45 +372,14 @@ public class TicketService {
         boolean hasDataUpdates = false;
 
         if (request.formData() != null && !request.formData().isEmpty()) {
-            Map<String, Object> sanitizedFormData = new HashMap<>(MongoKeyUtils.sanitizeKeys(request.formData()));
-
-            existingData.putAll(sanitizedFormData);
-            existingData.remove("creatorEmail");
-            existingData.remove("creatorIdentifier");
+            applyFormDataUpdates(server, ticket, request, existingData);
             hasDataUpdates = true;
-
-            Object emailAuthValue = request.formData().get("emailAuthEnabled");
-            if (emailAuthValue != null && Boolean.parseBoolean(emailAuthValue.toString())) {
-                ticket.setEmailAuthEnabled(true);
-                existingData.put("emailAuthEnabled", true);
-            }
-
-            if (ticket.getType() != null) {
-                TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
-                if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
-                    ticket.setEmailAuthEnabled(true);
-                    existingData.put("emailAuthEnabled", true);
-                }
-            }
-
-            Map<String, Object> mergedFormData = ticket.getFormData() != null
-                                                 ? new HashMap<>(ticket.getFormData())
-                                                 : new HashMap<>();
-            mergedFormData.putAll(sanitizedFormData);
-            ticket.setFormData(mergedFormData);
         }
 
-        String creatorEmail = contentService.resolveCreatorEmail(request);
-        if (creatorEmail != null) {
-            boolean hasExistingEmail = existingCreatorEmail != null;
-            if (!hasExistingEmail || emailVerified) {
-                existingData.put("creatorEmail", creatorEmail);
-            } else {
-                existingData.put("creatorEmail", existingCreatorEmail);
-            }
-            hasDataUpdates = true;
-        } else if (existingCreatorEmail != null) {
-            existingData.put("creatorEmail", existingCreatorEmail);
+        Object effectiveCreatorEmail = resolveEffectiveCreatorEmail(
+            existingCreatorEmail, contentService.resolveCreatorEmail(request), emailVerified);
+        if (effectiveCreatorEmail != null) {
+            existingData.put("creatorEmail", effectiveCreatorEmail);
             hasDataUpdates = true;
         }
 
@@ -537,7 +416,7 @@ public class TicketService {
 
         Ticket saved = ticketRepository.saveEntity(server, ticket);
 
-        return toTicketResponse(server, saved);
+        return ticketResponseAssembler.toTicketResponse(server, saved);
     }
 
     public void closeTicketForPunishment(Server server, String ticketId, String issuerName) {
@@ -588,15 +467,54 @@ public class TicketService {
             .collect(Collectors.toSet());
     }
 
+    private boolean resolveEmailAuth(Server server, TicketCategory ticketCategory, CreateTicketRequest request) {
+        boolean emailAuth = Boolean.TRUE.equals(request.emailAuthEnabled());
+        TicketFormSettings.TicketForm formSettings = ticketFormSettingsService.getFormByType(server, ticketCategory.getId());
+        if (formSettings != null && formSettings.isRequireEmailAuth()) {
+            emailAuth = true;
+        }
+        return emailAuth;
+    }
+
+    private void applyFormDataUpdates(Server server, Ticket ticket, SubmitTicketFormRequest request, Map<String, Object> existingData) {
+        Map<String, Object> sanitizedFormData = new HashMap<>(MongoKeyUtils.sanitizeKeys(request.formData()));
+
+        existingData.putAll(sanitizedFormData);
+        existingData.remove("creatorEmail");
+        existingData.remove("creatorIdentifier");
+
+        Object emailAuthValue = request.formData().get("emailAuthEnabled");
+        if (emailAuthValue != null && Boolean.parseBoolean(emailAuthValue.toString())) {
+            ticket.setEmailAuthEnabled(true);
+            existingData.put("emailAuthEnabled", true);
+        }
+
+        if (ticket.getType() != null) {
+            TicketFormSettings.TicketForm formTypeSettings = ticketFormSettingsService.getFormByType(server, ticket.getType().getId());
+            if (formTypeSettings != null && formTypeSettings.isRequireEmailAuth()) {
+                ticket.setEmailAuthEnabled(true);
+                existingData.put("emailAuthEnabled", true);
+            }
+        }
+
+        Map<String, Object> mergedFormData = ticket.getFormData() != null
+                                             ? new HashMap<>(ticket.getFormData())
+                                             : new HashMap<>();
+        mergedFormData.putAll(sanitizedFormData);
+        ticket.setFormData(mergedFormData);
+    }
+
+    private static Object resolveEffectiveCreatorEmail(Object existingCreatorEmail, String requestCreatorEmail, boolean emailVerified) {
+        if (requestCreatorEmail != null && (existingCreatorEmail == null || emailVerified)) {
+            return requestCreatorEmail;
+        }
+        return existingCreatorEmail;
+    }
+
     private static void applyLockedState(Ticket ticket, boolean locked) {
         TicketStatus nextStatus = locked
                                   ? TicketStatus.CLOSED
                                   : (ticket.getStatus() == TicketStatus.UNFINISHED ? TicketStatus.UNFINISHED : TicketStatus.OPEN);
         ticket.applyLifecycleStatus(nextStatus);
     }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
-    }
-
 }

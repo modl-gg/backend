@@ -2,13 +2,13 @@ package gg.modl.backend.registration.cleanup;
 
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository.PlayerCollectionInspection;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerRegistrationCleanupRepository;
 import gg.modl.backend.registration.config.RegistrationCleanupProperties;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Date;
@@ -18,17 +18,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class RegistrationCleanupService {
     private final RegistrationCleanupProperties properties;
-    private final ServerMongoRepository serverRepository;
+    private final ServerRegistrationCleanupRepository serverRegistrationCleanupRepository;
     private final ServerDatabaseMongoRepository serverDatabaseRepository;
     private final ServerService serverService;
     private final PermissionService permissionService;
-    private final StaffService staffService;
+    private final StaffLookupCache staffLookupCache;
     private final Clock clock;
 
     @Scheduled(fixedDelayString = "${modl.registration.cleanup.interval-ms:3600000}")
@@ -44,7 +45,7 @@ public class RegistrationCleanupService {
         Instant now = clock.instant();
         Date cutoff = Date.from(now.minus(properties.getExpiry()));
         Date claimCutoff = Date.from(now.minus(properties.getClaimTtl()));
-        List<Server> candidates = serverRepository.findExpiredRegistrationCleanupCandidates(
+        List<Server> candidates = serverRegistrationCleanupRepository.findExpiredRegistrationCleanupCandidates(
             cutoff,
             claimCutoff,
             properties.getBatchSize()
@@ -85,14 +86,14 @@ public class RegistrationCleanupService {
             return;
         }
 
-        Optional<Server> claimed = serverRepository.claimExpiredRegistrationForCleanup(candidate.getId(), cutoff, claimCutoff, now);
+        Optional<Server> claimed = serverRegistrationCleanupRepository.claimExpiredRegistrationForCleanup(candidate.getId(), cutoff, claimCutoff, now);
         if (claimed.isEmpty()) {
             stats.skippedRace++;
             return;
         }
 
         Server claimedServer = claimed.get();
-        if (!isStillEligible(claimedServer, cutoff) || isBlank(claimedServer.getCleanupClaimId())) {
+        if (!isStillEligible(claimedServer, cutoff) || !StringUtils.hasText(claimedServer.getCleanupClaimId())) {
             releaseClaimIfPresent(claimedServer);
             stats.skippedRace++;
             return;
@@ -104,7 +105,7 @@ public class RegistrationCleanupService {
             return;
         }
 
-        Optional<Server> confirmed = serverRepository.confirmRegistrationCleanupClaim(
+        Optional<Server> confirmed = serverRegistrationCleanupRepository.confirmRegistrationCleanupClaim(
             claimedServer.getId(),
             claimedServer.getCleanupClaimId(),
             cutoff,
@@ -121,7 +122,7 @@ public class RegistrationCleanupService {
             return;
         }
 
-        boolean deleted = serverRepository.deleteClaimedExpiredRegistration(
+        boolean deleted = serverRegistrationCleanupRepository.deleteClaimedExpiredRegistration(
             confirmedServer.getId(),
             confirmedServer.getCleanupClaimId(),
             cutoff
@@ -133,13 +134,13 @@ public class RegistrationCleanupService {
 
         serverService.evictAllServerCaches();
         permissionService.evictPermissionCache();
-        staffService.evictAllStaffCaches();
+        staffLookupCache.evictAll();
         stats.deleted++;
     }
 
     private void releaseClaimIfPresent(Server server) {
-        if (!isBlank(server.getCleanupClaimId())) {
-            serverRepository.releaseRegistrationCleanupClaim(server.getId(), server.getCleanupClaimId());
+        if (StringUtils.hasText(server.getCleanupClaimId())) {
+            serverRegistrationCleanupRepository.releaseRegistrationCleanupClaim(server.getId(), server.getCleanupClaimId());
         }
     }
 
@@ -159,16 +160,16 @@ public class RegistrationCleanupService {
         return server != null
             && Boolean.FALSE.equals(server.getEmailVerified())
             && server.getProvisioningStatus() == ProvisioningStatus.PENDING
-            && !isBlank(server.getEmailVerificationToken())
+            && StringUtils.hasText(server.getEmailVerificationToken())
             && server.getCreatedAt() != null
             && server.getCreatedAt().before(cutoff)
-            && !isBlank(server.getDatabaseName())
+            && StringUtils.hasText(server.getDatabaseName())
             && !hasActivityEvidence(server);
     }
 
     private boolean hasActivityEvidence(Server server) {
         return server.getLastActivityAt() != null
-            || !isBlank(server.getApiKey())
+            || StringUtils.hasText(server.getApiKey())
             || positive(server.getUserCount())
             || positive(server.getTicketCount())
             || positive(server.getOnlinePlayerCount());
@@ -176,10 +177,6 @@ public class RegistrationCleanupService {
 
     private boolean positive(Long value) {
         return value != null && value > 0;
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 
     private static class CleanupStats {

@@ -50,8 +50,8 @@ public class BillingService {
 
         try {
             stripeService.updateCustomerEmail(customerId, newEmail);
-        } catch (StripeException e) {
-            log.warn("Failed to sync Stripe customer email for server {}; billing email may be stale", server.getId(), e);
+        } catch (StripeException exception) {
+            log.warn("Failed to sync Stripe customer email for server {}; billing email may be stale", server.getId(), exception);
         }
     }
 
@@ -67,8 +67,8 @@ public class BillingService {
 
             Session session = stripeService.createCheckoutSession(customerId, server.getCustomDomain());
             return new CheckoutSessionResponse(session.getId(), session.getUrl());
-        } catch (StripeException e) {
-            throw new ExternalServiceException("Failed to create checkout session", e);
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to create checkout session", exception);
         }
     }
 
@@ -80,8 +80,8 @@ public class BillingService {
         try {
             com.stripe.model.billingportal.Session session = stripeService.createPortalSession(server.getStripeCustomerId(), server.getCustomDomain());
             return new PortalSessionResponse(session.getUrl());
-        } catch (StripeException e) {
-            throw new ExternalServiceException("Failed to create portal session", e);
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to create portal session", exception);
         }
     }
 
@@ -111,8 +111,8 @@ public class BillingService {
                 "Subscription cancelled successfully. Access will continue until the end of your current billing period.",
                 periodEndDate
             );
-        } catch (StripeException e) {
-            throw new ExternalServiceException("Failed to cancel subscription", e);
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to cancel subscription", exception);
         }
     }
 
@@ -224,8 +224,8 @@ public class BillingService {
                     periodEndDate
                 )
             );
-        } catch (StripeException e) {
-            throw new ExternalServiceException("Failed to resubscribe", e);
+        } catch (StripeException exception) {
+            throw new ExternalServiceException("Failed to resubscribe", exception);
         }
     }
 

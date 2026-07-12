@@ -3,8 +3,8 @@ package gg.modl.backend.database.mongo.repository;
 import static gg.modl.backend.database.mongo.MongoAggregationResults.extractFacetCount;
 
 import gg.modl.backend.admin.data.SystemLog;
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
-
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SystemLogFields;
 import java.util.ArrayList;
@@ -20,11 +20,10 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
+import org.springframework.util.StringUtils;
 
 @Repository
 public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<SystemLog> {
-    public static final String COLLECTION_NAME = "system_logs";
-
     private static final String ALIAS_DATE = "date";
     private static final String ALIAS_LEVEL = "level";
     private static final String ALIAS_COUNT = "count";
@@ -40,7 +39,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
     private static final String RESOLVED_TRUE = "true";
 
     public SystemLogMongoRepository(TenantMongoAccess tenantMongoAccess) {
-        super(SystemLog.class, COLLECTION_NAME, tenantMongoAccess);
+        super(SystemLog.class, CollectionName.SYSTEM_LOGS, tenantMongoAccess);
     }
 
     public long countAll() {
@@ -106,22 +105,22 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
         Query query = new Query();
         List<Criteria> criteriaList = new ArrayList<>();
 
-        if (hasText(level)) {
+        if (StringUtils.hasText(level)) {
             criteriaList.add(Criteria.where(SystemLogFields.LEVEL).is(level));
         }
-        if (hasText(source)) {
+        if (StringUtils.hasText(source)) {
             criteriaList.add(Criteria.where(SystemLogFields.SOURCE).is(source));
         }
-        if (hasText(serverId)) {
+        if (StringUtils.hasText(serverId)) {
             criteriaList.add(Criteria.where(SystemLogFields.SERVER_ID).is(serverId));
         }
-        if (hasText(category)) {
+        if (StringUtils.hasText(category)) {
             criteriaList.add(Criteria.where(SystemLogFields.CATEGORY).is(category));
         }
         if (resolved != null) {
             criteriaList.add(Criteria.where(SystemLogFields.RESOLVED).is(RESOLVED_TRUE.equals(resolved)));
         }
-        if (hasText(search)) {
+        if (StringUtils.hasText(search)) {
             criteriaList.add(Criteria.where(SystemLogFields.MESSAGE).regex(Pattern.quote(search), "i"));
         }
         if (startDate != null || endDate != null) {
@@ -138,10 +137,6 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
             query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
         }
         return query;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 
     private Sort.Direction resolveDirection(String order) {
@@ -176,11 +171,11 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
     }
 
     public List<String> findDistinctSources() {
-        return globalTemplate().findDistinct(new Query(), SystemLogFields.SOURCE, COLLECTION_NAME, String.class);
+        return globalTemplate().findDistinct(new Query(), SystemLogFields.SOURCE, CollectionName.SYSTEM_LOGS, String.class);
     }
 
     public List<String> findDistinctCategories() {
-        return globalTemplate().findDistinct(new Query(), SystemLogFields.CATEGORY, COLLECTION_NAME, String.class);
+        return globalTemplate().findDistinct(new Query(), SystemLogFields.CATEGORY, CollectionName.SYSTEM_LOGS, String.class);
     }
 
     public SystemLog resolveById(String id, String resolvedBy, Date resolvedAt) {
@@ -250,7 +245,7 @@ public class SystemLogMongoRepository extends AbstractGlobalMongoRepository<Syst
             ));
 
         List<Document> pipeline = List.of(new Document("$facet", facet));
-        List<Document> results = globalTemplate().getCollection(COLLECTION_NAME)
+        List<Document> results = globalTemplate().getCollection(CollectionName.SYSTEM_LOGS)
             .aggregate(pipeline)
             .into(new ArrayList<>());
 

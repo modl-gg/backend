@@ -2,14 +2,16 @@ package gg.modl.backend.admin.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
+import gg.modl.backend.admin.dto.response.AdminMonitoringLogs;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository;
 import gg.modl.backend.database.mongo.repository.SystemLogMongoRepository;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +29,7 @@ class AdminMonitoringServiceTest {
     private SystemLogMongoRepository systemLogRepository;
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerMetricsRepository serverRepository;
 
     @Mock
     private GlobalMongoAdminRepository globalMongoAdminRepository;
@@ -46,7 +48,7 @@ class AdminMonitoringServiceTest {
             .thenReturn(List.of());
         when(systemLogRepository.countLogs(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0L);
 
-        Map<String, Object> response = adminMonitoringService.getLogs(
+        AdminMonitoringLogs response = adminMonitoringService.getLogs(
             1,
             50,
             null,
@@ -61,13 +63,10 @@ class AdminMonitoringServiceTest {
             "desc"
         );
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.get("data");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> filters = (Map<String, Object>) data.get("filters");
+        AdminMonitoringLogs.Filters filters = response.filters();
         assertNotNull(filters);
-        assertEquals(null, filters.get("level"));
-        assertEquals(null, filters.get("search"));
+        assertNull(filters.level());
+        assertNull(filters.search());
     }
 
     @Test

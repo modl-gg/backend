@@ -2,8 +2,9 @@ package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository.ReplayCursor;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
+import gg.modl.backend.infrastructure.scheduling.KeysetDrainer;
 import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import gg.modl.backend.replay.config.LegacyReplayCleanupProperties;
 import gg.modl.backend.replay.data.ReplayDocument;
@@ -31,7 +32,7 @@ public class LegacyReplayCleanupService {
     private static final String CLEANUP_LEASE = "legacy-replay-cleanup";
 
     private final LegacyReplayCleanupProperties properties;
-    private final ServerMongoRepository serverRepository;
+    private final ServerLookupRepository serverLookupRepository;
     private final ReplayMongoRepository replayRepository;
     private final TicketMongoRepository ticketRepository;
     private final ReplayRetentionSettingsService replayRetentionSettingsService;
@@ -58,7 +59,7 @@ public class LegacyReplayCleanupService {
         }
 
         RunAggregate aggregate = new RunAggregate();
-        List<Server> servers = serverRepository.findAll();
+        List<Server> servers = serverLookupRepository.findAll();
         for (Server server : servers) {
             try {
                 ServerCleanupResult result = processServer(server);
@@ -106,25 +107,16 @@ public class LegacyReplayCleanupService {
     }
 
     private long drain(Server server, Date cutoff, int pageSize, ReplayPageFinder finder, ServerCleanupResult result) {
-        long deletedTotal = 0;
-        ReplayCursor cursor = null;
-        int pages = 0;
-        while (pages++ < MAX_PAGES_PER_RUN) {
-            List<ReplayDocument> page = finder.find(server, cutoff, cursor, pageSize);
-            if (page.isEmpty()) {
-                break;
-            }
-            result.scanned += page.size();
-            List<ReplayDocument> deletable = selectDeletable(server, page, result);
-            ReplayBatchDeletionResult deletion = replayDeletionService.deleteReplaysWithStorage(server, deletable);
-            deletedTotal += deletion.deleted();
-            result.alreadyAbsent += deletion.alreadyAbsent();
-            cursor = cursorFrom(page);
-            if (page.size() < pageSize) {
-                break;
-            }
-        }
-        return deletedTotal;
+        return KeysetDrainer.<ReplayDocument, ReplayCursor>drain(MAX_PAGES_PER_RUN, pageSize,
+            (cursor, limit) -> finder.find(server, cutoff, cursor, limit),
+            this::cursorFrom,
+            page -> {
+                result.scanned += page.size();
+                List<ReplayDocument> deletable = selectDeletable(server, page, result);
+                ReplayBatchDeletionResult deletion = replayDeletionService.deleteReplaysWithStorage(server, deletable);
+                result.alreadyAbsent += deletion.alreadyAbsent();
+                return deletion.deleted();
+            });
     }
 
     private List<ReplayDocument> selectDeletable(Server server, List<ReplayDocument> page, ServerCleanupResult result) {

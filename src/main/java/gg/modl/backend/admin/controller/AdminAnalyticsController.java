@@ -6,7 +6,6 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.proto.modl.v1.AdminAnalyticsReportResponse;
 import gg.modl.proto.modl.v1.ExportAnalyticsRequest;
 import gg.modl.proto.modl.v1.GenerateReportRequest;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,11 +41,7 @@ public class AdminAnalyticsController {
     public ResponseEntity<?> getHistorical(
         @RequestParam(required = false) String metric,
         @RequestParam(defaultValue = "30d") String range) {
-        Map<String, Object> response = adminAnalyticsService.getHistorical(metric, range);
-        if (Boolean.FALSE.equals(response.get("success"))) {
-            throw new ValidationException(String.valueOf(response.get("error")));
-        }
-        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toHistoricalResponse(response));
+        return ResponseEntity.ok(AdminAnalyticsProtoMapper.toHistoricalResponse(adminAnalyticsService.getHistorical(metric, range)));
     }
 
     @PostMapping("/export")
@@ -54,17 +49,14 @@ public class AdminAnalyticsController {
         String type = request.hasType() ? request.getType() : "json";
         String range = request.hasRange() ? request.getRange() : "30d";
 
-        Object result = adminAnalyticsService.exportAnalytics(type, range);
-
         if ("csv".equals(type)) {
             return ResponseEntity.ok()
                 .header("Content-Type", "text/csv")
                 .header("Content-Disposition", "attachment; filename=\"modl-analytics-" + range + ".csv\"")
-                .body(result);
-        } else if ("json".equals(type)) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> jsonResult = (Map<String, Object>) result;
-            return ResponseEntity.ok(AdminAnalyticsProtoMapper.toExportResponse(jsonResult));
+                .body(adminAnalyticsService.exportCsv(range));
+        }
+        if ("json".equals(type)) {
+            return ResponseEntity.ok(AdminAnalyticsProtoMapper.toExportResponse(adminAnalyticsService.exportJson(range)));
         }
 
         throw new ValidationException("Invalid export type");

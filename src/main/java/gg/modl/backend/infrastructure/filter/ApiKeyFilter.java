@@ -1,12 +1,10 @@
 package gg.modl.backend.infrastructure.filter;
 
 import gg.modl.backend.infrastructure.config.StagingEnvironment;
-import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import gg.modl.backend.infrastructure.rest.RESTMappingV2;
-import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
@@ -35,10 +33,7 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
         final String path = request.getRequestURI();
 
-        return !path.startsWith(RESTMappingV1.PREFIX_MINECRAFT)
-            && !path.startsWith(RESTMappingV1.PREFIX_REPLAY_LITE)
-            && !path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)
-            && !path.startsWith(RESTMappingV3.PREFIX_MINECRAFT);
+        return !RouteGroups.isMinecraftOrReplayLitePrefix(path);
     }
 
     @Override

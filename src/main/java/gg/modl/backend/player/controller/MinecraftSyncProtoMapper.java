@@ -20,24 +20,24 @@ final class MinecraftSyncProtoMapper {
 
     static List<MinecraftSyncService.ChatLogInput> toChatLogs(SyncRequest request) {
         return request.getChatLogsList().stream()
-            .map(log -> new MinecraftSyncService.ChatLogInput(
-                log.getUuid(),
-                log.getUsername(),
-                log.getMessage(),
-                log.getTimestamp(),
-                log.getServer()
+            .map(entry -> new MinecraftSyncService.ChatLogInput(
+                entry.getUuid(),
+                entry.getUsername(),
+                entry.getMessage(),
+                entry.getTimestamp(),
+                entry.getServer()
             ))
             .toList();
     }
 
     static List<MinecraftSyncService.CommandLogInput> toCommandLogs(SyncRequest request) {
         return request.getCommandLogsList().stream()
-            .map(log -> new MinecraftSyncService.CommandLogInput(
-                log.getUuid(),
-                log.getUsername(),
-                log.getCommand(),
-                log.getTimestamp(),
-                log.getServer()
+            .map(entry -> new MinecraftSyncService.CommandLogInput(
+                entry.getUuid(),
+                entry.getUsername(),
+                entry.getCommand(),
+                entry.getTimestamp(),
+                entry.getServer()
             ))
             .toList();
     }

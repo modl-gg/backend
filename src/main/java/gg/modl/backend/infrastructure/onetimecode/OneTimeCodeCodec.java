@@ -1,7 +1,9 @@
 package gg.modl.backend.infrastructure.onetimecode;
 
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 import javax.crypto.Mac;
@@ -32,7 +34,7 @@ public class OneTimeCodeCodec {
             }
             MessageDigest digest = MessageDigest.getInstance(DIGEST_ALGORITHM);
             return Base64.getEncoder().encodeToString(digest.digest(input));
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new IllegalStateException("Failed to hash one-time code", e);
         }
     }

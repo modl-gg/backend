@@ -1,12 +1,10 @@
 package gg.modl.backend.settings.controller;
 
-import gg.modl.backend.ai.service.AITicketAnalysisService;
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
-import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.GeneralSettings;
@@ -19,7 +17,6 @@ import gg.modl.backend.settings.data.WebhookSettings;
 import gg.modl.backend.settings.dto.request.PatchReplayRetentionSettingsRequest;
 import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import gg.modl.backend.settings.service.AIModerationSettingsService;
-import gg.modl.backend.settings.service.ApiKeySettingsService;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.settings.service.IconUploadService;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
@@ -29,14 +26,8 @@ import gg.modl.backend.settings.service.TicketFormSettingsService;
 import gg.modl.backend.settings.service.TicketLabelSettingsService;
 import gg.modl.backend.settings.service.VersionedSettings;
 import gg.modl.backend.settings.service.WebhookSettingsService;
-import gg.modl.proto.modl.v1.AISuggestionActionResponse;
-import gg.modl.proto.modl.v1.ApiKeyDeleteResponse;
-import gg.modl.proto.modl.v1.ApiKeyExistsResponse;
-import gg.modl.proto.modl.v1.ApiKeyGenerateResponse;
-import gg.modl.proto.modl.v1.ApiKeyRevealResponse;
 import gg.modl.proto.modl.v1.GeneralSettingsEnvelope;
 import gg.modl.proto.modl.v1.OffenderThresholdSettingsEnvelope;
-import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PatchGeneralSettingsRequest;
 import gg.modl.proto.modl.v1.PatchQuickResponsesRequest;
 import gg.modl.proto.modl.v1.PatchStatusThresholdSettingsRequest;
@@ -51,13 +42,9 @@ import gg.modl.proto.modl.v1.UpdateAIModerationSettingsRequest;
 import gg.modl.proto.modl.v1.UpdateWebhookSettingsRequest;
 import gg.modl.proto.modl.v1.WebhookTestResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Valid;
-import jakarta.validation.Validator;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -70,22 +57,20 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
+@RequiresPanelPermission(view = "admin.settings.view", modify = "admin.settings.modify")
 @RequiredArgsConstructor
 public class PanelSettingsController {
     private final GeneralSettingsService generalSettingsService;
     private final TicketLabelSettingsService ticketLabelSettingsService;
-    private final ApiKeySettingsService apiKeySettingsService;
     private final AIModerationSettingsService aiModerationSettingsService;
     private final WebhookSettingsService webhookSettingsService;
     private final TicketFormSettingsService ticketFormSettingsService;
     private final QuickResponseSettingsService quickResponseSettingsService;
     private final IconUploadService iconUploadService;
-    private final AITicketAnalysisService aiTicketAnalysisService;
     private final OffenderThresholdSettingsService offenderThresholdSettingsService;
-    private final PermissionService permissionService;
     private final ReplayRetentionSettingsService replayRetentionSettingsService;
-    private final RealtimeEventPublisher realtimeEventPublisher;
-    private final Validator validator;
+    private final SettingsInvalidationPublisher settingsInvalidationPublisher;
+    private final BeanValidationRunner validationRunner;
 
     @GetMapping("/general")
     public GeneralSettingsEnvelope getGeneralSettings(HttpServletRequest request) {
@@ -104,7 +89,7 @@ public class PanelSettingsController {
             body.getExpectedVersion(),
             PanelSettingsProtoMapper.fromPatchGeneralSettingsRequest(body)
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toGeneralSettingsEnvelope(updated);
     }
 
@@ -126,11 +111,12 @@ public class PanelSettingsController {
             body.getExpectedVersion(),
             PanelSettingsProtoMapper.fromPatchTicketLabelSettingsRequest(body)
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toTicketLabelSettingsEnvelope(updated);
     }
 
     @GetMapping("/status-thresholds")
+    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
     public OffenderThresholdSettingsEnvelope getStatusThresholds(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         return PanelSettingsProtoMapper.toOffenderThresholdSettingsEnvelope(
@@ -138,6 +124,7 @@ public class PanelSettingsController {
     }
 
     @PatchMapping("/status-thresholds")
+    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
     public OffenderThresholdSettingsEnvelope patchStatusThresholds(
         @RequestBody PatchStatusThresholdSettingsRequest body,
         HttpServletRequest request
@@ -148,7 +135,7 @@ public class PanelSettingsController {
             body.getExpectedVersion(),
             PanelSettingsProtoMapper.fromOffenderThresholdSettings(body.getSettings())
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toOffenderThresholdSettingsEnvelope(updated);
     }
 
@@ -171,67 +158,12 @@ public class PanelSettingsController {
             body.enabled(),
             body.days()
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toReplayRetentionSettingsEnvelope(updated);
     }
 
-    @PostMapping("/api-keys/{type}/generate")
-    public ApiKeyGenerateResponse generateApiKey(
-        @PathVariable String type,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-        String apiKey = apiKeySettingsService.generateApiKey(server, type);
-        invalidateSettings(server);
-        return PanelSettingsProtoMapper.toApiKeyGenerateResponse("API key generated successfully", apiKey);
-    }
-
-    @GetMapping("/api-keys/{type}/reveal")
-    public ResponseEntity<ApiKeyRevealResponse> revealApiKey(
-        @PathVariable String type,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-        String apiKey = apiKeySettingsService.revealApiKey(server, type);
-
-        if (apiKey == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        return ResponseEntity.ok(PanelSettingsProtoMapper.toApiKeyRevealResponse(apiKey));
-    }
-
-    @DeleteMapping("/api-keys/{type}")
-    public ResponseEntity<ApiKeyDeleteResponse> deleteApiKey(
-        @PathVariable String type,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-        boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
-
-        if (!deleted) {
-            return ResponseEntity.notFound().build();
-        }
-
-        invalidateSettings(server);
-        return ResponseEntity.ok(PanelSettingsProtoMapper.toApiKeyDeleteResponse("API key deleted successfully"));
-    }
-
-    @GetMapping("/api-keys/{type}/exists")
-    public ApiKeyExistsResponse checkApiKeyExists(
-        @PathVariable String type,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-        boolean exists = apiKeySettingsService.hasApiKey(server, type);
-        return PanelSettingsProtoMapper.toApiKeyExistsResponse(exists);
-    }
-
     @GetMapping("/ai-moderation")
+    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
     public gg.modl.proto.modl.v1.AIModerationSettings getAIModerationSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
@@ -239,15 +171,16 @@ public class PanelSettingsController {
     }
 
     @PatchMapping("/ai-moderation")
+    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
     public gg.modl.proto.modl.v1.AIModerationSettings updateAIModerationSettings(
         @RequestBody UpdateAIModerationSettingsRequest requestBody,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
         AIModerationSettings settings = PanelSettingsProtoMapper.fromUpdateAIModerationSettingsRequest(requestBody);
-        validate(settings);
+        validationRunner.validate(settings);
         AIModerationSettings updated = aiModerationSettingsService.updateAIModerationSettings(server, settings);
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toAIModerationSettings(updated);
     }
 
@@ -266,7 +199,7 @@ public class PanelSettingsController {
         Server server = RequestUtil.getRequestServer(request);
         WebhookSettings settings = PanelSettingsProtoMapper.fromUpdateWebhookSettingsRequest(requestBody);
         WebhookSettings updated = webhookSettingsService.updateWebhookSettings(server, settings);
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toWebhookSettings(updated);
     }
 
@@ -299,7 +232,7 @@ public class PanelSettingsController {
             body.getExpectedVersion(),
             PanelSettingsProtoMapper.fromTicketFormSettings(body.getSettings())
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toTicketFormSettingsEnvelope(updated);
     }
 
@@ -333,13 +266,13 @@ public class PanelSettingsController {
         Server server = RequestUtil.getRequestServer(request);
         UpdateQuickResponsesRequest quickResponses = new UpdateQuickResponsesRequest(
             PanelSettingsProtoMapper.fromPatchQuickResponsesRequest(body));
-        validate(quickResponses);
+        validationRunner.validate(quickResponses);
         VersionedSettings<QuickResponseSettings> updated = quickResponseSettingsService.patchQuickResponseSettings(
             server,
             body.getExpectedVersion(),
             quickResponses
         );
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toQuickResponseSettingsEnvelope(updated);
     }
 
@@ -352,55 +285,8 @@ public class PanelSettingsController {
         Server server = RequestUtil.getRequestServer(request);
         ResponseEntity<?> response = iconUploadService.uploadIcon(server, file, iconType);
         if (response.getStatusCode().is2xxSuccessful()) {
-            invalidateSettings(server);
+            settingsInvalidationPublisher.invalidateSettings(server);
         }
         return response;
     }
-
-    @PostMapping("/ai-apply-punishment/{ticketId}")
-    public AISuggestionActionResponse applyAIPunishment(
-        @PathVariable String ticketId,
-        @RequestBody gg.modl.proto.modl.v1.ApplyAIPunishmentRequest body,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-        String email = RequestUtil.getSessionEmail(request);
-
-        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.applyAISuggestion(server, ticketId, email);
-        return toAISuggestionResponse(result);
-    }
-
-    @PostMapping("/ai-dismiss-suggestion/{ticketId}")
-    public AISuggestionActionResponse dismissAISuggestion(
-        @PathVariable String ticketId,
-        HttpServletRequest request
-    ) {
-        Server server = RequestUtil.getRequestServer(request);
-
-        AITicketAnalysisService.AISuggestionResult result = aiTicketAnalysisService.dismissAISuggestion(server, ticketId);
-        return toAISuggestionResponse(result);
-    }
-
-    private AISuggestionActionResponse toAISuggestionResponse(AITicketAnalysisService.AISuggestionResult result) {
-        return PanelSettingsProtoMapper.toAISuggestionActionResponse(result.success(), result.error(), null);
-    }
-
-    private void invalidateSettings(Server server) {
-        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_SETTINGS);
-    }
-
-    private void requireSuperAdmin(Server server, HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            throw new ForbiddenException("Only super admins can manage API keys");
-        }
-    }
-
-    private <T> void validate(T target) {
-        Set<ConstraintViolation<T>> violations = validator.validate(target);
-        if (!violations.isEmpty()) {
-            throw new ValidationException(violations.iterator().next().getMessage());
-        }
-    }
-
 }

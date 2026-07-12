@@ -1,15 +1,14 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
 import gg.modl.backend.settings.service.CustomDomainAccessService;
 import gg.modl.backend.settings.service.DomainSettingsService;
 import gg.modl.proto.modl.v1.ConfigureDomainRequest;
-import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.RemoveDomainResponse;
 import gg.modl.proto.modl.v1.VerifyDomainRequest;
 import gg.modl.proto.modl.v1.VerifyDomainResponse;
@@ -24,11 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS + "/domain")
+@RequiresPanelPermission(view = "admin.settings.view.domain", modify = "admin.settings.modify.domain")
 @RequiredArgsConstructor
 public class PanelDomainSettingsController {
     private final DomainSettingsService domainSettingsService;
     private final CustomDomainAccessService customDomainAccessService;
-    private final RealtimeEventPublisher realtimeEventPublisher;
+    private final SettingsInvalidationPublisher settingsInvalidationPublisher;
 
     @GetMapping
     public gg.modl.proto.modl.v1.DomainSettings getDomainSettings(HttpServletRequest request) {
@@ -47,7 +47,7 @@ public class PanelDomainSettingsController {
         requireCustomDomainWriteAccess(server);
 
         DomainSettings settings = domainSettingsService.configureDomain(server, body.getCustomDomain().trim());
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toDomainSettings(settings);
     }
 
@@ -78,7 +78,7 @@ public class PanelDomainSettingsController {
             default -> "Domain verification pending. Please ensure your CNAME is configured correctly.";
         };
 
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toVerifyDomainResponse(settings, message);
     }
 
@@ -88,11 +88,7 @@ public class PanelDomainSettingsController {
         requireCustomDomainWriteAccess(server);
 
         domainSettingsService.removeDomain(server);
-        invalidateSettings(server);
+        settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toRemoveDomainResponse("Domain removed successfully");
-    }
-
-    private void invalidateSettings(Server server) {
-        realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_SETTINGS);
     }
 }

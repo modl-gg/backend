@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.infrastructure.origin.OriginPolicyFactory;
 import gg.modl.backend.server.ServerService;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -34,13 +35,24 @@ class DynamicCorsConfigurationSourceTest {
         assertNotNull(source.getCorsConfiguration(request("/v1/public/punishments/search", "https://customer.modl.gg")));
     }
 
+    @Test
+    void adminPathsRequireSystemOriginAcrossStrictBoundary() {
+        DynamicCorsConfigurationSource source = source(Mockito.mock(ServerService.class));
+
+        assertNull(source.getCorsConfiguration(request("/v1/admin/servers", "https://customer.modl.gg")));
+        assertNotNull(source.getCorsConfiguration(request("/v1/admin/servers", "https://modl.gg")));
+        assertNull(source.getCorsConfiguration(request("/v1/admin", "https://customer.modl.gg")));
+        assertNotNull(source.getCorsConfiguration(request("/v1/adminfoo", "https://customer.modl.gg")));
+    }
+
     private DynamicCorsConfigurationSource source(ServerService serverService) {
         ModlCorsProperties properties = new ModlCorsProperties();
         properties.setSystemOrigins("https://modl.gg,https://admin.modl.gg");
         properties.setAppDomains("modl.gg");
         properties.setReplayLiteOrigins("https://replays.modl.gg,http://localhost:5173");
 
-        DynamicCorsConfigurationSource source = new DynamicCorsConfigurationSource(serverService, properties, new ModlProperties());
+        DynamicCorsConfigurationSource source = new DynamicCorsConfigurationSource(
+            serverService, properties, new OriginPolicyFactory(properties, new ModlProperties()));
         source.initParsedOrigins();
         return source;
     }

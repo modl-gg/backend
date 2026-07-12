@@ -35,15 +35,33 @@ public class PermissionService {
         .expireAfterWrite(Duration.ofMinutes(2))
         .build();
 
+    public static final String ADMIN_SETTINGS_VIEW = "admin.settings.view";
+    public static final String ADMIN_STAFF_MANAGE = "admin.staff.manage";
+    public static final String ADMIN_AUDIT_VIEW = "admin.audit.view";
+    public static final String ADMIN_AUDIT_ROLLBACK = "admin.audit.rollback";
+    public static final String PUNISHMENT_VIEW = "punishment.view";
+    public static final String PUNISHMENT_MODIFY = "punishment.modify";
+    public static final String TICKET_VIEW_ALL = "ticket.view.all";
+    public static final String TICKET_REPLY_ALL = "ticket.reply.all";
+    public static final String APPEAL_MODIFY = "appeal.modify";
+    public static final String TICKET_CLOSE_ALL = "ticket.close.all";
+    public static final String STAFF_CHAT_TOGGLE = "staff.chat.toggle";
+    public static final String STAFF_CHAT_CLEAR = "staff.chat.clear";
+    public static final String STAFF_CHAT_SLOW = "staff.chat.slow";
+    public static final String STAFF_MAINTENANCE = "staff.maintenance";
+    public static final String STAFF_MODACTIONS = "staff.modactions";
+    public static final String STAFF_INTERCEPT = "staff.intercept";
+    public static final String STAFF_CHATLOGS = "staff.chatlogs";
+    public static final String STAFF_COMMANDLOGS = "staff.commandlogs";
+
     private static final List<Permission> BASE_PERMISSIONS = List.of(
-        // Admin permissions
-        new Permission("admin.settings.view", "View Settings", "View all system settings (includes all sub-permissions)", "admin"),
-        new Permission("admin.settings.view.punishments", "View Punishments Config", "View punishment type configuration", "admin", "admin.settings.view"),
-        new Permission("admin.settings.view.content", "View Content", "View homepage cards, knowledgebase, media", "admin", "admin.settings.view"),
-        new Permission("admin.settings.view.domain", "View Domain", "View custom domain configuration", "admin", "admin.settings.view"),
-        new Permission("admin.settings.view.billing", "View Billing", "View billing, subscription, and payment info", "admin", "admin.settings.view"),
-        new Permission("admin.settings.view.migration", "View Migration", "View import/export data configuration", "admin", "admin.settings.view"),
-        new Permission("admin.settings.view.storage", "View Storage", "View storage configuration", "admin", "admin.settings.view"),
+        new Permission(ADMIN_SETTINGS_VIEW, "View Settings", "View all system settings (includes all sub-permissions)", "admin"),
+        new Permission("admin.settings.view.punishments", "View Punishments Config", "View punishment type configuration", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission("admin.settings.view.content", "View Content", "View homepage cards, knowledgebase, media", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission("admin.settings.view.domain", "View Domain", "View custom domain configuration", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission("admin.settings.view.billing", "View Billing", "View billing, subscription, and payment info", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission("admin.settings.view.migration", "View Migration", "View import/export data configuration", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission("admin.settings.view.storage", "View Storage", "View storage configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.modify", "Modify Settings", "Full control over system settings (includes all sub-permissions)", "admin"),
         new Permission("admin.settings.modify.punishments", "Modify Punishments Config", "Create/edit/delete punishment types", "admin",
             "admin.settings.modify"),
@@ -52,41 +70,36 @@ public class PermissionService {
         new Permission("admin.settings.modify.billing", "Modify Billing", "Update subscription and payment methods", "admin", "admin.settings.modify"),
         new Permission("admin.settings.modify.migration", "Modify Migration", "Import/export data between platforms", "admin", "admin.settings.modify"),
         new Permission("admin.settings.modify.storage", "Modify Storage", "Configure storage backends and limits", "admin", "admin.settings.modify"),
-        new Permission("admin.staff.manage", "Manage Staff", "Full staff management (includes all sub-permissions)", "admin"),
-        new Permission("admin.staff.manage.members", "Manage Members", "Invite, remove, and reassign staff", "admin", "admin.staff.manage"),
-        new Permission("admin.staff.manage.roles", "Manage Roles", "Create/edit/delete roles and permissions", "admin", "admin.staff.manage"),
-        new Permission("admin.audit.view", "View Audit", "Full audit access (includes all sub-permissions)", "admin"),
-        new Permission("admin.audit.view.dashboard", "View Dashboard", "View dashboard statistics", "admin", "admin.audit.view"),
-        new Permission("admin.audit.view.analytics", "View Analytics", "View player and ticket analytics", "admin", "admin.audit.view"),
-        new Permission("admin.audit.view.logs", "View Logs", "View audit trail of staff actions", "admin", "admin.audit.view"),
-
-        // Punishment permissions
-        new Permission("punishment.view", "View Punishments", "View player profiles, punishments, and linked accounts", "punishment"),
-        new Permission("punishment.modify", "Modify Punishments", "Full control over existing punishments (includes all sub-permissions)", "punishment"),
-        new Permission("punishment.modify.pardon", "Pardon Punishments", "Pardon punishments and clear associated points", "punishment", "punishment.modify"),
-        new Permission("punishment.modify.duration", "Modify Duration", "Change punishment duration", "punishment", "punishment.modify"),
-        new Permission("punishment.modify.note", "Add Notes", "Add staff notes to punishments", "punishment", "punishment.modify"),
-        new Permission("punishment.modify.evidence", "Manage Evidence", "Add and view evidence on punishments", "punishment", "punishment.modify"),
-        new Permission("punishment.modify.options", "Toggle Options", "Toggle alt-blocking and stat-wipe options", "punishment", "punishment.modify"),
-
-        // Staff tool permissions
-        new Permission("staff.chat.toggle", "Toggle Chat", "Toggle server chat on/off", "staff"),
-        new Permission("staff.chat.clear", "Clear Chat", "Clear server chat", "staff"),
-        new Permission("staff.chat.slow", "Slow Chat", "Set slow mode on server chat", "staff"),
-        new Permission("staff.maintenance", "Maintenance Mode", "Toggle server maintenance mode", "staff"),
-        new Permission("staff.modactions", "Moderation Actions", "Staff mode, vanish, freeze, and target players", "staff"),
-        new Permission("staff.intercept", "Intercept Chat", "Intercept and view all network chat", "staff"),
-        new Permission("staff.chatlogs", "Chat Logs", "View player chat history", "staff"),
-        new Permission("staff.commandlogs", "Command Logs", "View player command history", "staff"),
-
-        // Ticket permissions
-        new Permission("ticket.view.all", "View All Tickets", "View all tickets (includes all sub-permissions)", "ticket"),
-        new Permission("ticket.view.all.notes", "View Staff Notes", "View internal staff notes on tickets", "ticket", "ticket.view.all"),
-        new Permission("ticket.reply.all", "Reply to All Tickets", "Reply to all ticket types (includes all sub-permissions)", "ticket"),
-        new Permission("ticket.reply.all.notes", "Add Staff Notes", "Add staff-only internal notes", "ticket", "ticket.reply.all"),
-        new Permission("appeal.modify", "Modify Appeals", "Reply to and update appeals", "ticket"),
-        new Permission("ticket.close.all", "Close/Reopen All Tickets", "Close and reopen all ticket types (includes all sub-permissions)", "ticket"),
-        new Permission("ticket.close.all.lock", "Lock Tickets", "Lock tickets to prevent further replies", "ticket", "ticket.close.all"),
+        new Permission(ADMIN_STAFF_MANAGE, "Manage Staff", "Full staff management (includes all sub-permissions)", "admin"),
+        new Permission("admin.staff.manage.members", "Manage Members", "Invite, remove, and reassign staff", "admin", ADMIN_STAFF_MANAGE),
+        new Permission("admin.staff.manage.roles", "Manage Roles", "Create/edit/delete roles and permissions", "admin", ADMIN_STAFF_MANAGE),
+        new Permission(ADMIN_AUDIT_VIEW, "View Audit", "Full audit access (includes all sub-permissions)", "admin"),
+        new Permission("admin.audit.view.dashboard", "View Dashboard", "View dashboard statistics", "admin", ADMIN_AUDIT_VIEW),
+        new Permission("admin.audit.view.analytics", "View Analytics", "View player and ticket analytics", "admin", ADMIN_AUDIT_VIEW),
+        new Permission("admin.audit.view.logs", "View Logs", "View audit trail of staff actions", "admin", ADMIN_AUDIT_VIEW),
+        new Permission(ADMIN_AUDIT_ROLLBACK, "Rollback Audit Actions", "Roll back punishments and perform destructive bulk audit operations", "admin"),
+        new Permission(PUNISHMENT_VIEW, "View Punishments", "View player profiles, punishments, and linked accounts", "punishment"),
+        new Permission(PUNISHMENT_MODIFY, "Modify Punishments", "Full control over existing punishments (includes all sub-permissions)", "punishment"),
+        new Permission("punishment.modify.pardon", "Pardon Punishments", "Pardon punishments and clear associated points", "punishment", PUNISHMENT_MODIFY),
+        new Permission("punishment.modify.duration", "Modify Duration", "Change punishment duration", "punishment", PUNISHMENT_MODIFY),
+        new Permission("punishment.modify.note", "Add Notes", "Add staff notes to punishments", "punishment", PUNISHMENT_MODIFY),
+        new Permission("punishment.modify.evidence", "Manage Evidence", "Add and view evidence on punishments", "punishment", PUNISHMENT_MODIFY),
+        new Permission("punishment.modify.options", "Toggle Options", "Toggle alt-blocking and stat-wipe options", "punishment", PUNISHMENT_MODIFY),
+        new Permission(STAFF_CHAT_TOGGLE, "Toggle Chat", "Toggle server chat on/off", "staff"),
+        new Permission(STAFF_CHAT_CLEAR, "Clear Chat", "Clear server chat", "staff"),
+        new Permission(STAFF_CHAT_SLOW, "Slow Chat", "Set slow mode on server chat", "staff"),
+        new Permission(STAFF_MAINTENANCE, "Maintenance Mode", "Toggle server maintenance mode", "staff"),
+        new Permission(STAFF_MODACTIONS, "Moderation Actions", "Staff mode, vanish, freeze, and target players", "staff"),
+        new Permission(STAFF_INTERCEPT, "Intercept Chat", "Intercept and view all network chat", "staff"),
+        new Permission(STAFF_CHATLOGS, "Chat Logs", "View player chat history", "staff"),
+        new Permission(STAFF_COMMANDLOGS, "Command Logs", "View player command history", "staff"),
+        new Permission(TICKET_VIEW_ALL, "View All Tickets", "View all tickets (includes all sub-permissions)", "ticket"),
+        new Permission("ticket.view.all.notes", "View Staff Notes", "View internal staff notes on tickets", "ticket", TICKET_VIEW_ALL),
+        new Permission(TICKET_REPLY_ALL, "Reply to All Tickets", "Reply to all ticket types (includes all sub-permissions)", "ticket"),
+        new Permission("ticket.reply.all.notes", "Add Staff Notes", "Add staff-only internal notes", "ticket", TICKET_REPLY_ALL),
+        new Permission(APPEAL_MODIFY, "Modify Appeals", "Reply to and update appeals", "ticket"),
+        new Permission(TICKET_CLOSE_ALL, "Close/Reopen All Tickets", "Close and reopen all ticket types (includes all sub-permissions)", "ticket"),
+        new Permission("ticket.close.all.lock", "Lock Tickets", "Lock tickets to prevent further replies", "ticket", TICKET_CLOSE_ALL),
         new Permission("ticket.manage", "Manage Tickets", "Advanced ticket management (includes all sub-permissions)", "ticket"),
         new Permission("ticket.manage.tags", "Manage Tags", "Add and remove tags from tickets", "ticket", "ticket.manage"),
         new Permission("ticket.manage.hide", "Hide Tickets", "Hide tickets from public view", "ticket", "ticket.manage"),

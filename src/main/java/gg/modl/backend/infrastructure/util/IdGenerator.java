@@ -1,7 +1,7 @@
 package gg.modl.backend.infrastructure.util;
 
+import gg.modl.backend.infrastructure.rest.RequestUtil;
 import java.security.SecureRandom;
-import java.util.Base64;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -13,9 +13,7 @@ public class IdGenerator {
     }
 
     public String generateToken() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        return RequestUtil.generateSecureToken(32);
     }
 
     public static String generateShortId() {

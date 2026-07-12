@@ -9,9 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerActivityRepository;
 import gg.modl.backend.infrastructure.config.ModlProperties;
-import gg.modl.backend.player.controller.MinecraftStartupController.StartupRequest;
+import gg.modl.backend.server.service.PanelDomainResolver;
+import gg.modl.backend.player.dto.request.StartupRequest;
 import gg.modl.backend.realtime.config.RealtimeProperties;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -77,9 +78,10 @@ class MinecraftStartupServiceTest {
     private MinecraftStartupService service(RealtimeProperties realtimeProperties) {
         ModlProperties modlProperties = new ModlProperties();
         modlProperties.setDomain("modl.gg");
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        PanelDomainResolver panelDomainResolver = new PanelDomainResolver(modlProperties);
+        ServerActivityRepository serverRepository = mock(ServerActivityRepository.class);
         ServerInstanceSnapshotMongoRepository snapshotRepository = mock(ServerInstanceSnapshotMongoRepository.class);
-        return new MinecraftStartupService(modlProperties, realtimeProperties, serverRepository, snapshotRepository);
+        return new MinecraftStartupService(panelDomainResolver, realtimeProperties, serverRepository, snapshotRepository);
     }
 
     private RealtimeProperties properties(boolean enabled, String publicUrl) {

@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -17,9 +18,11 @@ import org.springframework.web.client.RestTemplate;
 @RequiredArgsConstructor
 @Slf4j
 public class CloudflareClient {
+    private static final String CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
+    private static final ParameterizedTypeReference<Map<String, Object>> MAP_RESPONSE =
+        new ParameterizedTypeReference<>() {};
     private final CloudflareConfiguration config;
     private final RestTemplate restTemplate;
-    private static final String CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 
     public CustomHostnameResult createCustomHostname(String hostname) {
         if (!config.isConfigured()) {
@@ -43,16 +46,16 @@ public class CloudflareClient {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
             String url = CLOUDFLARE_API + "/zones/" + config.getZoneId() + "/custom_hostnames";
 
-            ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.POST, request, MAP_RESPONSE);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Boolean success = (Boolean) response.getBody().get("success");
                 if (Boolean.TRUE.equals(success)) {
                     return parseCustomHostnameResult(response.getBody());
                 } else {
-                    List<Map<String, Object>> errors = (List<Map<String, Object>>) response.getBody().get("errors");
-                    if (errors != null && !errors.isEmpty()) {
-                        log.error("Cloudflare API error creating custom hostname: {}", errors);
+                    Object errors = response.getBody().get("errors");
+                    if (errors instanceof List<?> errorList && !errorList.isEmpty()) {
+                        log.error("Cloudflare API error creating custom hostname: {}", errorList);
                     }
                 }
             }
@@ -63,9 +66,8 @@ public class CloudflareClient {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private CustomHostnameResult parseCustomHostnameResult(Map<String, Object> responseBody) {
-        Map<String, Object> result = (Map<String, Object>) responseBody.get("result");
+        Map<?, ?> result = (Map<?, ?>) responseBody.get("result");
         if (result == null) {
             return null;
         }
@@ -75,7 +77,7 @@ public class CloudflareClient {
         String status = (String) result.get("status");
 
         CustomHostnameResult.SslStatus sslStatus = null;
-        Map<String, Object> ssl = (Map<String, Object>) result.get("ssl");
+        Map<?, ?> ssl = (Map<?, ?>) result.get("ssl");
         if (ssl != null) {
             sslStatus = new CustomHostnameResult.SslStatus(
                 (String) ssl.get("status"),
@@ -86,7 +88,7 @@ public class CloudflareClient {
 
         String ownershipHttpUrl = null;
         String ownershipHttpBody = null;
-        Map<String, Object> ownershipVerification = (Map<String, Object>) result.get("ownership_verification");
+        Map<?, ?> ownershipVerification = (Map<?, ?>) result.get("ownership_verification");
         if (ownershipVerification != null) {
             ownershipHttpUrl = (String) ownershipVerification.get("http_url");
             ownershipHttpBody = (String) ownershipVerification.get("http_body");
@@ -119,7 +121,7 @@ public class CloudflareClient {
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             String url = CLOUDFLARE_API + "/zones/" + config.getZoneId() + "/custom_hostnames/" + hostnameId;
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.GET, request, MAP_RESPONSE);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Boolean success = (Boolean) response.getBody().get("success");
@@ -144,13 +146,13 @@ public class CloudflareClient {
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             String url = CLOUDFLARE_API + "/zones/" + config.getZoneId() + "/custom_hostnames?hostname=" + hostname;
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.GET, request, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.GET, request, MAP_RESPONSE);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Boolean success = (Boolean) response.getBody().get("success");
                 if (Boolean.TRUE.equals(success)) {
-                    List<Map<String, Object>> results = (List<Map<String, Object>>) response.getBody().get("result");
-                    if (results != null && !results.isEmpty()) {
+                    Object resultsValue = response.getBody().get("result");
+                    if (resultsValue instanceof List<?> results && !results.isEmpty()) {
                         Map<String, Object> modifiedBody = Map.of(
                             "success", true,
                             "result", results.get(0)
@@ -176,7 +178,7 @@ public class CloudflareClient {
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             String url = CLOUDFLARE_API + "/zones/" + config.getZoneId() + "/custom_hostnames/" + hostnameId;
-            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.DELETE, request, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(url, HttpMethod.DELETE, request, MAP_RESPONSE);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 return Boolean.TRUE.equals(response.getBody().get("success"));

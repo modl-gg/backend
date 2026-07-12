@@ -38,7 +38,7 @@ public class ProtoJsonHttpMessageConverter extends AbstractHttpMessageConverter<
     protected Message readInternal(@NonNull Class<? extends Message> clazz,
                                    @NonNull HttpInputMessage inputMessage) throws IOException {
         try {
-            Message.Builder builder = getDefaultInstance(clazz).newBuilderForType();
+            Message.Builder builder = ProtoMessages.defaultInstance(clazz).newBuilderForType();
             try (InputStreamReader reader = new InputStreamReader(inputMessage.getBody(), StandardCharsets.UTF_8)) {
                 PARSER.merge(reader, builder);
             }
@@ -55,14 +55,6 @@ public class ProtoJsonHttpMessageConverter extends AbstractHttpMessageConverter<
             PRINTER.appendTo(message, writer);
         } catch (Exception e) {
             throw new HttpMessageNotWritableException("Failed to write proto JSON: " + e.getMessage(), e);
-        }
-    }
-
-    private static Message getDefaultInstance(Class<? extends Message> clazz) {
-        try {
-            return (Message) clazz.getMethod("getDefaultInstance").invoke(null);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("Cannot get default instance for " + clazz.getName(), e);
         }
     }
 }

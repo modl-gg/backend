@@ -9,7 +9,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerSettingsTimestampRepository;
 import gg.modl.backend.realtime.dispatch.RealtimeEventDispatcher;
 import gg.modl.backend.realtime.dispatch.RealtimeOutboundEvent;
 import gg.modl.backend.server.data.Server;
@@ -26,7 +26,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class ServerTimestampServiceTest {
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerSettingsTimestampRepository serverRepository;
 
     @Mock
     private RealtimeEventDispatcher realtimeEventDispatcher;

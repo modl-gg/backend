@@ -1,6 +1,7 @@
 package gg.modl.backend.replay.data;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -24,5 +25,21 @@ class ReplayLabelValidationTest {
         label.setCheats(List.of(cheat));
 
         assertFalse(validator.validate(label).isEmpty());
+    }
+
+    @Test
+    void acceptsZeroLengthTimeRange() {
+        ReplayLabel label = new ReplayLabel();
+        label.setUuid("11111111-2222-3333-4444-555555555555");
+        label.setVerdict("cheating");
+        ReplayLabel.CheatDetail cheat = new ReplayLabel.CheatDetail();
+        cheat.setType("reach");
+        ReplayLabel.TimeRange range = new ReplayLabel.TimeRange();
+        range.setStartMs(5_000L);
+        range.setEndMs(5_000L);
+        cheat.setTimeRanges(List.of(range));
+        label.setCheats(List.of(cheat));
+
+        assertTrue(validator.validate(label).isEmpty());
     }
 }

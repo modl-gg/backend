@@ -73,10 +73,6 @@ public class ReplayLiteMongoRepository extends AbstractGlobalMongoRepository<Rep
         );
     }
 
-    public ReplayLiteDocument saveEntity(ReplayLiteDocument document) {
-        return super.saveEntity(document);
-    }
-
     public boolean claimLabels(String replayId, Instant now, List<ReplayLiteLabel> labels, String labelIp) {
         Query query = Query.query(Criteria.where(ReplayLiteDocumentFields.ID).is(replayId)
             .and(ReplayLiteDocumentFields.STATUS).is(ReplayLiteStatus.CONFIRMED)

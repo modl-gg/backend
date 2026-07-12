@@ -11,10 +11,7 @@ import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
-import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
-import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
@@ -38,15 +35,13 @@ class StaffServiceStaffCountTest {
         service = new StaffService(
             mock(InvitationMongoRepository.class),
             staffRepository,
-            mock(PlayerMongoRepository.class),
-            mock(PunishmentMongoRepository.class),
-            mock(PlayerService.class),
             mock(PermissionService.class),
             mock(RoleAuthorization.class),
             mock(ServerTimestampService.class),
             mock(WebAuthnService.class),
             mock(SessionService.class),
-            mock(GeneralSettingsService.class)
+            mock(GeneralSettingsService.class),
+            mock(StaffLookupCache.class)
         );
         server = new Server("Server", "server", "server_db", ADMIN_EMAIL, true, ServerPlan.FREE);
         server.setId("server-id");

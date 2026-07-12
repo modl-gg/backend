@@ -1,5 +1,7 @@
 package gg.modl.backend.player.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.emptyToNull;
+
 import com.google.protobuf.Empty;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
@@ -13,6 +15,7 @@ import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
+import gg.modl.backend.player.dto.response.PunishmentView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.AddPunishmentEvidenceRequest;
 import gg.modl.proto.modl.v1.AddPunishmentEvidenceResponse;
@@ -42,7 +45,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -61,6 +63,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Validated
 public class MinecraftPunishmentV3Controller {
+    private static final int RECENT_PUNISHMENTS_MAX_HOURS = 8760;
+
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentMutationService punishmentMutationService;
     private final PunishmentEvidenceService punishmentEvidenceService;
@@ -80,7 +84,7 @@ public class MinecraftPunishmentV3Controller {
 
     @GetMapping(value = "/recent", produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE)
     public ResponseEntity<RecentPunishmentsResponse> getRecentPunishments(
-        @RequestParam(defaultValue = "48") @Min(1) @Max(8760) int hours,
+        @RequestParam(defaultValue = "48") @Min(1) @Max(RECENT_PUNISHMENTS_MAX_HOURS) int hours,
         HttpServletRequest httpRequest
     ) {
         validateRecentHours(hours);
@@ -100,7 +104,7 @@ public class MinecraftPunishmentV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> punishment = punishmentQueryService
+        PunishmentView punishment = punishmentQueryService
             .getMinecraftPunishmentById(server, punishmentId)
             .orElse(null);
 
@@ -485,8 +489,8 @@ public class MinecraftPunishmentV3Controller {
     }
 
     private void validateRecentHours(int hours) {
-        if (hours < 1 || hours > 8760) {
-            throw new ValidationException("hours must be between 1 and 8760");
+        if (hours < 1 || hours > RECENT_PUNISHMENTS_MAX_HOURS) {
+            throw new ValidationException("hours must be between 1 and " + RECENT_PUNISHMENTS_MAX_HOURS);
         }
     }
 
@@ -529,10 +533,6 @@ public class MinecraftPunishmentV3Controller {
             throw new ValidationException("data must contain no more than "
                 + RequestValidationLimits.PLAYER_PUNISHMENT_DATA_MAX_ENTRIES + " entries");
         }
-    }
-
-    private String emptyToNull(String value) {
-        return value == null || value.isEmpty() ? null : value;
     }
 
     private ResponseEntity<StatWipeAcknowledgeResponse> statWipeResponse(

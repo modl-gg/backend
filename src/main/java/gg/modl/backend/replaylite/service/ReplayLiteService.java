@@ -26,7 +26,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -37,22 +36,14 @@ public class ReplayLiteService {
     private static final Duration DOWNLOAD_PRESIGN_TTL = Duration.ofMinutes(5);
     private static final int DAILY_CONFIRMED_LIMIT = 100;
     private static final DateTimeFormatter KEY_DATE_FORMATTER = DateTimeFormatter.BASIC_ISO_DATE;
+    private static final String REPLAY_NOT_FOUND = "Replay not found";
+    private static final String UPLOAD_NOT_PENDING = "Replay Lite upload is not pending";
 
     private final ReplayLiteMongoRepository repository;
     private final ReplayLiteQuotaMongoRepository quotaRepository;
     private final ReplayLiteStorageService storageService;
     private final ReplayLiteAbuseGuard abuseGuard;
     private final Clock clock;
-
-    @Autowired
-    public ReplayLiteService(
-        ReplayLiteMongoRepository repository,
-        ReplayLiteQuotaMongoRepository quotaRepository,
-        ReplayLiteStorageService storageService,
-        ReplayLiteAbuseGuard abuseGuard
-    ) {
-        this(repository, quotaRepository, storageService, abuseGuard, Clock.systemUTC());
-    }
 
     public ReplayLiteService(
         ReplayLiteMongoRepository repository,
@@ -114,10 +105,10 @@ public class ReplayLiteService {
         UUID pluginServerUuid = authenticatedServerUuid(server);
 
         ReplayLiteDocument document = repository.findByReplayId(replayId)
-            .orElseThrow(() -> new ResourceNotFoundException("Replay not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(REPLAY_NOT_FOUND));
 
         if (!pluginServerUuid.equals(document.getPluginServerUuid())) {
-            throw new ResourceNotFoundException("Replay not found");
+            throw new ResourceNotFoundException(REPLAY_NOT_FOUND);
         }
 
         abuseGuard.checkConfirm(pluginServerUuid);
@@ -138,33 +129,30 @@ public class ReplayLiteService {
         LocalDate quotaDay = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
         QuotaReservationResult quotaReservation = reserveDailyQuota(document.getPluginServerUuid(), document.getId(), quotaDay);
         if (quotaReservation == QuotaReservationResult.ALREADY_RESERVED) {
-            throw new ConflictException("Replay Lite upload is not pending");
+            throw new ConflictException(UPLOAD_NOT_PENDING);
         }
 
         boolean confirmed;
         try {
             confirmed = confirmPendingUpload(document, actualSize, clientIp);
         } catch (RuntimeException e) {
-            if (quotaReservation == QuotaReservationResult.RESERVED && shouldReleaseFailedConfirmation(document.getId())) {
-                quotaRepository.releaseConfirmedUpload(
-                    document.getPluginServerUuid(),
-                    quotaDay,
-                    document.getId(),
-                    clock.instant()
-                );
-            }
+            releaseQuotaOnFailedConfirmation(document, quotaReservation, quotaDay);
             throw e;
         }
         if (!confirmed) {
-            if (quotaReservation == QuotaReservationResult.RESERVED && shouldReleaseFailedConfirmation(document.getId())) {
-                quotaRepository.releaseConfirmedUpload(
-                    document.getPluginServerUuid(),
-                    quotaDay,
-                    document.getId(),
-                    clock.instant()
-                );
-            }
-            throw new ConflictException("Replay Lite upload is not pending");
+            releaseQuotaOnFailedConfirmation(document, quotaReservation, quotaDay);
+            throw new ConflictException(UPLOAD_NOT_PENDING);
+        }
+    }
+
+    private void releaseQuotaOnFailedConfirmation(ReplayLiteDocument document, QuotaReservationResult quotaReservation, LocalDate quotaDay) {
+        if (quotaReservation == QuotaReservationResult.RESERVED && shouldReleaseFailedConfirmation(document.getId())) {
+            quotaRepository.releaseConfirmedUpload(
+                document.getPluginServerUuid(),
+                quotaDay,
+                document.getId(),
+                clock.instant()
+            );
         }
     }
 
@@ -200,11 +188,11 @@ public class ReplayLiteService {
         abuseGuard.checkLabel(replayId);
 
         ReplayLiteDocument document = repository.findByReplayId(replayId)
-            .orElseThrow(() -> new ResourceNotFoundException("Replay not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(REPLAY_NOT_FOUND));
 
         Instant now = clock.instant();
-        if (document.getStatus() != ReplayLiteStatus.CONFIRMED || document.getExpiresAt() == null || !document.getExpiresAt().isAfter(now)) {
-            throw new ResourceNotFoundException("Replay not found");
+        if (!isConfirmedAndUnexpired(document, now)) {
+            throw new ResourceNotFoundException(REPLAY_NOT_FOUND);
         }
         if (document.getLabels() != null && !document.getLabels().isEmpty()) {
             throw new ConflictException("This replay has already been labeled");
@@ -212,11 +200,8 @@ public class ReplayLiteService {
 
         if (!repository.claimLabels(document.getId(), now, normalizeLabels(labels), clientIp)) {
             Optional<ReplayLiteDocument> current = repository.findByReplayId(replayId);
-            if (current.isEmpty()
-                || current.get().getStatus() != ReplayLiteStatus.CONFIRMED
-                || current.get().getExpiresAt() == null
-                || !current.get().getExpiresAt().isAfter(now)) {
-                throw new ResourceNotFoundException("Replay not found");
+            if (current.isEmpty() || !isConfirmedAndUnexpired(current.get(), now)) {
+                throw new ResourceNotFoundException(REPLAY_NOT_FOUND);
             }
             throw new ConflictException("This replay has already been labeled");
         }
@@ -235,8 +220,13 @@ public class ReplayLiteService {
     private Optional<ReplayLiteDocument> findAvailablePublicReplay(String replayId) {
         Instant now = clock.instant();
         return repository.findByReplayId(replayId)
-            .filter(document -> document.getStatus() == ReplayLiteStatus.CONFIRMED)
-            .filter(document -> document.getExpiresAt() != null && document.getExpiresAt().isAfter(now));
+            .filter(document -> isConfirmedAndUnexpired(document, now));
+    }
+
+    private boolean isConfirmedAndUnexpired(ReplayLiteDocument document, Instant now) {
+        return document.getStatus() == ReplayLiteStatus.CONFIRMED
+            && document.getExpiresAt() != null
+            && document.getExpiresAt().isAfter(now);
     }
 
     private List<ReplayLiteLabel> normalizeLabels(List<ReplayLiteLabel> labels) {
@@ -271,7 +261,7 @@ public class ReplayLiteService {
 
     private void requirePending(ReplayLiteDocument document) {
         if (document.getStatus() != ReplayLiteStatus.PENDING) {
-            throw new ValidationException("Replay Lite upload is not pending");
+            throw new ValidationException(UPLOAD_NOT_PENDING);
         }
     }
 

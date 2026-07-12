@@ -58,10 +58,9 @@ public class TicketSubscriptionService {
 
             Ticket ticket = ticketsById.get(subscription.getTicketId());
             if (ticket != null) {
-                String title = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
                 subscriptions.add(new TicketSubscriptionResponse(
                     subscription.getTicketId(),
-                    title,
+                    buildTicketTitle(ticket),
                     subscription.getSubscribedAt()
                 ));
             }
@@ -119,20 +118,7 @@ public class TicketSubscriptionService {
                 .toList();
 
             if (!unreadReplies.isEmpty()) {
-                TicketReply latestReply = unreadReplies.get(0);
-                String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
-
-                updates.add(new SubscriptionUpdateResponse(
-                    ticket.getId() + "::" + latestReply.getId(),
-                    ticket.getId(),
-                    ticketTitle,
-                    latestReply.getContent(),
-                    latestReply.getName(),
-                    latestReply.getCreated(),
-                    latestReply.isStaff(),
-                    false,
-                    unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
-                ));
+                updates.add(toSubscriptionUpdate(ticket, unreadReplies));
             }
 
             if (updates.size() >= safeLimit) {
@@ -239,24 +225,30 @@ public class TicketSubscriptionService {
                 .toList();
 
             if (!unreadReplies.isEmpty()) {
-                TicketReply latestReply = unreadReplies.get(0);
-                String ticketTitle = ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
-
-                updates.add(new SubscriptionUpdateResponse(
-                    ticket.getId() + "::" + latestReply.getId(),
-                    ticket.getId(),
-                    ticketTitle,
-                    latestReply.getContent(),
-                    latestReply.getName(),
-                    latestReply.getCreated(),
-                    latestReply.isStaff(),
-                    false,
-                    unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
-                ));
+                updates.add(toSubscriptionUpdate(ticket, unreadReplies));
             }
         }
 
         updates.sort((a, b) -> b.replyAt().compareTo(a.replyAt()));
         return updates.stream().limit(safeLimit).toList();
+    }
+
+    private SubscriptionUpdateResponse toSubscriptionUpdate(Ticket ticket, List<TicketReply> unreadReplies) {
+        TicketReply latestReply = unreadReplies.get(0);
+        return new SubscriptionUpdateResponse(
+            ticket.getId() + "::" + latestReply.getId(),
+            ticket.getId(),
+            buildTicketTitle(ticket),
+            latestReply.getContent(),
+            latestReply.getName(),
+            latestReply.getCreated(),
+            latestReply.isStaff(),
+            false,
+            unreadReplies.size() > 1 ? unreadReplies.size() - 1 : null
+        );
+    }
+
+    private String buildTicketTitle(Ticket ticket) {
+        return ticket.getId() + ": " + (ticket.getSubject() != null ? ticket.getSubject() : "Untitled Ticket");
     }
 }

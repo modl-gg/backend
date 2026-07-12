@@ -6,10 +6,10 @@ import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentData;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.data.punishment.PunishmentToggleOption;
 import gg.modl.backend.player.dto.request.AddModificationRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentContext;
@@ -22,12 +22,12 @@ import gg.modl.backend.ticket.service.TicketService;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -49,7 +49,7 @@ public class PunishmentMutationService {
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
         Date now = new Date();
-        String modIssuerName = request.issuerId() != null ? null : request.issuerName();
+        String modIssuerName = PunishmentMapper.storedName(request.issuerId(), request.issuerName());
         String modIssuerId = request.issuerId();
 
         PunishmentModification modification = new PunishmentModification(
@@ -64,7 +64,7 @@ public class PunishmentMutationService {
             null
         );
 
-        Punishment punishment = findPunishment(player, punishmentId);
+        Punishment punishment = PunishmentQueryService.findPunishment(player, punishmentId);
         if (punishment == null) {
             throw new ResourceNotFoundException("Punishment not found");
         }
@@ -94,17 +94,13 @@ public class PunishmentMutationService {
         appealWorkflowTransitionService.applyOutcomeForPunishment(server, request.appealTicketId(), punishmentId, outcome, issuerName);
     }
 
-    private Punishment findPunishment(Player player, String punishmentId) {
-        return PunishmentQueryService.findPunishment(player, punishmentId);
-    }
-
     public PunishmentOperationResult changeDuration(Server server, String punishmentId, Long newDuration, String issuerName, String issuerId) {
         PunishmentContext context = punishmentQueryService.findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
 
         Punishment punishment = context.punishment();
         Date now = new Date();
@@ -136,7 +132,7 @@ public class PunishmentMutationService {
 
         punishment.getModifications().add(modification);
         punishment.getNotes().add(note);
-        punishment.getData().put("duration", effective);
+        punishment.data().setDuration(effective);
         String uuid = context.player().getMinecraftUuid().toString();
         punishmentRepository.appendDurationChange(server, uuid, punishmentId, modification, note, effective);
         if (punishment.getStarted() == null) {
@@ -145,7 +141,7 @@ public class PunishmentMutationService {
         }
         realtimePublisher.punishmentModified(server, context.player(), punishment);
 
-        if (PunishmentData.isAltBlocking(punishment.getData())) {
+        if (punishment.data().altBlocking()) {
             int cascaded = punishmentLifecycleService.cascadeDurationChangeToLinkedBans(server, punishmentId, newDuration, issuerName);
             if (cascaded > 0) {
                 return new PunishmentOperationResult(
@@ -173,18 +169,18 @@ public class PunishmentMutationService {
 
         Punishment punishment = context.punishment();
         Date now = new Date();
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
         PunishmentNote note = new PunishmentNote(
             IdGenerator.generateShortId(),
-            (enabled ? "enabled " : "disabled ") + toggleOption.displayName,
+            (enabled ? "enabled " : "disabled ") + toggleOption.displayName(),
             now,
             resolvedIssuerName,
             issuerId
         );
-        punishment.getData().put(toggleOption.dataKey, enabled);
+        toggleOption.apply(punishment.data(), enabled);
         punishment.getNotes().add(note);
         punishmentRepository.setPunishmentData(server, context.player().getMinecraftUuid().toString(), punishmentId,
-            Map.of(toggleOption.dataKey, enabled), note);
+            Map.of(toggleOption.dataKey(), enabled), note);
         realtimePublisher.punishmentModified(server, context.player(), punishment);
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Option toggled", true, 1);
@@ -196,8 +192,7 @@ public class PunishmentMutationService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        Map<String, Object> data = context.punishment().getData();
-        if (!PunishmentData.isWipeAfterExpiry(data)) {
+        if (!context.punishment().data().wipeAfterExpiry()) {
             return new PunishmentOperationResult(
                 PunishmentOperationStatus.NO_OP,
                 "Stat wipe no longer enabled for this punishment",
@@ -206,8 +201,8 @@ public class PunishmentMutationService {
             );
         }
 
-        punishmentRepository.setPunishmentData(server, context.player().getMinecraftUuid().toString(), punishmentId,
-            Map.of("statWipeCompleted", true, "statWipeCompletedAt", new Date()), null);
+        punishmentRepository.markStatWipeAcknowledged(server, context.player().getMinecraftUuid().toString(),
+            punishmentId, new Date());
 
         return new PunishmentOperationResult(PunishmentOperationStatus.SUCCESS, "Stat wipe acknowledged", true, 1);
     }
@@ -290,20 +285,10 @@ public class PunishmentMutationService {
         if (request.modifyAssociatedTickets()) {
             String ticketIssuerName = issuerNameResolver.resolve(request.issuerId(), request.issuerName(), server);
             if (!addedIds.isEmpty()) {
-                closeAttachedTickets(server, addedIds, ticketIssuerName);
+                punishmentLifecycleService.closeAttachedTickets(server, addedIds, ticketIssuerName);
             }
             if (!removedIds.isEmpty()) {
                 reopenAttachedTickets(server, removedIds, ticketIssuerName);
-            }
-        }
-    }
-
-    private void closeAttachedTickets(Server server, List<String> ticketIds, String issuerName) {
-        for (String ticketId : ticketIds) {
-            try {
-                ticketService.closeTicketForPunishment(server, ticketId, issuerName);
-            } catch (Exception e) {
-                log.error("[TICKET_CLOSE] Failed to close ticket {}", ticketId, e);
             }
         }
     }
@@ -320,55 +305,27 @@ public class PunishmentMutationService {
 
     public void linkAppealToPunishment(Server server, String playerUuid, String punishmentId,
                                        String appealId, PunishmentNote note) {
-        punishmentRepository.linkAppealToPunishment(server, normalizeUuid(playerUuid), punishmentId, appealId, note);
+        punishmentRepository.linkAppealToPunishment(server, UuidUtils.normalize(playerUuid), punishmentId, appealId, note);
     }
 
-    public void addPunishmentNote(Server server, String playerUuid, String punishmentId,
-                                  PunishmentNote note, Map<String, Object> dataUpdates) {
-        punishmentRepository.addPunishmentNote(server, normalizeUuid(playerUuid), punishmentId, note, dataUpdates);
+    public void recordAppealRejection(Server server, String playerUuid, String punishmentId,
+                                      PunishmentNote note, String appealTicketId) {
+        punishmentRepository.appendAppealResultNote(server, UuidUtils.normalize(playerUuid), punishmentId,
+            note, "Rejected", appealTicketId);
     }
 
     public void applyAppealApproval(Server server, String playerUuid, String punishmentId,
                                     PunishmentModification modification, PunishmentNote note,
                                     String appealOutcome, String appealTicketId) {
-        String normalizedUuid = normalizeUuid(playerUuid);
+        String normalizedUuid = UuidUtils.normalize(playerUuid);
         punishmentRepository.applyAppealApproval(server, normalizedUuid, punishmentId,
             modification, note, appealOutcome, appealTicketId);
 
         playerRepository.findByMinecraftUuid(server, normalizedUuid).ifPresent(player -> {
-            Punishment punishment = findPunishment(player, punishmentId);
+            Punishment punishment = PunishmentQueryService.findPunishment(player, punishmentId);
             if (punishment != null) {
                 realtimePublisher.punishmentModified(server, player, punishment);
             }
         });
-    }
-
-    private enum PunishmentToggleOption {
-        ALT_BLOCKING("altBlocking", "alt-blocking"),
-        STAT_WIPE("wipeAfterExpiry", "stat wipe");
-
-        private final String dataKey;
-        private final String displayName;
-
-        PunishmentToggleOption(String dataKey, String displayName) {
-            this.dataKey = dataKey;
-            this.displayName = displayName;
-        }
-
-        private static PunishmentToggleOption from(String option) {
-            if (option == null || option.isBlank()) {
-                return null;
-            }
-
-            try {
-                return PunishmentToggleOption.valueOf(option.trim().toUpperCase(Locale.ROOT));
-            } catch (IllegalArgumentException exception) {
-                return null;
-            }
-        }
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

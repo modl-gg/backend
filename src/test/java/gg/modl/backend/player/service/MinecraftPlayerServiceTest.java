@@ -9,11 +9,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
+import gg.modl.backend.player.dto.response.AcknowledgeResult;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -56,9 +57,6 @@ class MinecraftPlayerServiceTest {
     @Mock
     private IssuerNameResolver issuerNameResolver;
 
-    @Mock
-    private StaffMongoRepository staffRepository;
-
     private MinecraftPlayerService minecraftPlayerService;
 
     @BeforeEach
@@ -71,8 +69,7 @@ class MinecraftPlayerServiceTest {
             punishmentTypeService,
             punishmentLifecycleService,
             accountLinkingService,
-            issuerNameResolver,
-            staffRepository
+            issuerNameResolver
         );
     }
 
@@ -85,7 +82,7 @@ class MinecraftPlayerServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, player.getMinecraftUuid().toString())).thenReturn(Optional.of(player));
 
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.createNote(
+        CreateNoteResult response = minecraftPlayerService.createNote(
             server,
             player.getMinecraftUuid().toString(),
             "Test note",
@@ -93,7 +90,7 @@ class MinecraftPlayerServiceTest {
             null
         );
 
-        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
+        assertEquals(new CreateNoteResult.Created("Note added"), response);
         verify(playerRepository).replaceNotes(server, player);
         assertEquals("Test note", player.getNotes().get(0).getText());
     }
@@ -114,15 +111,14 @@ class MinecraftPlayerServiceTest {
 
         when(playerRepository.findByMinecraftUuid(server, playerUuid.toString())).thenReturn(Optional.of(player));
 
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(
+        AcknowledgeResult response = minecraftPlayerService.acknowledgeNotifications(
             server,
             new AcknowledgeNotificationsRequest(playerUuid.toString(), List.of("notif-1"), null)
         );
 
-        assertEquals(org.springframework.http.HttpStatus.OK, response.status());
+        assertEquals(new AcknowledgeResult("Acknowledged 1 notification(s)"), response);
         verify(playerRepository).replacePendingNotifications(server, player, remainingNotifications(player));
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> remaining = (List<Map<String, Object>>) player.getData().get("pendingNotifications");
+        List<Map<String, Object>> remaining = player.data().pendingNotifications();
         assertEquals(1, remaining.size());
         assertEquals("notif-2", remaining.get(0).get("id"));
     }
@@ -176,9 +172,8 @@ class MinecraftPlayerServiceTest {
         verify(playerRepository).findByMinecraftUuid(server, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     }
 
-    @SuppressWarnings("unchecked")
     private List<Map<String, Object>> remainingNotifications(Player player) {
-        return (List<Map<String, Object>>) player.getData().get("pendingNotifications");
+        return player.data().pendingNotifications();
     }
 }
 

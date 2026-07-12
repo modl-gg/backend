@@ -409,7 +409,7 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     }
 
     public Ticket insertTicket(Server server, Ticket ticket) {
-        return insert(serverTemplate(server), ticket);
+        return insertEntity(server, ticket);
     }
 
     public void pushReply(Server server, String ticketId, TicketReply reply) {
@@ -578,7 +578,9 @@ public class TicketMongoRepository extends AbstractServerMongoRepository<Ticket>
     public record TicketCounts(long open, long closed) {}
 
     public void bulkCloseForPunishment(Server server, List<String> ticketIds) {
-        if (ticketIds == null || ticketIds.isEmpty()) return;
+        if (ticketIds == null || ticketIds.isEmpty()) {
+            return;
+        }
         Query query = Query.query(
             Criteria.where(TicketFields.ID).in(ticketIds)
                 .and(TicketFields.LOCKED).ne(true)

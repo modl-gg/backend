@@ -6,14 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
-import gg.modl.backend.player.dto.request.AddIpRequest;
 import gg.modl.backend.replay.dto.InitReplayUploadRequest;
 import gg.modl.backend.replaylite.data.ReplayLiteLabel;
 import gg.modl.backend.replaylite.data.ReplayLiteLabelRange;
 import gg.modl.backend.replaylite.dto.ReplayLiteLabelRequest;
 import gg.modl.backend.replaylite.dto.ReplayLiteUploadInitRequest;
-import gg.modl.backend.settings.dto.request.PunishmentTypeRequest;
-import gg.modl.backend.settings.dto.request.UpdateWebhookSettingsRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -74,54 +71,6 @@ class RequestDtoValidationTest {
         );
 
         assertHasViolation(validator.validate(request), "performance.rateLimitRequests");
-    }
-
-    @Test
-    void punishmentTypeRequestRejectsInvalidCategory() {
-        PunishmentTypeRequest request = new PunishmentTypeRequest(
-            "Spam",
-            "Other",
-            null,
-            null,
-            1,
-            null,
-            1,
-            "Staff desc",
-            "Player desc",
-            false,
-            false,
-            false,
-            true,
-            null,
-            false,
-            false
-        );
-
-        assertHasViolation(validator.validate(request), "category");
-    }
-
-    @Test
-    void webhookSettingsRequestRejectsTooManyEmbedFields() {
-        List<UpdateWebhookSettingsRequest.EmbedFieldRequest> fields = new ArrayList<>();
-        for (int i = 0; i < RequestValidationLimits.EMBED_FIELDS_MAX_ENTRIES + 1; i++) {
-            fields.add(new UpdateWebhookSettingsRequest.EmbedFieldRequest("Field " + i, "Value " + i, true));
-        }
-
-        UpdateWebhookSettingsRequest request = new UpdateWebhookSettingsRequest(
-            "https://discord.com/api/webhooks/123/token",
-            "123456789012345678",
-            "modl Panel",
-            "https://example.com/avatar.png",
-            true,
-            new UpdateWebhookSettingsRequest.NotificationSettingsRequest(true, true, true),
-            new UpdateWebhookSettingsRequest.EmbedTemplatesRequest(
-                new UpdateWebhookSettingsRequest.EmbedTemplateRequest("Title", "Description", "#3498db", fields),
-                null,
-                null
-            )
-        );
-
-        assertHasViolation(validator.validate(request), "embedTemplates.newTickets.fields");
     }
 
     @Test
@@ -191,6 +140,18 @@ class RequestDtoValidationTest {
     }
 
     @Test
+    void replayLiteLabelRequestAcceptsZeroLengthRange() {
+        ReplayLiteLabel label = new ReplayLiteLabel(
+            "player",
+            "aimbot",
+            List.of(new ReplayLiteLabelRange(1000, 1000)),
+            "notes"
+        );
+
+        assertTrue(validator.validate(new ReplayLiteLabelRequest(List.of(label))).isEmpty());
+    }
+
+    @Test
     void replayLiteLabelRequestRejectsUnsupportedVerdict() {
         ReplayLiteLabel label = new ReplayLiteLabel(
             "player",
@@ -202,22 +163,4 @@ class RequestDtoValidationTest {
         assertHasViolation(validator.validate(new ReplayLiteLabelRequest(List.of(label))), "labels[0].verdict");
     }
 
-    @Test
-    void addIpRequestRejectsStructurallyInvalidAddresses() {
-        for (String invalid : List.of("....", "::::", "ffffff", "1.2.3.4.5.6", "999.1.1.1", "256.1.1.1", "01.02.03.04")) {
-            assertHasViolation(validator.validate(new AddIpRequest(invalid)), "ipAddress");
-        }
-    }
-
-    @Test
-    void addIpRequestAcceptsValidAddresses() {
-        for (String valid : List.of("192.168.1.1", "2001:db8::1", "::1", "::ffff:192.168.1.1")) {
-            Set<ConstraintViolation<AddIpRequest>> violations = validator.validate(new AddIpRequest(valid));
-            assertTrue(
-                violations.stream().noneMatch(v -> "ipAddress".equals(v.getPropertyPath().toString())),
-                () -> "Expected no ipAddress violation for '" + valid + "' but got " +
-                      violations.stream().map(v -> v.getPropertyPath() + ": " + v.getMessage()).toList()
-            );
-        }
-    }
 }

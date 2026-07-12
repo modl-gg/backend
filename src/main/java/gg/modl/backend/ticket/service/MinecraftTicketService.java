@@ -14,6 +14,13 @@ import gg.modl.backend.ticket.dto.request.DismissReportRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.ResolveReportRequest;
+import gg.modl.backend.ticket.dto.response.MinecraftPlayerTicketView;
+import gg.modl.backend.ticket.dto.response.MinecraftReportView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailReplyView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketListItemView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketLookupView;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.ticket.util.TicketAssigneeUtil;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
@@ -23,9 +30,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -75,10 +80,10 @@ public class MinecraftTicketService {
             .subject(request.subject())
             .status(unfinished ? TicketStatus.UNFINISHED : TicketStatus.OPEN)
             .appealWorkflowStatus(ticketCategory.isAppeal() ? AppealWorkflowStatus.OPEN : null)
-            .creatorUuid(normalizeUuid(request.creatorUuid()))
+            .creatorUuid(UuidUtils.normalize(request.creatorUuid()))
             .creatorName(request.creatorName())
             .reportedPlayer(request.reportedPlayerName())
-            .reportedPlayerUuid(normalizeUuid(request.reportedPlayerUuid()))
+            .reportedPlayerUuid(UuidUtils.normalize(request.reportedPlayerUuid()))
             .tags(request.tags() != null ? new ArrayList<>(request.tags()) : new ArrayList<>())
             .replies(new ArrayList<>())
             .notes(new ArrayList<>())
@@ -97,7 +102,7 @@ public class MinecraftTicketService {
                 .id(UUID.randomUUID().toString())
                 .content(request.description())
                 .name(request.creatorName() != null ? request.creatorName() : "Player")
-                .creatorIdentifier(normalizeUuid(request.creatorUuid()))
+                .creatorIdentifier(UuidUtils.normalize(request.creatorUuid()))
                 .staff(false)
                 .type("user")
                 .created(now)
@@ -121,7 +126,7 @@ public class MinecraftTicketService {
     }
 
     public List<Ticket> getMinecraftTicketsByCreator(Server server, String creatorUuid, int limit) {
-        return ticketRepository.findRecentByCreator(server, normalizeUuid(creatorUuid), limit);
+        return ticketRepository.findRecentByCreator(server, UuidUtils.normalize(creatorUuid), limit);
     }
 
     public MinecraftTicketClaimResult claimMinecraftTicket(Server server, String ticketId, MinecraftClaimTicketRequest request) {
@@ -131,9 +136,9 @@ public class MinecraftTicketService {
         }
 
         Ticket ticket = existingTicket.get();
-        String claimerUuid = normalizeUuid(request.playerUuid());
+        String claimerUuid = UuidUtils.normalize(request.playerUuid());
         if (ticket.getCreatorUuid() != null && !ticket.getCreatorUuid().isBlank()) {
-            MinecraftTicketClaimStatus status = Objects.equals(normalizeUuid(ticket.getCreatorUuid()), claimerUuid)
+            MinecraftTicketClaimStatus status = Objects.equals(UuidUtils.normalize(ticket.getCreatorUuid()), claimerUuid)
                 ? MinecraftTicketClaimStatus.SUCCESS
                 : MinecraftTicketClaimStatus.ALREADY_LINKED;
             return new MinecraftTicketClaimResult(status, ticket);
@@ -195,38 +200,36 @@ public class MinecraftTicketService {
         return ticketRepository.findByIds(server, ids);
     }
 
-    public List<Map<String, Object>> getMinecraftReports(Server server, String status, int limit) {
+    public List<MinecraftReportView> getMinecraftReports(Server server, String status, int limit) {
         return ticketRepository.findReports(server, status, null, limit, true)
             .stream()
             .map(this::toMinecraftReport)
             .toList();
     }
 
-    private Map<String, Object> toMinecraftReport(Ticket ticket) {
-        Map<String, Object> report = new LinkedHashMap<>();
-        report.put("id", ticket.getId());
-        report.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        report.put("reporterName", ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown");
-        report.put("reporterUuid", ticket.getCreatorUuid());
-        report.put("reportedPlayerUuid", ticket.getReportedPlayerUuid());
-        report.put("reportedPlayerName", ticket.getReportedPlayer());
-        report.put("subject", ticket.getSubject());
-        report.put("content", ticket.getReplies() != null && !ticket.getReplies().isEmpty()
-                              ? ticket.getReplies().get(0).getContent()
-                              : null);
-        report.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId());
-        report.put("priority", (ticket.getPriority() != null ? ticket.getPriority() : TicketPriority.NORMAL).getId());
-        report.put("createdAt", ticket.getCreated());
-        report.put("assignedTo", ticket.getAssignedTo());
-        report.put("chatMessages", ticket.getChatMessages());
-        if (ticket.getReplayUrl() != null) {
-            report.put("replayUrl", ticket.getReplayUrl());
-        }
-        return report;
+    private MinecraftReportView toMinecraftReport(Ticket ticket) {
+        return new MinecraftReportView(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getCreatorName() != null ? ticket.getCreatorName() : "Unknown",
+            ticket.getCreatorUuid(),
+            ticket.getReportedPlayerUuid(),
+            ticket.getReportedPlayer(),
+            ticket.getSubject(),
+            ticket.getReplies() != null && !ticket.getReplies().isEmpty()
+                ? ticket.getReplies().get(0).getContent()
+                : null,
+            ticket.getStatus() != null ? ticket.getStatus().getId() : TicketStatus.OPEN.getId(),
+            (ticket.getPriority() != null ? ticket.getPriority() : TicketPriority.NORMAL).getId(),
+            ticket.getCreated(),
+            ticket.getAssignedTo(),
+            ticket.getChatMessages(),
+            ticket.getReplayUrl()
+        );
     }
 
-    public List<Map<String, Object>> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
-        return ticketRepository.findReports(server, status, normalizeUuid(playerUuid), limit, false)
+    public List<MinecraftReportView> getMinecraftReportsForPlayer(Server server, String playerUuid, String status, int limit) {
+        return ticketRepository.findReports(server, status, UuidUtils.normalize(playerUuid), limit, false)
             .stream()
             .map(this::toMinecraftReport)
             .toList();
@@ -345,92 +348,89 @@ public class MinecraftTicketService {
         return assignMinecraftReport(server, ticketId, new AssignReportRequest(assignee));
     }
 
-    public Map<String, Object> toTicketListItem(Ticket ticket) {
-        boolean hasStaffResponse = false;
-        if (ticket.getReplies() != null) {
-            hasStaffResponse = ticket.getReplies()
-                .stream().anyMatch(TicketReply::isStaff);
-        }
+    public MinecraftTicketListItemView toTicketListItem(Ticket ticket) {
+        boolean hasStaffResponse = ticket.getReplies() != null
+            && ticket.getReplies().stream().anyMatch(TicketReply::isStaff);
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
-        response.put("assignedTo", ticket.getAssignedTo());
-        response.put("createdAt", ticket.getCreated());
-        response.put("updatedAt", ticket.getUpdatedAt());
-        response.put("hasStaffResponse", hasStaffResponse);
-        response.put("replyCount", ticket.getReplies() != null ? ticket.getReplies().size() : 0);
-        response.put("locked", ticket.isLocked());
-        return response;
+        return new MinecraftTicketListItemView(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getSubject(),
+            ticket.getStatus() != null ? ticket.getStatus().getId() : null,
+            ticket.getCreatorName(),
+            ticket.getCreatorUuid(),
+            ticket.getPriority() != null ? ticket.getPriority().getId() : null,
+            ticket.getAssignedTo(),
+            ticket.getCreated(),
+            ticket.getUpdatedAt(),
+            hasStaffResponse,
+            ticket.getReplies() != null ? ticket.getReplies().size() : 0,
+            ticket.isLocked()
+        );
     }
 
-    public Map<String, Object> toTicketDetail(Ticket ticket) {
-        List<Map<String, Object>> replies = new ArrayList<>();
+    public MinecraftTicketDetailView toTicketDetail(Ticket ticket) {
+        List<MinecraftTicketDetailReplyView> replies = new ArrayList<>();
         if (ticket.getReplies() != null) {
             for (TicketReply reply : ticket.getReplies()) {
-                Map<String, Object> replyData = new LinkedHashMap<>();
-                replyData.put("id", reply.getId());
-                replyData.put("content", reply.getContent());
-                replyData.put("authorName", reply.getName());
-                replyData.put("authorId", reply.getCreatorIdentifier());
-                replyData.put("isStaff", reply.isStaff());
-                replyData.put("createdAt", reply.getCreated());
-                replies.add(replyData);
+                replies.add(new MinecraftTicketDetailReplyView(
+                    reply.getId(),
+                    reply.getContent(),
+                    reply.getName(),
+                    reply.getCreatorIdentifier(),
+                    reply.isStaff(),
+                    reply.getCreated()
+                ));
             }
         }
 
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("priority", ticket.getPriority() != null ? ticket.getPriority().getId() : null);
-        response.put("assignedTo", ticket.getAssignedTo());
-        response.put("createdAt", ticket.getCreated());
-        response.put("updatedAt", ticket.getUpdatedAt());
-        response.put("locked", ticket.isLocked());
-        response.put("replies", replies);
-        response.put("chatMessages", ticket.getChatMessages());
-        if (ticket.getReplayUrl() != null) {
-            response.put("replayUrl", ticket.getReplayUrl());
-        }
-        return response;
+        return new MinecraftTicketDetailView(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getSubject(),
+            ticket.getStatus() != null ? ticket.getStatus().getId() : null,
+            ticket.getCreatorName(),
+            ticket.getCreatorUuid(),
+            ticket.getPriority() != null ? ticket.getPriority().getId() : null,
+            ticket.getAssignedTo(),
+            ticket.getCreated(),
+            ticket.getUpdatedAt(),
+            ticket.isLocked(),
+            replies,
+            ticket.getChatMessages(),
+            ticket.getReplayUrl()
+        );
     }
 
-    public Map<String, Object> toTicketLookupItem(Ticket ticket) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("playerName", ticket.getCreatorName());
-        response.put("playerUuid", ticket.getCreatorUuid());
-        response.put("createdAt", ticket.getCreated());
-        if (ticket.getReplies() != null && !ticket.getReplies().isEmpty()) {
-            response.put("firstReplyContent", ticket.getReplies().get(0).getContent());
-        }
-        return response;
+    public MinecraftTicketLookupView toTicketLookupItem(Ticket ticket) {
+        String firstReplyContent = ticket.getReplies() != null && !ticket.getReplies().isEmpty()
+            ? ticket.getReplies().get(0).getContent()
+            : null;
+
+        return new MinecraftTicketLookupView(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getSubject(),
+            ticket.getStatus() != null ? ticket.getStatus().getId() : null,
+            ticket.getCreatorName(),
+            ticket.getCreatorUuid(),
+            ticket.getCreated(),
+            firstReplyContent
+        );
     }
 
-    public Map<String, Object> toPlayerTicketItem(Ticket ticket) {
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("id", ticket.getId());
-        response.put("type", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("category", ticket.getType() != null ? ticket.getType().getId() : null);
-        response.put("subject", ticket.getSubject());
-        response.put("status", ticket.getStatus() != null ? ticket.getStatus().getId() : null);
-        response.put("createdAt", ticket.getCreated());
-        return response;
+    public MinecraftPlayerTicketView toPlayerTicketItem(Ticket ticket) {
+        return new MinecraftPlayerTicketView(
+            ticket.getId(),
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getType() != null ? ticket.getType().getId() : null,
+            ticket.getSubject(),
+            ticket.getStatus() != null ? ticket.getStatus().getId() : null,
+            ticket.getCreated()
+        );
     }
 
     public enum MinecraftTicketClaimStatus {
@@ -447,10 +447,6 @@ public class MinecraftTicketService {
     public record MinecraftTicketClaimResult(MinecraftTicketClaimStatus status, Ticket ticket) {}
 
     public record ReportOperationResult(ReportOperationStatus status, Ticket ticket) {}
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
-    }
 
     private static Ticket.ChatMessage parseChatMessage(String rawMessage, Date reportTime) {
         String truncated = rawMessage.substring(0, Math.min(rawMessage.length(), TicketContentService.MAX_CHAT_MESSAGE_LENGTH));

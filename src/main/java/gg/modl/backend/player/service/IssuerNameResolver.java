@@ -1,8 +1,13 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
+import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -29,20 +34,32 @@ public class IssuerNameResolver {
         return "Console";
     }
 
-    public String resolve(@Nullable String issuerId, @Nullable String issuerName, Map<String, String> resolvedMap) {
-        if (issuerId != null && resolvedMap.containsKey(issuerId)) {
-            return resolvedMap.get(issuerId);
-        }
-        if (issuerName != null) {
-            return issuerName;
-        }
-        return issuerId != null ? "Unknown Staff" : "Console";
-    }
-
     public Map<String, String> batchResolve(Set<String> issuerIds, Server server) {
         if (issuerIds == null || issuerIds.isEmpty()) {
             return Map.of();
         }
         return staffRepository.findUsernamesByIds(server, issuerIds);
+    }
+
+    public Map<String, String> resolveForPunishments(Server server, Collection<Punishment> punishments) {
+        Set<String> ids = new HashSet<>();
+        for (Punishment punishment : punishments) {
+            ids.addAll(PunishmentQueryService.collectIssuerIds(punishment));
+        }
+        return batchResolve(ids, server);
+    }
+
+    public Map<String, String> resolveForPlayers(Server server, Collection<Player> players) {
+        Set<String> ids = new HashSet<>();
+        for (Player player : players) {
+            List<Punishment> punishments = player.getPunishments();
+            if (punishments == null) {
+                continue;
+            }
+            for (Punishment punishment : punishments) {
+                ids.addAll(PunishmentQueryService.collectIssuerIds(punishment));
+            }
+        }
+        return batchResolve(ids, server);
     }
 }

@@ -2,12 +2,13 @@ package gg.modl.backend.ratelimit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import gg.modl.backend.infrastructure.ratelimit.BucketPool;
 import gg.modl.backend.infrastructure.ratelimit.RateLimitConfig;
 import org.junit.jupiter.api.Test;
 
 class RateLimitConfigTest {
 
-    private final RateLimitConfig config = new RateLimitConfig();
+    private final RateLimitConfig config = new RateLimitConfig(new BucketPool());
 
     @Test
     void publicMediaPostUsesDedicatedTier() {

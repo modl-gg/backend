@@ -31,7 +31,7 @@ public class AdminAuthController {
     private final AuthService authService;
     private final SessionService sessionService;
     private final CookieUtil cookieUtil;
-    private static final long SESSION_MAX_AGE = 24 * 60 * 60; // 24 hours
+    private static final long SESSION_MAX_AGE = 24 * 60 * 60;
 
     @PostMapping("/request-code")
     public ResponseEntity<?> requestCode(@RequestBody AdminRequestCodeRequest request) throws Exception {
@@ -50,7 +50,6 @@ public class AdminAuthController {
         HttpServletResponse response,
         @RequestBody AdminLoginRequest loginRequest) {
 
-        // Always verify code regardless of user existence to prevent timing-based enumeration
         boolean codeValid = authService.verifyAdminCode(loginRequest.getEmail(), loginRequest.getCode());
         Optional<AdminUser> adminOpt = adminAuthService.findByEmail(loginRequest.getEmail());
 

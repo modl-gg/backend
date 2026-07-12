@@ -1,5 +1,8 @@
 package gg.modl.backend.role.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalEpochMillis;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.dto.request.ReorderRolesRequest;
 import gg.modl.backend.role.dto.request.RoleRequest;
@@ -8,10 +11,8 @@ import gg.modl.proto.modl.v1.PanelRoleListResponse;
 import gg.modl.proto.modl.v1.PermissionsResponse;
 import gg.modl.proto.modl.v1.RoleDetailResponse;
 import gg.modl.proto.modl.v1.RoleMutationResponse;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
 
 final class PanelRoleProtoMapper {
     private PanelRoleProtoMapper() {
@@ -63,10 +64,10 @@ final class PanelRoleProtoMapper {
 
     private static PermissionsResponse.Permission toPermission(Permission permission) {
         PermissionsResponse.Permission.Builder builder = PermissionsResponse.Permission.newBuilder();
-        setIfNotNull(builder::setId, permission.id());
-        setIfNotNull(builder::setName, permission.name());
-        setIfNotNull(builder::setDescription, permission.description());
-        setIfNotNull(builder::setCategory, permission.category());
+        setOptionalString(builder::setId, permission.id());
+        setOptionalString(builder::setName, permission.name());
+        setOptionalString(builder::setDescription, permission.description());
+        setOptionalString(builder::setCategory, permission.category());
         if (permission.parentId() != null) {
             builder.setParentId(permission.parentId());
         }
@@ -78,26 +79,14 @@ final class PanelRoleProtoMapper {
             .setIsDefault(role.isDefault())
             .setOrder(role.order())
             .setUserCount(role.userCount());
-        setIfNotNull(builder::setId, role.id());
-        setIfNotNull(builder::setName, role.name());
-        setIfNotNull(builder::setDescription, role.description());
+        setOptionalString(builder::setId, role.id());
+        setOptionalString(builder::setName, role.name());
+        setOptionalString(builder::setDescription, role.description());
         if (role.permissions() != null) {
             builder.addAllPermissions(role.permissions());
         }
-        setEpochMillisIfNotNull(builder::setCreatedAt, role.createdAt());
-        setEpochMillisIfNotNull(builder::setUpdatedAt, role.updatedAt());
+        setOptionalEpochMillis(builder::setCreatedAt, role.createdAt());
+        setOptionalEpochMillis(builder::setUpdatedAt, role.updatedAt());
         return builder.build();
-    }
-
-    private static void setIfNotNull(Consumer<String> setter, String value) {
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    private static void setEpochMillisIfNotNull(Consumer<Long> setter, Date date) {
-        if (date != null) {
-            setter.accept(date.getTime());
-        }
     }
 }

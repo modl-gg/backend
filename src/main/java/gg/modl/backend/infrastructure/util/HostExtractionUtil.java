@@ -28,11 +28,7 @@ public class HostExtractionUtil {
 
     @Nullable
     public String normalizeServerDomain(@Nullable String serverDomain) {
-        String host = extractHost(serverDomain);
-        if (host == null || host.isBlank()) {
-            return null;
-        }
-        return host;
+        return extractHost(serverDomain);
     }
 
     public Set<String> parseCommaSeparated(@Nullable String values) {

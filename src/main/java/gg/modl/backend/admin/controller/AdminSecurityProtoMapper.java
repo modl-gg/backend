@@ -1,6 +1,9 @@
 package gg.modl.backend.admin.controller;
 
 import gg.modl.backend.admin.data.SecurityEvent;
+import gg.modl.backend.admin.dto.response.AdminPagination;
+import gg.modl.backend.admin.dto.response.AdminSecurityEvents;
+import gg.modl.backend.admin.dto.response.AdminSecuritySummary;
 import gg.modl.proto.modl.v1.AdminSecurityEvent;
 import gg.modl.proto.modl.v1.AdminSecurityEventsData;
 import gg.modl.proto.modl.v1.AdminSecurityEventsResponse;
@@ -10,11 +13,6 @@ import gg.modl.proto.modl.v1.AdminSecurityPagination;
 import gg.modl.proto.modl.v1.AdminSecuritySummaryData;
 import gg.modl.proto.modl.v1.AdminSecuritySummaryResponse;
 
-import java.util.Map;
-
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
@@ -23,48 +21,42 @@ final class AdminSecurityProtoMapper {
     private AdminSecurityProtoMapper() {
     }
 
-    static AdminSecurityEventsResponse toEventsResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> pagination = map(data.get("pagination"));
-
+    static AdminSecurityEventsResponse toEventsResponse(AdminSecurityEvents response) {
         AdminSecurityEventsData.Builder dataBuilder = AdminSecurityEventsData.newBuilder()
-            .setPagination(AdminSecurityPagination.newBuilder()
-                .setPage((int) longValue(pagination.get("page")))
-                .setLimit((int) longValue(pagination.get("limit")))
-                .setTotal(longValue(pagination.get("total")))
-                .setPages((int) longValue(pagination.get("pages")))
-                .build());
-        list(data.get("events")).stream()
-            .filter(SecurityEvent.class::isInstance)
-            .map(SecurityEvent.class::cast)
-            .forEach(event -> dataBuilder.addEvents(toEvent(event)));
+            .setPagination(toPagination(response.pagination()));
+        response.events().forEach(event -> dataBuilder.addEvents(toEvent(event)));
         return AdminSecurityEventsResponse.newBuilder()
             .setSuccess(true)
             .setData(dataBuilder.build())
             .build();
     }
 
-    static AdminSecuritySummaryResponse toSummaryResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> last24Hours = map(data.get("last24Hours"));
-        Map<String, Object> last7Days = map(data.get("last7Days"));
-
+    static AdminSecuritySummaryResponse toSummaryResponse(AdminSecuritySummary response) {
+        AdminSecuritySummary.Last24Hours last24Hours = response.last24Hours();
         AdminSecuritySummaryData.Builder dataBuilder = AdminSecuritySummaryData.newBuilder()
             .setLast24Hours(AdminSecurityLast24Hours.newBuilder()
-                .setCritical(longValue(last24Hours.get("critical")))
-                .setHigh(longValue(last24Hours.get("high")))
-                .setMedium(longValue(last24Hours.get("medium")))
+                .setCritical(last24Hours.critical())
+                .setHigh(last24Hours.high())
+                .setMedium(last24Hours.medium())
                 .build())
             .setLast7Days(AdminSecurityLast7Days.newBuilder()
-                .setTotal(longValue(last7Days.get("total")))
+                .setTotal(response.last7DaysTotal())
                 .build());
-        Object timestamp = data.get("timestamp");
-        if (timestamp != null) {
-            dataBuilder.setTimestamp(toTimestamp(timestamp));
+        if (response.timestamp() != null) {
+            dataBuilder.setTimestamp(toTimestamp(response.timestamp()));
         }
         return AdminSecuritySummaryResponse.newBuilder()
             .setSuccess(true)
             .setData(dataBuilder.build())
+            .build();
+    }
+
+    private static AdminSecurityPagination toPagination(AdminPagination pagination) {
+        return AdminSecurityPagination.newBuilder()
+            .setPage(pagination.page())
+            .setLimit(pagination.limit())
+            .setTotal(pagination.total())
+            .setPages(pagination.pages())
             .build();
     }
 

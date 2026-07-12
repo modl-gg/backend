@@ -1,18 +1,18 @@
 package gg.modl.backend.migration.controller;
 
-import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.migration.dto.UpdateProgressRequest;
-import gg.modl.backend.migration.service.MigrationProcessor;
 import gg.modl.backend.migration.service.MigrationService;
+import gg.modl.backend.migration.service.MigrationService.FileSizeError;
+import gg.modl.backend.migration.service.MigrationUploadService;
+import gg.modl.backend.migration.service.MigrationUploadService.UploadResult;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.nio.file.Path;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.task.TaskRejectedException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -26,7 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 @RequiredArgsConstructor
 public class MinecraftMigrationController {
     private final MigrationService migrationService;
-    private final MigrationProcessor migrationProcessor;
+    private final MigrationUploadService migrationUploadService;
 
     @PostMapping("/upload")
     public ResponseEntity<?> uploadMigrationFile(
@@ -34,51 +34,37 @@ public class MinecraftMigrationController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-
-        if (file.isEmpty()) {
-            throw new ValidationException("No file uploaded");
-        }
-
-        String originalFilename = file.getOriginalFilename();
-        if (originalFilename == null || !originalFilename.endsWith(".json")) {
-            throw new ValidationException("Only JSON files are allowed");
-        }
-
-        Map<String, Object> sizeError = migrationService.validateFileSize(server, file);
-        if (sizeError != null) {
-            return ResponseEntity.status(413).body(sizeError);
-        }
-
-        migrationService.requireActiveMigrationForUpload(server);
-
-        Path filePath = migrationService.saveUploadedFile(file);
-        try {
-            migrationService.updateProgress(server, new UpdateProgressRequest(
-                "uploading_json",
-                "Migration file uploaded successfully. Starting data processing...",
-                0, 0, null
-            ));
-            migrationProcessor.processFileAsync(server, filePath);
-        } catch (TaskRejectedException e) {
-            migrationService.discardUpload(server, filePath,
-                "Migration processing is busy. Please try again shortly.");
-            return ResponseEntity.status(503).body(Map.of(
-                "error", "Migration processing is busy",
-                "message", "The server is processing other migrations. Please try again shortly."
-            ));
-        } catch (RuntimeException e) {
-            migrationService.discardUpload(server, filePath, "Migration failed to start.");
-            return ResponseEntity.status(503).body(Map.of(
-                "error", "Migration failed to start",
-                "message", "The migration could not be started. Please try again."
-            ));
-        }
-
-        return ResponseEntity.ok(Map.of(
-            "success", true,
-            "message", "Migration file uploaded successfully. Processing started.",
-            "fileSize", file.getSize()
-        ));
+        UploadResult result = migrationUploadService.beginUpload(server, file);
+        return switch (result) {
+            case UploadResult.Success success -> {
+                Map<String, Object> body = Map.of(
+                    "success", true,
+                    "message", "Migration file uploaded successfully. Processing started.",
+                    "fileSize", success.fileSize());
+                yield ResponseEntity.ok(body);
+            }
+            case UploadResult.FileTooLarge fileTooLarge -> {
+                FileSizeError error = fileTooLarge.error();
+                Map<String, Object> body = Map.of(
+                    "error", error.error(),
+                    "message", error.message(),
+                    "fileSize", error.fileSize(),
+                    "limit", error.limit());
+                yield ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+            }
+            case UploadResult.ProcessingBusy ignored -> {
+                Map<String, Object> body = Map.of(
+                    "error", "Migration processing is busy",
+                    "message", "The server is processing other migrations. Please try again shortly.");
+                yield ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+            case UploadResult.StartFailed ignored -> {
+                Map<String, Object> body = Map.of(
+                    "error", "Migration failed to start",
+                    "message", "The migration could not be started. Please try again.");
+                yield ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+            }
+        };
     }
 
     @PostMapping("/progress")

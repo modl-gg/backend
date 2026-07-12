@@ -2,7 +2,6 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.KnowledgebaseCategoryFields;
 import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
@@ -12,9 +11,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -97,15 +94,6 @@ public class KnowledgebaseCategoryMongoRepository extends AbstractServerMongoRep
     }
 
     public void reorderCategories(Server server, List<String> ids) {
-        if (ids.isEmpty()) return;
-
-        MongoTemplate template = serverTemplate(server);
-        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
-        for (int index = 0; index < ids.size(); index++) {
-            Query query = Query.query(Criteria.where(KnowledgebaseCategoryFields.ID).is(ids.get(index)));
-            Update update = new Update().set(KnowledgebaseCategoryFields.ORDINAL, index);
-            bulk.updateOne(query, update);
-        }
-        bulk.execute();
+        bulkUpdateByIds(server, ids, (id, index) -> new Update().set(KnowledgebaseCategoryFields.ORDINAL, index));
     }
 }

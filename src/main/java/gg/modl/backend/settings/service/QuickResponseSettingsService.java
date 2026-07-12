@@ -7,26 +7,27 @@ import gg.modl.backend.settings.dto.request.UpdateQuickResponsesRequest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class QuickResponseSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_QUICK_RESPONSES = "quickResponses";
 
+    private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<QuickResponseSettings> support;
+
+    public QuickResponseSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_QUICK_RESPONSES, this::mapToQuickResponseSettings);
+    }
+
     public QuickResponseSettings getQuickResponseSettings(Server server) {
-        return getQuickResponseSettingsState(server).data();
+        return support.get(server);
     }
 
     public VersionedSettings<QuickResponseSettings> getQuickResponseSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_QUICK_RESPONSES);
-        QuickResponseSettings settings = mapToQuickResponseSettings(state.data());
-        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+        return support.state(server);
     }
 
     public QuickResponseSettings.Action findAction(QuickResponseSettings settings, String categoryId, String actionId) {
@@ -55,24 +56,13 @@ public class QuickResponseSettingsService {
         long expectedVersion,
         UpdateQuickResponsesRequest quickResponses
     ) {
-        QuickResponseSettings currentSettings = getQuickResponseSettings(server);
+        QuickResponseSettings currentSettings = support.get(server);
         if (quickResponses != null && quickResponses.categories() != null) {
             currentSettings.setCategories(quickResponses.categories());
         }
 
         Map<String, Object> data = codec().encode(currentSettings);
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-            server,
-            SETTINGS_TYPE_QUICK_RESPONSES,
-            expectedVersion,
-            new LinkedHashMap<>(data)
-        );
-        return new VersionedSettings<>(mapToQuickResponseSettings(updated.data()), updated.version(), updated.updatedAt());
-    }
-
-    public void updateQuickResponseSettings(Server server, UpdateQuickResponsesRequest quickResponses) {
-        long expectedVersion = getQuickResponseSettingsState(server).version();
-        patchQuickResponseSettings(server, expectedVersion, quickResponses);
+        return support.save(server, expectedVersion, new LinkedHashMap<>(data));
     }
 
     private QuickResponseSettings mapToQuickResponseSettings(Map<String, Object> data) {

@@ -5,20 +5,23 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import java.util.HashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@Slf4j
-@RequiredArgsConstructor
 public class AIModerationSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_AI_MODERATION = "aiModerationSettings";
 
+    private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<AIModerationSettings> support;
+
+    public AIModerationSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_AI_MODERATION, this::mapToAIModerationSettings);
+    }
+
     public AIModerationSettings updateAIModerationSettings(Server server, AIModerationSettings newSettings) {
-        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION);
+        long expectedVersion = support.currentVersion(server);
 
         AIModerationSettings toPersist = AIModerationSettings.builder()
             .enableAIReview(newSettings.isEnableAIReview())
@@ -28,13 +31,15 @@ public class AIModerationSettingsService {
                 : new HashMap<>())
             .build();
 
-        SettingsDocumentService.RawSettingsState saved =
-            settingsDocumentService.saveRawState(server, SETTINGS_TYPE_AI_MODERATION, current.version(), codec().encode(toPersist));
-        return codec().decode(saved.data());
+        return support.save(server, expectedVersion, codec().encode(toPersist)).data();
     }
 
     public AIModerationSettings getAIModerationSettings(Server server) {
-        return codec().decode(settingsDocumentService.getRawState(server, SETTINGS_TYPE_AI_MODERATION).data());
+        return support.get(server);
+    }
+
+    private AIModerationSettings mapToAIModerationSettings(Map<String, Object> data) {
+        return codec().decode(data);
     }
 
     private SettingsCodec<AIModerationSettings> codec() {

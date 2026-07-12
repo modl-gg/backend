@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class MediaValidationService {
-    private static final long DEFAULT_MAX_FILE_SIZE = 10L * 1024 * 1024; // 10 MB
+    private static final long DEFAULT_MAX_FILE_SIZE = 10L * 1024 * 1024;
 
     private static final Set<String> DANGEROUS_EXTENSIONS = Set.of(
         ".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".pif",
@@ -33,26 +33,22 @@ public class MediaValidationService {
     );
 
     private static final Map<String, Long> MAX_SIZES = Map.of(
-        "evidence", 100L * 1024 * 1024, // 100 mb
-        "ticket", 100L * 1024 * 1024, // 100 mb
-        "appeal", 100L * 1024 * 1024, // 100 mb
-        "article", 50L * 1024 * 1024, // 50 mb
-        "server-icon", 10L * 1024 * 1024, //  10 mb
-        "replay", 10L * 1024 * 1024 // 10 mb
+        "evidence", 100L * 1024 * 1024,
+        "ticket", 100L * 1024 * 1024,
+        "appeal", 100L * 1024 * 1024,
+        "article", 50L * 1024 * 1024,
+        "server-icon", 10L * 1024 * 1024,
+        "replay", 10L * 1024 * 1024
     );
 
     private static final Map<String, Long> PREMIUM_MAX_SIZES = Map.of(
-        "evidence", 1L * 1024 * 1024 * 1024, // 1 GB
-        "ticket", 1L * 1024 * 1024 * 1024, // 1 GB
-        "appeal", 1L * 1024 * 1024 * 1024, // 1 GB
-        "article", 50L * 1024 * 1024, // 50 mb
-        "server-icon", 10L * 1024 * 1024, //  10 mb
-        "replay", 10L * 1024 * 1024 // 10 mb
+        "evidence", 1L * 1024 * 1024 * 1024,
+        "ticket", 1L * 1024 * 1024 * 1024,
+        "appeal", 1L * 1024 * 1024 * 1024,
+        "article", 50L * 1024 * 1024,
+        "server-icon", 10L * 1024 * 1024,
+        "replay", 10L * 1024 * 1024
     );
-
-    public ValidationResult validateMetadata(String fileName, String contentType, long fileSize, String uploadType) {
-        return validateMetadata(fileName, contentType, fileSize, uploadType, false);
-    }
 
     public ValidationResult validateMetadata(String fileName, String contentType, long fileSize, String uploadType, boolean isPremium) {
         if (fileName == null || fileName.isBlank()) {
@@ -92,17 +88,13 @@ public class MediaValidationService {
         return new ValidationResult(true, null);
     }
 
-    public Set<String> getAllowedTypes(String uploadType) {
+    private Set<String> getAllowedTypes(String uploadType) {
         return ALLOWED_TYPES.getOrDefault(uploadType, Set.of());
     }
 
-    public long getMaxSize(String uploadType, boolean isPremium) {
+    private long getMaxSize(String uploadType, boolean isPremium) {
         Map<String, Long> sizes = isPremium ? PREMIUM_MAX_SIZES : MAX_SIZES;
         return sizes.getOrDefault(uploadType, DEFAULT_MAX_FILE_SIZE);
-    }
-
-    public long getMaxSize(String uploadType) {
-        return MAX_SIZES.getOrDefault(uploadType, DEFAULT_MAX_FILE_SIZE);
     }
 
     public Map<String, Object> getAllSupportedTypes() {
@@ -114,10 +106,6 @@ public class MediaValidationService {
             "server-icons", List.copyOf(ALLOWED_TYPES.get("server-icon")),
             "replays", List.copyOf(ALLOWED_TYPES.get("replay"))
         );
-    }
-
-    public Map<String, Object> getAllSizeLimits() {
-        return getAllSizeLimits(false);
     }
 
     public Map<String, Object> getAllSizeLimits(boolean isPremium) {

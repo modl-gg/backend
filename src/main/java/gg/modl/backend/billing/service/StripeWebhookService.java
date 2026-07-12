@@ -5,8 +5,9 @@ import com.stripe.model.Event;
 import com.stripe.model.Invoice;
 import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
+import com.stripe.model.checkout.Session;
 import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerBillingUpdate;
@@ -14,6 +15,7 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
 import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.Date;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,7 +25,7 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class StripeWebhookService {
     private final StripeService stripeService;
-    private final ServerMongoRepository serverRepository;
+    private final ServerLookupRepository serverLookupRepository;
     private final UsageTrackingService usageTrackingService;
     private final ServerMutationHelper serverMutationHelper;
     private final StripeWebhookEventMongoRepository webhookEventRepository;
@@ -50,26 +52,29 @@ public class StripeWebhookService {
         }
     }
 
+    private <T extends StripeObject> Optional<T> objectOf(Event event, Class<T> type) {
+        return event.getDataObjectDeserializer().getObject()
+            .filter(type::isInstance)
+            .map(type::cast);
+    }
+
     private void handleCheckoutCompleted(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof com.stripe.model.checkout.Session session)) {
-            return;
-        }
+        objectOf(event, Session.class).ifPresent(session -> {
+            if (session.getCustomer() == null || session.getSubscription() == null) {
+                return;
+            }
 
-        if (session.getCustomer() == null || session.getSubscription() == null) {
-            return;
-        }
+            Server server = findServerByCustomerId(session.getCustomer());
+            if (server == null) {
+                log.warn("No server found for customer: {}", session.getCustomer());
+                return;
+            }
 
-        Server server = findServerByCustomerId(session.getCustomer());
-        if (server == null) {
-            log.warn("No server found for customer: {}", session.getCustomer());
-            return;
-        }
-
-        serverMutationHelper.mutate(server, current -> {
-            current.setStripeSubscriptionId(session.getSubscription());
-            current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-            current.setPlan(ServerPlan.PREMIUM);
+            serverMutationHelper.mutate(server, current -> {
+                current.setStripeSubscriptionId(session.getSubscription());
+                current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+                current.setPlan(ServerPlan.PREMIUM);
+            });
         });
     }
 
@@ -85,7 +90,7 @@ public class StripeWebhookService {
     }
 
     private Server findServerByCustomerId(String customerId) {
-        return serverRepository.findByStripeCustomerId(customerId).orElse(null);
+        return serverLookupRepository.findByStripeCustomerId(customerId).orElse(null);
     }
 
     private Server resolveServer(Subscription subscription) {
@@ -105,25 +110,22 @@ public class StripeWebhookService {
     }
 
     private void handleSubscriptionCreated(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof Subscription subscription)) {
-            return;
-        }
+        objectOf(event, Subscription.class).ifPresent(subscription -> {
+            if (subscription.getCustomer() == null) {
+                return;
+            }
 
-        if (subscription.getCustomer() == null) {
-            return;
-        }
+            Server server = findServerByCustomerId(subscription.getCustomer());
+            if (server == null) {
+                return;
+            }
 
-        Server server = findServerByCustomerId(subscription.getCustomer());
-        if (server == null) {
-            return;
-        }
-
-        serverMutationHelper.mutate(server, current -> {
-            current.setStripeSubscriptionId(subscription.getId());
-            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(subscription.getStatus()));
-            current.setPlan(planForSubscriptionStatus(subscription.getStatus()));
-            applyPeriodDates(current, subscription);
+            serverMutationHelper.mutate(server, current -> {
+                current.setStripeSubscriptionId(subscription.getId());
+                current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(subscription.getStatus()));
+                current.setPlan(planForSubscriptionStatus(subscription.getStatus()));
+                applyPeriodDates(current, subscription);
+            });
         });
     }
 
@@ -139,32 +141,29 @@ public class StripeWebhookService {
     }
 
     private void handleSubscriptionUpdated(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof Subscription subscription)) {
-            return;
-        }
-
-        Server server = resolveServer(subscription);
-        if (server == null) {
-            log.warn("No server found for subscription: {}", subscription.getId());
-            return;
-        }
-
-        String effectiveStatus = stripeService.getEffectiveStatus(subscription);
-        serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(effectiveStatus));
-            if (isPremiumStatus(effectiveStatus)) {
-                current.setPlan(ServerPlan.PREMIUM);
-            } else if (isFreeStatus(effectiveStatus)) {
-                current.setPlan(ServerPlan.FREE);
+        objectOf(event, Subscription.class).ifPresent(subscription -> {
+            Server server = resolveServer(subscription);
+            if (server == null) {
+                log.warn("No server found for subscription: {}", subscription.getId());
+                return;
             }
 
-            applyPeriodDates(current, subscription);
+            String effectiveStatus = stripeService.getEffectiveStatus(subscription);
+            serverMutationHelper.mutate(server, current -> {
+                current.setSubscriptionStatus(SubscriptionStatus.fromStripeOrInactive(effectiveStatus));
+                if (isPremiumStatus(effectiveStatus)) {
+                    current.setPlan(ServerPlan.PREMIUM);
+                } else if (isFreeStatus(effectiveStatus)) {
+                    current.setPlan(ServerPlan.FREE);
+                }
+
+                applyPeriodDates(current, subscription);
+            });
         });
     }
 
     private Server findServerBySubscriptionId(String subscriptionId) {
-        return serverRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
+        return serverLookupRepository.findByStripeSubscriptionId(subscriptionId).orElse(null);
     }
 
     private boolean isPremiumStatus(String status) {
@@ -172,86 +171,85 @@ public class StripeWebhookService {
     }
 
     private void handleSubscriptionDeleted(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof Subscription subscription)) {
-            return;
-        }
+        objectOf(event, Subscription.class).ifPresent(subscription -> {
+            Server server = resolveServer(subscription);
+            if (server == null) {
+                return;
+            }
 
-        Server server = resolveServer(subscription);
-        if (server == null) {
-            return;
-        }
-
-        serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
-            current.setPlan(ServerPlan.FREE);
-            current.setCurrentPeriodEnd(null);
+            serverMutationHelper.mutate(server, current -> {
+                current.setSubscriptionStatus(SubscriptionStatus.INACTIVE);
+                current.setPlan(ServerPlan.FREE);
+                current.setCurrentPeriodEnd(null);
+            });
+            usageTrackingService.resetUsageCounters(server.getId());
         });
-        usageTrackingService.resetUsageCounters(server.getId());
     }
 
     private void handlePaymentFailed(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof Invoice invoice) || invoice.getCustomer() == null) {
-            return;
-        }
+        objectOf(event, Invoice.class).ifPresent(invoice -> {
+            if (invoice.getCustomer() == null) {
+                return;
+            }
 
-        Server server = findServerByCustomerId(invoice.getCustomer());
-        if (server == null) {
-            return;
-        }
+            Server server = findServerByCustomerId(invoice.getCustomer());
+            if (server == null) {
+                return;
+            }
 
-        serverMutationHelper.mutate(server, current -> {
-            current.setSubscriptionStatus(SubscriptionStatus.PAST_DUE);
-            current.setPlan(ServerPlan.FREE);
+            serverMutationHelper.mutate(server, current -> {
+                current.setSubscriptionStatus(SubscriptionStatus.PAST_DUE);
+                current.setPlan(ServerPlan.FREE);
+            });
         });
     }
 
     private void handlePaymentSucceeded(Event event) {
-        StripeObject stripeObject = event.getDataObjectDeserializer().getObject().orElse(null);
-        if (!(stripeObject instanceof Invoice invoice) || invoice.getCustomer() == null) {
-            return;
-        }
-
-        Server server = findServerByCustomerId(invoice.getCustomer());
-        if (server == null) {
-            return;
-        }
-
-        String subscriptionId = extractInvoiceSubscriptionId(invoice);
-        if (subscriptionId == null) {
-            subscriptionId = server.getStripeSubscriptionId();
-        }
-
-        if (subscriptionId == null) {
-            unstickPastDue(server);
-            return;
-        }
-
-        boolean alreadyActive = server.getSubscriptionStatus() == SubscriptionStatus.ACTIVE
-                                && server.getPlan() == ServerPlan.PREMIUM;
-        if (alreadyActive) {
-            return;
-        }
-
-        try {
-            Subscription subscription = stripeService.retrieveSubscription(subscriptionId);
-            String effectiveStatus = stripeService.getEffectiveStatus(subscription);
-            if (isPremiumStatus(effectiveStatus)) {
-                serverMutationHelper.mutate(server, current -> {
-                    current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-                    current.setPlan(ServerPlan.PREMIUM);
-                    applyPeriodDates(current, subscription);
-                    if (current.getStripeSubscriptionId() == null) {
-                        current.setStripeSubscriptionId(subscription.getId());
-                    }
-                });
-            } else {
-                unstickPastDue(server);
+        objectOf(event, Invoice.class).ifPresent(invoice -> {
+            if (invoice.getCustomer() == null) {
+                return;
             }
-        } catch (StripeException exception) {
-            throw new ExternalServiceException("Failed to sync subscription state on Stripe payment success", exception);
-        }
+
+            Server server = findServerByCustomerId(invoice.getCustomer());
+            if (server == null) {
+                return;
+            }
+
+            String subscriptionId = extractInvoiceSubscriptionId(invoice);
+            if (subscriptionId == null) {
+                subscriptionId = server.getStripeSubscriptionId();
+            }
+
+            if (subscriptionId == null) {
+                unstickPastDue(server);
+                return;
+            }
+
+            boolean alreadyActive = server.getSubscriptionStatus() == SubscriptionStatus.ACTIVE
+                                    && server.getPlan() == ServerPlan.PREMIUM;
+            if (alreadyActive) {
+                return;
+            }
+
+            try {
+                Subscription subscription = stripeService.retrieveSubscription(subscriptionId);
+                String effectiveStatus = stripeService.getEffectiveStatus(subscription);
+                if (isPremiumStatus(effectiveStatus)) {
+                    serverMutationHelper.mutate(server, current -> {
+                        current.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
+                        current.setPlan(ServerPlan.PREMIUM);
+                        applyPeriodDates(current, subscription);
+                        if (current.getStripeSubscriptionId() == null) {
+                            current.setStripeSubscriptionId(subscription.getId());
+                        }
+                    });
+                } else {
+                    unstickPastDue(server);
+                }
+            } catch (StripeException exception) {
+                throw new ExternalServiceException("Failed to sync subscription state on Stripe payment success", exception);
+            }
+        });
     }
 
     private void unstickPastDue(Server server) {

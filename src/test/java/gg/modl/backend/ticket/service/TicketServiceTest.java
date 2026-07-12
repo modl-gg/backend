@@ -73,7 +73,7 @@ class TicketServiceTest {
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, staffRepository, quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator, contentService, webhookSettingsService);
+        ticketService = new TicketService(ticketRepository, new TicketResponseAssembler(staffRepository), quickResponseSettingsService, ticketFormSettingsService, notificationService, ticketIdGenerator, contentService, webhookSettingsService);
         minecraftTicketService = new MinecraftTicketService(ticketRepository, notificationService, ticketIdGenerator);
     }
 

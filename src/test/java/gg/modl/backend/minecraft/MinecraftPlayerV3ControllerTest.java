@@ -23,6 +23,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -31,6 +32,20 @@ import gg.modl.backend.player.controller.MinecraftPlayerController;
 import gg.modl.backend.player.controller.MinecraftPlayerV3Controller;
 import gg.modl.backend.player.service.MinecraftPlayerService;
 import gg.modl.backend.player.service.PlayerLookupService;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
+import gg.modl.backend.player.dto.response.LinkedAccountsResult;
+import gg.modl.backend.player.dto.response.OnlinePlayersResult;
+import gg.modl.backend.player.dto.response.PaginatedNotesResult;
+import gg.modl.backend.player.dto.response.PaginatedPunishmentsResult;
+import gg.modl.backend.player.dto.response.PardonResult;
+import gg.modl.backend.player.dto.response.PlayerFetchResult;
+import gg.modl.backend.player.dto.response.PlayerLookupResult;
+import gg.modl.backend.player.dto.response.PlayerLoginResult;
+import gg.modl.backend.player.dto.response.PlayerProfileResult;
+import gg.modl.backend.player.dto.response.PlayerReportsResult;
+import gg.modl.backend.player.dto.response.PunishmentView;
+import gg.modl.backend.player.dto.response.SimpleActionResult;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.Account;
@@ -55,6 +70,7 @@ import gg.modl.proto.modl.v1.SimpleResponse;
 import gg.modl.proto.modl.v1.SubmitPlayerIpInfoRequest;
 import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.UpdatePlayerServerRequest;
+import java.util.Date;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -62,7 +78,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -84,40 +99,42 @@ class MinecraftPlayerV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftPlayerV3Controller(minecraftPlayerService, playerLookupService))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
 
         v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftPlayerController(minecraftPlayerService, playerLookupService))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }
 
     @Test
     void v3LoginAcceptsBinaryRequestAndReturnsBinaryResponse() throws Exception {
-        Map<String, Object> serviceBody = Map.of(
-            "status", 201,
-            "activePunishments", List.of(Map.of(
-                "type", "Ban",
-                "category", "BAN",
-                "expiration", 1_777_777_777_000L,
-                "description", "Rule violation",
-                "id", "punishment-1",
-                "issuerName", "Moderator",
-                "issuedAt", 1_700_000_000_000L,
-                "playerDescription", "You are banned",
-                "started", true,
-                "ordinal", 2
+        PlayerLoginResult serviceResult = new PlayerLoginResult(
+            201,
+            List.of(new SimplePunishmentView(
+                "punishment-1",
+                "Ban",
+                "BAN",
+                0,
+                2,
+                true,
+                1_777_777_777_000L,
+                "Rule violation",
+                "Moderator",
+                1_700_000_000_000L,
+                "You are banned",
+                List.of()
             )),
-            "pendingNotifications", List.of(Map.of(
+            List.of(Map.of(
                 "id", "notification-1",
                 "count", 2,
                 "read", false
             )),
-            "pendingIpLookups", List.of("203.0.113.10"),
-            "pendingStatWipes", List.of(Map.of(
+            List.of("203.0.113.10"),
+            List.of(Map.of(
                 "minecraftUuid", PLAYER_UUID.toString(),
                 "username", "Byteful",
                 "punishmentId", "punishment-1"
@@ -131,7 +148,7 @@ class MinecraftPlayerV3ControllerTest {
             any(),
             eq("skin-hash"),
             eq("hub")
-        )).thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.CREATED, serviceBody));
+        )).thenReturn(serviceResult);
 
         PlayerLoginRequest request = PlayerLoginRequest.newBuilder()
             .setMinecraftUuid(PLAYER_UUID.toString())
@@ -283,7 +300,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3DisconnectAcceptsBinaryRequestAndReturnsBinarySimpleResponse() throws Exception {
         when(minecraftPlayerService.disconnect(server, PLAYER_UUID.toString(), 12_345L))
-            .thenReturn(Map.of("status", 200, "success", true));
+            .thenReturn(new SimpleActionResult(true));
 
         PlayerDisconnectRequest request = PlayerDisconnectRequest.newBuilder()
             .setMinecraftUuid(PLAYER_UUID.toString())
@@ -307,7 +324,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3UpdateServerAcceptsBinaryRequestAndReturnsBinarySimpleResponse() throws Exception {
         when(minecraftPlayerService.updateServer(server, PLAYER_UUID.toString(), "survival"))
-            .thenReturn(Map.of("status", 200, "success", true));
+            .thenReturn(new SimpleActionResult(true));
 
         UpdatePlayerServerRequest request = UpdatePlayerServerRequest.newBuilder()
             .setMinecraftUuid(PLAYER_UUID.toString())
@@ -339,7 +356,7 @@ class MinecraftPlayerV3ControllerTest {
             "AS64500",
             true,
             false
-        )).thenReturn(Map.of("status", 200, "success", true));
+        )).thenReturn(new SimpleActionResult(true));
 
         SubmitPlayerIpInfoRequest request = SubmitPlayerIpInfoRequest.newBuilder()
             .setMinecraftUuid(PLAYER_UUID.toString())
@@ -481,15 +498,12 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetOnlinePlayersReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.getOnlinePlayers(server))
-            .thenReturn(Map.of(
-                "status", 200,
-                "players", List.of(Map.of(
-                    "uuid", PLAYER_UUID.toString(),
-                    "username", "Byteful",
-                    "joinedAt", "2026-05-03T10:15:30Z",
-                    "totalPlaytimeMs", 12_000L
-                ))
-            ));
+            .thenReturn(new OnlinePlayersResult(List.of(Map.of(
+                "uuid", PLAYER_UUID.toString(),
+                "username", "Byteful",
+                "joinedAt", "2026-05-03T10:15:30Z",
+                "totalPlaytimeMs", 12_000L
+            ))));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/online")
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
@@ -523,7 +537,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByUuidPassesLimitsAndReturnsProfile() throws Exception {
         when(playerLookupService.getPlayerByUuid(server, PLAYER_UUID.toString(), 3, 2))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, profileBody()));
+            .thenReturn(new PlayerProfileResult.Found(profileMap()));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/" + PLAYER_UUID)
                 .queryParam("punishmentLimit", "3")
@@ -544,10 +558,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByUuidPreservesMalformedUuidServiceBehavior() throws Exception {
         when(playerLookupService.getPlayerByUuid(server, "not-a-uuid", null, null))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.NOT_FOUND, Map.of(
-                "status", 404,
-                "message", "Player not found"
-            )));
+            .thenReturn(new PlayerProfileResult.NotFound("Player not found"));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/not-a-uuid")
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
@@ -565,11 +576,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByMinecraftUuidPassesFalseMojangFlagAndReturnsPlayer() throws Exception {
         when(playerLookupService.getPlayerByMinecraftUuid(server, PLAYER_UUID.toString(), false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "message", "Player found",
-                "player", accountMap()
-            )));
+            .thenReturn(new PlayerFetchResult.Found("Player found", accountMap()));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players")
                 .queryParam("minecraftUuid", PLAYER_UUID.toString())
@@ -589,11 +596,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByMinecraftUuidDefaultsQueryMojangTrue() throws Exception {
         when(playerLookupService.getPlayerByMinecraftUuid(server, PLAYER_UUID.toString(), true))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "message", "Player found",
-                "player", accountMap()
-            )));
+            .thenReturn(new PlayerFetchResult.Found("Player found", accountMap()));
 
         v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players")
                 .queryParam("minecraftUuid", PLAYER_UUID.toString())
@@ -606,10 +609,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByMinecraftUuidNotFoundReturnsBinaryApiError() throws Exception {
         when(playerLookupService.getPlayerByMinecraftUuid(server, PLAYER_UUID.toString(), false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.NOT_FOUND, Map.of(
-                "status", 404,
-                "message", "Player not found"
-            )));
+            .thenReturn(new PlayerFetchResult.NotFound("Player not found"));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players")
                 .queryParam("minecraftUuid", PLAYER_UUID.toString())
@@ -649,11 +649,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByUsernamePassesFalseMojangFlagAndReturnsPlayer() throws Exception {
         when(playerLookupService.getPlayerByUsername(server, "Byteful", false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "message", "Player found",
-                "player", accountMap()
-            )));
+            .thenReturn(new PlayerFetchResult.Found("Player found", accountMap()));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/by-name")
                 .queryParam("username", "Byteful")
@@ -702,10 +698,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerByUsernameNotFoundReturnsBinaryApiError() throws Exception {
         when(playerLookupService.getPlayerByUsername(server, "Byteful", false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.NOT_FOUND, Map.of(
-                "status", 404,
-                "message", "Player not found"
-            )));
+            .thenReturn(new PlayerFetchResult.NotFound("Player not found"));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/by-name")
                 .queryParam("username", "Byteful")
@@ -723,7 +716,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3LookupPlayerPassesRequestAndReturnsLookupData() throws Exception {
         when(playerLookupService.lookupPlayer(server, "Byteful", false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, lookupBody()));
+            .thenReturn(new PlayerLookupResult.Found("Player found", lookupData()));
 
         PlayerLookupRequest request = PlayerLookupRequest.newBuilder()
             .setQuery("Byteful")
@@ -754,7 +747,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3LookupPlayerDefaultsQueryMojangTrue() throws Exception {
         when(playerLookupService.lookupPlayer(server, "Byteful", true))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, lookupBody()));
+            .thenReturn(new PlayerLookupResult.Found("Player found", lookupData()));
 
         PlayerLookupRequest request = PlayerLookupRequest.newBuilder()
             .setQuery("Byteful")
@@ -772,10 +765,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3LookupPlayerNotFoundReturnsBinaryApiError() throws Exception {
         when(playerLookupService.lookupPlayer(server, "Missing", false))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.NOT_FOUND, Map.of(
-                "status", 404,
-                "message", "Player not found"
-            )));
+            .thenReturn(new PlayerLookupResult.NotFound("Player not found"));
 
         PlayerLookupRequest request = PlayerLookupRequest.newBuilder()
             .setQuery("Missing")
@@ -798,7 +788,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3LookupProfilePassesLimitsAndReturnsProfile() throws Exception {
         when(playerLookupService.lookupProfile(server, "Byteful", false, 7, 4))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, profileBody()));
+            .thenReturn(new PlayerProfileResult.Found(profileMap()));
 
         PlayerLookupRequest request = PlayerLookupRequest.newBuilder()
             .setQuery("Byteful")
@@ -826,10 +816,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3LookupProfileNotFoundReturnsBinaryApiError() throws Exception {
         when(playerLookupService.lookupProfile(server, "Missing", false, null, null))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.NOT_FOUND, Map.of(
-                "status", 404,
-                "message", "Player not found"
-            )));
+            .thenReturn(new PlayerProfileResult.NotFound("Player not found"));
 
         PlayerLookupRequest request = PlayerLookupRequest.newBuilder()
             .setQuery("Missing")
@@ -852,11 +839,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3CreatePlayerNoteAcceptsBinaryRequestAndReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.createNote(server, PLAYER_UUID.toString(), "Helpful note", "Mod", "staff-1"))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.CREATED, Map.of(
-                "status", 201,
-                "success", true,
-                "message", "Note created"
-            )));
+            .thenReturn(new CreateNoteResult.Created("Note created"));
 
         CreatePlayerNoteRequest request = CreatePlayerNoteRequest.newBuilder()
             .setText("Helpful note")
@@ -868,12 +851,12 @@ class MinecraftPlayerV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isCreated())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
         PlayerNoteCreateResponse response = PlayerNoteCreateResponse.parseFrom(result.getResponse().getContentAsByteArray());
-        assertEquals(201, response.getStatus());
+        assertEquals(200, response.getStatus());
         assertTrue(response.getSuccess());
         assertEquals("Note created", response.getMessage());
         verify(minecraftPlayerService).createNote(server, PLAYER_UUID.toString(), "Helpful note", "Mod", "staff-1");
@@ -882,13 +865,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetLinkedAccountsPassesPaginationAndReturnsBinaryResponse() throws Exception {
         when(playerLookupService.getLinkedAccounts(server, PLAYER_UUID.toString(), 2, 3))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "linkedAccounts", List.of(accountMap()),
-                "totalCount", 4,
-                "page", 2,
-                "hasMore", true
-            )));
+            .thenReturn(new LinkedAccountsResult.Found(List.of(accountMap()), 4, 2, true));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/" + PLAYER_UUID + "/linked-accounts")
                 .queryParam("page", "2")
@@ -910,13 +887,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerPunishmentsPassesPaginationAndReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.getPlayerPunishments(server, PLAYER_UUID.toString(), 2, 4))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "punishments", List.of(punishmentMap()),
-                "totalCount", 6,
-                "page", 2,
-                "hasMore", true
-            )));
+            .thenReturn(new PaginatedPunishmentsResult.Found(List.of(punishmentView()), 6, 2, true));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/" + PLAYER_UUID + "/punishments")
                 .queryParam("page", "2")
@@ -941,13 +912,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerNotesPassesPaginationAndReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.getPlayerNotes(server, PLAYER_UUID.toString(), 2, 4))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(HttpStatus.OK, Map.of(
-                "status", 200,
-                "notes", List.of(noteMap()),
-                "totalCount", 6,
-                "page", 2,
-                "hasMore", true
-            )));
+            .thenReturn(new PaginatedNotesResult.Found(List.of(noteMap()), 6, 2, true));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/" + PLAYER_UUID + "/notes")
                 .queryParam("page", "2")
@@ -970,19 +935,16 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3GetPlayerReportsReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.getPlayerReports(server, PLAYER_UUID.toString()))
-            .thenReturn(Map.of(
-                "status", 200,
-                "reports", List.of(Map.of(
-                    "id", "report-1",
-                    "type", "player-report",
-                    "reporterName", "Reporter",
-                    "reporterUuid", "reporter-uuid",
-                    "subject", "Rule break",
-                    "status", "open",
-                    "priority", "high",
-                    "createdAt", 1_777_777_777_000L
-                ))
-            ));
+            .thenReturn(new PlayerReportsResult(List.of(Map.of(
+                "id", "report-1",
+                "type", "player-report",
+                "reporterName", "Reporter",
+                "reporterUuid", "reporter-uuid",
+                "subject", "Rule break",
+                "status", "open",
+                "priority", "high",
+                "createdAt", 1_777_777_777_000L
+            ))));
 
         MvcResult result = v3MockMvc.perform(get(RESTMappingV3.PREFIX_MINECRAFT + "/players/" + PLAYER_UUID + "/reports")
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
@@ -1003,12 +965,7 @@ class MinecraftPlayerV3ControllerTest {
     @Test
     void v3PardonPlayerAcceptsBinaryRequestAndReturnsBinaryResponse() throws Exception {
         when(minecraftPlayerService.pardonPlayer(server, "Byteful", "ban", "Mod", "staff-1", "Appeal accepted"))
-            .thenReturn(Map.of(
-                "status", 200,
-                "success", true,
-                "pardonedCount", 1,
-                "message", "Pardoned 1 punishment(s)"
-            ));
+            .thenReturn(new PardonResult.Pardoned(true, 1, "Pardoned 1 punishment(s)"));
 
         PardonPlayerRequest request = PardonPlayerRequest.newBuilder()
             .setPlayerName("Byteful")
@@ -1034,15 +991,11 @@ class MinecraftPlayerV3ControllerTest {
         verify(minecraftPlayerService).pardonPlayer(server, "Byteful", "ban", "Mod", "staff-1", "Appeal accepted");
     }
 
-    private static Map<String, Object> profileBody() {
+    private static Map<String, Object> profileMap() {
         Map<String, Object> profile = new LinkedHashMap<>(accountMap());
         profile.put("punishmentCount", 4);
         profile.put("noteCount", 5);
-
-        return Map.of(
-            "status", 200,
-            "profile", profile
-        );
+        return profile;
     }
 
     private static Map<String, Object> accountMap() {
@@ -1064,15 +1017,9 @@ class MinecraftPlayerV3ControllerTest {
                 "firstLogin", "2026-05-03T10:15:30Z",
                 "logins", List.of("2026-05-03T10:15:30Z")
             )),
-            "punishments", List.of(Map.of(
-                "id", "punishment-1",
-                "type", "Ban",
-                "typeOrdinal", 1,
-                "issuerName", "Mod",
-                "issued", 1_777_777_777_000L,
-                "isAppealable", true,
-                "active", true
-            )),
+            "punishments", List.of(new PunishmentView(
+                "punishment-1", "Mod", new Date(1_777_777_777_000L), null, 1, "Ban",
+                List.of(), List.of(), List.of(), List.of(), Map.of(), null, null)),
             "pendingNotifications", List.of(Map.of("id", "notification-1")),
             "data", Map.of("isOnline", true)
         );
@@ -1088,23 +1035,14 @@ class MinecraftPlayerV3ControllerTest {
         );
     }
 
-    private static Map<String, Object> punishmentMap() {
-        Map<String, Object> punishment = new LinkedHashMap<>();
-        punishment.put("id", "punishment-1");
-        punishment.put("type", "Ban");
-        punishment.put("typeOrdinal", 1);
-        punishment.put("issuerName", "Mod");
-        punishment.put("issued", 1_777_777_777_000L);
-        punishment.put("started", 1_777_777_778_000L);
-        punishment.put("notes", List.of());
-        punishment.put("modifications", List.of());
-        punishment.put("evidence", List.of());
-        punishment.put("attachedTicketIds", List.of("ticket-1"));
-        punishment.put("data", Map.of("status", "active"));
-        return punishment;
+    private static PunishmentView punishmentView() {
+        return new PunishmentView(
+            "punishment-1", "Mod", new Date(1_777_777_777_000L), new Date(1_777_777_778_000L),
+            1, "Ban", List.of(), List.of(), List.of(), List.of("ticket-1"),
+            Map.of("status", "active"), null, null);
     }
 
-    private static Map<String, Object> lookupBody() {
+    private static Map<String, Object> lookupData() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("minecraftUuid", PLAYER_UUID.toString());
         data.put("currentUsername", "Byteful");
@@ -1144,12 +1082,7 @@ class MinecraftPlayerV3ControllerTest {
             "lastUpdated", "2026-05-03T10:15:30Z"
         )));
         data.put("isOnline", true);
-
-        return Map.of(
-            "status", 200,
-            "message", "Player found",
-            "data", data
-        );
+        return data;
     }
 
     private static void assertProfile(Account account) throws Exception {

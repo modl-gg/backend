@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.replaylite.service.ReplayLiteService;
 import java.net.URI;
@@ -50,7 +51,7 @@ class PublicReplayLiteControllerTest {
     void malformedReplayIdReturnsBadRequestBeforeDownloadLookup() throws Exception {
         ReplayLiteService service = Mockito.mock(ReplayLiteService.class);
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new PublicReplayLiteController(service))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .build();
 
         mockMvc.perform(get(RESTMappingV1.PUBLIC_REPLAY_LITE_REPLAYS + "/not-a-uuid/download"))

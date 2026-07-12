@@ -1,12 +1,15 @@
 package gg.modl.backend.homepage.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
 import gg.modl.backend.homepage.data.HomepageCard;
-import gg.modl.backend.homepage.dto.response.HomepageCardResponse;
 import gg.modl.backend.homepage.service.HomepageCardService;
+import gg.modl.backend.knowledgebase.data.KnowledgebaseArticle;
+import gg.modl.backend.knowledgebase.data.KnowledgebaseCategory;
 import gg.modl.proto.modl.v1.HomepageCardMutationResponse;
+import gg.modl.proto.modl.v1.HomepageCardResponse;
 import gg.modl.proto.modl.v1.PanelHomepageCardResponse;
 import gg.modl.proto.modl.v1.PanelHomepageCardsResponse;
 import gg.modl.proto.modl.v1.PublicHomepageCardsResponse;
@@ -26,7 +29,7 @@ public class HomepageProtoMapper {
         return panelCardBuilder(card).build();
     }
 
-    public PublicHomepageCardsResponse toPublicCardsResponse(List<HomepageCardResponse> cards) {
+    public PublicHomepageCardsResponse toPublicCardsResponse(List<HomepageCardService.EnrichedCardWithArticles> cards) {
         PublicHomepageCardsResponse.Builder builder = PublicHomepageCardsResponse.newBuilder();
         addAll(cards, this::toPublicCard, builder::addCards);
         return builder.build();
@@ -73,51 +76,47 @@ public class HomepageProtoMapper {
         return builder;
     }
 
-    private gg.modl.proto.modl.v1.HomepageCardResponse toPublicCard(HomepageCardResponse card) {
-        gg.modl.proto.modl.v1.HomepageCardResponse.Builder builder =
-            gg.modl.proto.modl.v1.HomepageCardResponse.newBuilder()
-                .setId(nullToEmpty(card.id()))
-                .setTitle(nullToEmpty(card.title()))
-                .setDescription(nullToEmpty(card.description()))
-                .setIcon(nullToEmpty(card.icon()))
-                .setIconColor(nullToEmpty(card.iconColor()))
-                .setActionType(nullToEmpty(card.actionType()))
-                .setActionUrl(nullToEmpty(card.actionUrl()))
-                .setActionButtonText(nullToEmpty(card.actionButtonText()))
-                .setCategoryId(nullToEmpty(card.categoryId()))
-                .setBackgroundColor(nullToEmpty(card.backgroundColor()))
-                .setOrdinal(card.ordinal())
-                .setIsEnabled(card.isEnabled());
-        if (card.createdAt() != null) {
-            builder.setCreatedAt(toTimestamp(card.createdAt()));
+    private HomepageCardResponse toPublicCard(HomepageCardService.EnrichedCardWithArticles enriched) {
+        HomepageCard card = enriched.card();
+        HomepageCardResponse.Builder builder = HomepageCardResponse.newBuilder()
+            .setId(nullToEmpty(card.getId()))
+            .setTitle(nullToEmpty(card.getTitle()))
+            .setDescription(nullToEmpty(card.getDescription()))
+            .setIcon(nullToEmpty(card.getIcon()))
+            .setIconColor(nullToEmpty(card.getIconColor()))
+            .setActionType(nullToEmpty(card.getActionType()))
+            .setActionUrl(nullToEmpty(card.getActionUrl()))
+            .setActionButtonText(nullToEmpty(card.getActionButtonText()))
+            .setCategoryId(nullToEmpty(card.getCategoryId()))
+            .setBackgroundColor(nullToEmpty(card.getBackgroundColor()))
+            .setOrdinal(card.getOrdinal())
+            .setIsEnabled(card.isEnabled());
+        if (card.getCreatedAt() != null) {
+            builder.setCreatedAt(toTimestamp(card.getCreatedAt()));
         }
-        if (card.updatedAt() != null) {
-            builder.setUpdatedAt(toTimestamp(card.updatedAt()));
+        if (card.getUpdatedAt() != null) {
+            builder.setUpdatedAt(toTimestamp(card.getUpdatedAt()));
         }
-        HomepageCardResponse.EmbeddedCategory category = card.category();
+        KnowledgebaseCategory category = enriched.category();
         if (category != null) {
-            gg.modl.proto.modl.v1.HomepageCardResponse.EmbeddedCategory.Builder embedded =
-                gg.modl.proto.modl.v1.HomepageCardResponse.EmbeddedCategory.newBuilder()
-                    .setId(nullToEmpty(category.id()))
-                    .setName(nullToEmpty(category.name()))
-                    .setSlug(nullToEmpty(category.slug()))
-                    .setDescription(nullToEmpty(category.description()));
-            addAll(category.articles(), this::toArticleStub, embedded::addArticles);
+            HomepageCardResponse.EmbeddedCategory.Builder embedded =
+                HomepageCardResponse.EmbeddedCategory.newBuilder()
+                    .setId(nullToEmpty(category.getId()))
+                    .setName(nullToEmpty(category.getName()))
+                    .setSlug(nullToEmpty(category.getSlug()))
+                    .setDescription(nullToEmpty(category.getDescription()));
+            addAll(enriched.articles(), this::toArticleStub, embedded::addArticles);
             builder.setCategory(embedded);
         }
         return builder.build();
     }
 
-    private gg.modl.proto.modl.v1.HomepageCardResponse.ArticleStub toArticleStub(HomepageCardResponse.ArticleStub stub) {
-        return gg.modl.proto.modl.v1.HomepageCardResponse.ArticleStub.newBuilder()
-            .setId(nullToEmpty(stub.id()))
-            .setTitle(nullToEmpty(stub.title()))
-            .setSlug(nullToEmpty(stub.slug()))
-            .setOrdinal(stub.ordinal())
+    private HomepageCardResponse.ArticleStub toArticleStub(KnowledgebaseArticle article) {
+        return HomepageCardResponse.ArticleStub.newBuilder()
+            .setId(nullToEmpty(article.getId()))
+            .setTitle(nullToEmpty(article.getTitle()))
+            .setSlug(nullToEmpty(article.getSlug()))
+            .setOrdinal(article.getOrdinal())
             .build();
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

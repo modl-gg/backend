@@ -11,11 +11,8 @@ import gg.modl.backend.auth.WebAuthnService;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.settings.service.GeneralSettingsService;
 import gg.modl.backend.database.mongo.repository.InvitationMongoRepository;
-import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
-import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
@@ -35,15 +32,13 @@ class StaffServiceRoleSecurityTest {
     private final StaffService service = new StaffService(
         mock(InvitationMongoRepository.class),
         staffRepository,
-        mock(PlayerMongoRepository.class),
-        mock(PunishmentMongoRepository.class),
-        mock(PlayerService.class),
         permissionService,
         roleAuthorization,
         mock(ServerTimestampService.class),
         mock(WebAuthnService.class),
         mock(SessionService.class),
-        mock(GeneralSettingsService.class)
+        mock(GeneralSettingsService.class),
+        mock(StaffLookupCache.class)
     );
 
     @Test

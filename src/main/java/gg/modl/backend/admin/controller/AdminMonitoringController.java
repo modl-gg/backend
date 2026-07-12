@@ -5,6 +5,10 @@ import gg.modl.backend.admin.service.AdminMonitoringService;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.proto.modl.v1.CreateSystemLogRequest;
+import gg.modl.proto.modl.v1.DeleteLogsRequest;
+import gg.modl.proto.modl.v1.ResolveLogRequest;
+import gg.modl.proto.modl.v1.TogglePm2Request;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import java.util.Date;
@@ -63,7 +67,7 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/logs")
-    public ResponseEntity<?> createLog(@RequestBody gg.modl.proto.modl.v1.CreateSystemLogRequest request) {
+    public ResponseEntity<?> createLog(@RequestBody CreateSystemLogRequest request) {
         SystemLog saved = adminMonitoringService.createLog(AdminMonitoringProtoMapper.fromCreateLog(request));
         return ResponseEntity.status(201).body(
             AdminMonitoringProtoMapper.toSystemLogMutationResponse(saved, "Log entry created successfully"));
@@ -75,7 +79,7 @@ public class AdminMonitoringController {
     }
 
     @PutMapping("/logs/{id}/resolve")
-    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody gg.modl.proto.modl.v1.ResolveLogRequest request) {
+    public ResponseEntity<?> resolveLog(@PathVariable String id, @RequestBody ResolveLogRequest request) {
         SystemLog updated = adminMonitoringService.resolveLog(id, AdminMonitoringProtoMapper.fromResolveLog(request)).orElse(null);
         if (updated == null) {
             throw new ResourceNotFoundException("Log entry not found");
@@ -90,7 +94,7 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/logs/delete")
-    public ResponseEntity<?> deleteLogs(@RequestBody gg.modl.proto.modl.v1.DeleteLogsRequest request) {
+    public ResponseEntity<?> deleteLogs(@RequestBody DeleteLogsRequest request) {
         long deletedCount = adminMonitoringService.deleteLogs(request.getLogIdsList());
         return ResponseEntity.ok(AdminMonitoringProtoMapper.toDeleteLogsResponse(
             deletedCount, "Successfully deleted " + deletedCount + " log(s)"));
@@ -121,7 +125,6 @@ public class AdminMonitoringController {
 
     @GetMapping("/pm2-status")
     public ResponseEntity<?> getPm2Status() {
-        // PM2 integration placeholder - would require native process monitoring
         return ResponseEntity.ok(AdminMonitoringProtoMapper.toPm2StatusResponse());
     }
 
@@ -131,7 +134,7 @@ public class AdminMonitoringController {
     }
 
     @PostMapping("/pm2/toggle")
-    public ResponseEntity<?> togglePm2(@RequestBody gg.modl.proto.modl.v1.TogglePm2Request request) {
+    public ResponseEntity<?> togglePm2(@RequestBody TogglePm2Request request) {
         boolean enabled = request.hasEnabledValue() ? request.getEnabledValue() : request.getEnabled();
         return ResponseEntity.ok(AdminMonitoringProtoMapper.toPm2ToggleResponse(
             enabled, "PM2 log streaming " + (enabled ? "enabled" : "disabled")));

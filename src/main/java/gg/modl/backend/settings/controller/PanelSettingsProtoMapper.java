@@ -1,7 +1,5 @@
 package gg.modl.backend.settings.controller;
 
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalBoolean;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalInt;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
@@ -44,8 +42,10 @@ import gg.modl.proto.modl.v1.TicketFormSettingsEnvelope;
 import gg.modl.proto.modl.v1.TicketLabelSettingsEnvelope;
 import gg.modl.proto.modl.v1.VerifyDomainResponse;
 import gg.modl.proto.modl.v1.WebhookTestResponse;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 final class PanelSettingsProtoMapper {
 
@@ -734,11 +734,11 @@ final class PanelSettingsProtoMapper {
             .enableAutomatedActions(request.getEnableAutomatedActions());
         Map<String, AIModerationSettings.AIPunishmentConfig> configs =
             request.getAiPunishmentConfigsMap().entrySet().stream()
-                .collect(java.util.stream.Collectors.toMap(
+                .collect(Collectors.toMap(
                     Map.Entry::getKey,
                     entry -> fromAIPunishmentConfigRequest(entry.getValue()),
                     (left, right) -> right,
-                    java.util.LinkedHashMap::new
+                    LinkedHashMap::new
                 ));
         return builder.aiPunishmentConfigs(configs).build();
     }

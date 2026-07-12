@@ -8,9 +8,9 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.data.StorageFileDocument;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
 import java.util.Optional;
 import org.bson.Document;
 import org.springframework.data.domain.Sort;
@@ -22,6 +22,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class StorageFileMongoRepository extends AbstractServerMongoRepository<StorageFileDocument> {
+    private static final String ALIAS_TOTAL_SIZE = "totalSize";
 
     public StorageFileMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(StorageFileDocument.class, CollectionName.STORAGE_FILES, tenantMongoAccess);
@@ -83,19 +84,19 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
 
         Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(match),
-            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as("totalSize")
+            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as(ALIAS_TOTAL_SIZE)
         );
 
         Document result = aggregate(server, aggregation, Document.class).getUniqueMappedResult();
         if (result == null) {
             return 0L;
         }
-        return result.get("totalSize", Number.class).longValue();
+        return result.get(ALIAS_TOTAL_SIZE, Number.class).longValue();
     }
 
     public Map<String, Long> aggregateStorageByCategory(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.group(StorageFileDocumentFields.CATEGORY).sum(StorageFileDocumentFields.SIZE).as("totalSize")
+            Aggregation.group(StorageFileDocumentFields.CATEGORY).sum(StorageFileDocumentFields.SIZE).as(ALIAS_TOTAL_SIZE)
         );
 
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
@@ -110,7 +111,7 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
 
         for (Document doc : results.getMappedResults()) {
             String category = doc.getString("_id");
-            long totalSize = doc.get("totalSize", Number.class).longValue();
+            long totalSize = doc.get(ALIAS_TOTAL_SIZE, Number.class).longValue();
             byType.put(category, totalSize);
         }
 
@@ -119,7 +120,7 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
 
     public long sumTotalSize(Server server) {
         Aggregation aggregation = Aggregation.newAggregation(
-            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as("totalSize")
+            Aggregation.group().sum(StorageFileDocumentFields.SIZE).as(ALIAS_TOTAL_SIZE)
         );
 
         AggregationResults<Document> results = aggregate(server, aggregation, Document.class);
@@ -128,7 +129,7 @@ public class StorageFileMongoRepository extends AbstractServerMongoRepository<St
         if (result == null) {
             return 0L;
         }
-        return result.get("totalSize", Number.class).longValue();
+        return result.get(ALIAS_TOTAL_SIZE, Number.class).longValue();
     }
 
     private String escapeRegex(String input) {

@@ -12,14 +12,15 @@ import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.settings.data.SupportedLanguages;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
+import gg.modl.backend.staff.service.StaffProfileService;
+import gg.modl.backend.staff.service.SuperAdminStaffSynthesizer;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.proto.modl.v1.PanelAuthResponse;
 import gg.modl.proto.modl.v1.PanelPermissionsResponse;
-import gg.modl.proto.modl.v1.PanelProfileResponse;
 import gg.modl.proto.modl.v1.PanelSendEmailCodeRequest;
-import gg.modl.proto.modl.v1.PanelSessionsResponse;
 import gg.modl.proto.modl.v1.PanelUpdateEmailRequest;
 import gg.modl.proto.modl.v1.PanelUpdateEmailWithCodeRequest;
 import gg.modl.proto.modl.v1.PanelUpdateProfileRequest;
@@ -53,7 +54,8 @@ public class PanelAuthController {
     private final AuthService authService;
     private final SessionService sessionService;
     private final AuthConfiguration authConfiguration;
-    private final StaffService staffService;
+    private final StaffProfileService staffProfileService;
+    private final StaffLookupCache staffLookupCache;
     private final PermissionService permissionService;
     private final CookieUtil cookieUtil;
     private final EmailChangeService emailChangeService;
@@ -65,14 +67,13 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
-        // Always return generic success to prevent email enumeration
         if (!permissionService.isAuthorizedEmail(server, requestData.getEmail())) {
-            return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
+            return verificationCodeSentResponse();
         }
 
         authService.sendUserLoginCode(server, requestData.getEmail());
 
-        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
+        return verificationCodeSentResponse();
     }
 
     @PostMapping("/verify-email-code")
@@ -83,15 +84,14 @@ public class PanelAuthController {
 
         Server server = RequestUtil.getRequestServer(request);
 
-        // Return same error as invalid code to prevent email enumeration
         if (!permissionService.isAuthorizedEmail(server, requestData.getEmail())) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, AuthResponseMessage.INVALID_CODE));
+            return invalidCodeResponse();
         }
 
         boolean valid = authService.verifyCode(server, requestData.getEmail(), requestData.getCode());
 
         if (!valid) {
-            return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, AuthResponseMessage.INVALID_CODE));
+            return invalidCodeResponse();
         }
 
         String clientIp = RequestUtil.getClientIp(request);
@@ -147,22 +147,19 @@ public class PanelAuthController {
         String language = requestData.hasLanguage() ? requestData.getLanguage() : null;
         String dateFormat = requestData.hasDateFormat() ? requestData.getDateFormat() : null;
 
-        Optional<Staff> result = staffService.updateOrCreateProfileUsername(server, email, username, isSuperAdmin, language, dateFormat);
+        Optional<Staff> result = staffProfileService.updateOrCreateProfileUsername(server, email, username, isSuperAdmin, language, dateFormat);
         if (result.isEmpty()) {
             if (isSuperAdmin) {
-                String resolvedUsername = username != null ? username : "Admin";
-                String resolvedLanguage = language != null ? language : "en";
+                String resolvedUsername = username != null ? username : SuperAdminStaffSynthesizer.SUPER_ADMIN_USERNAME;
+                String resolvedLanguage = language != null ? language : SupportedLanguages.DEFAULT;
                 String resolvedDateFormat = dateFormat != null ? dateFormat : Staff.DEFAULT_DATE_FORMAT;
-                return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
-                    null, email, resolvedUsername, "Super Admin", resolvedUsername, resolvedLanguage, resolvedDateFormat));
+                return superAdminProfileResponse(email, resolvedUsername, resolvedLanguage, resolvedDateFormat);
             }
             return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
         }
         Staff staff = result.get();
-        String role = isSuperAdmin ? "Super Admin" : permissionService.resolveRoleName(server, staff.getRoleId());
-        String minecraftUsername = staff.getAssignedMinecraftUsername() != null
-                                   ? staff.getAssignedMinecraftUsername()
-                                   : staff.getUsername();
+        String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.resolveRoleName(server, staff.getRoleId());
+        String minecraftUsername = minecraftUsernameOrPanel(staff);
         return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
             staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
     }
@@ -213,22 +210,18 @@ public class PanelAuthController {
         Server server = RequestUtil.getRequestServer(request);
         boolean isSuperAdmin = permissionService.isSuperAdmin(server, email);
 
-        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
+        Optional<Staff> staffOpt = staffLookupCache.findByEmail(server, email);
 
         if (staffOpt.isPresent()) {
             Staff staff = staffOpt.get();
-            String role = isSuperAdmin ? "Super Admin" : permissionService.resolveRoleName(server, staff.getRoleId());
-            // Include Minecraft username if assigned, fall back to panel username
-            String minecraftUsername = staff.getAssignedMinecraftUsername() != null
-                                       ? staff.getAssignedMinecraftUsername()
-                                       : staff.getUsername();
+            String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.resolveRoleName(server, staff.getRoleId());
+            String minecraftUsername = minecraftUsernameOrPanel(staff);
             return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
                 staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
         }
 
-        // Super Admin without a staff record - return default username
         if (isSuperAdmin) {
-            return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(null, email, "Admin", "Super Admin", "Admin", "en", Staff.DEFAULT_DATE_FORMAT));
+            return superAdminProfileResponse(email, SuperAdminStaffSynthesizer.SUPER_ADMIN_USERNAME, SupportedLanguages.DEFAULT, Staff.DEFAULT_DATE_FORMAT);
         }
 
         return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
@@ -301,6 +294,25 @@ public class PanelAuthController {
         }
     }
 
+    private ResponseEntity<PanelAuthResponse> verificationCodeSentResponse() {
+        return ResponseEntity.ok(PanelAuthProtoMapper.toAuthResponse(true, AuthResponseMessage.VERIFICATION_CODE_SENT));
+    }
+
+    private ResponseEntity<PanelAuthResponse> invalidCodeResponse() {
+        return ResponseEntity.badRequest().body(PanelAuthProtoMapper.toAuthResponse(false, AuthResponseMessage.INVALID_CODE));
+    }
+
+    private ResponseEntity<?> superAdminProfileResponse(String email, String username, String language, String dateFormat) {
+        return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
+            null, email, username, RoleAuthorization.SUPER_ADMIN_ROLE_NAME, username, language, dateFormat));
+    }
+
+    private static String minecraftUsernameOrPanel(Staff staff) {
+        return staff.getAssignedMinecraftUsername() != null
+            ? staff.getAssignedMinecraftUsername()
+            : staff.getUsername();
+    }
+
     @GetMapping("/permissions")
     public ResponseEntity<PanelPermissionsResponse> getUserPermissions(HttpServletRequest request) {
         String email = RequestUtil.getSessionEmail(request);
@@ -314,7 +326,7 @@ public class PanelAuthController {
             return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(permissionService.getAllPermissionIds(server)));
         }
 
-        Optional<Staff> staffOpt = staffService.getStaffByEmail(server, email);
+        Optional<Staff> staffOpt = staffLookupCache.findByEmail(server, email);
         if (staffOpt.isEmpty()) {
             return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of()));
         }

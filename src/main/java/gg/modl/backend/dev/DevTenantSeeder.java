@@ -1,6 +1,6 @@
 package gg.modl.backend.dev;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.infrastructure.config.ModlDevProperties;
 import gg.modl.backend.infrastructure.config.ModlProperties;
@@ -25,7 +25,7 @@ public class DevTenantSeeder implements ApplicationRunner {
     private final ModlProperties modlProperties;
     private final ModlDevProperties devProperties;
     private final ServerService serverService;
-    private final ServerMongoRepository serverRepository;
+    private final ServerLookupRepository serverLookupRepository;
     private final ServerProvisioningService provisioningService;
 
     @Override
@@ -44,7 +44,7 @@ public class DevTenantSeeder implements ApplicationRunner {
         String customDomain = resolveCustomDomain(serverDomain);
         String adminEmail = normalizeEmail(devProperties.getSeedAdminEmail());
 
-        Server server = serverRepository.findByCustomDomain(customDomain).orElse(null);
+        Server server = serverLookupRepository.findByCustomDomain(customDomain).orElse(null);
         if (server == null) {
             server = serverService.createServer(devProperties.getServerName(), customDomain, adminEmail, null, ServerPlan.PREMIUM);
             log.warn("[DevSeed] Created test tenant server '{}' (customDomain={})", devProperties.getServerName(), customDomain);
@@ -62,7 +62,7 @@ public class DevTenantSeeder implements ApplicationRunner {
         }
 
         server.setUpdatedAt(new Date());
-        serverRepository.saveEntity(server);
+        serverLookupRepository.saveEntity(server);
         serverService.evictAllServerCaches();
 
         log.warn("======================================================================");

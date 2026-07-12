@@ -9,7 +9,7 @@ import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import gg.modl.proto.modl.v1.Topic;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -19,15 +19,15 @@ class RealtimeTopicAuthorizerTest {
     @Test
     void panelTicketTopicsRequireReadPermission() {
         PermissionService permissionService = mock(PermissionService.class);
-        StaffService staffService = mock(StaffService.class);
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffService);
+        StaffLookupCache staffLookupCache = mock(StaffLookupCache.class);
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffLookupCache);
         Server server = server();
 
         Staff staff = Staff.builder()
             .email("staff@example.com")
             .roleId("support")
             .build();
-        when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
+        when(staffLookupCache.findByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
         when(permissionService.hasPermission(server, "support", "ticket.view.all")).thenReturn(true);
 
         assertTrue(authorizer.canSubscribe(
@@ -39,15 +39,15 @@ class RealtimeTopicAuthorizerTest {
     @Test
     void panelPermissionScopesAreEnforcedPerTopic() {
         PermissionService permissionService = mock(PermissionService.class);
-        StaffService staffService = mock(StaffService.class);
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffService);
+        StaffLookupCache staffLookupCache = mock(StaffLookupCache.class);
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffLookupCache);
         Server server = server();
 
         Staff staff = Staff.builder()
             .email("staff@example.com")
             .roleId("support")
             .build();
-        when(staffService.getStaffByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
+        when(staffLookupCache.findByEmail(server, "staff@example.com")).thenReturn(Optional.of(staff));
         when(permissionService.hasPermission(server, "support", "ticket.view.all")).thenReturn(true);
 
         RealtimePrincipal principal = RealtimePrincipal.panel(server, "staff@example.com");
@@ -57,7 +57,7 @@ class RealtimeTopicAuthorizerTest {
 
     @Test
     void panelCannotSubscribeToMinecraftTopics() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffLookupCache.class));
 
         assertFalse(authorizer.canSubscribe(
             RealtimePrincipal.panel(server(), "staff@example.com"),
@@ -67,7 +67,7 @@ class RealtimeTopicAuthorizerTest {
 
     @Test
     void minecraftCanSubscribeToAllMinecraftTopics() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffService.class));
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffLookupCache.class));
         RealtimePrincipal principal = RealtimePrincipal.minecraft(server(), "instance-1");
 
         assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PERMISSIONS));

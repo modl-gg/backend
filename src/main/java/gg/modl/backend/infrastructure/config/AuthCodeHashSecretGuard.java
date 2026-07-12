@@ -3,12 +3,12 @@ package gg.modl.backend.infrastructure.config;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.ticket.config.TicketEmailVerificationConfiguration;
 import jakarta.annotation.PostConstruct;
-import java.util.Arrays;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Component
 @RequiredArgsConstructor
@@ -21,10 +21,9 @@ public class AuthCodeHashSecretGuard {
 
     @PostConstruct
     public void validate() {
-        boolean isProductionProfile = Arrays.stream(environment.getActiveProfiles())
-            .anyMatch(profile -> PRODUCTION_PROFILES.contains(profile.toLowerCase()));
-        boolean authSecretMissing = isBlank(authConfiguration.getCodeHashSecret());
-        boolean ticketSecretMissing = isBlank(ticketEmailVerificationConfiguration.getCodeHashSecret());
+        boolean isProductionProfile = ProfileEnvironment.hasAnyActiveProfile(environment, PRODUCTION_PROFILES);
+        boolean authSecretMissing = !StringUtils.hasText(authConfiguration.getCodeHashSecret());
+        boolean ticketSecretMissing = !StringUtils.hasText(ticketEmailVerificationConfiguration.getCodeHashSecret());
 
         if (isProductionProfile && (authSecretMissing || ticketSecretMissing)) {
             throw new IllegalStateException(
@@ -43,9 +42,5 @@ public class AuthCodeHashSecretGuard {
             log.warn("  unsalted SHA-256 (reversible). Do NOT use this setting in production.");
             log.warn("======================================================================");
         }
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

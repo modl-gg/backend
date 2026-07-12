@@ -1,9 +1,9 @@
 package gg.modl.backend.infrastructure.cors;
 
 import gg.modl.backend.infrastructure.config.ModlCorsProperties;
-import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.infrastructure.origin.OriginPolicy;
-import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.origin.OriginPolicyFactory;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.util.HostExtractionUtil;
@@ -24,7 +24,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
     private final ServerService serverService;
     private final ModlCorsProperties corsProperties;
-    private final ModlProperties modlProperties;
+    private final OriginPolicyFactory originPolicyFactory;
     private final Map<String, CachedOrigin> originCache = Collections.synchronizedMap(
         new LinkedHashMap<>(64, 0.75f, true) {
             @Override
@@ -46,7 +46,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         }
 
         String path = request.getRequestURI();
-        boolean adminPath = isAdminPath(path);
+        boolean adminPath = RouteGroups.isAdminArea(path);
 
         if (adminPath && !originPolicy.isSystemOrigin(origin)) {
             return null;
@@ -71,18 +71,8 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
         return config;
     }
 
-    private boolean isAdminPath(String path) {
-        return path != null && (
-            path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
-            || path.equals(RESTMappingV1.PREFIX_ADMIN)
-        );
-    }
-
     private boolean isReplayLitePath(String path) {
-        return path != null && (
-            path.startsWith(RESTMappingV1.PREFIX_REPLAY_LITE + "/")
-            || path.startsWith(RESTMappingV1.PREFIX_PUBLIC + "/replay-lite/")
-        );
+        return RouteGroups.isReplayLiteChild(path) || RouteGroups.isPublicReplayLiteChild(path);
     }
 
     private boolean isOriginAllowed(String path, String origin) {
@@ -121,11 +111,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
 
     @PostConstruct
     void initParsedOrigins() {
-        originPolicy = new OriginPolicy(
-            HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()),
-            HostExtractionUtil.parseCommaSeparated(corsProperties.getAppDomains()),
-            modlProperties.isDevelopmentMode()
-        );
+        originPolicy = originPolicyFactory.withAppDomains();
         parsedReplayLiteOrigins = HostExtractionUtil.parseCommaSeparated(corsProperties.getReplayLiteOrigins());
     }
 

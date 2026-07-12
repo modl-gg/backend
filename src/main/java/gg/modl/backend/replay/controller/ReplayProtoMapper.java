@@ -1,5 +1,7 @@
 package gg.modl.backend.replay.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
+
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.proto.modl.v1.PublicReplayResponse;
@@ -72,9 +74,5 @@ public class ReplayProtoMapper {
         }
         detail.setTimeRanges(ranges);
         return detail;
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

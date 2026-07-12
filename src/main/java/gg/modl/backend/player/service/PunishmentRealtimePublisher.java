@@ -2,6 +2,8 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
+import gg.modl.backend.player.dto.response.SyncPunishmentEntry;
 import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -10,10 +12,8 @@ import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.SyncModifiedPunishment;
 import gg.modl.proto.modl.v1.SyncPendingPunishment;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -116,36 +116,28 @@ public class PunishmentRealtimePublisher {
         return syncProtoFactory.toModifiedPunishment(toEntry(server, player, punishment));
     }
 
-    private Map<String, Object> toEntry(Server server, Player player, Punishment punishment) {
+    private SyncPunishmentEntry toEntry(Server server, Player player, Punishment punishment) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, String> resolvedIssuers = resolveIssuers(server, punishment);
-        Map<String, Object> simplePunishment =
+        Map<String, String> resolvedIssuers = issuerNameResolver.resolveForPunishments(server, List.of(punishment));
+        SimplePunishmentView simplePunishment =
             PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, resolvedIssuers);
-        return Map.of(
-            "minecraftUuid", player.getMinecraftUuid().toString(),
-            "username", PlayerDataUtils.extractLatestUsername(player.getUsernames()),
-            "punishment", simplePunishment
+        return new SyncPunishmentEntry(
+            player.getMinecraftUuid().toString(),
+            PlayerDataUtils.extractLatestUsername(player.getUsernames()),
+            simplePunishment
         );
     }
 
-    private Map<String, Object> toEntry(Server server, EntryPunishment change) {
+    private SyncPunishmentEntry toEntry(Server server, EntryPunishment change) {
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, String> resolvedIssuers = resolveIssuers(server, change.punishment());
-        Map<String, Object> simplePunishment =
+        Map<String, String> resolvedIssuers = issuerNameResolver.resolveForPunishments(server, List.of(change.punishment()));
+        SimplePunishmentView simplePunishment =
             PunishmentMapper.toSimplePunishment(change.punishment(), types, statusCalculator, resolvedIssuers);
-        return Map.of(
-            "minecraftUuid", change.minecraftUuid(),
-            "username", change.username(),
-            "punishment", simplePunishment
+        return new SyncPunishmentEntry(
+            change.minecraftUuid(),
+            change.username(),
+            simplePunishment
         );
-    }
-
-    private Map<String, String> resolveIssuers(Server server, Punishment punishment) {
-        Set<String> ids = new HashSet<>(PunishmentQueryService.collectIssuerIds(punishment));
-        if (ids.isEmpty()) {
-            return Map.of();
-        }
-        return issuerNameResolver.batchResolve(ids, server);
     }
 
     public record PlayerPunishment(Player player, Punishment punishment) {

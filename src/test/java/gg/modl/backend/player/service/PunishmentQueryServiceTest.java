@@ -9,10 +9,11 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
+import gg.modl.backend.player.dto.response.AppealEligibility;
+import gg.modl.backend.player.dto.response.AppealInfoView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.data.PunishmentType;
@@ -47,7 +48,6 @@ class PunishmentQueryServiceTest {
             mock(OffenderThresholdSettingsService.class),
             mock(EvidenceUploadTokenService.class),
             mock(IssuerNameResolver.class),
-            mock(StaffMongoRepository.class),
             ticketRepository
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
@@ -63,7 +63,7 @@ class PunishmentQueryServiceTest {
         punishment.setNotes(new ArrayList<>());
         punishment.setEvidence(new ArrayList<>());
         punishment.setAttachedTicketIds(new ArrayList<>());
-        punishment.setData(Map.of());
+        punishment.replaceData(Map.of());
         Player player = Player.builder()
             .minecraftUuid(playerUuid)
             .punishments(new ArrayList<>(List.of(punishment)))
@@ -90,11 +90,13 @@ class PunishmentQueryServiceTest {
         when(punishmentTypeService.getPunishmentTypeByOrdinal(server, 2)).thenReturn(Optional.of(punishmentType));
         when(ticketRepository.findAppealsByPunishmentId(server, "punishment-1")).thenReturn(List.of(olderAppeal, latestAppeal));
 
-        Map<String, Object> response = service.getPublicPunishmentWithAppealEligibility(server, "punishment-1").orElseThrow();
+        AppealEligibility result = service.getPublicPunishmentWithAppealEligibility(server, "punishment-1").orElseThrow();
 
-        assertEquals(playerUuid.toString(), response.get("playerUuid"));
-        assertTrue(response.get("existingAppeal") instanceof Map<?, ?>);
-        Map<?, ?> existingAppeal = (Map<?, ?>) response.get("existingAppeal");
+        assertTrue(result instanceof AppealEligibility.Eligible);
+        AppealInfoView info = ((AppealEligibility.Eligible) result).info();
+        assertEquals(playerUuid.toString(), info.playerUuid());
+        assertTrue(info.existingAppeal() != null);
+        Map<String, Object> existingAppeal = info.existingAppeal();
         assertEquals("APPEAL-222222", existingAppeal.get("id"));
         assertEquals(latestAppeal.getCreated(), existingAppeal.get("submittedDate"));
         assertEquals("open", existingAppeal.get("status"));
@@ -113,7 +115,6 @@ class PunishmentQueryServiceTest {
             mock(OffenderThresholdSettingsService.class),
             mock(EvidenceUploadTokenService.class),
             mock(IssuerNameResolver.class),
-            mock(StaffMongoRepository.class),
             mock(TicketMongoRepository.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);

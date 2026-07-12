@@ -1,7 +1,6 @@
 package gg.modl.backend.infrastructure.config;
 
 import jakarta.annotation.PostConstruct;
-import java.util.Arrays;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,8 +21,7 @@ public class DevelopmentModeGuard {
             return;
         }
 
-        boolean isDevProfile = Arrays.stream(environment.getActiveProfiles())
-            .anyMatch(profile -> DEV_PROFILES.contains(profile.toLowerCase()));
+        boolean isDevProfile = ProfileEnvironment.hasAnyActiveProfile(environment, DEV_PROFILES);
         boolean explicitlyAllowed = environment.getProperty("MODL_ALLOW_DEV_MODE", Boolean.class, false);
 
         if (!isDevProfile && !explicitlyAllowed) {

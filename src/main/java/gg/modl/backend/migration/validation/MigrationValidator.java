@@ -1,7 +1,6 @@
 package gg.modl.backend.migration.validation;
 
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
-import java.net.InetAddress;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.Date;
@@ -41,15 +40,7 @@ public class MigrationValidator {
             return false;
         }
 
-        if (UUID_PATTERN.matcher(uuid).matches()) {
-            return true;
-        }
-
-        if (UUID_NO_DASHES_PATTERN.matcher(uuid).matches()) {
-            return true;
-        }
-
-        return false;
+        return UUID_PATTERN.matcher(uuid).matches() || UUID_NO_DASHES_PATTERN.matcher(uuid).matches();
     }
 
     public String normalizeUuid(String uuid) {
@@ -90,31 +81,20 @@ public class MigrationValidator {
             return null;
         }
 
-        if (dateObj instanceof Date) {
-            return (Date) dateObj;
+        if (dateObj instanceof Date date) {
+            return date;
         }
 
-        if (dateObj instanceof Number) {
-            long timestamp = ((Number) dateObj).longValue();
-            if (timestamp > 100_000_000_000L) {
-                return new Date(timestamp);
-            } else {
-                return new Date(timestamp * 1000);
-            }
+        if (dateObj instanceof Number number) {
+            return epochToDate(number.longValue());
         }
 
-        if (dateObj instanceof String) {
-            String dateStr = (String) dateObj;
+        if (dateObj instanceof String dateStr) {
             try {
                 return Date.from(Instant.parse(dateStr));
             } catch (DateTimeParseException e) {
                 try {
-                    long timestamp = Long.parseLong(dateStr);
-                    if (timestamp > 100_000_000_000L) {
-                        return new Date(timestamp);
-                    } else {
-                        return new Date(timestamp * 1000);
-                    }
+                    return epochToDate(Long.parseLong(dateStr));
                 } catch (NumberFormatException ex) {
                     log.warn("Unable to parse date: {}", dateStr);
                     return null;
@@ -125,17 +105,101 @@ public class MigrationValidator {
         return null;
     }
 
+    private Date epochToDate(long timestamp) {
+        if (timestamp > 100_000_000_000L) {
+            return new Date(timestamp);
+        }
+        return new Date(timestamp * 1000);
+    }
+
     public boolean isValidIpAddress(String ip) {
         if (ip == null || ip.isBlank()) {
             return false;
         }
 
-        try {
-            InetAddress.getByName(ip);
-            return true;
-        } catch (Exception e) {
+        return ip.indexOf(':') >= 0 ? isValidIpv6(ip) : isValidIpv4(ip);
+    }
+
+    private static boolean isValidIpv4(String value) {
+        String[] octets = value.split("\\.", -1);
+        if (octets.length != 4) {
             return false;
         }
+        for (String octet : octets) {
+            if (!isValidIpv4Octet(octet)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidIpv4Octet(String octet) {
+        int length = octet.length();
+        if (length < 1 || length > 3) {
+            return false;
+        }
+        for (int i = 0; i < length; i++) {
+            char c = octet.charAt(i);
+            if (c < '0' || c > '9') {
+                return false;
+            }
+        }
+        if (length > 1 && octet.charAt(0) == '0') {
+            return false;
+        }
+        return Integer.parseInt(octet) <= 255;
+    }
+
+    private static boolean isValidIpv6(String value) {
+        int compressionIndex = value.indexOf("::");
+        boolean compressed = compressionIndex >= 0;
+        if (compressed && value.indexOf("::", compressionIndex + 1) >= 0) {
+            return false;
+        }
+
+        String[] sides = compressed
+                         ? new String[]{value.substring(0, compressionIndex), value.substring(compressionIndex + 2)}
+                         : new String[]{value};
+
+        int groupCount = 0;
+        for (int side = 0; side < sides.length; side++) {
+            if (sides[side].isEmpty()) {
+                continue;
+            }
+            String[] groups = sides[side].split(":", -1);
+            for (int i = 0; i < groups.length; i++) {
+                boolean lastGroup = side == sides.length - 1 && i == groups.length - 1;
+                String group = groups[i];
+                if (group.indexOf('.') >= 0) {
+                    if (!lastGroup || !isValidIpv4(group)) {
+                        return false;
+                    }
+                    groupCount += 2;
+                } else {
+                    if (!isValidHextet(group)) {
+                        return false;
+                    }
+                    groupCount += 1;
+                }
+            }
+        }
+
+        return compressed ? groupCount < 8 : groupCount == 8;
+    }
+
+    private static boolean isValidHextet(String group) {
+        int length = group.length();
+        if (length < 1 || length > 4) {
+            return false;
+        }
+        for (int i = 0; i < length; i++) {
+            char c = group.charAt(i);
+            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (!hex) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public record ValidationResult(boolean valid, String error, int playerCount) {

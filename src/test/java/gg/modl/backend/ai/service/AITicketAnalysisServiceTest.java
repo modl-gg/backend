@@ -17,7 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import gg.modl.backend.ai.LLMService;
 import gg.modl.backend.ai.data.AIAnalysisResult;
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.SystemPromptMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
@@ -59,7 +59,7 @@ class AITicketAnalysisServiceTest {
     private TicketMongoRepository ticketRepository;
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerUsageRepository serverRepository;
 
     @Mock
     private PunishmentLifecycleService punishmentLifecycleService;
@@ -80,6 +80,7 @@ class AITicketAnalysisServiceTest {
 
     @BeforeEach
     void setUp() {
+        ObjectMapper objectMapper = new ObjectMapper();
         aiTicketAnalysisService = new AITicketAnalysisService(
             llmService,
             aiModerationSettingsService,
@@ -89,7 +90,8 @@ class AITicketAnalysisServiceTest {
             punishmentTypeService,
             usageTrackingService,
             new DefaultServerLimitPolicy(),
-            new ObjectMapper(),
+            new ChatModerationPromptBuilder(objectMapper),
+            new AiAnalysisResponseParser(objectMapper),
             systemPromptRepository,
             staffRepository
         );

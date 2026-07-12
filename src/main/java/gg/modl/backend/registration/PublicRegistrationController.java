@@ -21,7 +21,6 @@ import gg.modl.proto.modl.v1.SetupStatusRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Date;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
@@ -34,19 +33,32 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PUBLIC_REGISTRATION)
-@RequiredArgsConstructor
 @Profile("!staging")
 public class PublicRegistrationController {
     private static final String CLI_TURNSTILE_TOKEN_HEADER = "X-Turnstile-Token";
 
-    @Value("${modl.registration.cli-turnstile-required:false}")
-    private boolean cliTurnstileRequired;
-
+    private final boolean cliTurnstileRequired;
     private final ServerService serverService;
     private final SessionService sessionService;
     private final RegistrationService registrationService;
     private final CookieUtil cookieUtil;
     private final SubdomainValidator subdomainValidator;
+
+    public PublicRegistrationController(
+        @Value("${modl.registration.cli-turnstile-required:false}") boolean cliTurnstileRequired,
+        ServerService serverService,
+        SessionService sessionService,
+        RegistrationService registrationService,
+        CookieUtil cookieUtil,
+        SubdomainValidator subdomainValidator
+    ) {
+        this.cliTurnstileRequired = cliTurnstileRequired;
+        this.serverService = serverService;
+        this.sessionService = sessionService;
+        this.registrationService = registrationService;
+        this.cookieUtil = cookieUtil;
+        this.subdomainValidator = subdomainValidator;
+    }
 
     @PostMapping
     public ResponseEntity<?> register(

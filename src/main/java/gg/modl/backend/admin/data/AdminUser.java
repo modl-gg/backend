@@ -7,11 +7,12 @@ import java.util.Date;
 import java.util.List;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import gg.modl.backend.database.CollectionName;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
-@Document(collection = "admin_users")
+@Document(collection = CollectionName.ADMIN_USERS)
 @GenerateMongoFields
 public class AdminUser {
     @Id
