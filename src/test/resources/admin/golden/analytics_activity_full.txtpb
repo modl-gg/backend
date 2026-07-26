@@ -1,0 +1,13 @@
+success: true
+data {
+  date: "2026-07-01T00:00:00Z"
+  active_servers: 5
+  online_players: 30
+}
+data {
+  date: "2026-07-02T00:00:00Z"
+  active_servers: 7
+  online_players: 42
+}
+total_players: 500
+total_servers: 10

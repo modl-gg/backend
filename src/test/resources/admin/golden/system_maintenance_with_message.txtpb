@@ -1,0 +1,6 @@
+success: true
+data {
+  is_active: true
+  message: "System under maintenance."
+}
+message: "Maintenance mode enabled"

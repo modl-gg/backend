@@ -50,12 +50,14 @@ import org.springframework.data.mongodb.core.index.IndexField;
 import org.springframework.data.mongodb.core.index.IndexInfo;
 import org.springframework.data.mongodb.core.index.IndexOperations;
 import org.springframework.data.mongodb.core.index.PartialIndexFilter;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.data.mongodb.core.query.Collation;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
+@DependsOn("customDomainOverrideDedupeMigration")
 public class MongoIndexReconciler {
     private static final String TYPE_OPERATOR = "$type";
     private static final Map<String, Integer> BSON_TYPE_CODES = Map.ofEntries(
@@ -125,7 +127,8 @@ public class MongoIndexReconciler {
             IndexSpec.standard("uidx_servers_provisioningSignInToken", doc(ServerFields.PROVISIONING_SIGN_IN_TOKEN, 1), true, true),
             IndexSpec.standard("uidx_servers_stripeCustomerId", doc(ServerFields.STRIPE_CUSTOMER_ID, 1), true, true),
             IndexSpec.standard("uidx_servers_stripeSubscriptionId", doc(ServerFields.STRIPE_SUBSCRIPTION_ID, 1), true, true),
-            IndexSpec.standard("uidx_servers_customDomainOverride", doc(ServerFields.CUSTOM_DOMAIN_OVERRIDE, 1), true, true),
+            IndexSpec.partialUnique("uidx_servers_customDomainOverride", doc(ServerFields.CUSTOM_DOMAIN_OVERRIDE, 1),
+                new Document(ServerFields.CUSTOM_DOMAIN_OVERRIDE, new Document(TYPE_OPERATOR, "string"))),
             IndexSpec.standard("uidx_servers_customDomainCloudflareId", doc(ServerFields.CUSTOM_DOMAIN_CLOUDFLARE_ID, 1), true, true),
             IndexSpec.standard("uidx_servers_cliSetupToken", doc(ServerFields.CLI_SETUP_TOKEN, 1), true, true),
             IndexSpec.standard("uidx_servers_apiKey", doc(ServerFields.API_KEY, 1), true, true),
