@@ -9,14 +9,12 @@ import org.springframework.http.converter.AbstractHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 
-@Component
 public class ProtoJsonHttpMessageConverter extends AbstractHttpMessageConverter<Message> {
 
     private static final JsonFormat.Printer PRINTER = JsonFormat.printer()
