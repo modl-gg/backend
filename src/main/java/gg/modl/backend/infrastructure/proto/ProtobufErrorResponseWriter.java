@@ -1,7 +1,6 @@
 package gg.modl.backend.infrastructure.proto;
 
-import gg.modl.backend.infrastructure.rest.RESTMappingV2;
-import gg.modl.backend.infrastructure.rest.RESTMappingV3;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import gg.modl.proto.modl.v1.ApiError;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,10 +19,10 @@ public class ProtobufErrorResponseWriter {
 
     public boolean shouldWriteProtobuf(HttpServletRequest request) {
         String path = protobufDecisionPath(request);
-        if (path != null && path.startsWith(RESTMappingV3.PREFIX)) {
+        if (RouteGroups.isVersion3Prefix(path)) {
             return true;
         }
-        if (path != null && (path.startsWith("/v1") || path.startsWith(RESTMappingV2.PREFIX_MINECRAFT))) {
+        if (RouteGroups.isVersion1Prefix(path) || RouteGroups.isVersion2MinecraftPrefix(path)) {
             return false;
         }
         return acceptsProtobuf(Collections.list(request.getHeaders(HttpHeaders.ACCEPT)));

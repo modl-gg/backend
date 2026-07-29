@@ -8,14 +8,14 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.ServerDatabaseMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerRegistrationCleanupRepository;
 import gg.modl.backend.registration.config.RegistrationCleanupProperties;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -30,20 +30,20 @@ import org.mockito.InOrder;
 class RegistrationCleanupServiceTest {
     private static final Instant NOW = Instant.parse("2026-05-01T12:00:00Z");
 
-    private ServerMongoRepository serverRepository;
+    private ServerRegistrationCleanupRepository serverRepository;
     private ServerDatabaseMongoRepository serverDatabaseRepository;
     private ServerService serverService;
     private PermissionService permissionService;
-    private StaffService staffService;
+    private StaffLookupCache staffLookupCache;
     private RegistrationCleanupService cleanupService;
 
     @BeforeEach
     void setUp() {
-        serverRepository = mock(ServerMongoRepository.class);
+        serverRepository = mock(ServerRegistrationCleanupRepository.class);
         serverDatabaseRepository = mock(ServerDatabaseMongoRepository.class);
         serverService = mock(ServerService.class);
         permissionService = mock(PermissionService.class);
-        staffService = mock(StaffService.class);
+        staffLookupCache = mock(StaffLookupCache.class);
 
         RegistrationCleanupProperties properties = new RegistrationCleanupProperties();
         properties.setEnabled(true);
@@ -57,7 +57,7 @@ class RegistrationCleanupServiceTest {
             serverDatabaseRepository,
             serverService,
             permissionService,
-            staffService,
+            staffLookupCache,
             Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -84,14 +84,14 @@ class RegistrationCleanupServiceTest {
 
         cleanupService.runCleanupOnce();
 
-        InOrder order = inOrder(serverDatabaseRepository, serverRepository, serverService, permissionService, staffService);
+        InOrder order = inOrder(serverDatabaseRepository, serverRepository, serverService, permissionService, staffLookupCache);
         order.verify(serverRepository).claimExpiredRegistrationForCleanup(candidate.getId(), Date.from(NOW.minus(Duration.ofHours(24))), Date.from(NOW.minus(Duration.ofHours(6))), NOW);
         order.verify(serverRepository).confirmRegistrationCleanupClaim(claimed.getId(), claimed.getCleanupClaimId(), Date.from(NOW.minus(Duration.ofHours(24))), NOW);
         order.verify(serverDatabaseRepository).dropDatabase(claimed);
         order.verify(serverRepository).deleteClaimedExpiredRegistration(claimed.getId(), claimed.getCleanupClaimId(), Date.from(NOW.minus(Duration.ofHours(24))));
         order.verify(serverService).evictAllServerCaches();
         order.verify(permissionService).evictPermissionCache();
-        order.verify(staffService).evictAllStaffCaches();
+        order.verify(staffLookupCache).evictAll();
     }
 
     @Test
@@ -115,7 +115,7 @@ class RegistrationCleanupServiceTest {
         cleanupService.runCleanupOnce();
 
         verify(serverRepository, never()).deleteClaimedExpiredRegistration(claimed.getId(), claimed.getCleanupClaimId(), Date.from(NOW.minus(Duration.ofHours(24))));
-        verifyNoInteractions(serverService, permissionService, staffService);
+        verifyNoInteractions(serverService, permissionService, staffLookupCache);
     }
 
     @Test
@@ -132,7 +132,7 @@ class RegistrationCleanupServiceTest {
         cleanupService.runCleanupOnce();
 
         verify(serverDatabaseRepository, never()).dropDatabase(candidate);
-        verifyNoInteractions(serverService, permissionService, staffService);
+        verifyNoInteractions(serverService, permissionService, staffLookupCache);
     }
 
     @Test
@@ -192,7 +192,7 @@ class RegistrationCleanupServiceTest {
 
         verify(serverDatabaseRepository, never()).dropDatabase(claimed);
         verify(serverRepository, never()).deleteClaimedExpiredRegistration(claimed.getId(), claimed.getCleanupClaimId(), Date.from(NOW.minus(Duration.ofHours(24))));
-        verifyNoInteractions(serverService, permissionService, staffService);
+        verifyNoInteractions(serverService, permissionService, staffLookupCache);
     }
 
     private Server expiredCandidate() {

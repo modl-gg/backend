@@ -46,7 +46,7 @@ class DuplicatePlayerMergerTest {
         assertEquals(Set.of("n1", "n2", "n3"), noteIds(merged));
         assertEquals(Set.of("1.1.1.1", "3.3.3.3", "2.2.2.2"), ipStrings(merged));
         assertEquals(Set.of("Alpha", "Gamma", "Beta"), usernameStrings(merged));
-        assertEquals(Set.of("alt-a", "alt-b"), Set.copyOf((List<?>) merged.getData().get("linkedAccounts")));
+        assertEquals(Set.of("alt-a", "alt-b"), Set.copyOf(merged.data().linkedAccountUuids()));
     }
 
     @Test

@@ -5,9 +5,7 @@ import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.proto.modl.v1.ApiError;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
 import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -59,25 +57,6 @@ public class CustomErrorController implements ErrorController {
                     .build());
         }
 
-        ErrorResponse errorResponse = new ErrorResponse(
-            statusCode,
-            error,
-            errorMessage);
-
-        return ResponseEntity.status(statusCode).body(errorResponse);
-    }
-
-    @Setter
-    @Getter
-    public static class ErrorResponse {
-        private int status;
-        private String error;
-        private String message;
-
-        public ErrorResponse(int status, String error, String message) {
-            this.status = status;
-            this.error = error;
-            this.message = message;
-        }
+        return ResponseEntity.status(statusCode).body(new ErrorResponseDTO(statusCode, error, errorMessage));
     }
 }

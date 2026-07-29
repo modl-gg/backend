@@ -380,7 +380,7 @@ public final class MongoFieldsProcessor extends AbstractProcessor {
         }
 
         for (final Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry :
-            processingEnv.getElementUtils().getElementValuesWithDefaults(mirror).entrySet()) {
+            elements.getElementValuesWithDefaults(mirror).entrySet()) {
 
             if (propertyName.equals(entry.getKey().getSimpleName().toString())) {
                 Object value = entry.getValue().getValue();

@@ -42,7 +42,7 @@ public class DuplicatePlayerMerger {
         primary.setIpAddresses(mergeBy(primary.getIpAddresses(), other.getIpAddresses(), IPEntry::getIpAddress));
         primary.setNotes(mergeBy(primary.getNotes(), other.getNotes(), NoteEntry::getId));
         primary.setPunishments(mergeBy(primary.getPunishments(), other.getPunishments(), Punishment::getId));
-        primary.setData(mergeData(primary.getData(), other.getData()));
+        primary.replaceData(mergeData(primary.data().asMap(), other.data().asMap()));
     }
 
     private <T> List<T> mergeBy(List<T> primary, List<T> other, Function<T, Object> identity) {

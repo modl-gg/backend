@@ -1,11 +1,11 @@
 package gg.modl.backend.staff.service;
 
-import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.server.service.PanelDomainResolver;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.staff.data.Staff;
 import java.time.Instant;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StaffTwoFactorService {
     private final StaffMongoRepository staffRepository;
-    private final ModlProperties modlProperties;
+    private final PanelDomainResolver panelDomainResolver;
     private static final long SESSION_DURATION_MILLIS = 7L * 24 * 60 * 60 * 1000;
     private static final long TOKEN_TTL_MILLIS = 10L * 60 * 1000;
 
@@ -23,14 +23,11 @@ public class StaffTwoFactorService {
         String token = UUID.randomUUID().toString();
         long now = Instant.now().toEpochMilli();
 
-        if (!staffRepository.createTwoFactorToken(server, normalizeUuid(minecraftUuid), token, ip, now)) {
+        if (!staffRepository.createTwoFactorToken(server, UuidUtils.normalize(minecraftUuid), token, ip, now)) {
             return Optional.empty();
         }
 
-        String domain = server.getCustomDomainOverride();
-        if (domain == null || domain.isBlank()) {
-            domain = server.getCustomDomain() + "." + modlProperties.getDomain();
-        }
+        String domain = panelDomainResolver.panelDomain(server);
 
         return Optional.of(new TwoFactorTokenResult(token, "https://" + domain + "/verify/" + token));
     }
@@ -76,9 +73,5 @@ public class StaffTwoFactorService {
     }
 
     public record TwoFactorTokenResult(String token, String verifyUrl) {
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

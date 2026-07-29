@@ -90,7 +90,7 @@ class PlayerServiceSearchRankingTest {
             player.getUsernames().add(new UsernameEntry(username, new Date()));
         }
         if (lastLogin != null) {
-            player.getData().put("lastLogin", lastLogin);
+            player.data().setLastLogin(lastLogin);
         }
 
         return player;
@@ -139,7 +139,7 @@ class PlayerServiceSearchRankingTest {
 
         Player offlinePlayer = player(offlineUuid, List.of("modltarget"), Date.from(Instant.parse("2026-04-20T10:15:30Z")));
         Player onlinePlayer = player(onlineUuid, List.of("modltarget"), Date.from(Instant.parse("2026-04-21T10:15:30Z")));
-        onlinePlayer.getData().put("isOnline", true);
+        onlinePlayer.data().setOnline(true);
 
         when(playerRepository.searchByUsernamePattern(server, "modltarget", 100))
             .thenReturn(List.of(offlinePlayer, onlinePlayer));

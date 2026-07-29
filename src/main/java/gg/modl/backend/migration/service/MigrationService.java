@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import gg.modl.backend.migration.config.MigrationConfiguration;
@@ -36,6 +35,23 @@ public class MigrationService {
     private final ServerLimitPolicy serverLimitPolicy;
 
     public record CooldownState(boolean onCooldown, @Nullable Long remainingTime) {}
+
+    public record MigrationOperationResult(boolean success, @Nullable String taskId,
+                                           @Nullable String message, @Nullable String error) {
+        static MigrationOperationResult failure(String error) {
+            return new MigrationOperationResult(false, null, null, error);
+        }
+
+        static MigrationOperationResult started(String taskId, String message) {
+            return new MigrationOperationResult(true, taskId, message, null);
+        }
+
+        static MigrationOperationResult succeeded(String message) {
+            return new MigrationOperationResult(true, null, message, null);
+        }
+    }
+
+    public record FileSizeError(String error, String message, long fileSize, long limit) {}
 
     private static final List<String> VALID_TYPES = List.of("litebans");
     private static final List<String> VALID_STATUSES = List.of(
@@ -73,9 +89,9 @@ public class MigrationService {
         return new CooldownState(false, null);
     }
 
-    public Map<String, Object> startMigration(Server server, String migrationType) {
+    public MigrationOperationResult startMigration(Server server, String migrationType) {
         if (!VALID_TYPES.contains(migrationType.toLowerCase())) {
-            return Map.of("success", false, "error", "Invalid migration type");
+            return MigrationOperationResult.failure("Invalid migration type");
         }
 
         Date now = new Date();
@@ -84,12 +100,13 @@ public class MigrationService {
             "Migration timed out and was automatically cancelled.");
 
         if (migrationRepository.existsActiveMigration(server, staleBefore)) {
-            return Map.of("success", false, "error", "A migration is already in progress");
+            return MigrationOperationResult.failure("A migration is already in progress");
         }
 
         CooldownState cooldown = checkCooldown(server);
         if (cooldown.onCooldown()) {
-            return Map.of("success", false, "error", "Migration on cooldown. Please wait before starting another migration.");
+            return MigrationOperationResult.failure(
+                "Migration on cooldown. Please wait before starting another migration.");
         }
 
         String taskId = UUID.randomUUID().toString();
@@ -114,18 +131,15 @@ public class MigrationService {
             .setType(type)
             .build());
 
-        return Map.of(
-            "success", true,
-            "taskId", taskId,
-            "message", "Migration task initiated. Waiting for Minecraft server to process."
-        );
+        return MigrationOperationResult.started(taskId,
+            "Migration task initiated. Waiting for Minecraft server to process.");
     }
 
-    public Map<String, Object> cancelMigration(Server server) {
+    public MigrationOperationResult cancelMigration(Server server) {
         MigrationStatus activeMigration = migrationRepository.findActiveMigration(server).orElse(null);
 
         if (activeMigration == null) {
-            return Map.of("success", false, "error", "No active migration to cancel");
+            return MigrationOperationResult.failure("No active migration to cancel");
         }
 
         boolean cooldownExempt = "building_json".equals(activeMigration.getStatus());
@@ -133,13 +147,13 @@ public class MigrationService {
         migrationRepository.cancelMigration(server, activeMigration.getId(),
             "Cancelled by administrator", new Date(), "Migration cancelled by administrator", cooldownExempt);
 
-        return Map.of("success", true, "message", "Migration cancelled successfully");
+        return MigrationOperationResult.succeeded("Migration cancelled successfully");
     }
 
-    public Map<String, Object> validateFileSize(Server server, MultipartFile file) {
+    public Optional<FileSizeError> validateFileSize(Server server, MultipartFile file) {
         long fileSizeLimit = getFileSizeLimit(server);
         if (file.getSize() <= fileSizeLimit) {
-            return null;
+            return Optional.empty();
         }
 
         double fileSizeMB = file.getSize() / (1024.0 * 1024.0);
@@ -149,12 +163,11 @@ public class MigrationService {
             "failed", "Migration file exceeds size limit", 0, 0, null
         ));
 
-        return Map.of(
-            "error", "Migration file exceeds size limit",
-            "message", String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
-            "fileSize", file.getSize(),
-            "limit", fileSizeLimit
-        );
+        return Optional.of(new FileSizeError(
+            "Migration file exceeds size limit",
+            String.format("File size (%.2fMB) exceeds the limit of %.2fMB.", fileSizeMB, limitMB),
+            file.getSize(),
+            fileSizeLimit));
     }
 
     public void updateProgress(Server server, UpdateProgressRequest request) {
@@ -192,10 +205,7 @@ public class MigrationService {
     }
 
     private static String clampMessage(String message) {
-        if (message == null || message.length() <= MAX_MESSAGE_LENGTH) {
-            return message;
-        }
-        return message.substring(0, MAX_MESSAGE_LENGTH - 1) + "…";
+        return message == null ? null : MigrationMessages.truncate(message, MAX_MESSAGE_LENGTH);
     }
 
     public long getFileSizeLimit(Server server) {

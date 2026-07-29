@@ -15,7 +15,7 @@ public class ProtoValidationException extends RuntimeException {
 
     public ProtoValidationException(ValidationResult result) {
         super(formatViolations(result.getViolations()));
-        this.violations = result.getViolations();
+        this.violations = List.copyOf(result.getViolations());
     }
 
     public List<Violation> getViolations() {

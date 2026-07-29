@@ -1,7 +1,7 @@
 package gg.modl.backend.server.service;
 
 import gg.modl.backend.database.mongo.fields.ServerFields;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerAdminRepository;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerBillingUpdate;
@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ServerMutationHelper {
 
-    private final ServerMongoRepository serverRepository;
+    private final ServerAdminRepository serverAdminRepository;
     private final ServerService serverService;
 
     public void mutate(Server server, Consumer<ServerBillingUpdate> mutator) {
@@ -87,7 +87,7 @@ public class ServerMutationHelper {
         }
 
         update.set(ServerFields.UPDATED_AT, new Date());
-        serverRepository.applyFieldUpdate(server.getId(), update);
+        serverAdminRepository.applyFieldUpdate(server.getId(), update);
         serverService.evictAllServerCaches();
     }
 }

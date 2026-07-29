@@ -1,7 +1,7 @@
 package gg.modl.backend.replaylite.storage;
 
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
-import java.net.URI;
+import gg.modl.backend.storage.config.S3ClientFactory;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
@@ -12,9 +12,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ContentDisposition;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -60,17 +57,11 @@ public class ReplayLiteStorageService {
             return null;
         }
 
-        AwsBasicCredentials credentials = AwsBasicCredentials.create(
+        return S3ClientFactory.createClient(
+            configuration.getEndpoint(),
             configuration.getKeyId(),
             configuration.getApplicationKey()
         );
-
-        return S3Client.builder()
-            .credentialsProvider(StaticCredentialsProvider.create(credentials))
-            .endpointOverride(URI.create(configuration.getEndpoint()))
-            .region(Region.US_EAST_1)
-            .forcePathStyle(true)
-            .build();
     }
 
     private static S3Presigner createPresigner(ReplayLiteStorageConfiguration configuration) {
@@ -78,16 +69,11 @@ public class ReplayLiteStorageService {
             return null;
         }
 
-        AwsBasicCredentials credentials = AwsBasicCredentials.create(
+        return S3ClientFactory.createPresigner(
+            configuration.getEndpoint(),
             configuration.getKeyId(),
             configuration.getApplicationKey()
         );
-
-        return S3Presigner.builder()
-            .credentialsProvider(StaticCredentialsProvider.create(credentials))
-            .endpointOverride(URI.create(configuration.getEndpoint()))
-            .region(Region.US_EAST_1)
-            .build();
     }
 
     public boolean isConfigured() {
@@ -142,14 +128,6 @@ public class ReplayLiteStorageService {
             }
             throw e;
         }
-    }
-
-    public String getPublicUrl(String objectKey) {
-        String cdnDomain = configuration.getCdnDomain();
-        if (cdnDomain == null || cdnDomain.isBlank()) {
-            throw new ExternalServiceException("Replay Lite CDN domain is not configured");
-        }
-        return "https://" + cdnDomain + "/" + objectKey;
     }
 
     public PresignedDownload createPresignedDownload(String objectKey, String downloadFilename, Duration duration) {

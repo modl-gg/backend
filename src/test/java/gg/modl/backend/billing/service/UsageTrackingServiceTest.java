@@ -5,7 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verify;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -21,7 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class UsageTrackingServiceTest {
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerUsageRepository serverRepository;
 
     @Mock
     private ServerMutationHelper serverMutationHelper;

@@ -2,6 +2,7 @@ package gg.modl.backend.log.controller;
 
 import gg.modl.backend.log.dto.response.SystemLogResponse;
 import gg.modl.backend.log.service.LogService;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_LOGS)
+@RequiresPanelPermission("admin.audit.view.logs")
 @RequiredArgsConstructor
 @Validated
 public class PanelLogController {

@@ -14,20 +14,19 @@ import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.ticket.dto.response.MinecraftPlayerTicketView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketListItemView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketLookupView;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
-import gg.modl.proto.modl.v1.ClaimTicketResponse;
 import gg.modl.proto.modl.v1.FieldViolation;
 import gg.modl.proto.modl.v1.MinecraftClaimTicketRequest;
 import gg.modl.proto.modl.v1.MinecraftCreateTicketRequest;
-import gg.modl.proto.modl.v1.MinecraftCreateTicketResponse;
-import gg.modl.proto.modl.v1.MinecraftTicketDetailResponse;
 import gg.modl.proto.modl.v1.MinecraftTicketsByIdsRequest;
 import gg.modl.proto.modl.v1.TicketsResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -118,7 +117,7 @@ public class MinecraftTicketsV3Controller {
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTickets(server, status, type, limit)
+        List<MinecraftTicketListItemView> tickets = minecraftTicketService.getMinecraftTickets(server, status, type, limit)
             .stream()
             .map(minecraftTicketService::toTicketListItem)
             .toList();
@@ -135,12 +134,12 @@ public class MinecraftTicketsV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
+        List<MinecraftPlayerTicketView> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
             .stream()
             .map(minecraftTicketService::toPlayerTicketItem)
             .toList();
 
-        return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, tickets));
+        return ResponseEntity.ok(MinecraftTicketProtoMapper.toPlayerTicketsResponse(200, tickets));
     }
 
     @GetMapping(
@@ -210,19 +209,19 @@ public class MinecraftTicketsV3Controller {
             ? request
             : MinecraftTicketsByIdsRequest.getDefaultInstance();
         if (effectiveRequest.getIdsCount() == 0) {
-            return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, List.of()));
+            return ResponseEntity.ok(MinecraftTicketProtoMapper.toLookupTicketsResponse(200, List.of()));
         }
         if (!isValidTicketIdsRequest(effectiveRequest)) {
             return error(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid data provided.");
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByIds(server, effectiveRequest.getIdsList())
+        List<MinecraftTicketLookupView> tickets = minecraftTicketService.getMinecraftTicketsByIds(server, effectiveRequest.getIdsList())
             .stream()
             .map(minecraftTicketService::toTicketLookupItem)
             .toList();
 
-        return ResponseEntity.ok(MinecraftTicketProtoMapper.toTicketsResponse(200, tickets));
+        return ResponseEntity.ok(MinecraftTicketProtoMapper.toLookupTicketsResponse(200, tickets));
     }
 
     private static boolean isValidTicketIdsRequest(MinecraftTicketsByIdsRequest request) {

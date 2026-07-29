@@ -5,10 +5,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.admin.data.SecurityEvent;
+import gg.modl.backend.admin.dto.response.AdminPagination;
+import gg.modl.backend.admin.dto.response.AdminSecurityEvents;
 import gg.modl.backend.database.mongo.repository.SecurityEventMongoRepository;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,7 +41,7 @@ class AdminSecurityServiceTest {
             "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
         )).thenReturn(1L);
 
-        Map<String, Object> response = adminSecurityService.getSecurityEvents(
+        AdminSecurityEvents response = adminSecurityService.getSecurityEvents(
             2,
             25,
             "login_attempt",
@@ -58,12 +59,9 @@ class AdminSecurityServiceTest {
             "login_attempt", "high", "gateway", "blocked", new Date(1000L), new Date(2000L)
         );
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) response.get("data");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> pagination = (Map<String, Object>) data.get("pagination");
-        assertEquals(2, pagination.get("page"));
-        assertEquals(25, pagination.get("limit"));
-        assertEquals(1L, pagination.get("total"));
+        AdminPagination pagination = response.pagination();
+        assertEquals(2, pagination.page());
+        assertEquals(25, pagination.limit());
+        assertEquals(1L, pagination.total());
     }
 }

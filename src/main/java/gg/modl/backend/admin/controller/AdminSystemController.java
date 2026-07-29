@@ -3,12 +3,15 @@ package gg.modl.backend.admin.controller;
 import gg.modl.backend.admin.data.SystemConfig;
 import gg.modl.backend.admin.data.SystemPrompt;
 import gg.modl.backend.admin.dto.request.ToggleMaintenanceRequest;
+import gg.modl.backend.admin.dto.response.AdminMaintenanceStatus;
 import gg.modl.backend.admin.service.GlobalSystemService;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.proto.modl.v1.UpdatePromptRequest;
+import gg.modl.proto.modl.v1.UpdateRateLimitsRequest;
+import gg.modl.proto.modl.v1.UpdateSystemConfigRequest;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -34,7 +37,7 @@ public class AdminSystemController {
     }
 
     @PutMapping("/config")
-    public ResponseEntity<?> updateConfig(@RequestBody gg.modl.proto.modl.v1.UpdateSystemConfigRequest request) {
+    public ResponseEntity<?> updateConfig(@RequestBody UpdateSystemConfigRequest request) {
         SystemConfig saved = globalSystemService.updateConfig(AdminSystemProtoMapper.fromUpdateConfig(request));
         log.info("Configuration updated by admin");
         return ResponseEntity.ok(AdminSystemProtoMapper.toConfigResponse(saved, "Configuration updated successfully"));
@@ -49,7 +52,7 @@ public class AdminSystemController {
     public ResponseEntity<?> toggleMaintenance(@RequestBody gg.modl.proto.modl.v1.ToggleMaintenanceRequest request) {
         ToggleMaintenanceRequest domainRequest = AdminSystemProtoMapper.fromToggleMaintenance(request);
         boolean enabled = domainRequest.enabled();
-        Map<String, Object> data = globalSystemService.toggleMaintenance(domainRequest);
+        AdminMaintenanceStatus data = globalSystemService.toggleMaintenance(domainRequest);
         log.info("Maintenance mode {} by admin", enabled ? "enabled" : "disabled");
         return ResponseEntity.ok(AdminSystemProtoMapper.toMaintenanceResponse(
             data, "Maintenance mode " + (enabled ? "enabled" : "disabled")));
@@ -61,7 +64,7 @@ public class AdminSystemController {
     }
 
     @PutMapping("/rate-limits")
-    public ResponseEntity<?> updateRateLimits(@RequestBody gg.modl.proto.modl.v1.UpdateRateLimitsRequest request) {
+    public ResponseEntity<?> updateRateLimits(@RequestBody UpdateRateLimitsRequest request) {
         SystemConfig.PerformanceConfig performanceConfig = globalSystemService.updateRateLimits(
             AdminSystemProtoMapper.fromUpdateRateLimits(request));
         log.info("Rate limits updated by admin");
@@ -75,7 +78,7 @@ public class AdminSystemController {
     }
 
     @PutMapping("/prompts")
-    public ResponseEntity<?> updatePrompt(@RequestBody gg.modl.proto.modl.v1.UpdatePromptRequest request) {
+    public ResponseEntity<?> updatePrompt(@RequestBody UpdatePromptRequest request) {
         SystemPrompt updated = globalSystemService.updatePrompt(AdminSystemProtoMapper.fromUpdatePrompt(request));
         log.info("System prompt updated");
         return ResponseEntity.ok(AdminSystemProtoMapper.toPromptResponse(updated, "System prompt updated successfully"));

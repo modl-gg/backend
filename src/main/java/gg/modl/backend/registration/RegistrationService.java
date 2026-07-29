@@ -4,6 +4,7 @@ import gg.modl.backend.beta.SubdomainValidator;
 import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.email.EmailHTMLTemplate;
 import gg.modl.backend.email.EmailService;
+import gg.modl.backend.infrastructure.ratelimit.BucketPool;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.turnstile.TurnstileService;
 import gg.modl.backend.server.ServerService;
@@ -11,9 +12,11 @@ import gg.modl.backend.server.data.ProvisioningStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.ApiKeySettingsService;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.ConsumptionProbe;
+import java.time.Duration;
 import java.util.Date;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -30,32 +33,32 @@ public class RegistrationService {
     private final ServerService serverService;
     private final TurnstileService turnstileService;
     private final SubdomainValidator subdomainValidator;
+    private final BucketPool bucketPool;
 
     private static final int TOKEN_BYTE_LENGTH = 32;
-    private static final long RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-    private static final long CLI_RATE_LIMIT_WINDOW_MS = 30 * 60 * 1000;
+    private static final int REGISTRATION_CAPACITY = 1;
+    private static final long NANOS_PER_MINUTE = 60_000_000_000L;
+    private static final Duration RATE_LIMIT_WINDOW = Duration.ofMinutes(10);
+    private static final Duration CLI_RATE_LIMIT_WINDOW = Duration.ofMinutes(30);
     private static final long AUTO_LOGIN_TOKEN_EXPIRY_MS = 10 * 60 * 1000;
     private static final ServerPlan PUBLIC_REGISTRATION_PLAN = ServerPlan.FREE;
-
-    private final ConcurrentHashMap<String, Long> rateLimitMap = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> cliRateLimitMap = new ConcurrentHashMap<>();
 
     private record RateLimitResult(boolean limited, long remainingMinutes) {}
 
     public enum RegistrationChannel {
-        WEB(RATE_LIMIT_WINDOW_MS, "You can only register one server every 10 minutes."),
-        CLI(CLI_RATE_LIMIT_WINDOW_MS, "CLI registration is limited to once every 30 minutes.");
+        WEB(RATE_LIMIT_WINDOW, "You can only register one server every 10 minutes."),
+        CLI(CLI_RATE_LIMIT_WINDOW, "CLI registration is limited to once every 30 minutes.");
 
-        private final long windowMs;
+        private final Duration window;
         private final String cooldownMessage;
 
-        RegistrationChannel(long windowMs, String cooldownMessage) {
-            this.windowMs = windowMs;
+        RegistrationChannel(Duration window, String cooldownMessage) {
+            this.window = window;
             this.cooldownMessage = cooldownMessage;
         }
 
-        long windowMs() {
-            return windowMs;
+        Duration window() {
+            return window;
         }
 
         String cooldownMessage() {
@@ -156,35 +159,15 @@ public class RegistrationService {
         return Optional.empty();
     }
 
-    private ConcurrentHashMap<String, Long> store(RegistrationChannel channel) {
-        return channel == RegistrationChannel.CLI ? cliRateLimitMap : rateLimitMap;
-    }
-
     private RateLimitResult reserve(RegistrationChannel channel, String clientIp) {
-        return reserve(store(channel), channel.windowMs(), clientIp);
-    }
-
-    private void evictExpired(ConcurrentHashMap<String, Long> map, long windowMs) {
-        long now = System.currentTimeMillis();
-        map.entrySet().removeIf(entry -> (now - entry.getValue()) >= windowMs);
-    }
-
-    private RateLimitResult reserve(ConcurrentHashMap<String, Long> map, long windowMs, String clientIp) {
-        evictExpired(map, windowMs);
-        long now = System.currentTimeMillis();
-        long[] prior = { -1L };
-        map.compute(clientIp, (k, last) -> {
-            if (last != null && (now - last) < windowMs) {
-                prior[0] = last;
-                return last;
-            }
-            prior[0] = -1L;
-            return now;
-        });
-        if (prior[0] != -1L) {
-            return new RateLimitResult(true, (windowMs - (now - prior[0])) / 1000 / 60 + 1);
+        Bucket bucket = bucketPool.resolveBucket(
+            "registration:" + channel.name(), clientIp, REGISTRATION_CAPACITY, channel.window());
+        ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
+        if (probe.isConsumed()) {
+            return new RateLimitResult(false, 0);
         }
-        return new RateLimitResult(false, 0);
+        long remainingMinutes = Math.max(1, (probe.getNanosToWaitForRefill() + NANOS_PER_MINUTE - 1) / NANOS_PER_MINUTE);
+        return new RateLimitResult(true, remainingMinutes);
     }
 
     public String generateToken() {

@@ -3,6 +3,7 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.dto.response.LinkedAccountResponse;
 import gg.modl.backend.server.data.Server;
@@ -12,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -35,14 +35,8 @@ public class AccountLinkingService {
             return new ArrayList<>();
         }
 
-        Map<String, Object> data = player.getData();
-        if (data == null || !data.containsKey("linkedAccounts")) {
-            return new ArrayList<>();
-        }
-
-        @SuppressWarnings("unchecked")
-        List<String> linkedUuids = (List<String>) data.get("linkedAccounts");
-        if (linkedUuids == null || linkedUuids.isEmpty()) {
+        List<String> linkedUuids = player.data().linkedAccountUuids();
+        if (linkedUuids.isEmpty()) {
             return new ArrayList<>();
         }
 
@@ -81,22 +75,16 @@ public class AccountLinkingService {
         for (Punishment punishment : player.getPunishments()) {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType punishmentType = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
-                String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.getData());
-                if ("BAN".equals(category)) {
+                String category = statusCalculator.getEffectiveCategory(punishmentType, punishment.data());
+                if (EnforcementCategory.BAN.name().equals(category)) {
                     activeBans++;
-                } else if ("MUTE".equals(category)) {
+                } else if (EnforcementCategory.MUTE.name().equals(category)) {
                     activeMutes++;
                 }
             }
         }
 
-        Date lastLinkedUpdate = null;
-        if (player.getData() != null) {
-            Object lastUpdate = player.getData().get("lastLinkedUpdate");
-            if (lastUpdate instanceof Date date) {
-                lastLinkedUpdate = date;
-            }
-        }
+        Date lastLinkedUpdate = player.data().lastLinkedUpdate();
 
         return new LinkedAccountResponse(
             player.getMinecraftUuid().toString(),

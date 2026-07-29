@@ -1,0 +1,9 @@
+success: true
+data {
+  user_engagement {
+    monthly_active_servers: 8
+  }
+  resource_utilization {
+    storage: 2048
+  }
+}

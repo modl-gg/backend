@@ -1,6 +1,8 @@
 package gg.modl.backend.alert.controller;
 
 import gg.modl.backend.alert.service.SystemAlertService;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
@@ -22,6 +24,7 @@ public class PanelSystemAlertController {
     private final PermissionService permissionService;
 
     @GetMapping("/alerts")
+    @RequiresPanelPermission(rule = PanelAccessRule.PERMIT_ALL)
     public ResponseEntity<PanelSystemAlertsResponse> getAlerts(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         String email = RequestUtil.getSessionEmail(request);

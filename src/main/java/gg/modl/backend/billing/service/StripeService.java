@@ -15,6 +15,7 @@ import gg.modl.backend.billing.config.StripeConfiguration;
 import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
+import java.util.function.Function;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -117,20 +118,19 @@ public class StripeService {
     }
 
     public Date extractPeriodStart(Subscription subscription) {
-        if (subscription.getItems() != null && !subscription.getItems().getData().isEmpty()) {
-            SubscriptionItem item = subscription.getItems().getData().get(0);
-            if (item.getCurrentPeriodStart() != null) {
-                return new Date(item.getCurrentPeriodStart() * 1000);
-            }
-        }
-        return null;
+        return extractPeriod(subscription, SubscriptionItem::getCurrentPeriodStart);
     }
 
     public Date extractPeriodEnd(Subscription subscription) {
+        return extractPeriod(subscription, SubscriptionItem::getCurrentPeriodEnd);
+    }
+
+    private Date extractPeriod(Subscription subscription, Function<SubscriptionItem, Long> periodExtractor) {
         if (subscription.getItems() != null && !subscription.getItems().getData().isEmpty()) {
             SubscriptionItem item = subscription.getItems().getData().get(0);
-            if (item.getCurrentPeriodEnd() != null) {
-                return new Date(item.getCurrentPeriodEnd() * 1000);
+            Long period = periodExtractor.apply(item);
+            if (period != null) {
+                return new Date(period * 1000);
             }
         }
         return null;

@@ -3,16 +3,16 @@ package gg.modl.backend.alert.controller;
 import gg.modl.backend.alert.data.SystemAlert;
 import gg.modl.backend.alert.service.SystemAlertService;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.filter.AdminAuthFilter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.proto.modl.v1.AdminSystemAlertResponse;
 import gg.modl.proto.modl.v1.AdminSystemAlertsResponse;
 import gg.modl.proto.modl.v1.CreateSystemAlertRequest;
 import gg.modl.proto.modl.v1.UpdateSystemAlertRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,13 +33,16 @@ public class AdminSystemAlertController {
     }
 
     @PostMapping
-    public ResponseEntity<AdminSystemAlertResponse> createAlert(@RequestBody CreateSystemAlertRequest request) {
+    public ResponseEntity<AdminSystemAlertResponse> createAlert(
+        @RequestBody CreateSystemAlertRequest request,
+        HttpServletRequest httpRequest
+    ) {
         SystemAlert alert = alertService.createAlert(
             request.getMessage(),
             AlertProtoMapper.parseSeverity(request.getSeverity()),
             AlertProtoMapper.parseAudience(request.getAudience()),
             AlertProtoMapper.toExpiresAt(request.getExpiresAt()),
-            getAdminEmail()
+            getAdminEmail(httpRequest)
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(AlertProtoMapper.toAdminAlert(alert));
     }
@@ -47,7 +50,8 @@ public class AdminSystemAlertController {
     @PutMapping("/{id}")
     public ResponseEntity<AdminSystemAlertResponse> updateAlert(
         @PathVariable String id,
-        @RequestBody UpdateSystemAlertRequest request
+        @RequestBody UpdateSystemAlertRequest request,
+        HttpServletRequest httpRequest
     ) {
         SystemAlert alert = alertService.updateAlert(
             id,
@@ -56,16 +60,14 @@ public class AdminSystemAlertController {
             request.hasAudience() ? AlertProtoMapper.parseAudienceStrict(request.getAudience()) : null,
             request.hasExpiresAt(),
             request.hasExpiresAt() ? AlertProtoMapper.toExpiresAt(request.getExpiresAt()) : null,
-            getAdminEmail()
+            getAdminEmail(httpRequest)
         ).orElseThrow(() -> new ResourceNotFoundException("Alert not found"));
         return ResponseEntity.ok(AlertProtoMapper.toAdminAlert(alert));
     }
 
-    private String getAdminEmail() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
-            return "unknown";
-        }
-        return authentication.getName();
+    private String getAdminEmail(HttpServletRequest request) {
+        return AdminAuthFilter.actingEmail(request)
+            .filter(email -> !email.isBlank())
+            .orElse("unknown");
     }
 }

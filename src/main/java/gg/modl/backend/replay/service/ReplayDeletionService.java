@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.repository.TrainingSegmentRepository;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageKeyUtils;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -96,7 +97,7 @@ public class ReplayDeletionService {
         }
         List<String> replayKeys = new ArrayList<>();
         for (String key : keys) {
-            if (key != null && REPLAY_STORAGE_CATEGORY.equals(S3StorageService.categorizeFile(key))) {
+            if (key != null && REPLAY_STORAGE_CATEGORY.equals(StorageKeyUtils.categorizeFile(key))) {
                 replayKeys.add(key);
             }
         }

@@ -59,10 +59,6 @@ public final class MongoKeyUtils {
         }
     }
 
-    /**
-     * Resolve a field key to a human-readable label using the provided mapping.
-     * Falls back to formatting the key directly if no label mapping exists.
-     */
     public static String resolveFieldLabel(String key, Map<String, String> fieldLabels) {
         if (fieldLabels != null && fieldLabels.containsKey(key)) {
             return fieldLabels.get(key);
@@ -70,10 +66,6 @@ public final class MongoKeyUtils {
         return formatFieldKey(key);
     }
 
-    /**
-     * Format a raw field key (e.g. "myField_name") into a human-readable label
-     * (e.g. "My Field Name").
-     */
     public static String formatFieldKey(String key) {
         if (key == null || key.isBlank()) {
             return key;

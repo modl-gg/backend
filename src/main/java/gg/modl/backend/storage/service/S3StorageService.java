@@ -14,9 +14,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Delete;
@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -54,8 +55,8 @@ public class S3StorageService {
     private static final Duration PRESIGN_UPLOAD_DURATION = Duration.ofMinutes(15);
 
     public S3StorageService(
-        @org.springframework.lang.Nullable S3Client s3Client,
-        @org.springframework.lang.Nullable S3Presigner s3Presigner,
+        @Nullable S3Client s3Client,
+        @Nullable S3Presigner s3Presigner,
         S3Configuration s3Configuration
     ) {
         this.s3Client = s3Client;
@@ -131,7 +132,7 @@ public class S3StorageService {
             .stream()
             .map(obj -> new StorageFileResponse(
                 obj.key(),
-                extractFileName(obj.key()),
+                StorageKeyUtils.extractFileName(obj.key()),
                 obj.size(),
                 "application/octet-stream",
                 Date.from(obj.lastModified()),
@@ -164,10 +165,6 @@ public class S3StorageService {
         return s3Presigner.presignGetObject(presignRequest).url().toString();
     }
 
-    private String extractFileName(String key) {
-        return key.substring(key.lastIndexOf("/") + 1);
-    }
-
     public PresignUploadResponse createPresignedUploadUrl(
         Server server,
         String uploadType,
@@ -190,7 +187,7 @@ public class S3StorageService {
             throw new IllegalStateException("S3 storage is not configured");
         }
 
-        String key = buildKey(server, uploadType, fileName, entityId);
+        String key = StorageKeyUtils.buildKey(server, uploadType, fileName, entityId);
 
         PutObjectRequest putRequest = PutObjectRequest.builder()
             .bucket(s3Configuration.getBucketName())
@@ -218,60 +215,6 @@ public class S3StorageService {
             presignedRequest.httpRequest().method().name(),
             requiredHeaders
         );
-    }
-
-    private String buildKey(Server server, String uploadType, String fileName, String entityId) {
-        String safeUploadType = sanitizeSegment(uploadType, "other");
-        String safeFileName = sanitizeFileName(fileName);
-
-        if (entityId != null && !entityId.isBlank()) {
-            String safeEntityId = sanitizeSegment(entityId, UUID.randomUUID().toString());
-            String folder = "ticket".equals(safeUploadType) ? "tickets" : safeUploadType;
-            // Always randomize stored object names to prevent collisions/overwrite in shared entity folders.
-            String uniqueName = UUID.randomUUID() + "-" + safeFileName;
-            return String.format("%s/%s/%s/%s", server.getDatabaseName(), folder, safeEntityId, uniqueName);
-        }
-
-        String uuid = UUID.randomUUID().toString();
-        int dotIndex = safeFileName.lastIndexOf('.');
-        String extension = dotIndex >= 0 ? safeFileName.substring(dotIndex) : "";
-        return String.format("%s/%s/%s%s", server.getDatabaseName(), safeUploadType, uuid, extension);
-    }
-
-    private String sanitizeFileName(String fileName) {
-        if (fileName == null || fileName.isBlank()) {
-            return "upload.bin";
-        }
-
-        String basename = fileName.replace('\\', '/');
-        int slashIndex = basename.lastIndexOf('/');
-        if (slashIndex >= 0) {
-            basename = basename.substring(slashIndex + 1);
-        }
-
-        basename = basename.replaceAll("[^a-zA-Z0-9._-]", "_");
-        if (basename.isBlank()) {
-            return "upload.bin";
-        }
-        if (basename.length() > 128) {
-            return basename.substring(0, 128);
-        }
-        return basename;
-    }
-
-    private String sanitizeSegment(String value, String fallback) {
-        if (value == null || value.isBlank()) {
-            return fallback;
-        }
-
-        String sanitized = value.replaceAll("[^a-zA-Z0-9._-]", "_");
-        if (sanitized.isBlank()) {
-            return fallback;
-        }
-        if (sanitized.length() > 128) {
-            return sanitized.substring(0, 128);
-        }
-        return sanitized;
     }
 
     public boolean verifyUploadExists(String key) {
@@ -308,7 +251,7 @@ public class S3StorageService {
 
             HeadObjectResponse response = s3Client.headObject(headRequest);
             String url = getCdnUrl(key);
-            String fileName = extractFileName(key);
+            String fileName = StorageKeyUtils.extractFileName(key);
 
             return new UploadResponse(
                 key,
@@ -359,11 +302,6 @@ public class S3StorageService {
         return objects;
     }
 
-    public long calculateStorageUsed(Server server) {
-        return calculateStorageByType(server).values()
-            .stream().mapToLong(Long::longValue).sum();
-    }
-
     public Map<String, Long> calculateStorageByType(Server server) {
         Map<String, Long> byType = new HashMap<>();
         byType.put("ticket", 0L);
@@ -395,32 +333,13 @@ public class S3StorageService {
             response = s3Client.listObjectsV2(request);
             for (S3Object obj : response.contents()) {
                 String key = obj.key();
-                String type = categorizeFile(key);
+                String type = StorageKeyUtils.categorizeFile(key);
                 byType.merge(type, obj.size(), Long::sum);
             }
             continuationToken = response.nextContinuationToken();
         } while (response.isTruncated());
 
         return byType;
-    }
-
-    public static String categorizeFile(String key) {
-        if (key.contains("/evidence/")) {
-            return "evidence";
-        }
-        if (key.contains("/tickets/") || key.contains("/ticket/")) {
-            return "ticket";
-        }
-        if (key.contains("/logs/")) {
-            return "logs";
-        }
-        if (key.contains("/backup/")) {
-            return "backup";
-        }
-        if (key.contains("/replays/")) {
-            return "replay";
-        }
-        return "other";
     }
 
     private List<ObjectIdentifier> collectAllVersions(String key) {
@@ -503,22 +422,12 @@ public class S3StorageService {
         return totalDeleted;
     }
 
-    /**
-     * Upload a file directly to S3 (for small files like icons).
-     *
-     * @param server      The server for namespacing
-     * @param uploadType  The type of upload (e.g., "icons")
-     * @param fileName    The original file name
-     * @param contentType The MIME type
-     * @param data        The file bytes
-     * @return The CDN URL of the uploaded file
-     */
     public UploadFileResult uploadFile(Server server, String uploadType, String fileName, String contentType, byte[] data) {
         if (s3Client == null) {
             throw new IllegalStateException("S3 storage is not configured");
         }
 
-        String key = buildKey(server, uploadType, fileName, null);
+        String key = StorageKeyUtils.buildKey(server, uploadType, fileName, null);
 
         try {
             PutObjectRequest putRequest = PutObjectRequest.builder()
@@ -528,7 +437,7 @@ public class S3StorageService {
                 .contentLength((long) data.length)
                 .build();
 
-            s3Client.putObject(putRequest, software.amazon.awssdk.core.sync.RequestBody.fromBytes(data));
+            s3Client.putObject(putRequest, RequestBody.fromBytes(data));
 
             return new UploadFileResult(key, getCdnUrl(key));
         } catch (Exception e) {

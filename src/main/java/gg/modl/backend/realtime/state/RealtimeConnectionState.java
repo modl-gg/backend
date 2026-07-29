@@ -65,7 +65,7 @@ public class RealtimeConnectionState {
     }
 
     public RealtimeClientKind getClientKind() {
-        return principal.clientKind();
+        return principal != null ? principal.clientKind() : null;
     }
 
     @Nullable
@@ -76,15 +76,6 @@ public class RealtimeConnectionState {
     @Nullable
     public String getServerId() {
         return principal != null ? principal.serverId() : null;
-    }
-
-    @Nullable
-    public String getUserEmail() {
-        return principal != null ? principal.email() : null;
-    }
-
-    public int getProtocolVersion() {
-        return protocolVersion;
     }
 
     public Set<Topic> getSubscriptions() {
@@ -119,11 +110,6 @@ public class RealtimeConnectionState {
         lastHeartbeat = Instant.now();
     }
 
-    @Nullable
-    public String getLastAcknowledgedEventId() {
-        return lastAcknowledgedEventId;
-    }
-
     public void setLastAcknowledgedEventId(@Nullable String lastAcknowledgedEventId) {
         this.lastAcknowledgedEventId = lastAcknowledgedEventId;
     }
@@ -138,13 +124,5 @@ public class RealtimeConnectionState {
 
     public long recordDeliveryFailure() {
         return deliveryFailures.incrementAndGet();
-    }
-
-    public long getDeliveryAttempts() {
-        return deliveryAttempts.get();
-    }
-
-    public long getDeliveryFailures() {
-        return deliveryFailures.get();
     }
 }

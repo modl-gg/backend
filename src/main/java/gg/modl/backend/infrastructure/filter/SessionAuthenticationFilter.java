@@ -3,11 +3,9 @@ package gg.modl.backend.infrastructure.filter;
 import gg.modl.backend.auth.AuthConfiguration;
 import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
-import gg.modl.backend.infrastructure.rest.RESTMappingV1;
-import gg.modl.backend.infrastructure.rest.RESTMappingV2;
-import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.server.data.Server;
 import jakarta.servlet.FilterChain;
@@ -52,9 +50,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
             return true;
         }
 
-        if (path.startsWith(RESTMappingV1.PREFIX_MINECRAFT)
-            || path.startsWith(RESTMappingV2.PREFIX_MINECRAFT)
-            || path.startsWith(RESTMappingV3.PREFIX_MINECRAFT)) {
+        if (RouteGroups.isMinecraftApiPrefix(path)) {
             return true;
         }
 

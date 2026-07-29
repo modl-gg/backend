@@ -29,6 +29,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class RealtimeEventPublisher {
+    private static final String PUNISHMENT_KEY_INFIX = "::pun::";
+    private static final String STAFF_2FA_KEY_INFIX = "::2fa::";
+    private static final String KEY_FIELD_SEPARATOR = "::";
+
     private final RealtimeEventDispatcher dispatcher;
 
     public void invalidatePanel(Server server, PanelResource resource) {
@@ -113,11 +117,11 @@ public class RealtimeEventPublisher {
                                             List<SyncModifiedPunishment> modified) {
         if (pending.size() == 1 && modified.isEmpty()) {
             var punishment = pending.get(0).getPunishment();
-            return serverId + "::pun::" + punishment.getId() + "::" + punishment.getIssuedAt();
+            return serverId + PUNISHMENT_KEY_INFIX + punishment.getId() + KEY_FIELD_SEPARATOR + punishment.getIssuedAt();
         }
         if (modified.size() == 1 && pending.isEmpty()) {
             var punishment = modified.get(0).getPunishment();
-            return serverId + "::pun::" + punishment.getId() + "::" + punishment.getModificationsCount();
+            return serverId + PUNISHMENT_KEY_INFIX + punishment.getId() + KEY_FIELD_SEPARATOR + punishment.getModificationsCount();
         }
         return null;
     }
@@ -128,6 +132,6 @@ public class RealtimeEventPublisher {
         if (verifications.size() != 1 || discriminator == null) {
             return null;
         }
-        return serverId + "::2fa::" + verifications.get(0).getMinecraftUuid() + "::" + discriminator;
+        return serverId + STAFF_2FA_KEY_INFIX + verifications.get(0).getMinecraftUuid() + KEY_FIELD_SEPARATOR + discriminator;
     }
 }

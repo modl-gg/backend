@@ -1,11 +1,10 @@
 package gg.modl.backend.infrastructure.filter;
 
 import gg.modl.backend.auth.AuthConfiguration;
-import gg.modl.backend.infrastructure.config.ModlCorsProperties;
-import gg.modl.backend.infrastructure.config.ModlProperties;
 import gg.modl.backend.infrastructure.origin.OriginPolicy;
-import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.origin.OriginPolicyFactory;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RequestHeader;
 import gg.modl.backend.infrastructure.util.HostExtractionUtil;
@@ -28,8 +27,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class OriginCsrfFilter extends OncePerRequestFilter {
     private final AuthConfiguration authConfiguration;
-    private final ModlCorsProperties corsProperties;
-    private final ModlProperties modlProperties;
+    private final OriginPolicyFactory originPolicyFactory;
     private volatile OriginPolicy originPolicy = new OriginPolicy(Set.of(), Set.of(), false);
 
     @Override
@@ -40,10 +38,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
         }
 
         final String path = request.getRequestURI();
-        final boolean panelOrAdmin = path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
-                                     || path.equals(RESTMappingV1.PREFIX_PANEL)
-                                     || path.startsWith(RESTMappingV1.PREFIX_ADMIN + "/")
-                                     || path.equals(RESTMappingV1.PREFIX_ADMIN);
+        final boolean panelOrAdmin = RouteGroups.isPanelArea(path) || RouteGroups.isAdminArea(path);
 
         return !panelOrAdmin || !hasSessionCookie(request);
     }
@@ -94,11 +89,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
 
     @PostConstruct
     void initParsedOrigins() {
-        originPolicy = new OriginPolicy(
-            HostExtractionUtil.parseCommaSeparated(corsProperties.getSystemOrigins()),
-            Set.of(),
-            modlProperties.isDevelopmentMode()
-        );
+        originPolicy = originPolicyFactory.systemOriginsOnly();
     }
 
     private void reject(HttpServletResponse response) throws IOException {
@@ -144,8 +135,7 @@ public class OriginCsrfFilter extends OncePerRequestFilter {
     }
 
     private boolean isPanelPath(String path) {
-        return path != null && (path.startsWith(RESTMappingV1.PREFIX_PANEL + "/")
-                                || path.equals(RESTMappingV1.PREFIX_PANEL));
+        return RouteGroups.isPanelArea(path);
     }
 
     private String resolveRequestServerDomain(HttpServletRequest request) {

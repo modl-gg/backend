@@ -32,14 +32,13 @@ public class MinecraftNotificationV3Controller {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        MinecraftPlayerService.ServiceResponse response = minecraftPlayerService.acknowledgeNotifications(
+        minecraftPlayerService.acknowledgeNotifications(
             server,
             request.getPlayerUuid(),
             request.getNotificationIdsList(),
             request.getAcknowledgedAt().isEmpty() ? null : request.getAcknowledgedAt()
         );
 
-        return ResponseEntity.status(response.status())
-            .body(MinecraftPlayerProtoMapper.toSimpleResponse(response.body()));
+        return ResponseEntity.ok(MinecraftPlayerProtoMapper.toSimpleResponse(true));
     }
 }

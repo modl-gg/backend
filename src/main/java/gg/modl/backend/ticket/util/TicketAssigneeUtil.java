@@ -1,6 +1,6 @@
 package gg.modl.backend.ticket.util;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -18,12 +18,7 @@ public final class TicketAssigneeUtil {
             return List.of();
         }
 
-        String[] split = value.split(",");
-        List<String> items = new ArrayList<>(split.length);
-        for (String item : split) {
-            items.add(item);
-        }
-        return normalizeCollection(items);
+        return normalizeCollection(Arrays.asList(value.split(",")));
     }
 
     public static List<String> normalizeCollection(Collection<String> values) {

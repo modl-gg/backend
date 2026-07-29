@@ -1,0 +1,41 @@
+success: true
+data {
+  logs {
+    id: "log-1"
+    message: "CPU spike"
+    level: "warning"
+    source: "monitor"
+    timestamp {
+      seconds: 1700000000
+    }
+    category: "infra"
+    server_id: "srv-1"
+    metadata {
+      fields {
+        key: "cpu"
+        value {
+          number_value: 95.0
+        }
+      }
+    }
+    resolved: true
+    resolved_by: "admin"
+    resolved_at {
+      seconds: 1700000100
+    }
+  }
+  pagination {
+    page: 1
+    limit: 50
+    total: 1
+    pages: 1
+  }
+  filters {
+    level: "warning"
+    source: "monitor"
+    server_id: "srv-1"
+    category: "infra"
+    resolved: "true"
+    search: "cpu"
+  }
+}

@@ -74,10 +74,6 @@ public class TicketContentService {
         return content.toString().trim();
     }
 
-    public String buildFormDataContent(Map<String, Object> formData) {
-        return buildFormDataContent(formData, null);
-    }
-
     public String buildFormDataContent(Map<String, Object> formData, Map<String, String> fieldLabels) {
         if (formData == null || formData.isEmpty()) {
             return "";
@@ -186,20 +182,6 @@ public class TicketContentService {
             merged.addAll(inferredAttachments);
         }
         return dedupeAttachments(merged);
-    }
-
-    public Map<String, Object> sanitizeMapKeysForMongo(Map<String, Object> map) {
-        return MongoKeyUtils.sanitizeKeys(map);
-    }
-
-    public Map<String, Object> sanitizeFormDataForDataStore(Map<String, Object> formData) {
-        Map<String, Object> sanitized = MongoKeyUtils.sanitizeKeys(formData);
-        if (sanitized == null) {
-            return new LinkedHashMap<>();
-        }
-        sanitized.remove("creatorEmail");
-        sanitized.remove("creatorIdentifier");
-        return sanitized;
     }
 
     public String resolveCreatorEmail(SubmitTicketFormRequest request) {

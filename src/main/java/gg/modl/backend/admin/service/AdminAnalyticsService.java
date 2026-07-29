@@ -1,16 +1,28 @@
 package gg.modl.backend.admin.service;
 
+import gg.modl.backend.admin.dto.response.AdminAnalyticsActivity;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsDashboard;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsExport;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsHistorical;
+import gg.modl.backend.admin.dto.response.AdminAnalyticsUsage;
+import gg.modl.backend.admin.dto.response.AdminHistoricalPoint;
+import gg.modl.backend.admin.dto.response.AdminNameCount;
+import gg.modl.backend.admin.dto.response.AdminRegistrationPoint;
 import gg.modl.backend.analytics.data.MetricSnapshot;
 import gg.modl.backend.analytics.data.ServerInstanceSnapshot;
 import gg.modl.backend.database.mongo.repository.GlobalMongoAdminRepository;
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
-import gg.modl.backend.server.data.Server;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository.DateServersResult;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository.DateValueResult;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository.NameValueResult;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
+import gg.modl.backend.server.data.Server;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -19,28 +31,26 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateServersResult;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.DateValueResult;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository.NameValueResult;
 import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AdminAnalyticsService {
-    private final ServerMongoRepository serverRepository;
+    private final ServerMetricsRepository serverMetricsRepository;
+    private final ServerUsageRepository serverUsageRepository;
     private final MetricSnapshotMongoRepository metricSnapshotRepository;
     private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
     private final GlobalMongoAdminRepository globalMongoAdminRepository;
     private final AdminServerService adminServerService;
 
-    public Map<String, Object> getDashboard(String range) {
+    public AdminAnalyticsDashboard getDashboard(String range) {
         int days = DateRangeUtil.resolveRangeDays(range);
         Instant now = Instant.now();
         Date startDate = Date.from(now.minus(days, ChronoUnit.DAYS));
         Date previousStartDate = Date.from(now.minus(days * 2L, ChronoUnit.DAYS));
 
-        ServerMongoRepository.DashboardStats stats = serverRepository.aggregateDashboardStats(startDate, previousStartDate);
+        ServerMetricsRepository.DashboardStats stats = serverMetricsRepository.aggregateDashboardStats(startDate, previousStartDate);
 
         long totalServers = stats.totalServers();
         int refreshLimit = totalServers <= 200 ? (int) Math.max(totalServers, 1) : 50;
@@ -56,10 +66,10 @@ public class AdminAnalyticsService {
                                   ? ((currentPeriodServers - previousPeriodServers) / (double) previousPeriodServers) * 100
                                   : (currentPeriodServers > 0 ? 100 : 0);
 
-        List<NameValueResult> planResults = serverRepository.aggregatePlanCounts();
-        List<NameValueResult> statusResults = serverRepository.aggregateProvisioningStatusCounts();
-        List<DateServersResult> registrationTrend = serverRepository.findRegistrationTrend(startDate);
-        List<Server> topServers = serverRepository.findTopCompletedVerifiedByUserCount(10);
+        List<NameValueResult> planResults = serverMetricsRepository.aggregatePlanCounts();
+        List<NameValueResult> statusResults = serverMetricsRepository.aggregateProvisioningStatusCounts();
+        List<DateServersResult> registrationTrend = serverMetricsRepository.findRegistrationTrend(startDate);
+        List<Server> topServers = serverMetricsRepository.findTopCompletedVerifiedByUserCount(10);
 
         long serversWithData = stats.serversWithData();
         double avgPlayersPerServer = serversWithData > 0 ? (double) totalUsers / serversWithData : 0;
@@ -69,10 +79,9 @@ public class AdminAnalyticsService {
         Date last24h = Date.from(now.minus(24, ChronoUnit.HOURS));
 
         List<MetricSnapshot> metricSnapshots = metricSnapshotRepository.findSinceOrdered(last24h);
-        List<Map<String, Object>> serverActivity = metricSnapshots.stream().map(s -> Map.<String, Object>of(
-            "date", s.getDate().toInstant().toString(),
-            "activeServers", s.getActiveServers()
-        )).toList();
+        List<AdminAnalyticsDashboard.ServerActivityPoint> serverActivity = metricSnapshots.stream()
+            .map(s -> new AdminAnalyticsDashboard.ServerActivityPoint(s.getDate().toInstant().toString(), s.getActiveServers()))
+            .toList();
 
         List<ServerInstanceSnapshot> instanceSnapshots = serverInstanceSnapshotRepository.findSinceOrdered(last24h);
 
@@ -81,24 +90,23 @@ public class AdminAnalyticsService {
             ? instanceSnapshots.getLast()
             : null;
 
-        List<Map<String, Object>> liveServers;
+        List<AdminAnalyticsDashboard.LiveServer> liveServers;
         if (latestSnapshot != null && latestSnapshot.getServers() != null && !latestSnapshot.getServers().isEmpty()) {
             List<String> serverIds = latestSnapshot.getServers().stream()
                 .map(ServerInstanceSnapshot.ServerEntry::getServerId)
                 .collect(Collectors.toList());
-            Map<String, String> serverNameMap = serverRepository.findUsageTargetsByIds(serverIds).stream()
+            Map<String, String> serverNameMap = serverUsageRepository.findUsageTargetsByIds(serverIds).stream()
                 .collect(Collectors.toMap(Server::getId, Server::getServerName, (a, b) -> a));
 
-            liveServers = latestSnapshot.getServers().stream().map(srv -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("serverId", srv.getServerId());
-                map.put("serverName", serverNameMap.getOrDefault(srv.getServerId(), srv.getServerName()));
-                map.put("playerCount", srv.getPlayerCount());
-                map.put("platform", srv.getPlatform());
-                map.put("version", srv.getVersion());
-                map.put("pluginVersion", srv.getPluginVersion());
-                return map;
-            }).toList();
+            liveServers = latestSnapshot.getServers().stream()
+                .map(srv -> new AdminAnalyticsDashboard.LiveServer(
+                    srv.getServerId(),
+                    serverNameMap.getOrDefault(srv.getServerId(), srv.getServerName()),
+                    srv.getPlayerCount(),
+                    srv.getPlatform(),
+                    srv.getVersion(),
+                    srv.getPluginVersion()))
+                .toList();
         } else {
             liveServers = List.of();
         }
@@ -107,40 +115,33 @@ public class AdminAnalyticsService {
             ? sumPlayerCount(latestSnapshot)
             : 0;
 
-        List<Map<String, Object>> playerActivity = instanceSnapshots.stream().map(s -> Map.<String, Object>of(
-            "date", s.getDate().toInstant().toString(),
-            "players", sumPlayerCount(s)
-        )).toList();
+        List<AdminAnalyticsDashboard.PlayerActivityPoint> playerActivity = instanceSnapshots.stream()
+            .map(s -> new AdminAnalyticsDashboard.PlayerActivityPoint(s.getDate().toInstant().toString(), sumPlayerCount(s)))
+            .toList();
 
-        Map<String, Object> usageStatistics = new HashMap<>();
-        usageStatistics.put("topServersByUsers", topServers);
-        usageStatistics.put("serverActivity", serverActivity);
-        usageStatistics.put("liveServers", liveServers);
-        usageStatistics.put("totalPlayerCount", totalPlayerCount);
-        usageStatistics.put("playerActivity", playerActivity);
+        AdminAnalyticsDashboard.Overview overview = new AdminAnalyticsDashboard.Overview(
+            totalServers,
+            activeServers,
+            totalUsers,
+            totalTickets,
+            String.format("%.2f", serverGrowthRate),
+            "0.00",
+            String.format("%.1f", avgPlayersPerServer),
+            String.format("%.1f", avgTicketsPerServer));
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("data", Map.of(
-            "overview", Map.of(
-                "totalServers", totalServers,
-                "activeServers", activeServers,
-                "totalUsers", totalUsers,
-                "totalTickets", totalTickets,
-                "serverGrowthRate", String.format("%.2f", serverGrowthRate),
-                "userGrowthRate", "0.00",
-                "avgPlayersPerServer", String.format("%.1f", avgPlayersPerServer),
-                "avgTicketsPerServer", String.format("%.1f", avgTicketsPerServer)
-            ),
-            "serverMetrics", Map.of(
-                "byPlan", planResults,
-                "byStatus", statusResults,
-                "registrationTrend", registrationTrend
-            ),
-            "usageStatistics", usageStatistics,
-            "systemHealth", Map.of("errorRates", Collections.emptyList())
-        ));
-        return response;
+        AdminAnalyticsDashboard.ServerMetrics serverMetrics = new AdminAnalyticsDashboard.ServerMetrics(
+            toNameCounts(planResults),
+            toNameCounts(statusResults),
+            toRegistrationPoints(registrationTrend));
+
+        AdminAnalyticsDashboard.UsageStatistics usageStatistics = new AdminAnalyticsDashboard.UsageStatistics(
+            topServers,
+            serverActivity,
+            liveServers,
+            totalPlayerCount,
+            playerActivity);
+
+        return new AdminAnalyticsDashboard(overview, serverMetrics, usageStatistics);
     }
 
     private int sumPlayerCount(ServerInstanceSnapshot snapshot) {
@@ -149,15 +150,15 @@ public class AdminAnalyticsService {
             : 0;
     }
 
-    public Map<String, Object> getActivity(String range) {
+    public AdminAnalyticsActivity getActivity(String range) {
         int days = DateRangeUtil.resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
 
         List<MetricSnapshot> snapshots = metricSnapshotRepository.findSinceOrdered(startDate);
         List<ServerInstanceSnapshot> instanceSnapshots = serverInstanceSnapshotRepository.findSinceOrdered(startDate);
 
-        long totalServers = serverRepository.countAll();
-        long totalPlayers = serverRepository.getUsageTotals().totalUsers();
+        long totalServers = serverMetricsRepository.countAll();
+        long totalPlayers = serverMetricsRepository.getUsageTotals().totalUsers();
 
         Map<String, Integer> playersByBucket = new HashMap<>();
         for (ServerInstanceSnapshot inst : instanceSnapshots) {
@@ -166,88 +167,64 @@ public class AdminAnalyticsService {
             playersByBucket.merge(bucketKey, players, Math::max);
         }
 
-        List<Map<String, Object>> activityData = snapshots.stream().map(s -> {
+        List<AdminAnalyticsActivity.ActivityPoint> activityData = snapshots.stream().map(s -> {
             String dateKey = s.getDate().toInstant().toString();
             int onlinePlayers = playersByBucket.getOrDefault(dateKey, 0);
-            return Map.<String, Object>of(
-                "date", dateKey,
-                "activeServers", s.getActiveServers(),
-                "onlinePlayers", onlinePlayers
-            );
+            return new AdminAnalyticsActivity.ActivityPoint(dateKey, s.getActiveServers(), onlinePlayers);
         }).toList();
 
-        return Map.of("success", true, "data", activityData,
-            "totalPlayers", totalPlayers, "totalServers", totalServers);
+        return new AdminAnalyticsActivity(totalPlayers, totalServers, activityData);
     }
 
-    public Map<String, Object> getUsage() {
+    public AdminAnalyticsUsage getUsage() {
         Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
 
-        long activeServers = serverRepository.countActiveSince(thirtyDaysAgo);
+        long activeServers = serverMetricsRepository.countActiveSince(thirtyDaysAgo);
         long storageSize = globalMongoAdminRepository.getStorageSize();
 
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "userEngagement", Map.of("monthlyActiveServers", activeServers),
-                "resourceUtilization", Map.of(
-                    "storage", storageSize,
-                    "storagePercent", 0.0,
-                    "apiCalls", 0,
-                    "databaseQueries", 0
-                )
-            )
-        );
+        return new AdminAnalyticsUsage(activeServers, storageSize, 0.0, 0L, 0L);
     }
 
-    public Map<String, Object> getHistorical(String metric, String range) {
+    public AdminAnalyticsHistorical getHistorical(String metric, String range) {
         if (metric == null || (!metric.equals("servers") && !metric.equals("users") && !metric.equals("tickets"))) {
-            return Map.of("success", false, "error", "Invalid metric type");
+            throw new ValidationException("Invalid metric type");
         }
 
         int days = DateRangeUtil.resolveRangeDays(range);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
-        List<DateValueResult> results = serverRepository.aggregateHistoricalMetric(metric, startDate);
+        List<DateValueResult> results = serverMetricsRepository.aggregateHistoricalMetric(metric, startDate);
 
-        return Map.of(
-            "success", true,
-            "data", Map.of(
-                "metric", metric,
-                "range", range != null && !range.isBlank() ? range : "30d",
-                "data", results
-            )
-        );
+        return new AdminAnalyticsHistorical(
+            metric,
+            range != null && !range.isBlank() ? range : "30d",
+            results.stream().map(r -> new AdminHistoricalPoint(r.date(), r.value())).toList());
     }
 
-    public Object exportAnalytics(String type, String range) {
-        String normalizedType = type != null ? type : "json";
+    public String exportCsv(String range) {
         String normalizedRange = range != null && !range.isBlank() ? range : "30d";
-
         int days = DateRangeUtil.resolveRangeDays(normalizedRange);
         Date startDate = Date.from(Instant.now().minus(days, ChronoUnit.DAYS));
+        return buildCsv(startDate);
+    }
 
-        if ("csv".equals(normalizedType)) {
-            return buildCsv(startDate);
-        }
+    public AdminAnalyticsExport exportJson(String range) {
+        String normalizedRange = range != null && !range.isBlank() ? range : "30d";
 
-        long totalServers = serverRepository.countAll();
-        ServerMongoRepository.UsageTotals totals = serverRepository.getUsageTotals();
+        long totalServers = serverMetricsRepository.countAll();
+        ServerMetricsRepository.UsageTotals totals = serverMetricsRepository.getUsageTotals();
 
-        return Map.of(
-            "exportDate", new Date().toString(),
-            "range", normalizedRange,
-            "data", Map.of(
-                "servers", totalServers,
-                "users", totals.totalUsers(),
-                "tickets", totals.totalTickets()
-            )
-        );
+        return new AdminAnalyticsExport(
+            new Date().toString(),
+            normalizedRange,
+            totalServers,
+            totals.totalUsers(),
+            totals.totalTickets());
     }
 
     private String buildCsv(Date startDate) {
-        List<DateValueResult> servers = serverRepository.aggregateHistoricalMetric("servers", startDate);
-        List<DateValueResult> users = serverRepository.aggregateHistoricalMetric("users", startDate);
-        List<DateValueResult> tickets = serverRepository.aggregateHistoricalMetric("tickets", startDate);
+        List<DateValueResult> servers = serverMetricsRepository.aggregateHistoricalMetric("servers", startDate);
+        List<DateValueResult> users = serverMetricsRepository.aggregateHistoricalMetric("users", startDate);
+        List<DateValueResult> tickets = serverMetricsRepository.aggregateHistoricalMetric("tickets", startDate);
 
         TreeMap<String, long[]> byDate = new TreeMap<>();
         for (DateValueResult r : servers) {
@@ -269,5 +246,13 @@ public class AdminAnalyticsService {
                 .append(v[2]).append("\n");
         }
         return sb.toString();
+    }
+
+    private static List<AdminNameCount> toNameCounts(List<NameValueResult> results) {
+        return results.stream().map(r -> new AdminNameCount(r.name(), r.value())).toList();
+    }
+
+    private static List<AdminRegistrationPoint> toRegistrationPoints(List<DateServersResult> results) {
+        return results.stream().map(r -> new AdminRegistrationPoint(r.date(), r.servers())).toList();
     }
 }

@@ -1,0 +1,13 @@
+success: true
+data {
+  metric: "servers"
+  range: "30d"
+  data {
+    date: "2026-07-01"
+    value: 3
+  }
+  data {
+    date: "2026-07-02"
+    value: 6
+  }
+}

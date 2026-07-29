@@ -1,5 +1,6 @@
 package gg.modl.backend.storage.controller;
 
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.replay.service.ReplayDeletionService;
@@ -7,6 +8,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageKeyUtils;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.UploadOrchestrationService;
 import gg.modl.proto.modl.v1.ConfirmUploadRequest;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_MEDIA)
+@RequiresPanelPermission(view = "admin.settings.view.content", modify = "admin.settings.modify.content")
 @RequiredArgsConstructor
 public class PanelMediaController {
     private final S3StorageService s3StorageService;
@@ -56,7 +59,7 @@ public class PanelMediaController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+        String normalizedKey = StorageKeyUtils.stripLeadingSlash(key);
         validationService.assertKeyOwnedByServer(server, normalizedKey);
 
         boolean deleted = s3StorageService.deleteFile(normalizedKey);

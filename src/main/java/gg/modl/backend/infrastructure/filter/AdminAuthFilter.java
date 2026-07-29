@@ -2,6 +2,7 @@ package gg.modl.backend.infrastructure.filter;
 
 import gg.modl.backend.admin.service.AdminAuthService;
 import gg.modl.backend.infrastructure.rest.RESTSecurityRole;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,13 +23,21 @@ public class AdminAuthFilter extends OncePerRequestFilter {
     private final AdminAuthService adminAuthService;
     public static final String ADMIN_SESSION_ATTR = "adminSession";
 
+    public static Optional<String> actingEmail(HttpServletRequest request) {
+        Object attribute = request.getAttribute(ADMIN_SESSION_ATTR);
+        if (attribute instanceof AdminAuthService.AdminSession session) {
+            return Optional.ofNullable(session.email());
+        }
+        return Optional.empty();
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
         throws ServletException, IOException {
 
         String path = request.getRequestURI();
 
-        if (path.startsWith("/v1/admin/") && !path.startsWith("/v1/admin/auth/")) {
+        if (RouteGroups.isAdminChild(path) && !RouteGroups.isAdminAuthChild(path)) {
             Optional<AdminAuthService.AdminSession> sessionOpt = adminAuthService.getAuthenticatedSession(request);
             if (sessionOpt.isEmpty()) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);

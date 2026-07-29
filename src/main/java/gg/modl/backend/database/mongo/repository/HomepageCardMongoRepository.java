@@ -10,9 +10,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -112,15 +110,6 @@ public class HomepageCardMongoRepository extends AbstractServerMongoRepository<H
     }
 
     public void reorderCards(Server server, List<String> ids) {
-        if (ids.isEmpty()) return;
-
-        MongoTemplate template = serverTemplate(server);
-        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
-        for (int index = 0; index < ids.size(); index++) {
-            Query query = Query.query(Criteria.where(HomepageCardFields.ID).is(ids.get(index)));
-            Update update = new Update().set(HomepageCardFields.ORDINAL, index);
-            bulk.updateOne(query, update);
-        }
-        bulk.execute();
+        bulkUpdateByIds(server, ids, (id, index) -> new Update().set(HomepageCardFields.ORDINAL, index));
     }
 }

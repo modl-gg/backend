@@ -1,5 +1,6 @@
 package gg.modl.backend.database.mongo.repository;
 
+import gg.modl.backend.database.mongo.MongoAggregationResults;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import lombok.RequiredArgsConstructor;
 import org.bson.Document;
@@ -16,7 +17,6 @@ public class GlobalMongoAdminRepository {
 
     public long getStorageSize() {
         Document dbStats = tenantMongoAccess.global().getDb().runCommand(new Document("dbStats", 1));
-        Object value = dbStats.get("storageSize");
-        return value instanceof Number number ? number.longValue() : 0L;
+        return MongoAggregationResults.extractLong(dbStats, "storageSize");
     }
 }

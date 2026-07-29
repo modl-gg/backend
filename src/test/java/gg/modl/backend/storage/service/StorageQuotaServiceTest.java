@@ -10,7 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.billing.service.UsageTrackingService;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.limits.DefaultServerLimitPolicy;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -26,7 +26,7 @@ class StorageQuotaServiceTest {
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
             usageTrackingService,
-            mock(ServerMongoRepository.class),
+            new StorageUsageAccountant(mock(ServerUsageRepository.class)),
             storageSyncService,
             new DefaultServerLimitPolicy()
         );
@@ -44,7 +44,7 @@ class StorageQuotaServiceTest {
         StorageQuotaService service = new StorageQuotaService(
             mock(StorageMetadataService.class),
             mock(UsageTrackingService.class),
-            mock(ServerMongoRepository.class),
+            new StorageUsageAccountant(mock(ServerUsageRepository.class)),
             mock(StorageSyncService.class),
             new DefaultServerLimitPolicy()
         );
@@ -60,7 +60,7 @@ class StorageQuotaServiceTest {
         StorageQuotaService service = new StorageQuotaService(
             mock(StorageMetadataService.class),
             mock(UsageTrackingService.class),
-            mock(ServerMongoRepository.class),
+            new StorageUsageAccountant(mock(ServerUsageRepository.class)),
             storageSyncService,
             new DefaultServerLimitPolicy()
         );
@@ -74,11 +74,11 @@ class StorageQuotaServiceTest {
     void confirmAndRecordFileReservesQuotaBeforeRecordingMetadata() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        ServerUsageRepository serverRepository = mock(ServerUsageRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
             usageTrackingService,
-            serverRepository,
+            new StorageUsageAccountant(serverRepository),
             mock(StorageSyncService.class),
             new DefaultServerLimitPolicy()
         );
@@ -99,11 +99,11 @@ class StorageQuotaServiceTest {
     void confirmAndRecordFileRejectsWhenAtomicReservationFails() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        ServerUsageRepository serverRepository = mock(ServerUsageRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
             usageTrackingService,
-            serverRepository,
+            new StorageUsageAccountant(serverRepository),
             mock(StorageSyncService.class),
             new DefaultServerLimitPolicy()
         );
@@ -121,11 +121,11 @@ class StorageQuotaServiceTest {
     void confirmAndRecordFileRollsBackReservationWhenMetadataAlreadyExistsAfterRace() {
         StorageMetadataService metadataService = mock(StorageMetadataService.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        ServerUsageRepository serverRepository = mock(ServerUsageRepository.class);
         StorageQuotaService service = new StorageQuotaService(
             metadataService,
             usageTrackingService,
-            serverRepository,
+            new StorageUsageAccountant(serverRepository),
             mock(StorageSyncService.class),
             new DefaultServerLimitPolicy()
         );

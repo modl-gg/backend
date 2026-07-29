@@ -1,0 +1,7 @@
+export_date: "Fri Jul 11 00:00:00 UTC 2026"
+range: "30d"
+data {
+  servers: 10
+  users: 500
+  tickets: 42
+}

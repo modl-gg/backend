@@ -4,8 +4,10 @@ import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import gg.modl.backend.server.ServerField;
 import java.util.Date;
-import lombok.Data;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.ToString;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.springframework.data.annotation.Id;
@@ -15,7 +17,9 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import org.springframework.data.mongodb.core.mapping.FieldType;
 
 @Document(collection = CollectionName.MODL_SERVERS)
-@Data
+@Getter
+@Setter
+@ToString
 @RequiredArgsConstructor
 @GenerateMongoFields
 public class Server implements ServerBillingUpdate {
@@ -44,6 +48,7 @@ public class Server implements ServerBillingUpdate {
     private Boolean emailVerified;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "emailVerificationToken", targetType = FieldType.STRING)
     private String emailVerificationToken;
 
@@ -64,6 +69,7 @@ public class Server implements ServerBillingUpdate {
     private String provisioningNotes;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "provisioningSignInToken", targetType = FieldType.STRING)
     private String provisioningSignInToken;
 
@@ -88,20 +94,22 @@ public class Server implements ServerBillingUpdate {
     private Date currentPeriodEnd;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "stripeCustomerId", targetType = FieldType.STRING)
     private String stripeCustomerId;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "stripeSubscriptionId", targetType = FieldType.STRING)
     private String stripeSubscriptionId;
 
     @Nullable
     @Field(name = "aiRequestsCurrentPeriod", targetType = FieldType.INT64)
-    private Long aiRequestsCurrentPeriod; // AI requests used in current billing period
+    private Long aiRequestsCurrentPeriod;
 
     @Nullable
     @Field(name = "usageBillingEnabled", targetType = FieldType.BOOLEAN)
-    private Boolean usageBillingEnabled; // Whether to charge for overages
+    private Boolean usageBillingEnabled;
 
     @Nullable
     @Field(name = "usageBillingUpdatedAt", targetType = FieldType.DATE_TIME)
@@ -121,7 +129,7 @@ public class Server implements ServerBillingUpdate {
 
     @Nullable
     @Field(name = "migrationFileSizeLimit", targetType = FieldType.INT64)
-    private Long migrationFileSizeLimit; // Custom migration file size limit in bytes
+    private Long migrationFileSizeLimit;
 
     @Nullable
     @Field(name = ServerField.CUSTOM_DOMAIN, targetType = FieldType.STRING)
@@ -160,10 +168,12 @@ public class Server implements ServerBillingUpdate {
     private String betaTesterCreatedBy;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "cliSetupToken", targetType = FieldType.STRING)
     private String cliSetupToken;
 
     @Nullable
+    @ToString.Exclude
     @Field(name = "apiKey", targetType = FieldType.STRING)
     private String apiKey;
 
@@ -202,4 +212,13 @@ public class Server implements ServerBillingUpdate {
     @Nullable
     @Field(name = "punishmentTypesUpdatedAt", targetType = FieldType.DATE_TIME)
     private Date punishmentTypesUpdatedAt;
+
+    private static final int MAX_PROVISIONING_NOTES_LENGTH = 500;
+
+    @Nullable
+    public static String boundProvisioningNotes(@Nullable String notes) {
+        return notes != null && notes.length() > MAX_PROVISIONING_NOTES_LENGTH
+               ? notes.substring(0, MAX_PROVISIONING_NOTES_LENGTH)
+               : notes;
+    }
 }

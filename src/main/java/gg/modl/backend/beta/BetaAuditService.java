@@ -16,12 +16,13 @@ public class BetaAuditService {
     private final BetaAuditMongoRepository auditRepository;
 
     public void record(BetaAuditAction action, String serverId, String adminEmail, String details) {
-        BetaAudit audit = new BetaAudit();
-        audit.setAction(action.name());
-        audit.setServerId(serverId);
-        audit.setAdminEmail(adminEmail);
-        audit.setTimestamp(new Date());
-        audit.setDetails(details);
+        BetaAudit audit = BetaAudit.builder()
+            .action(action.name())
+            .serverId(serverId)
+            .adminEmail(adminEmail)
+            .timestamp(new Date())
+            .details(details)
+            .build();
         auditRepository.saveEntity(audit);
     }
 

@@ -1,0 +1,31 @@
+success: true
+data {
+  status: "degraded"
+  checks {
+    name: "Database Connectivity"
+    status: "healthy"
+    message: "MongoDB connection is responsive."
+    response_time: 12
+  }
+  checks {
+    name: "Database Connectivity"
+    status: "critical"
+    message: "Failed to ping MongoDB."
+    error: "timeout"
+  }
+  checks {
+    name: "Critical System Logs"
+    status: "degraded"
+    message: "2 unresolved critical log(s) in the last 24 hours."
+    count: 2
+  }
+  checks {
+    name: "Server Provisioning"
+    status: "healthy"
+    message: "0 server(s) failed to provision."
+    count: 0
+  }
+  timestamp {
+    seconds: 1700000000
+  }
+}

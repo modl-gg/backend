@@ -1,21 +1,31 @@
 package gg.modl.backend.player.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.emptyToNull;
+
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.dto.response.LinkedAccountResponse;
 import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentResponse;
 import gg.modl.backend.player.dto.response.PunishmentSearchResult;
 import gg.modl.backend.player.service.AccountLinkingService;
+import gg.modl.backend.player.dto.response.LinkedBanView;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
 import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.player.service.PunishmentQueryService;
-import gg.modl.backend.replay.service.ReplayService;
+import gg.modl.backend.replay.service.PlayerReplayListingService;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import gg.modl.proto.modl.v1.ActivePunishmentsResponse;
+import gg.modl.proto.modl.v1.AddPlayerIpRequest;
+import gg.modl.proto.modl.v1.AddPlayerUsernameRequest;
+import gg.modl.proto.modl.v1.CreatePlayerNoteRequest;
+import gg.modl.proto.modl.v1.CreatePlayerRequest;
+import gg.modl.proto.modl.v1.ModifyPunishmentTicketsRequest;
 import gg.modl.proto.modl.v1.PanelAddEvidenceRequest;
 import gg.modl.proto.modl.v1.PanelAddModificationRequest;
 import gg.modl.proto.modl.v1.PanelAddPunishmentNoteRequest;
@@ -26,12 +36,12 @@ import gg.modl.proto.modl.v1.PanelLinkedBansResponse;
 import gg.modl.proto.modl.v1.PlayerDetailResponse;
 import gg.modl.proto.modl.v1.PlayerReplaysResponse;
 import gg.modl.proto.modl.v1.PlayerSearchResultsResponse;
+import gg.modl.proto.modl.v1.PunishmentPreviewResponse;
 import gg.modl.proto.modl.v1.SimpleResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -47,6 +57,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_PLAYERS)
+@RequiresPanelPermission(rule = PanelAccessRule.PLAYER_ACCESS)
 @RequiredArgsConstructor
 @Validated
 public class PanelPlayerController {
@@ -58,7 +69,7 @@ public class PanelPlayerController {
     private final PunishmentEvidenceService punishmentEvidenceService;
     private final PunishmentMutationService punishmentMutationService;
     private final AccountLinkingService accountLinkingService;
-    private final ReplayService replayService;
+    private final PlayerReplayListingService playerReplayListingService;
 
     @GetMapping
     public ResponseEntity<PlayerSearchResultsResponse> searchPlayers(
@@ -82,7 +93,7 @@ public class PanelPlayerController {
 
     @PostMapping
     public ResponseEntity<SimpleResponse> createPlayer(
-        @RequestBody gg.modl.proto.modl.v1.CreatePlayerRequest createRequest,
+        @RequestBody CreatePlayerRequest createRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -98,7 +109,7 @@ public class PanelPlayerController {
     @PostMapping("/{uuid}/usernames")
     public ResponseEntity<SimpleResponse> addUsername(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-        @RequestBody gg.modl.proto.modl.v1.AddPlayerUsernameRequest addRequest,
+        @RequestBody AddPlayerUsernameRequest addRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -109,7 +120,7 @@ public class PanelPlayerController {
     @PostMapping("/{uuid}/notes")
     public ResponseEntity<SimpleResponse> addNote(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-        @RequestBody gg.modl.proto.modl.v1.CreatePlayerNoteRequest addRequest,
+        @RequestBody CreatePlayerNoteRequest addRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -117,8 +128,8 @@ public class PanelPlayerController {
             server,
             UUID.fromString(uuid),
             addRequest.getText(),
-            PanelPlayerProtoMapper.emptyToNull(addRequest.getIssuerName()),
-            PanelPlayerProtoMapper.emptyToNull(addRequest.getIssuerId())
+            emptyToNull(addRequest.getIssuerName()),
+            emptyToNull(addRequest.getIssuerId())
         );
         return ResponseEntity.ok(SUCCESS);
     }
@@ -126,7 +137,7 @@ public class PanelPlayerController {
     @PostMapping("/{uuid}/ips")
     public ResponseEntity<SimpleResponse> addIp(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
-        @RequestBody gg.modl.proto.modl.v1.AddPlayerIpRequest addRequest,
+        @RequestBody AddPlayerIpRequest addRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -135,6 +146,7 @@ public class PanelPlayerController {
     }
 
     @PostMapping("/{uuid}/punishments")
+    @RequiresPanelPermission(rule = PanelAccessRule.PERMIT_ALL)
     public ResponseEntity<SimpleResponse> createPunishment(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestBody PanelCreatePunishmentRequest createRequest,
@@ -184,7 +196,7 @@ public class PanelPlayerController {
     }
 
     @GetMapping("/{uuid}/punishments/preview")
-    public ResponseEntity<gg.modl.proto.modl.v1.PunishmentPreviewResponse> previewPunishment(
+    public ResponseEntity<PunishmentPreviewResponse> previewPunishment(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @RequestParam int typeOrdinal,
         HttpServletRequest request
@@ -227,8 +239,8 @@ public class PanelPlayerController {
             UUID.fromString(uuid),
             punishmentId,
             noteRequest.getText(),
-            PanelPlayerProtoMapper.emptyToNull(noteRequest.getIssuerName()),
-            PanelPlayerProtoMapper.emptyToNull(noteRequest.getIssuerId())
+            emptyToNull(noteRequest.getIssuerName()),
+            emptyToNull(noteRequest.getIssuerId())
         );
         return ResponseEntity.ok(SUCCESS);
     }
@@ -254,7 +266,7 @@ public class PanelPlayerController {
     public ResponseEntity<SimpleResponse> modifyPunishmentTickets(
         @PathVariable @Pattern(regexp = RegExpConstants.UUID) String uuid,
         @PathVariable String punishmentId,
-        @RequestBody gg.modl.proto.modl.v1.ModifyPunishmentTicketsRequest ticketRequest,
+        @RequestBody ModifyPunishmentTicketsRequest ticketRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
@@ -288,7 +300,7 @@ public class PanelPlayerController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
         return ResponseEntity.ok(PanelPlayerProtoMapper.toPlayerReplays(
-            replayService.listPlayerReplays(server, uuid)));
+            playerReplayListingService.listPlayerReplays(server, uuid)));
     }
 
     @GetMapping("/punishments/{punishmentId}/linked-bans")
@@ -297,7 +309,7 @@ public class PanelPlayerController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Map<String, Object>> linkedBans = punishmentQueryService.getLinkedBansForParent(server, punishmentId);
+        List<LinkedBanView> linkedBans = punishmentQueryService.getLinkedBansForParent(server, punishmentId);
         return ResponseEntity.ok(PanelPlayerProtoMapper.toLinkedBans(linkedBans));
     }
 

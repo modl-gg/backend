@@ -15,14 +15,14 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class StripeWebhookEventMongoRepository extends AbstractGlobalMongoRepository<StripeWebhookEvent> {
-    public StripeWebhookEventMongoRepository(TenantMongoAccess tenantMongoAccess) {
-        super(StripeWebhookEvent.class, CollectionName.STRIPE_WEBHOOK_EVENTS, tenantMongoAccess);
-    }
-
     private static final long PROCESSING_STALE_MS = 15L * 60L * 1000L;
     private static final String STATUS_PROCESSING = "processing";
     private static final String STATUS_PROCESSED = "processed";
     private static final String STATUS_FAILED = "failed";
+
+    public StripeWebhookEventMongoRepository(TenantMongoAccess tenantMongoAccess) {
+        super(StripeWebhookEvent.class, CollectionName.STRIPE_WEBHOOK_EVENTS, tenantMongoAccess);
+    }
 
     public boolean markProcessing(String eventId, String eventType, Date processingAt) {
         try {

@@ -13,7 +13,7 @@ import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.StaffProfileService;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 public class EmailChangeService {
     private final PermissionService permissionService;
     private final AuthService authService;
-    private final StaffService staffService;
+    private final StaffProfileService staffProfileService;
     private final ServerService serverService;
     private final WebAuthnService webAuthnService;
     private final BillingService billingService;
@@ -52,7 +52,7 @@ public class EmailChangeService {
             serverService.changeAdminEmail(server, normalizedNewEmail);
         }
 
-        Optional<Staff> staff = staffService.applyStaffEmailChange(server, currentEmail, normalizedNewEmail);
+        Optional<Staff> staff = staffProfileService.applyStaffEmailChange(server, currentEmail, normalizedNewEmail);
         if (staff.isEmpty() && !isSuperAdmin) {
             throw new ResourceNotFoundException("Staff member not found");
         }
@@ -80,7 +80,7 @@ public class EmailChangeService {
         boolean collidesWithServerAdmin = server.getAdminEmail() != null
             && normalizedNewEmail.equalsIgnoreCase(server.getAdminEmail());
         if (collidesWithServerAdmin
-            || staffService.isStaffEmailInUse(server, normalizedNewEmail, currentEmail)
+            || staffProfileService.isStaffEmailInUse(server, normalizedNewEmail, currentEmail)
             || (isSuperAdmin && serverService.isAdminEmailInUse(normalizedNewEmail, server.getId()))) {
             throw new ConflictException("Email address already in use");
         }

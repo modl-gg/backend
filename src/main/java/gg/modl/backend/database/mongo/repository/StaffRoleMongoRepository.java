@@ -2,11 +2,11 @@ package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
-
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +52,6 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
             .and(StaffRoleFields.ID).ne(excludedRoleId);
         return exists(server, Query.query(criteria));
     }
-
 
     public void updateOrder(Server server, String roleId, int order) {
         Update update = new Update();
@@ -112,25 +111,19 @@ public class StaffRoleMongoRepository extends AbstractServerMongoRepository<Staf
     }
 
     public void bulkUpdateOrder(Server server, Map<String, Integer> orderById) {
-        if (orderById.isEmpty()) return;
-
-        MongoTemplate template = serverTemplate(server);
-        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
-        for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
-            Query query = Query.query(Criteria.where("_id").is(entry.getKey()));
-            Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());
-            bulk.updateOne(query, update);
-        }
-        bulk.execute();
+        bulkUpdateByIds(server, new ArrayList<>(orderById.keySet()),
+            (id, index) -> new Update().set(StaffRoleFields.ORDER, orderById.get(id)));
     }
 
     public void bulkRepairOrderFromZero(Server server, Map<String, Integer> orderById) {
-        if (orderById.isEmpty()) return;
+        if (orderById.isEmpty()) {
+            return;
+        }
 
         MongoTemplate template = serverTemplate(server);
         BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
         for (Map.Entry<String, Integer> entry : orderById.entrySet()) {
-            Query query = Query.query(Criteria.where("_id").is(entry.getKey())
+            Query query = Query.query(Criteria.where(StaffRoleFields.ID).is(entry.getKey())
                 .and(StaffRoleFields.ORDER).is(0)
                 .and(StaffRoleFields.IS_DEFAULT).is(false));
             Update update = new Update().set(StaffRoleFields.ORDER, entry.getValue());

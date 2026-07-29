@@ -3,6 +3,11 @@ package gg.modl.backend.admin.controller;
 import gg.modl.backend.admin.data.SystemLog;
 import gg.modl.backend.admin.dto.request.CreateSystemLogRequest;
 import gg.modl.backend.admin.dto.request.ResolveLogRequest;
+import gg.modl.backend.admin.dto.response.AdminMonitoringDashboard;
+import gg.modl.backend.admin.dto.response.AdminMonitoringHealth;
+import gg.modl.backend.admin.dto.response.AdminMonitoringLogs;
+import gg.modl.backend.admin.dto.response.AdminMonitoringSources;
+import gg.modl.backend.admin.dto.response.AdminPagination;
 import gg.modl.proto.modl.v1.AdminMonitoringDashboardData;
 import gg.modl.proto.modl.v1.AdminMonitoringDashboardResponse;
 import gg.modl.proto.modl.v1.AdminMonitoringDeleteLogsResponse;
@@ -30,14 +35,10 @@ import gg.modl.proto.modl.v1.AdminMonitoringUnresolvedLogs;
 import gg.modl.proto.modl.v1.SystemLogResponse;
 
 import java.util.Map;
-import java.util.function.Consumer;
 
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.doubleValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
@@ -48,7 +49,7 @@ final class AdminMonitoringProtoMapper {
 
     static CreateSystemLogRequest fromCreateLog(gg.modl.proto.modl.v1.CreateSystemLogRequest request) {
         Map<String, Object> metadata = request.hasMetadata()
-            ? gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap(request.getMetadata())
+            ? structToMap(request.getMetadata())
             : null;
         return new CreateSystemLogRequest(
             request.getLevel(),
@@ -64,44 +65,40 @@ final class AdminMonitoringProtoMapper {
         return new ResolveLogRequest(request.hasResolvedBy() ? request.getResolvedBy() : null);
     }
 
-    static AdminMonitoringDashboardResponse toDashboardResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> servers = map(data.get("servers"));
-        Map<String, Object> logs = map(data.get("logs"));
-        Map<String, Object> last24h = map(logs.get("last24h"));
-        Map<String, Object> unresolved = map(logs.get("unresolved"));
-        Map<String, Object> systemHealth = map(data.get("systemHealth"));
+    static AdminMonitoringDashboardResponse toDashboardResponse(AdminMonitoringDashboard response) {
+        AdminMonitoringDashboard.ServerMetrics servers = response.servers();
+        AdminMonitoringDashboard.LogMetrics logs = response.logs();
+        AdminMonitoringDashboard.SystemHealth systemHealth = response.systemHealth();
 
         AdminMonitoringDashboardData.Builder builder = AdminMonitoringDashboardData.newBuilder()
             .setServers(AdminMonitoringServerMetrics.newBuilder()
-                .setTotal(longValue(servers.get("total")))
-                .setActive(longValue(servers.get("active")))
-                .setPending(longValue(servers.get("pending")))
-                .setFailed(longValue(servers.get("failed")))
-                .setRecentRegistrations(longValue(servers.get("recentRegistrations")))
-                .setConcurrentServers(longValue(servers.get("concurrentServers")))
-                .setConcurrentPlayers(longValue(servers.get("concurrentPlayers")))
+                .setTotal(servers.total())
+                .setActive(servers.active())
+                .setPending(servers.pending())
+                .setFailed(servers.failed())
+                .setRecentRegistrations(servers.recentRegistrations())
+                .setConcurrentServers(servers.concurrentServers())
+                .setConcurrentPlayers(servers.concurrentPlayers())
                 .build())
             .setLogs(AdminMonitoringLogMetrics.newBuilder()
                 .setLast24H(AdminMonitoringLogWindow.newBuilder()
-                    .setTotal(longValue(last24h.get("total")))
-                    .setCritical(longValue(last24h.get("critical")))
-                    .setError(longValue(last24h.get("error")))
-                    .setWarning(longValue(last24h.get("warning")))
+                    .setTotal(logs.last24h().total())
+                    .setCritical(logs.last24h().critical())
+                    .setError(logs.last24h().error())
+                    .setWarning(logs.last24h().warning())
                     .build())
                 .setUnresolved(AdminMonitoringUnresolvedLogs.newBuilder()
-                    .setCritical(longValue(unresolved.get("critical")))
-                    .setError(longValue(unresolved.get("error")))
+                    .setCritical(logs.unresolved().critical())
+                    .setError(logs.unresolved().error())
                     .build())
                 .build())
             .setSystemHealth(AdminMonitoringSystemHealthSummary.newBuilder()
-                .setScore(doubleValue(systemHealth.get("score")))
-                .setStatus(stringValue(systemHealth.get("status")))
+                .setScore(systemHealth.score())
+                .setStatus(systemHealth.status())
                 .build());
-        listOfMaps(data.get("trends")).forEach(trend -> builder.addTrends(toStruct(trend)));
-        Object lastUpdated = data.get("lastUpdated");
-        if (lastUpdated != null) {
-            builder.setLastUpdated(toTimestamp(lastUpdated));
+        response.trends().forEach(trend -> builder.addTrends(toStruct(trend)));
+        if (response.lastUpdated() != null) {
+            builder.setLastUpdated(toTimestamp(response.lastUpdated()));
         }
         return AdminMonitoringDashboardResponse.newBuilder()
             .setSuccess(true)
@@ -109,23 +106,11 @@ final class AdminMonitoringProtoMapper {
             .build();
     }
 
-    static AdminMonitoringLogsResponse toLogsResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        Map<String, Object> pagination = map(data.get("pagination"));
-        Map<String, Object> filters = map(data.get("filters"));
-
+    static AdminMonitoringLogsResponse toLogsResponse(AdminMonitoringLogs response) {
         AdminMonitoringLogsData.Builder dataBuilder = AdminMonitoringLogsData.newBuilder()
-            .setPagination(AdminMonitoringPagination.newBuilder()
-                .setPage((int) longValue(pagination.get("page")))
-                .setLimit((int) longValue(pagination.get("limit")))
-                .setTotal(longValue(pagination.get("total")))
-                .setPages((int) longValue(pagination.get("pages")))
-                .build())
-            .setFilters(toLogFilters(filters));
-        list(data.get("logs")).stream()
-            .filter(SystemLog.class::isInstance)
-            .map(SystemLog.class::cast)
-            .forEach(systemLog -> dataBuilder.addLogs(toSystemLogResponse(systemLog)));
+            .setPagination(toPagination(response.pagination()))
+            .setFilters(toLogFilters(response.filters()));
+        response.logs().forEach(systemLog -> dataBuilder.addLogs(toSystemLogResponse(systemLog)));
         return AdminMonitoringLogsResponse.newBuilder()
             .setSuccess(true)
             .setData(dataBuilder.build())
@@ -142,25 +127,23 @@ final class AdminMonitoringProtoMapper {
         return builder.build();
     }
 
-    static AdminMonitoringSourcesResponse toSourcesResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
-        AdminMonitoringSourcesData.Builder dataBuilder = AdminMonitoringSourcesData.newBuilder();
-        list(data.get("sources")).forEach(source -> dataBuilder.addSources(stringValue(source)));
-        list(data.get("categories")).forEach(category -> dataBuilder.addCategories(stringValue(category)));
+    static AdminMonitoringSourcesResponse toSourcesResponse(AdminMonitoringSources response) {
+        AdminMonitoringSourcesData dataBuilder = AdminMonitoringSourcesData.newBuilder()
+            .addAllSources(response.sources())
+            .addAllCategories(response.categories())
+            .build();
         return AdminMonitoringSourcesResponse.newBuilder()
             .setSuccess(true)
-            .setData(dataBuilder.build())
+            .setData(dataBuilder)
             .build();
     }
 
-    static AdminMonitoringHealthResponse toHealthResponse(Map<String, Object> response) {
-        Map<String, Object> data = map(response.get("data"));
+    static AdminMonitoringHealthResponse toHealthResponse(AdminMonitoringHealth response) {
         AdminMonitoringHealthData.Builder dataBuilder = AdminMonitoringHealthData.newBuilder()
-            .setStatus(stringValue(data.get("status")));
-        listOfMaps(data.get("checks")).forEach(check -> dataBuilder.addChecks(toHealthCheck(check)));
-        Object timestamp = data.get("timestamp");
-        if (timestamp != null) {
-            dataBuilder.setTimestamp(toTimestamp(timestamp));
+            .setStatus(stringValue(response.status()));
+        response.checks().forEach(check -> dataBuilder.addChecks(toHealthCheck(check)));
+        if (response.timestamp() != null) {
+            dataBuilder.setTimestamp(toTimestamp(response.timestamp()));
         }
         return AdminMonitoringHealthResponse.newBuilder()
             .setSuccess(true)
@@ -212,38 +195,41 @@ final class AdminMonitoringProtoMapper {
         return builder.build();
     }
 
-    private static AdminMonitoringLogFilters toLogFilters(Map<String, Object> filters) {
+    private static AdminMonitoringPagination toPagination(AdminPagination pagination) {
+        return AdminMonitoringPagination.newBuilder()
+            .setPage(pagination.page())
+            .setLimit(pagination.limit())
+            .setTotal(pagination.total())
+            .setPages(pagination.pages())
+            .build();
+    }
+
+    private static AdminMonitoringLogFilters toLogFilters(AdminMonitoringLogs.Filters filters) {
         AdminMonitoringLogFilters.Builder builder = AdminMonitoringLogFilters.newBuilder();
-        setFilter(filters.get("level"), builder::setLevel);
-        setFilter(filters.get("source"), builder::setSource);
-        setFilter(filters.get("serverId"), builder::setServerId);
-        setFilter(filters.get("category"), builder::setCategory);
-        setFilter(filters.get("resolved"), builder::setResolved);
-        setFilter(filters.get("search"), builder::setSearch);
+        setOptionalString(builder::setLevel, filters.level());
+        setOptionalString(builder::setSource, filters.source());
+        setOptionalString(builder::setServerId, filters.serverId());
+        setOptionalString(builder::setCategory, filters.category());
+        setOptionalString(builder::setResolved, filters.resolved());
+        setOptionalString(builder::setSearch, filters.search());
         return builder.build();
     }
 
-    private static void setFilter(Object value, Consumer<String> setter) {
-        if (value != null) {
-            setter.accept(stringValue(value));
-        }
-    }
-
-    private static AdminMonitoringHealthCheck toHealthCheck(Map<String, Object> check) {
+    private static AdminMonitoringHealthCheck toHealthCheck(AdminMonitoringHealth.HealthCheck check) {
         AdminMonitoringHealthCheck.Builder builder = AdminMonitoringHealthCheck.newBuilder()
-            .setName(stringValue(check.get("name")))
-            .setStatus(stringValue(check.get("status")));
-        if (check.get("message") != null) {
-            builder.setMessage(stringValue(check.get("message")));
+            .setName(stringValue(check.name()))
+            .setStatus(stringValue(check.status()));
+        if (check.message() != null) {
+            builder.setMessage(check.message());
         }
-        if (check.get("responseTime") != null) {
-            builder.setResponseTime(longValue(check.get("responseTime")));
+        if (check.responseTime() != null) {
+            builder.setResponseTime(check.responseTime());
         }
-        if (check.get("error") != null) {
-            builder.setError(stringValue(check.get("error")));
+        if (check.error() != null) {
+            builder.setError(check.error());
         }
-        if (check.get("count") != null) {
-            builder.setCount(longValue(check.get("count")));
+        if (check.count() != null) {
+            builder.setCount(check.count());
         }
         return builder.build();
     }

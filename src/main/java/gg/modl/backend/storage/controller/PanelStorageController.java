@@ -1,6 +1,7 @@
 package gg.modl.backend.storage.controller;
 
 import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
@@ -11,12 +12,12 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
 import gg.modl.backend.storage.service.S3StorageService;
+import gg.modl.backend.storage.service.StorageKeyUtils;
 import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
 import gg.modl.backend.storage.service.StorageSyncService;
 import gg.modl.proto.modl.v1.BulkDeleteRequest;
 import gg.modl.proto.modl.v1.StorageBulkDeleteResponse;
-import gg.modl.proto.modl.v1.StorageDownloadUrlResponse;
 import gg.modl.proto.modl.v1.StorageFilesResponse;
 import gg.modl.proto.modl.v1.StorageQuotaResponse;
 import gg.modl.proto.modl.v1.StorageSyncResponse;
@@ -34,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_STORAGE)
+@RequiresPanelPermission(view = "admin.settings.view.storage", modify = "admin.settings.modify.storage")
 @RequiredArgsConstructor
 public class PanelStorageController {
     private final S3StorageService s3StorageService;
@@ -98,7 +100,7 @@ public class PanelStorageController {
     ) {
         Server server = RequestUtil.getRequestServer(request);
 
-        String normalizedKey = key.startsWith("/") ? key.substring(1) : key;
+        String normalizedKey = StorageKeyUtils.stripLeadingSlash(key);
         validationService.assertKeyOwnedByServer(server, normalizedKey);
 
         String url = s3StorageService.getPresignedUrl(normalizedKey);

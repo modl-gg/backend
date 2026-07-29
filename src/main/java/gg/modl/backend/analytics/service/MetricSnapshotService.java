@@ -2,7 +2,7 @@ package gg.modl.backend.analytics.service;
 
 import gg.modl.backend.database.mongo.repository.MetricSnapshotMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerMetricsRepository;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
@@ -15,7 +15,9 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class MetricSnapshotService {
-    private final ServerMongoRepository serverRepository;
+    private static final long FIVE_MINUTE_BOUNDARY_SECONDS = 300;
+
+    private final ServerMetricsRepository serverMetricsRepository;
     private final MetricSnapshotMongoRepository metricSnapshotRepository;
     private final ServerInstanceSnapshotMongoRepository serverInstanceSnapshotRepository;
 
@@ -24,12 +26,12 @@ public class MetricSnapshotService {
         try {
             Instant nowInstant = Instant.now();
             Date now = Date.from(nowInstant);
-            // Truncate to 5-minute boundary
             long epochSeconds = nowInstant.getEpochSecond();
-            Date fiveTruncated = Date.from(Instant.ofEpochSecond((epochSeconds / 300) * 300));
+            Date fiveTruncated = Date.from(Instant.ofEpochSecond(
+                (epochSeconds / FIVE_MINUTE_BOUNDARY_SECONDS) * FIVE_MINUTE_BOUNDARY_SECONDS));
             Date fiveMinutesAgo = Date.from(nowInstant.minus(5, ChronoUnit.MINUTES));
 
-            long activeServers = serverRepository.countActiveSince(fiveMinutesAgo);
+            long activeServers = serverMetricsRepository.countActiveSince(fiveMinutesAgo);
 
             metricSnapshotRepository.upsertSnapshot(
                 fiveTruncated,

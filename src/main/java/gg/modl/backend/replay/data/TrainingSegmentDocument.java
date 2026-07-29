@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.codegen.GenerateMongoFields;
 import java.util.Date;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 import org.bson.types.Binary;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -20,13 +21,14 @@ public class TrainingSegmentDocument {
     private String serverDatabaseName;
     private String playerUuid;
     private String playerName;
-    private String verdict;        // "legit" | "cheating"
-    private String cheatType;      // "aim", "scaffold", etc. (null for legit)
+    private String verdict;
+    private String cheatType;
     private int confidence;
     private String notes;
     private long startMs;
     private long endMs;
     private String mcVersion;
+    @ToString.Exclude
     private Binary segmentBinary;
     private Date createdAt;
 }

@@ -5,30 +5,30 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.GeneralSettings;
 import gg.modl.backend.settings.data.SupportedLanguages;
-import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
-@Slf4j
 public class GeneralSettingsService {
-    private final SettingsDocumentService settingsDocumentService;
-    private final ObjectMapper objectMapper;
     private static final String SETTINGS_TYPE_GENERAL = "general";
     private static final int MAX_SERVER_NAME_LENGTH = 80;
     private static final int MAX_URL_LENGTH = 2048;
 
+    private final ObjectMapper objectMapper;
+    private final VersionedSettingsSupport<GeneralSettings> support;
+
+    public GeneralSettingsService(SettingsDocumentService settingsDocumentService, ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+        this.support = VersionedSettingsSupport.of(
+            settingsDocumentService, SETTINGS_TYPE_GENERAL, this::mapToGeneralSettings);
+    }
+
     public GeneralSettings getGeneralSettings(Server server) {
-        return getGeneralSettingsState(server).data();
+        return support.get(server);
     }
 
     public VersionedSettings<GeneralSettings> getGeneralSettingsState(Server server) {
-        SettingsDocumentService.RawSettingsState state = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
-        GeneralSettings settings = mapToGeneralSettings(state.data());
-        return new VersionedSettings<>(settings, state.version(), state.updatedAt());
+        return support.state(server);
     }
 
     private GeneralSettings mapToGeneralSettings(Map<String, Object> data) {
@@ -82,8 +82,7 @@ public class GeneralSettingsService {
         long expectedVersion,
         GeneralSettings patch
     ) {
-        SettingsDocumentService.RawSettingsState current = settingsDocumentService.getRawState(server, SETTINGS_TYPE_GENERAL);
-        Map<String, Object> data = new LinkedHashMap<>(current.data());
+        Map<String, Object> data = support.currentData(server);
 
         putIfNotNull(data, "serverDisplayName", patch.getServerDisplayName(), MAX_SERVER_NAME_LENGTH);
         putIfNotNull(data, "discordWebhookUrl", patch.getDiscordWebhookUrl(), MAX_URL_LENGTH);
@@ -91,13 +90,7 @@ public class GeneralSettingsService {
         putIfNotNull(data, "panelIconUrl", patch.getPanelIconUrl(), MAX_URL_LENGTH);
         putLanguageIfNotNull(data, patch.getDefaultLanguage());
 
-        SettingsDocumentService.RawSettingsState updated = settingsDocumentService.saveRawState(
-            server,
-            SETTINGS_TYPE_GENERAL,
-            expectedVersion,
-            data
-        );
-        return new VersionedSettings<>(mapToGeneralSettings(updated.data()), updated.version(), updated.updatedAt());
+        return support.save(server, expectedVersion, data);
     }
 
     private void putIfNotNull(Map<String, Object> data, String key, String value, int maxLength) {

@@ -11,6 +11,7 @@ import jakarta.validation.ConstraintViolationException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -31,17 +32,10 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 @Slf4j
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
     private static final String INVALID_DATA_MESSAGE = "Invalid data provided.";
     private final ProtobufErrorResponseWriter protobufErrorResponseWriter;
-
-    public GlobalExceptionHandler() {
-        this(new ProtobufErrorResponseWriter());
-    }
-
-    public GlobalExceptionHandler(ProtobufErrorResponseWriter protobufErrorResponseWriter) {
-        this.protobufErrorResponseWriter = protobufErrorResponseWriter;
-    }
 
     @ExceptionHandler(SettingsConflictException.class)
     public ResponseEntity<?> handleSettingsConflict(SettingsConflictException ex, HttpServletRequest request) {
@@ -58,31 +52,19 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BaseApplicationException.class)
     public ResponseEntity<?> handleApplicationException(BaseApplicationException ex, HttpServletRequest request) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(ex.getStatus(), HttpErrorMapping.machineCode(ex.getStatus()), ex.getMessage());
-        }
-        return ResponseEntity.status(ex.getStatus())
-            .body(new ErrorResponseDTO(ex.getStatus().value(), ex.getMessage()));
+        return respond(request, ex.getStatus(), HttpErrorMapping.machineCode(ex.getStatus()), ex.getMessage());
     }
 
     @ExceptionHandler(DuplicateKeyException.class)
     public ResponseEntity<?> handleDuplicateKey(DuplicateKeyException ex, HttpServletRequest request) {
         log.debug("Duplicate key violation for {} {}", request.getMethod(), request.getRequestURI());
-        String message = "The request conflicts with an existing record.";
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.CONFLICT, "CONFLICT", message);
-        }
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponseDTO(409, message));
+        return respond(request, HttpStatus.CONFLICT, "CONFLICT", "The request conflicts with an existing record.");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<?> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
         log.warn("Unhandled IllegalArgumentException. Consider replacing with a typed exception at the throw site", ex);
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid argument");
-        }
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponseDTO(400, "Invalid argument"));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid argument");
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
@@ -90,39 +72,22 @@ public class GlobalExceptionHandler {
         MissingServletRequestParameterException ex,
         HttpServletRequest request
     ) {
-        String message = "Missing required parameter: " + ex.getParameterName();
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", message);
-        }
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponseDTO(400, message));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Missing required parameter: " + ex.getParameterName());
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
-        String message = "Invalid value for parameter: " + ex.getName();
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", message);
-        }
-        return ResponseEntity.badRequest()
-            .body(new ErrorResponseDTO(400, message));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "Invalid value for parameter: " + ex.getName());
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<?> handleConstraintViolation(ConstraintViolationException ex, HttpServletRequest request) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
-        }
-        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, INVALID_DATA_MESSAGE));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<?> handleValidationException(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        String message = fieldErrorMessage(ex);
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", message);
-        }
-        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, message));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", fieldErrorMessage(ex));
     }
 
     private static String fieldErrorMessage(MethodArgumentNotValidException ex) {
@@ -138,36 +103,22 @@ public class GlobalExceptionHandler {
         HandlerMethodValidationException ex,
         HttpServletRequest request
     ) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
-        }
-        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, INVALID_DATA_MESSAGE));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<?> handleNotReadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
-        }
-        return ResponseEntity.badRequest().body(new ErrorResponseDTO(400, INVALID_DATA_MESSAGE));
+        return respond(request, HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", INVALID_DATA_MESSAGE);
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<?> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex, HttpServletRequest request) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "Unsupported media type");
-        }
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
-            .body(new ErrorResponseDTO(415, "Unsupported media type"));
+        return respond(request, HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "Unsupported media type");
     }
 
     @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
     public ResponseEntity<?> handleMediaTypeNotAcceptable(HttpMediaTypeNotAcceptableException ex, HttpServletRequest request) {
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.NOT_ACCEPTABLE, "NOT_ACCEPTABLE", "Not acceptable");
-        }
-        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE)
-            .body(new ErrorResponseDTO(406, "Not acceptable"));
+        return respond(request, HttpStatus.NOT_ACCEPTABLE, "NOT_ACCEPTABLE", "Not acceptable");
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -175,22 +126,12 @@ public class GlobalExceptionHandler {
         HttpRequestMethodNotSupportedException ex,
         HttpServletRequest request
     ) {
-        String message = "HTTP method not supported: " + ex.getMethod();
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", message);
-        }
-        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-            .body(new ErrorResponseDTO(405, message));
+        return respond(request, HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "HTTP method not supported: " + ex.getMethod());
     }
 
     @ExceptionHandler(NoHandlerFoundException.class)
     public ResponseEntity<?> handleNoHandlerFound(NoHandlerFoundException ex, HttpServletRequest request) {
-        String message = "No endpoint found for " + ex.getHttpMethod() + " " + ex.getRequestURL();
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.NOT_FOUND, "NOT_FOUND", message);
-        }
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponseDTO(404, message));
+        return respond(request, HttpStatus.NOT_FOUND, "NOT_FOUND", "No endpoint found for " + ex.getHttpMethod() + " " + ex.getRequestURL());
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
@@ -198,12 +139,7 @@ public class GlobalExceptionHandler {
         if (log.isDebugEnabled()) {
             log.debug("No resource found for {} {}", request.getMethod(), ex.getResourcePath());
         }
-        String message = "No endpoint found for " + request.getMethod() + " " + request.getRequestURI();
-        if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.NOT_FOUND, "NOT_FOUND", message);
-        }
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-            .body(new ErrorResponseDTO(404, message));
+        return respond(request, HttpStatus.NOT_FOUND, "NOT_FOUND", "No endpoint found for " + request.getMethod() + " " + request.getRequestURI());
     }
 
     @ExceptionHandler(ProtoValidationException.class)
@@ -238,18 +174,18 @@ public class GlobalExceptionHandler {
             }
             String code = HttpErrorMapping.machineCode(status);
             String message = status.is4xxClientError() ? status.getReasonPhrase() : "An internal error occurred";
-            if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-                return protobufError(status, code, message);
-            }
-            return ResponseEntity.status(status).body(new ErrorResponseDTO(status.value(), message));
+            return respond(request, status, code, message);
         }
 
         log.error("Unhandled exception", ex);
+        return respond(request, HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", "An internal error occurred");
+    }
+
+    private ResponseEntity<?> respond(HttpServletRequest request, HttpStatus status, String code, String message) {
         if (protobufErrorResponseWriter.shouldWriteProtobuf(request)) {
-            return protobufError(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL", "An internal error occurred");
+            return protobufError(status, code, message);
         }
-        return ResponseEntity.internalServerError()
-            .body(new ErrorResponseDTO(500, "An internal error occurred"));
+        return ResponseEntity.status(status).body(new ErrorResponseDTO(status.value(), message));
     }
 
     private ResponseEntity<ApiError> protobufError(HttpStatus status, String code, String message) {

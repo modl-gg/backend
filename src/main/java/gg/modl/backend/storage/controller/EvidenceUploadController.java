@@ -5,6 +5,10 @@ import gg.modl.backend.storage.dto.request.EvidenceConfirmUploadRequest;
 import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.service.EvidenceUploadService;
+import gg.modl.backend.storage.service.EvidenceUploadService.ConfirmUploadResult;
+import gg.modl.backend.storage.service.EvidenceUploadService.PresignUploadResult;
+import gg.modl.backend.storage.service.EvidenceUploadService.SubmitEvidenceResult;
+import gg.modl.backend.storage.service.UploadOrchestrationService;
 import jakarta.validation.Valid;
 import java.util.Map;
 import java.util.Objects;
@@ -37,10 +41,7 @@ public class EvidenceUploadController {
     public ResponseEntity<Map<String, Object>> validateToken(@PathVariable String token) {
         EvidenceUploadService.TokenValidationResult result = evidenceUploadService.validateToken(token);
         if (!result.valid()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Invalid or expired upload token"
-            ));
+            return error(HttpStatus.NOT_FOUND, "Invalid or expired upload token");
         }
 
         return ResponseEntity.ok(Map.of(
@@ -56,31 +57,27 @@ public class EvidenceUploadController {
         @PathVariable String token,
         @RequestBody @Valid EvidencePresignUploadRequest body
     ) {
-        EvidenceUploadService.PresignUploadResult result = evidenceUploadService.presignUpload(token, body);
-        return switch (result.status()) {
-            case INVALID_TOKEN -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Invalid or expired upload token"
-            ));
-            case STORAGE_NOT_CONFIGURED -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
-                "status", 503,
-                "message", "File storage is not configured"
-            ));
-            case SERVER_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Server not found"
-            ));
-            case VALIDATION_FAILED, QUOTA_EXCEEDED -> ResponseEntity.badRequest().body(Map.of(
-                "status", 400,
-                "message", result.message()
-            ));
+        PresignUploadResult result = evidenceUploadService.presignUpload(token, body);
+        return switch (result) {
+            case PresignUploadResult.InvalidToken ignored -> error(HttpStatus.NOT_FOUND, "Invalid or expired upload token");
+            case PresignUploadResult.StorageNotConfigured ignored -> error(HttpStatus.SERVICE_UNAVAILABLE, "File storage is not configured");
+            case PresignUploadResult.ServerNotFound ignored -> error(HttpStatus.NOT_FOUND, "Server not found");
+            case PresignUploadResult.Orchestrated orchestrated -> presignResponse(orchestrated.outcome());
+        };
+    }
+
+    private ResponseEntity<Map<String, Object>> presignResponse(UploadOrchestrationService.PresignOutcome outcome) {
+        return switch (outcome.status()) {
+            case QUOTA_EXCEEDED ->
+                error(HttpStatus.BAD_REQUEST, "Storage quota exceeded. Please contact the server administrator.");
+            case VALIDATION_FAILED, TEMP_LIMIT_EXCEEDED -> error(HttpStatus.BAD_REQUEST, outcome.message());
             case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
-                "presignedUrl", result.upload().presignedUrl(),
-                "key", result.upload().key(),
-                "expiresAt", result.upload().expiresAt().toString(),
-                "method", result.upload().method(),
-                "requiredHeaders", result.upload().requiredHeaders()
+                "presignedUrl", outcome.upload().presignedUrl(),
+                "key", outcome.upload().key(),
+                "expiresAt", outcome.upload().expiresAt().toString(),
+                "method", outcome.upload().method(),
+                "requiredHeaders", outcome.upload().requiredHeaders()
             ));
         };
     }
@@ -90,35 +87,27 @@ public class EvidenceUploadController {
         @PathVariable String token,
         @RequestBody @Valid EvidenceConfirmUploadRequest body
     ) {
-        EvidenceUploadService.ConfirmUploadResult result = evidenceUploadService.confirmUpload(token, body);
-        return switch (result.status()) {
-            case INVALID_TOKEN -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Invalid or expired upload token"
-            ));
-            case INVALID_KEY -> ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
-                "status", 403,
-                "message", "Upload key does not belong to this evidence token"
-            ));
-            case UPLOAD_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Upload not found. File may not have been uploaded yet."
-            ));
-            case QUOTA_EXCEEDED -> ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                "status", 400,
-                "message", "Storage quota exceeded"
-            ));
-            case RECORD_FAILED -> ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                "status", 500,
-                "message", "Failed to record upload"
-            ));
+        ConfirmUploadResult result = evidenceUploadService.confirmUpload(token, body);
+        return switch (result) {
+            case ConfirmUploadResult.InvalidToken ignored -> error(HttpStatus.NOT_FOUND, "Invalid or expired upload token");
+            case ConfirmUploadResult.InvalidKey ignored ->
+                error(HttpStatus.FORBIDDEN, "Upload key does not belong to this evidence token");
+            case ConfirmUploadResult.Orchestrated orchestrated -> confirmResponse(orchestrated.outcome());
+        };
+    }
+
+    private ResponseEntity<Map<String, Object>> confirmResponse(UploadOrchestrationService.ConfirmOutcome outcome) {
+        return switch (outcome.status()) {
+            case UPLOAD_NOT_FOUND -> error(HttpStatus.NOT_FOUND, "Upload not found. File may not have been uploaded yet.");
+            case QUOTA_EXCEEDED -> error(HttpStatus.BAD_REQUEST, "Storage quota exceeded");
+            case RECORD_FAILED, TEMP_LIMIT_EXCEEDED -> error(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to record upload");
             case SUCCESS -> ResponseEntity.ok(Map.of(
                 "status", 200,
-                "key", result.upload().key(),
-                "url", result.upload().url(),
-                "fileName", result.upload().fileName(),
-                "size", result.upload().size(),
-                "contentType", result.upload().contentType()
+                "key", outcome.upload().key(),
+                "url", outcome.upload().url(),
+                "fileName", outcome.upload().fileName(),
+                "size", outcome.upload().size(),
+                "contentType", outcome.upload().contentType()
             ));
         };
     }
@@ -128,25 +117,14 @@ public class EvidenceUploadController {
         @PathVariable String token,
         @RequestBody @Valid SubmitEvidenceRequest request
     ) {
-        EvidenceUploadService.SubmitEvidenceResult result = evidenceUploadService.submitEvidence(token, request);
-        return switch (result.status()) {
-            case INVALID_TOKEN -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Invalid or expired upload token"
-            ));
-            case SERVER_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Server not found"
-            ));
-            case INVALID_URL -> ResponseEntity.badRequest().body(Map.of(
-                "status", 400,
-                "message", "Invalid evidence URL"
-            ));
-            case PUNISHMENT_NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", result.message() != null ? result.message() : "Punishment not found"
-            ));
-            case SUCCESS -> ResponseEntity.ok(Map.of(
+        SubmitEvidenceResult result = evidenceUploadService.submitEvidence(token, request);
+        return switch (result) {
+            case SubmitEvidenceResult.InvalidToken ignored -> error(HttpStatus.NOT_FOUND, "Invalid or expired upload token");
+            case SubmitEvidenceResult.ServerNotFound ignored -> error(HttpStatus.NOT_FOUND, "Server not found");
+            case SubmitEvidenceResult.InvalidUrl ignored -> error(HttpStatus.BAD_REQUEST, "Invalid evidence URL");
+            case SubmitEvidenceResult.PunishmentNotFound notFound ->
+                error(HttpStatus.NOT_FOUND, notFound.message() != null ? notFound.message() : "Punishment not found");
+            case SubmitEvidenceResult.Success ignored -> ResponseEntity.ok(Map.of(
                 "status", 200,
                 "message", "Evidence uploaded successfully"
             ));
@@ -160,7 +138,7 @@ public class EvidenceUploadController {
             .filter(Objects::nonNull)
             .findFirst()
             .orElse("Invalid request body");
-        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", message));
+        return error(HttpStatus.BAD_REQUEST, message);
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
@@ -170,11 +148,15 @@ public class EvidenceUploadController {
             .filter(Objects::nonNull)
             .findFirst()
             .orElse("Invalid request");
-        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", message));
+        return error(HttpStatus.BAD_REQUEST, message);
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Map<String, Object>> handleUnreadableBody(HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest().body(Map.of("status", 400, "message", "Malformed request body"));
+        return error(HttpStatus.BAD_REQUEST, "Malformed request body");
+    }
+
+    private ResponseEntity<Map<String, Object>> error(HttpStatus status, String message) {
+        return ResponseEntity.status(status).body(Map.of("status", status.value(), "message", message));
     }
 }

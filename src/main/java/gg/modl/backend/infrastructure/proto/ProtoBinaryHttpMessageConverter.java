@@ -7,11 +7,9 @@ import org.springframework.http.converter.AbstractHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.lang.NonNull;
-import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-@Component
 public class ProtoBinaryHttpMessageConverter extends AbstractHttpMessageConverter<Message> {
 
     public ProtoBinaryHttpMessageConverter() {
@@ -28,7 +26,7 @@ public class ProtoBinaryHttpMessageConverter extends AbstractHttpMessageConverte
     protected Message readInternal(@NonNull Class<? extends Message> clazz,
                                    @NonNull HttpInputMessage inputMessage) throws IOException {
         try {
-            Message defaultInstance = getDefaultInstance(clazz);
+            Message defaultInstance = ProtoMessages.defaultInstance(clazz);
             return defaultInstance.getParserForType().parseFrom(inputMessage.getBody());
         } catch (Exception e) {
             throw new HttpMessageNotReadableException("Failed to parse binary protobuf: " + e.getMessage(), e, inputMessage);
@@ -42,14 +40,6 @@ public class ProtoBinaryHttpMessageConverter extends AbstractHttpMessageConverte
             message.writeTo(outputMessage.getBody());
         } catch (Exception e) {
             throw new HttpMessageNotWritableException("Failed to write binary protobuf: " + e.getMessage(), e);
-        }
-    }
-
-    private static Message getDefaultInstance(Class<? extends Message> clazz) {
-        try {
-            return (Message) clazz.getMethod("getDefaultInstance").invoke(null);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalArgumentException("Cannot get default instance for " + clazz.getName(), e);
         }
     }
 }

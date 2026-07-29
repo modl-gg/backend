@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository.ReplayCursor;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import gg.modl.backend.replay.config.LegacyReplayCleanupProperties;
@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 class LegacyReplayCleanupServiceTest {
     private static final Instant NOW = Instant.parse("2026-05-18T12:00:00Z");
 
-    private ServerMongoRepository serverRepository;
+    private ServerLookupRepository serverRepository;
     private ReplayMongoRepository replayRepository;
     private TicketMongoRepository ticketRepository;
     private ReplayRetentionSettingsService replayRetentionSettingsService;
@@ -45,7 +45,7 @@ class LegacyReplayCleanupServiceTest {
 
     @BeforeEach
     void setUp() {
-        serverRepository = mock(ServerMongoRepository.class);
+        serverRepository = mock(ServerLookupRepository.class);
         replayRepository = mock(ReplayMongoRepository.class);
         ticketRepository = mock(TicketMongoRepository.class);
         replayRetentionSettingsService = mock(ReplayRetentionSettingsService.class);

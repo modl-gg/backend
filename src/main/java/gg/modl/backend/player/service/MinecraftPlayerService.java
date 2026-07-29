@@ -1,7 +1,6 @@
 package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.player.PlayerService;
 import gg.modl.backend.player.data.NoteEntry;
@@ -9,32 +8,39 @@ import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
-import gg.modl.backend.player.data.punishment.PunishmentModificationType;
-import gg.modl.backend.player.data.punishment.PunishmentData;
-import gg.modl.backend.player.data.punishment.PunishmentStatus;
+import gg.modl.backend.player.data.punishment.PunishmentDataView;
 import gg.modl.backend.player.dto.request.AcknowledgeNotificationsRequest;
+import gg.modl.backend.player.dto.response.AcknowledgeResult;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
+import gg.modl.backend.player.dto.response.OnlinePlayersResult;
+import gg.modl.backend.player.dto.response.PaginatedNotesResult;
+import gg.modl.backend.player.dto.response.PaginatedPunishmentsResult;
+import gg.modl.backend.player.dto.response.PardonResult;
+import gg.modl.backend.player.dto.response.PlayerLoginResult;
+import gg.modl.backend.player.dto.response.PlayerReportsResult;
+import gg.modl.backend.player.dto.response.PunishmentView;
+import gg.modl.backend.player.dto.response.SimpleActionResult;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
-import gg.modl.backend.player.service.PlayerDataUtils;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import gg.modl.backend.infrastructure.util.IdGenerator;
-import org.springframework.http.HttpStatus;
+import gg.modl.backend.infrastructure.util.UuidUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class MinecraftPlayerService {
     private final PlayerService playerService;
     private final PlayerMongoRepository playerRepository;
@@ -44,31 +50,8 @@ public class MinecraftPlayerService {
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final AccountLinkingService accountLinkingService;
     private final IssuerNameResolver issuerNameResolver;
-    private final StaffMongoRepository staffRepository;
 
-    public MinecraftPlayerService(
-        PlayerService playerService,
-        PlayerMongoRepository playerRepository,
-        TicketMongoRepository ticketRepository,
-        PlayerStatusCalculator statusCalculator,
-        PunishmentTypeService punishmentTypeService,
-        PunishmentLifecycleService punishmentLifecycleService,
-        AccountLinkingService accountLinkingService,
-        IssuerNameResolver issuerNameResolver,
-        StaffMongoRepository staffRepository
-    ) {
-        this.playerService = playerService;
-        this.playerRepository = playerRepository;
-        this.ticketRepository = ticketRepository;
-        this.statusCalculator = statusCalculator;
-        this.punishmentTypeService = punishmentTypeService;
-        this.punishmentLifecycleService = punishmentLifecycleService;
-        this.accountLinkingService = accountLinkingService;
-        this.issuerNameResolver = issuerNameResolver;
-        this.staffRepository = staffRepository;
-    }
-
-    public ServiceResponse login(
+    public PlayerLoginResult login(
         Server server,
         UUID playerUuid,
         String username,
@@ -87,8 +70,8 @@ public class MinecraftPlayerService {
         player = promotePunishments(server, player, playerUuid, username, skinHash);
 
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
-        List<Map<String, Object>> activePunishments = collectActivePunishments(player, punishmentTypes, resolvedIssuers);
+        Map<String, String> resolvedIssuers = issuerNameResolver.resolveForPlayers(server, List.of(player));
+        List<SimplePunishmentView> activePunishments = collectActivePunishments(player, punishmentTypes, resolvedIssuers);
 
         return buildLoginResponse(server, player, playerUuid, ip, username, activePunishments, isNewIp);
     }
@@ -104,12 +87,12 @@ public class MinecraftPlayerService {
         return player;
     }
 
-    private List<Map<String, Object>> collectActivePunishments(
+    private List<SimplePunishmentView> collectActivePunishments(
         Player player,
         List<PunishmentType> punishmentTypes,
         Map<String, String> resolvedIssuers
     ) {
-        List<Map<String, Object>> activePunishments = new ArrayList<>();
+        List<SimplePunishmentView> activePunishments = new ArrayList<>();
         Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
 
         for (Punishment punishment : player.getPunishments()) {
@@ -135,22 +118,16 @@ public class MinecraftPlayerService {
         return deduplicateActivePunishments(activePunishments);
     }
 
-    private List<Map<String, Object>> deduplicateActivePunishments(List<Map<String, Object>> punishments) {
-        Map<String, Map<String, Object>> oldestByCategory = new LinkedHashMap<>();
-        List<Map<String, Object>> result = new ArrayList<>();
+    private List<SimplePunishmentView> deduplicateActivePunishments(List<SimplePunishmentView> punishments) {
+        Map<String, SimplePunishmentView> oldestByCategory = new LinkedHashMap<>();
+        List<SimplePunishmentView> result = new ArrayList<>();
 
-        for (Map<String, Object> punishment : punishments) {
-            String category = (String) punishment.get("category");
+        for (SimplePunishmentView punishment : punishments) {
+            String category = punishment.category();
             if (EnforcementCategory.BAN.name().equals(category) || EnforcementCategory.MUTE.name().equals(category)) {
-                Map<String, Object> existing = oldestByCategory.get(category);
-                if (existing == null) {
+                SimplePunishmentView existing = oldestByCategory.get(category);
+                if (existing == null || punishment.issuedAt() < existing.issuedAt()) {
                     oldestByCategory.put(category, punishment);
-                } else {
-                    long existingIssued = existing.get("issuedAt") instanceof Number number ? number.longValue() : 0L;
-                    long currentIssued = punishment.get("issuedAt") instanceof Number number ? number.longValue() : 0L;
-                    if (currentIssued < existingIssued) {
-                        oldestByCategory.put(category, punishment);
-                    }
                 }
             } else {
                 result.add(punishment);
@@ -161,16 +138,16 @@ public class MinecraftPlayerService {
         return result;
     }
 
-    private ServiceResponse buildLoginResponse(
+    private PlayerLoginResult buildLoginResponse(
         Server server,
         Player player,
         UUID playerUuid,
         String ip,
         String username,
-        List<Map<String, Object>> activePunishments,
+        List<SimplePunishmentView> activePunishments,
         boolean isNewIp
     ) {
-        List<Map<String, Object>> pendingNotifications = extractPendingNotifications(player);
+        List<Map<String, Object>> pendingNotifications = player.data().pendingNotifications();
 
         List<String> pendingIpLookups = new ArrayList<>();
         if (ip != null && isNewIp) {
@@ -184,10 +161,9 @@ public class MinecraftPlayerService {
 
         List<Map<String, Object>> pendingStatWipes = new ArrayList<>();
         for (Punishment punishment : player.getPunishments()) {
-            Map<String, Object> data = punishment.getData();
-            if (data == null
-                || !PunishmentData.isWipeAfterExpiry(data)
-                || PunishmentData.isStatWipeCompleted(data)
+            PunishmentDataView data = punishment.data();
+            if (!data.wipeAfterExpiry()
+                || data.statWipeCompleted()
                 || !statusCalculator.isPunishmentNaturallyExpired(punishment)) {
                 continue;
             }
@@ -200,38 +176,13 @@ public class MinecraftPlayerService {
         }
 
         boolean isNewPlayer = player.getUsernames().size() == 1;
-        Map<String, Object> responseBody = new LinkedHashMap<>();
-        responseBody.put("status", isNewPlayer ? 201 : 200);
-        responseBody.put("activePunishments", activePunishments);
-        responseBody.put("pendingNotifications", pendingNotifications);
-        if (!pendingIpLookups.isEmpty()) {
-            responseBody.put("pendingIpLookups", pendingIpLookups);
-        }
-        if (!pendingStatWipes.isEmpty()) {
-            responseBody.put("pendingStatWipes", pendingStatWipes);
-        }
-
-        return new ServiceResponse(isNewPlayer ? HttpStatus.CREATED : HttpStatus.OK, responseBody);
-    }
-
-    private List<Map<String, Object>> extractPendingNotifications(Player player) {
-        if (player.getData() == null) {
-            return List.of();
-        }
-
-        Object rawPending = player.getData().getOrDefault("pendingNotifications", Collections.emptyList());
-        if (!(rawPending instanceof List<?> list)) {
-            return List.of();
-        }
-
-        return list.stream()
-            .filter(entry -> entry instanceof Map<?, ?>)
-            .map(entry -> {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> notification = (Map<String, Object>) entry;
-                return notification;
-            })
-            .toList();
+        return new PlayerLoginResult(
+            isNewPlayer ? 201 : 200,
+            activePunishments,
+            pendingNotifications,
+            pendingIpLookups,
+            pendingStatWipes
+        );
     }
 
     private List<UsernameEntry> safeUsernames(Player player) {
@@ -239,38 +190,26 @@ public class MinecraftPlayerService {
     }
 
     private Optional<Player> findPlayerByUuid(Server server, String uuid) {
-        return playerRepository.findByMinecraftUuid(server, normalizeUuid(uuid));
+        return playerRepository.findByMinecraftUuid(server, UuidUtils.normalize(uuid));
     }
 
-    private Map<String, String> resolveIssuersForPlayer(Server server, Player player) {
-        Set<String> ids = new HashSet<>();
-        for (Punishment p : player.getPunishments()) {
-            ids.addAll(PunishmentQueryService.collectIssuerIds(p));
-        }
-        if (ids.isEmpty()) {
-            return Map.of();
-        }
-        return issuerNameResolver.batchResolve(ids, server);
+    public SimpleActionResult disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
+        playerRepository.markDisconnected(server, UuidUtils.normalize(minecraftUuid), sessionDurationMs);
+        return new SimpleActionResult(true);
     }
 
-    public Map<String, Object> disconnect(Server server, String minecraftUuid, long sessionDurationMs) {
-        playerRepository.markDisconnected(server, normalizeUuid(minecraftUuid), sessionDurationMs);
-        return Map.of("status", 200, "success", true);
+    public SimpleActionResult updateServer(Server server, String minecraftUuid, String serverName) {
+        playerRepository.updateLastServer(server, UuidUtils.normalize(minecraftUuid), serverName);
+        return new SimpleActionResult(true);
     }
 
-    public Map<String, Object> updateServer(Server server, String minecraftUuid, String serverName) {
-        playerRepository.updateLastServer(server, normalizeUuid(minecraftUuid), serverName);
-        return Map.of("status", 200, "success", true);
-    }
-
-    public Map<String, Object> getOnlinePlayers(Server server) {
+    public OnlinePlayersResult getOnlinePlayers(Server server) {
         List<Map<String, Object>> players = playerRepository.findOnlinePlayers(server, 500)
             .stream()
             .map(player -> {
-                Object lastLoginObj = player.getData() != null ? player.getData().get("lastLogin") : null;
-                Date joinedAt = lastLoginObj instanceof Date date ? date : null;
-                Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
-                long totalPlaytimeMs = playtimeObj instanceof Number number ? number.longValue() * 1000 : 0L;
+                Date joinedAt = player.data().lastLogin();
+                Number playtime = player.data().totalPlaytimeSeconds();
+                long totalPlaytimeMs = playtime != null ? playtime.longValue() * 1000 : 0L;
 
                 Map<String, Object> entry = new LinkedHashMap<>();
                 entry.put("uuid", player.getMinecraftUuid().toString());
@@ -281,13 +220,13 @@ public class MinecraftPlayerService {
             })
             .toList();
 
-        return Map.of("status", 200, "players", players);
+        return new OnlinePlayersResult(players);
     }
 
-    public ServiceResponse createNote(Server server, String uuid, String text, String issuerName, String issuerId) {
+    public CreateNoteResult createNote(Server server, String uuid, String text, String issuerName, String issuerId) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
-            return notFound("Player not found");
+            return new CreateNoteResult.NotFound("Player not found");
         }
 
         ensurePlayerNotes(player).add(NoteEntry.builder()
@@ -299,11 +238,7 @@ public class MinecraftPlayerService {
             .build());
         playerRepository.replaceNotes(server, player);
 
-        return ok(Map.of(
-            "status", 200,
-            "success", true,
-            "message", "Note added"
-        ));
+        return new CreateNoteResult.Created("Note added");
     }
 
     private List<NoteEntry> ensurePlayerNotes(Player player) {
@@ -313,11 +248,11 @@ public class MinecraftPlayerService {
         return player.getNotes();
     }
 
-    public ServiceResponse acknowledgeNotifications(Server server, AcknowledgeNotificationsRequest request) {
+    public AcknowledgeResult acknowledgeNotifications(Server server, AcknowledgeNotificationsRequest request) {
         return acknowledgeNotifications(server, request.playerUuid(), request.notificationIds(), request.acknowledgedAt());
     }
 
-    public ServiceResponse acknowledgeNotifications(
+    public AcknowledgeResult acknowledgeNotifications(
         Server server,
         String playerUuid,
         List<String> notificationIds,
@@ -325,14 +260,10 @@ public class MinecraftPlayerService {
     ) {
         Player player = findPlayerByUuid(server, playerUuid).orElse(null);
         if (player == null) {
-            return ok(Map.of(
-                "status", 200,
-                "success", true,
-                "message", "No player found, nothing to acknowledge"
-            ));
+            return new AcknowledgeResult("No player found, nothing to acknowledge");
         }
 
-        List<Map<String, Object>> pendingNotifications = extractPendingNotifications(player);
+        List<Map<String, Object>> pendingNotifications = player.data().pendingNotifications();
         List<Map<String, Object>> remainingNotifications = pendingNotifications.stream()
             .filter(notification -> {
                 Object notificationId = notification.get("id");
@@ -340,53 +271,36 @@ public class MinecraftPlayerService {
             })
             .toList();
 
-        ensurePlayerData(player).put("pendingNotifications", remainingNotifications);
+        player.data().setPendingNotifications(remainingNotifications);
         playerRepository.replacePendingNotifications(server, player, remainingNotifications);
 
-        return ok(Map.of(
-            "status", 200,
-            "success", true,
-            "message", "Acknowledged " + (pendingNotifications.size() - remainingNotifications.size()) + " notification(s)"
-        ));
+        return new AcknowledgeResult(
+            "Acknowledged " + (pendingNotifications.size() - remainingNotifications.size()) + " notification(s)");
     }
 
-    private Map<String, Object> ensurePlayerData(Player player) {
-        if (player.getData() == null) {
-            player.setData(new LinkedHashMap<>());
-        }
-        return player.getData();
-    }
-
-    public ServiceResponse getPlayerPunishments(Server server, String uuid, int page, int limit) {
+    public PaginatedPunishmentsResult getPlayerPunishments(Server server, String uuid, int page, int limit) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
-            return notFound("Player not found");
+            return new PaginatedPunishmentsResult.NotFound("Player not found");
         }
 
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
-        Map<String, String> resolvedIssuers = resolveIssuersForPlayer(server, player);
+        Map<String, String> resolvedIssuers = issuerNameResolver.resolveForPlayers(server, List.of(player));
 
-        List<Map<String, Object>> allPunishments = player.getPunishments()
+        List<PunishmentView> allPunishments = player.getPunishments()
             .stream()
             .sorted((a, b) -> b.getIssued().compareTo(a.getIssued()))
-            .map(p -> PunishmentMapper.toPunishmentMap(p, punishmentTypes, resolvedIssuers))
+            .map(p -> PunishmentMapper.toPunishmentView(p, punishmentTypes, resolvedIssuers))
             .toList();
 
-        PaginationHelper.PageResult<Map<String, Object>> result = PaginationHelper.paginate(allPunishments, page, limit);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", 200);
-        response.put("punishments", result.items());
-        response.put("totalCount", result.totalCount());
-        response.put("page", result.page());
-        response.put("hasMore", result.hasMore());
-        return ok(response);
+        PaginationHelper.PageResult<PunishmentView> result = PaginationHelper.paginate(allPunishments, page, limit);
+        return new PaginatedPunishmentsResult.Found(result.items(), result.totalCount(), result.page(), result.hasMore());
     }
 
-    public ServiceResponse getPlayerNotes(Server server, String uuid, int page, int limit) {
+    public PaginatedNotesResult getPlayerNotes(Server server, String uuid, int page, int limit) {
         Player player = findPlayerByUuid(server, uuid).orElse(null);
         if (player == null) {
-            return notFound("Player not found");
+            return new PaginatedNotesResult.NotFound("Player not found");
         }
 
         List<Map<String, Object>> allNotes = player.getNotes()
@@ -404,18 +318,11 @@ public class MinecraftPlayerService {
             .toList();
 
         PaginationHelper.PageResult<Map<String, Object>> result = PaginationHelper.paginate(allNotes, page, limit);
-
-        Map<String, Object> response = new LinkedHashMap<>();
-        response.put("status", 200);
-        response.put("notes", result.items());
-        response.put("totalCount", result.totalCount());
-        response.put("page", result.page());
-        response.put("hasMore", result.hasMore());
-        return ok(response);
+        return new PaginatedNotesResult.Found(result.items(), result.totalCount(), result.page(), result.hasMore());
     }
 
-    public Map<String, Object> getPlayerReports(Server server, String uuid) {
-        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, normalizeUuid(uuid), 50)
+    public PlayerReportsResult getPlayerReports(Server server, String uuid) {
+        List<Map<String, Object>> reports = ticketRepository.findReportedPlayerTickets(server, UuidUtils.normalize(uuid), 50)
             .stream()
             .map(ticket -> {
                 Map<String, Object> report = new LinkedHashMap<>();
@@ -431,10 +338,10 @@ public class MinecraftPlayerService {
             })
             .toList();
 
-        return Map.of("status", 200, "reports", reports);
+        return new PlayerReportsResult(reports);
     }
 
-    public Map<String, Object> submitIpInfo(
+    public SimpleActionResult submitIpInfo(
         Server server,
         String minecraftUuid,
         String ip,
@@ -444,39 +351,38 @@ public class MinecraftPlayerService {
         boolean proxy,
         boolean hosting
     ) {
-        playerService.updateIpGeoData(server, normalizeUuid(minecraftUuid), ip, Map.of(
+        playerService.updateIpGeoData(server, UuidUtils.normalize(minecraftUuid), ip, Map.of(
             "country", country != null ? country : "",
             "region", region != null ? region : "",
             "asn", asn != null ? asn : "",
             "proxy", proxy,
             "hosting", hosting
         ));
-        return Map.of("status", 200, "success", true);
+        return new SimpleActionResult(true);
     }
 
-    public Map<String, Object> pardonPlayer(Server server, String playerName, String punishmentType, String issuerName, String issuerId, String reason) {
+    public PardonResult pardonPlayer(Server server, String playerName, String punishmentType, String issuerName, String issuerId, String reason) {
         Player player = playerService.findBestByUsername(server, playerName).orElse(null);
         if (player == null) {
-            return Map.of("status", 404, "message", "Player not found");
+            return new PardonResult.PlayerNotFound("Player not found");
         }
 
         List<PunishmentType> types = punishmentTypeService.getPunishmentTypes(server);
         List<Punishment> targets = new ArrayList<>();
 
         for (Punishment punishment : player.getPunishments()) {
-            if (isAlreadyPardoned(punishment)) {
+            if (punishment.isPardoned()) {
                 continue;
             }
 
             boolean isActive = statusCalculator.isPunishmentActive(punishment);
-            Map<String, Object> punishmentData = punishment.getData();
-            boolean isUnstarted = PunishmentStatus.UNSTARTED.equals(PunishmentData.getStatus(punishmentData));
+            boolean isUnstarted = punishment.hasUnstartedStatus();
 
             boolean shouldPardon;
             if (punishmentType == null) {
                 shouldPardon = isActive || isUnstarted;
             } else {
-                String requestedType = punishmentType.toLowerCase();
+                String requestedType = punishmentType.toLowerCase(Locale.ROOT);
                 String effectiveCategory = statusCalculator.getEffectiveCategory(punishment, types);
                 shouldPardon = ("ban".equals(requestedType) && EnforcementCategory.BAN.name().equals(effectiveCategory) && (isActive || isUnstarted))
                                || ("mute".equals(requestedType) && EnforcementCategory.MUTE.name().equals(effectiveCategory) && (isActive || isUnstarted));
@@ -491,35 +397,12 @@ public class MinecraftPlayerService {
                        ? 0
                        : punishmentLifecycleService.pardonPunishments(server, player, targets, issuerName, issuerId, reason);
 
-        return Map.of(
-            "status", 200,
-            "success", pardoned > 0,
-            "pardonedCount", pardoned,
-            "message", pardoned > 0
-                       ? "Pardoned " + pardoned + " punishment(s)"
-                       : "No punishments found to pardon"
+        return new PardonResult.Pardoned(
+            pardoned > 0,
+            pardoned,
+            pardoned > 0
+                ? "Pardoned " + pardoned + " punishment(s)"
+                : "No punishments found to pardon"
         );
-    }
-
-    private boolean isAlreadyPardoned(Punishment punishment) {
-        return punishment.getModifications()
-            .stream()
-            .anyMatch(modification ->
-                PunishmentModificationType.isPardon(modification.type()));
-    }
-
-    private ServiceResponse ok(Map<String, Object> body) {
-        return new ServiceResponse(HttpStatus.OK, body);
-    }
-
-    private ServiceResponse notFound(String message) {
-        return new ServiceResponse(HttpStatus.NOT_FOUND, Map.of("status", 404, "message", message));
-    }
-
-    public record ServiceResponse(HttpStatus status, Map<String, Object> body) {
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

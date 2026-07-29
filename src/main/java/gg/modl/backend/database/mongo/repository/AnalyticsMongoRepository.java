@@ -7,6 +7,7 @@ import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.TicketStatus;
 import java.util.ArrayList;
@@ -38,9 +39,14 @@ public class AnalyticsMongoRepository {
     private static final String ALIAS_N = "n";
     private static final String ALIAS_COUNT = "count";
     private static final String ALIAS_DATE = "date";
+    private static final String ALIAS_AVG_MILLIS = "avgMillis";
     private static final String EARLIEST_FIRST_LOGIN = "earliestFirstLogin";
 
     private final TenantMongoAccess tenantMongoAccess;
+
+    private static Document matchDateTyped(String field) {
+        return new Document("$match", new Document(field, new Document("$type", "date")));
+    }
 
     @NotNull
     public OverviewStats loadOverviewStats(@NotNull Server server, @NotNull Date thirtyDaysAgo, @NotNull Date sixtyDaysAgo) {
@@ -76,7 +82,29 @@ public class AnalyticsMongoRepository {
 
         final long totalPlayers = template.getCollection(CollectionName.PLAYERS).countDocuments();
 
-        return new OverviewStats(totalTickets, totalPlayers, activeTickets, recentTickets, previousTickets);
+        final List<Document> playerPipeline = List.of(
+            new Document("$addFields", new Document(EARLIEST_FIRST_LOGIN, new Document("$min", "$" + PlayerFields.IP_FIRST_LOGIN))),
+            matchDateTyped(EARLIEST_FIRST_LOGIN),
+            new Document("$facet", new Document()
+                .append(FACET_RECENT, List.of(
+                    new Document("$match", new Document(EARLIEST_FIRST_LOGIN, new Document("$gte", thirtyDaysAgo))),
+                    new Document("$count", ALIAS_N)))
+                .append(FACET_PREVIOUS, List.of(
+                    new Document("$match", new Document(EARLIEST_FIRST_LOGIN,
+                        new Document("$gte", sixtyDaysAgo).append("$lt", thirtyDaysAgo))),
+                    new Document("$count", ALIAS_N))))
+        );
+        final List<Document> playerResult = template.getCollection(CollectionName.PLAYERS).aggregate(playerPipeline).into(new ArrayList<>());
+
+        long recentPlayers = 0, previousPlayers = 0;
+        if (!playerResult.isEmpty()) {
+            Document facets = playerResult.get(0);
+            recentPlayers = extractFacetCount(facets, FACET_RECENT);
+            previousPlayers = extractFacetCount(facets, FACET_PREVIOUS);
+        }
+
+        return new OverviewStats(totalTickets, totalPlayers, activeTickets, recentTickets, previousTickets,
+            recentPlayers, previousPlayers);
     }
 
     public List<IdCountResult> aggregateTicketStatusCounts(Server server, Date startDate) {
@@ -117,6 +145,8 @@ public class AnalyticsMongoRepository {
             criteria = criteria.and(TicketFields.CREATED).gte(startDate);
         }
 
+        final AggregationOperation createdDateTypeMatch = context -> matchDateTyped(TicketFields.CREATED);
+
         final AggregationOperation dayProjection = context -> new Document("$project",
             new Document(ALIAS_DATE, new Document("$dateToString",
                 new Document("format", "%Y-%m-%d")
@@ -125,6 +155,7 @@ public class AnalyticsMongoRepository {
 
         final Aggregation aggregation = Aggregation.newAggregation(
             Aggregation.match(criteria),
+            createdDateTypeMatch,
             dayProjection,
             Aggregation.group(ALIAS_DATE).count().as(ALIAS_COUNT),
             Aggregation.sort(Sort.Direction.ASC, "_id")
@@ -135,14 +166,37 @@ public class AnalyticsMongoRepository {
             .getMappedResults();
     }
 
-    public Document aggregatePunishmentAnalytics(Server server, Date startDate, String analyticsTimeZone) {
+    public List<CategoryAvgResolution> aggregateAvgResolutionByCategory(Server server, Date startDate) {
+        final List<Document> pipeline = new ArrayList<>();
+        final Document match = new Document(TicketFields.STATUS, TicketStatus.CLOSED.getId());
+        if (startDate != null) {
+            match.append(TicketFields.UPDATED_AT, new Document("$gte", startDate));
+        }
+        pipeline.add(new Document("$match", match));
+        pipeline.add(matchDateTyped(TicketFields.CREATED));
+        pipeline.add(matchDateTyped(TicketFields.UPDATED_AT));
+        pipeline.add(new Document("$group", new Document("_id", "$" + TicketFields.TYPE)
+            .append(ALIAS_AVG_MILLIS, new Document("$avg",
+                new Document("$subtract", List.of("$" + TicketFields.UPDATED_AT, "$" + TicketFields.CREATED))))));
+
+        final List<Document> results = tenantMongoAccess.forServer(server)
+            .getCollection(CollectionName.TICKETS)
+            .aggregate(pipeline)
+            .into(new ArrayList<>());
+
+        return results.stream()
+            .map(doc -> new CategoryAvgResolution(doc.getString("_id"), doubleValueOrZero(doc.get(ALIAS_AVG_MILLIS))))
+            .toList();
+    }
+
+    public PunishmentAnalyticsFacet aggregatePunishmentAnalytics(Server server, Date startDate, String analyticsTimeZone) {
         final List<Document> pipeline = new ArrayList<>();
         if (startDate != null) {
             pipeline.add(new Document("$match", new Document(PlayerFields.PUNISHMENT_ISSUED, new Document("$gte", startDate))));
         }
 
         pipeline.add(new Document("$unwind", "$" + PlayerFields.PUNISHMENTS));
-        pipeline.add(new Document("$match", new Document(PlayerFields.PUNISHMENT_ISSUED, new Document("$type", "date"))));
+        pipeline.add(matchDateTyped(PlayerFields.PUNISHMENT_ISSUED));
 
         if (startDate != null) {
             pipeline.add(new Document("$match", new Document(PlayerFields.PUNISHMENT_ISSUED, new Document("$gte", startDate))));
@@ -173,7 +227,15 @@ public class AnalyticsMongoRepository {
             .aggregate(pipeline)
             .into(new ArrayList<>());
 
-        return aggregateResults.isEmpty() ? null : aggregateResults.get(0);
+        if (aggregateResults.isEmpty()) {
+            return null;
+        }
+        Document facets = aggregateResults.get(0);
+        return new PunishmentAnalyticsFacet(
+            toTypeOrdinalCounts(facets.get(FACET_BY_TYPE)),
+            toIssuerCounts(facets.get(FACET_BY_STAFF)),
+            toDateCounts(facets.get(FACET_DAILY))
+        );
     }
 
     public List<IdCountResult> aggregateAuditLogLevelCounts(Server server, Date startDate) {
@@ -210,38 +272,64 @@ public class AnalyticsMongoRepository {
             .into(new ArrayList<>());
     }
 
-    public Document aggregatePlayerActivity(Server server, Date startDate, String timeZone) {
+    public PlayerActivityFacet aggregatePlayerActivity(Server server, Date startDate, String timeZone) {
         final List<Document> pipeline = new ArrayList<>();
 
         pipeline.add(new Document("$match", new Document(PlayerFields.IP_ADDRESSES, new Document("$exists", true).append("$ne", List.of()))));
         pipeline.add(new Document("$project", new Document(PlayerFields.IP_ADDRESSES, 1)));
 
-        final List<Document> newPlayerFacet = new ArrayList<>();
-        newPlayerFacet.add(new Document("$addFields", new Document(EARLIEST_FIRST_LOGIN, new Document("$min", "$" + PlayerFields.IP_FIRST_LOGIN))));
+        pipeline.add(new Document("$facet", new Document()
+            .append(FACET_NEW_PLAYERS, newPlayerFacet(startDate, timeZone))
+            .append(FACET_BY_COUNTRY, countryFacet(startDate))
+            .append(FACET_SUSPICIOUS, suspiciousFacet(startDate))));
+
+        final List<Document> results = tenantMongoAccess.forServer(server)
+            .getCollection(CollectionName.PLAYERS)
+            .aggregate(pipeline)
+            .into(new ArrayList<>());
+
+        if (results.isEmpty()) {
+            return null;
+        }
+        Document facets = results.get(0);
+        return new PlayerActivityFacet(
+            toDateCounts(facets.get(FACET_NEW_PLAYERS)),
+            toCountryCounts(facets.get(FACET_BY_COUNTRY)),
+            toSuspiciousCounts(facets.get(FACET_SUSPICIOUS))
+        );
+    }
+
+    private static List<Document> newPlayerFacet(Date startDate, String timeZone) {
+        final List<Document> facet = new ArrayList<>();
+        facet.add(new Document("$addFields", new Document(EARLIEST_FIRST_LOGIN, new Document("$min", "$" + PlayerFields.IP_FIRST_LOGIN))));
+        facet.add(matchDateTyped(EARLIEST_FIRST_LOGIN));
 
         if (startDate != null) {
-            newPlayerFacet.add(new Document("$match", new Document(EARLIEST_FIRST_LOGIN,
+            facet.add(new Document("$match", new Document(EARLIEST_FIRST_LOGIN,
                 new Document("$gt", startDate))));
         }
 
-        newPlayerFacet.add(new Document("$group", new Document("_id",
+        facet.add(new Document("$group", new Document("_id",
             new Document("$dateToString",
                 new Document("format", "%Y-%m-%d")
                     .append("date", "$" + EARLIEST_FIRST_LOGIN)
                     .append("timezone", timeZone)))
             .append(ALIAS_COUNT, new Document("$sum", 1))));
-        newPlayerFacet.add(new Document("$sort", new Document("_id", 1)));
+        facet.add(new Document("$sort", new Document("_id", 1)));
+        return facet;
+    }
 
-        final List<Document> countryFacet = new ArrayList<>();
-        countryFacet.add(new Document("$unwind", "$" + PlayerFields.IP_ADDRESSES));
+    private static List<Document> countryFacet(Date startDate) {
+        final List<Document> facet = new ArrayList<>();
+        facet.add(new Document("$unwind", "$" + PlayerFields.IP_ADDRESSES));
 
         if (startDate != null) {
-            countryFacet.add(new Document("$match", new Document("$or", List.of(
+            facet.add(new Document("$match", new Document("$or", List.of(
                 new Document(PlayerFields.IP_FIRST_LOGIN, new Document("$gt", startDate)),
                 new Document(PlayerFields.IP_ADDRESSES + ".logins", new Document("$elemMatch", new Document("$gt", startDate)))
             ))));
         }
-        countryFacet.add(new Document("$match", new Document(PlayerFields.IP_ADDRESSES + ".country",
+        facet.add(new Document("$match", new Document(PlayerFields.IP_ADDRESSES + ".country",
             new Document("$exists", true).append("$ne", ""))));
 
         Document loginCountExpr;
@@ -258,35 +346,27 @@ public class AnalyticsMongoRepository {
                 new Document("$size", new Document("$ifNull", List.of("$" + PlayerFields.IP_ADDRESSES + ".logins", List.of())))));
         }
 
-        countryFacet.add(new Document("$group", new Document("_id", "$" + PlayerFields.IP_ADDRESSES + ".country")
+        facet.add(new Document("$group", new Document("_id", "$" + PlayerFields.IP_ADDRESSES + ".country")
             .append(ALIAS_COUNT, new Document("$sum", loginCountExpr))));
-        countryFacet.add(new Document("$sort", new Document(ALIAS_COUNT, -1)));
-        countryFacet.add(new Document("$limit", 20));
+        facet.add(new Document("$sort", new Document(ALIAS_COUNT, -1)));
+        facet.add(new Document("$limit", 20));
+        return facet;
+    }
 
-        final List<Document> suspiciousFacet = new ArrayList<>();
-        suspiciousFacet.add(new Document("$unwind", "$" + PlayerFields.IP_ADDRESSES));
+    private static List<Document> suspiciousFacet(Date startDate) {
+        final List<Document> facet = new ArrayList<>();
+        facet.add(new Document("$unwind", "$" + PlayerFields.IP_ADDRESSES));
 
         if (startDate != null) {
-            suspiciousFacet.add(new Document("$match", new Document("$or", List.of(
+            facet.add(new Document("$match", new Document("$or", List.of(
                 new Document(PlayerFields.IP_FIRST_LOGIN, new Document("$gt", startDate)),
                 new Document(PlayerFields.IP_ADDRESSES + ".logins", new Document("$elemMatch", new Document("$gt", startDate)))
             ))));
         }
-        suspiciousFacet.add(new Document("$group", new Document("_id", null)
+        facet.add(new Document("$group", new Document("_id", null)
             .append("proxyCount", new Document("$sum", new Document("$cond", List.of("$" + PlayerFields.IP_ADDRESSES + ".proxy", 1, 0))))
             .append("hostingCount", new Document("$sum", new Document("$cond", List.of("$" + PlayerFields.IP_ADDRESSES + ".hosting", 1, 0))))));
-
-        pipeline.add(new Document("$facet", new Document()
-            .append(FACET_NEW_PLAYERS, newPlayerFacet)
-            .append(FACET_BY_COUNTRY, countryFacet)
-            .append(FACET_SUSPICIOUS, suspiciousFacet)));
-
-        final List<Document> results = tenantMongoAccess.forServer(server)
-            .getCollection(CollectionName.PLAYERS)
-            .aggregate(pipeline)
-            .into(new ArrayList<>());
-
-        return results.isEmpty() ? null : results.get(0);
+        return facet;
     }
 
     public record OverviewStats(
@@ -294,9 +374,95 @@ public class AnalyticsMongoRepository {
         long totalPlayers,
         long activeTickets,
         long recentTickets,
-        long previousTickets
+        long previousTickets,
+        long recentPlayers,
+        long previousPlayers
     ) {
     }
 
     public record IdCountResult(String id, int count) {}
+
+    public record CategoryAvgResolution(String id, double avgMillis) {}
+
+    public record PunishmentAnalyticsFacet(
+        List<TypeOrdinalCount> byType,
+        List<IssuerCount> byStaff,
+        List<DateCountResult> daily
+    ) {}
+
+    public record PlayerActivityFacet(
+        List<DateCountResult> newPlayers,
+        List<CountryCount> byCountry,
+        SuspiciousCounts suspicious
+    ) {}
+
+    public record TypeOrdinalCount(Integer typeOrdinal, int count) {}
+
+    public record IssuerCount(String issuerId, int count) {}
+
+    public record DateCountResult(String date, int count) {}
+
+    public record CountryCount(String country, int count) {}
+
+    public record SuspiciousCounts(int proxyCount, int hostingCount) {}
+
+    private static double doubleValueOrZero(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private static List<Document> facetDocuments(Object value) {
+        if (!(value instanceof List<?> rawList)) {
+            return List.of();
+        }
+        List<Document> documents = new ArrayList<>();
+        for (Object item : rawList) {
+            if (item instanceof Document document) {
+                documents.add(document);
+            }
+        }
+        return documents;
+    }
+
+    private static List<TypeOrdinalCount> toTypeOrdinalCounts(Object value) {
+        return facetDocuments(value).stream()
+            .map(doc -> new TypeOrdinalCount(
+                doc.get("_id") instanceof Number number ? number.intValue() : null,
+                ProtoMapperSupport.intValueOrZero(doc.get(ALIAS_COUNT))))
+            .toList();
+    }
+
+    private static List<IssuerCount> toIssuerCounts(Object value) {
+        return facetDocuments(value).stream()
+            .map(doc -> new IssuerCount(
+                doc.get("_id") instanceof String issuerId ? issuerId : null,
+                ProtoMapperSupport.intValueOrZero(doc.get(ALIAS_COUNT))))
+            .toList();
+    }
+
+    private static List<DateCountResult> toDateCounts(Object value) {
+        return facetDocuments(value).stream()
+            .map(doc -> new DateCountResult(
+                doc.getString("_id"),
+                ProtoMapperSupport.intValueOrZero(doc.get(ALIAS_COUNT))))
+            .toList();
+    }
+
+    private static List<CountryCount> toCountryCounts(Object value) {
+        return facetDocuments(value).stream()
+            .map(doc -> new CountryCount(
+                doc.getString("_id"),
+                ProtoMapperSupport.intValueOrZero(doc.get(ALIAS_COUNT))))
+            .toList();
+    }
+
+    private static SuspiciousCounts toSuspiciousCounts(Object value) {
+        List<Document> documents = facetDocuments(value);
+        if (documents.isEmpty()) {
+            return new SuspiciousCounts(0, 0);
+        }
+        Document first = documents.get(0);
+        return new SuspiciousCounts(
+            ProtoMapperSupport.intValueOrZero(first.get("proxyCount")),
+            ProtoMapperSupport.intValueOrZero(first.get("hostingCount")));
+    }
 }

@@ -1,14 +1,28 @@
 package gg.modl.backend.replay.util;
 
+import gg.modl.backend.infrastructure.exception.ValidationException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 public final class ReplayReferenceUtil {
     private static final String REPLAY_ID_QUERY_PARAM = "id";
 
     private ReplayReferenceUtil() {
+    }
+
+    public static String requireValidUuid(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(normalized).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new ValidationException("Target UUID must be a valid UUID");
+        }
     }
 
     public static String extractReplayId(String replayReference) {
@@ -40,7 +54,7 @@ public final class ReplayReferenceUtil {
         }
     }
 
-    private static String normalize(String value) {
+    public static String normalize(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }

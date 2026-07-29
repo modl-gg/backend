@@ -7,6 +7,7 @@ import gg.modl.backend.player.service.PunishmentEvidenceService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
 import gg.modl.backend.player.service.PunishmentQueryService.UploadedEvidenceItem;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -15,16 +16,13 @@ import gg.modl.backend.storage.dto.request.EvidenceItemRequest;
 import gg.modl.backend.storage.dto.request.EvidencePresignUploadRequest;
 import gg.modl.backend.storage.dto.request.SubmitEvidenceRequest;
 import gg.modl.backend.storage.data.StorageFileDocument;
-import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.dto.response.UploadResponse;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -49,7 +47,7 @@ public class EvidenceUploadService {
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         Player player = server == null
             ? null
-            : playerRepository.findByMinecraftUuid(server, normalizeUuid(uploadToken.playerUuid())).orElse(null);
+            : playerRepository.findByMinecraftUuid(server, UuidUtils.normalize(uploadToken.playerUuid())).orElse(null);
         String playerName = player != null ? PlayerDataUtils.extractLatestUsername(player.getUsernames()) : "Unknown";
 
         return TokenValidationResult.valid(new TokenInfo(
@@ -62,16 +60,16 @@ public class EvidenceUploadService {
     public PresignUploadResult presignUpload(String token, EvidencePresignUploadRequest request) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
-            return PresignUploadResult.of(PresignUploadStatus.INVALID_TOKEN, null, null);
+            return new PresignUploadResult.InvalidToken();
         }
 
         if (!s3StorageService.isConfigured()) {
-            return PresignUploadResult.of(PresignUploadStatus.STORAGE_NOT_CONFIGURED, null, null);
+            return new PresignUploadResult.StorageNotConfigured();
         }
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server == null) {
-            return PresignUploadResult.of(PresignUploadStatus.SERVER_NOT_FOUND, null, null);
+            return new PresignUploadResult.ServerNotFound();
         }
 
         UploadOrchestrationService.PresignOutcome outcome = uploadOrchestrationService.presign(server,
@@ -85,71 +83,61 @@ public class EvidenceUploadService {
                 false
             ));
 
-        return switch (outcome.status()) {
-            case SUCCESS -> PresignUploadResult.of(PresignUploadStatus.SUCCESS, null, outcome.upload());
-            case QUOTA_EXCEEDED -> PresignUploadResult.of(PresignUploadStatus.QUOTA_EXCEEDED,
-                "Storage quota exceeded. Please contact the server administrator.", null);
-            case VALIDATION_FAILED, TEMP_LIMIT_EXCEEDED ->
-                PresignUploadResult.of(PresignUploadStatus.VALIDATION_FAILED, outcome.message(), null);
-        };
+        return new PresignUploadResult.Orchestrated(outcome);
     }
 
     public ConfirmUploadResult confirmUpload(String token, EvidenceConfirmUploadRequest request) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
-            return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_TOKEN, null);
+            return new ConfirmUploadResult.InvalidToken();
         }
 
         if (!validationService.isKeyOwnedByServer(request.key(), uploadToken.serverDatabaseName())) {
-            return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_KEY, null);
+            return new ConfirmUploadResult.InvalidKey();
         }
 
         String expectedKeyPrefix = uploadToken.serverDatabaseName() + "/evidence/" + uploadToken.punishmentId() + "/";
         if (!request.key().startsWith(expectedKeyPrefix)) {
-            return ConfirmUploadResult.of(ConfirmUploadStatus.INVALID_KEY, null);
+            return new ConfirmUploadResult.InvalidKey();
         }
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server == null) {
             UploadResponse uploadDetails = s3StorageService.getUploadDetails(request.key());
             if (uploadDetails == null) {
-                return ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
+                return new ConfirmUploadResult.Orchestrated(
+                    UploadOrchestrationService.ConfirmOutcome.status(UploadOrchestrationService.ConfirmStatus.UPLOAD_NOT_FOUND));
             }
             log.warn("Could not record storage metadata: server not found for database {}", uploadToken.serverDatabaseName());
-            return ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, uploadDetails);
+            return new ConfirmUploadResult.Orchestrated(UploadOrchestrationService.ConfirmOutcome.success(uploadDetails));
         }
 
         UploadOrchestrationService.ConfirmOutcome outcome =
             uploadOrchestrationService.confirm(server, request.key(), false);
-        return switch (outcome.status()) {
-            case SUCCESS -> ConfirmUploadResult.of(ConfirmUploadStatus.SUCCESS, outcome.upload());
-            case UPLOAD_NOT_FOUND -> ConfirmUploadResult.of(ConfirmUploadStatus.UPLOAD_NOT_FOUND, null);
-            case QUOTA_EXCEEDED -> ConfirmUploadResult.of(ConfirmUploadStatus.QUOTA_EXCEEDED, null);
-            case RECORD_FAILED, TEMP_LIMIT_EXCEEDED -> ConfirmUploadResult.of(ConfirmUploadStatus.RECORD_FAILED, null);
-        };
+        return new ConfirmUploadResult.Orchestrated(outcome);
     }
 
     public SubmitEvidenceResult submitEvidence(String token, SubmitEvidenceRequest request) {
         EvidenceUploadTokenService.UploadToken uploadToken = tokenService.validateToken(token);
         if (uploadToken == null) {
-            return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_TOKEN, null);
+            return new SubmitEvidenceResult.InvalidToken();
         }
 
         Server server = serverService.getServerByDatabaseName(uploadToken.serverDatabaseName());
         if (server == null) {
-            return SubmitEvidenceResult.of(SubmitEvidenceStatus.SERVER_NOT_FOUND, null);
+            return new SubmitEvidenceResult.ServerNotFound();
         }
 
         List<EvidenceItemRequest> items = request.evidence();
         List<String> keys = new ArrayList<>(items.size());
         for (EvidenceItemRequest item : items) {
             if (!isAllowedEvidenceUrl(item.url(), uploadToken)) {
-                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+                return new SubmitEvidenceResult.InvalidUrl();
             }
 
             String key = extractKeyFromEvidenceUrl(item.url());
             if (key == null) {
-                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+                return new SubmitEvidenceResult.InvalidUrl();
             }
             keys.add(key);
         }
@@ -161,7 +149,7 @@ public class EvidenceUploadService {
             EvidenceItemRequest item = items.get(i);
             StorageFileDocument doc = confirmedFiles.get(keys.get(i));
             if (doc == null) {
-                return SubmitEvidenceResult.of(SubmitEvidenceStatus.INVALID_URL, null);
+                return new SubmitEvidenceResult.InvalidUrl();
             }
 
             evidenceItems.add(new UploadedEvidenceItem(
@@ -180,11 +168,11 @@ public class EvidenceUploadService {
             evidenceItems
         );
         if (result.status() == PunishmentOperationStatus.NOT_FOUND) {
-            return SubmitEvidenceResult.of(SubmitEvidenceStatus.PUNISHMENT_NOT_FOUND, result.message());
+            return new SubmitEvidenceResult.PunishmentNotFound(result.message());
         }
 
         tokenService.invalidateToken(token);
-        return SubmitEvidenceResult.of(SubmitEvidenceStatus.SUCCESS, null);
+        return new SubmitEvidenceResult.Success();
     }
 
     private String extractKeyFromEvidenceUrl(String url) {
@@ -224,32 +212,6 @@ public class EvidenceUploadService {
         }
     }
 
-    public enum PresignUploadStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        STORAGE_NOT_CONFIGURED,
-        SERVER_NOT_FOUND,
-        VALIDATION_FAILED,
-        QUOTA_EXCEEDED
-    }
-
-    public enum ConfirmUploadStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        INVALID_KEY,
-        UPLOAD_NOT_FOUND,
-        QUOTA_EXCEEDED,
-        RECORD_FAILED
-    }
-
-    public enum SubmitEvidenceStatus {
-        SUCCESS,
-        INVALID_TOKEN,
-        SERVER_NOT_FOUND,
-        INVALID_URL,
-        PUNISHMENT_NOT_FOUND
-    }
-
     public record TokenValidationResult(boolean valid, TokenInfo info) {
         private static TokenValidationResult invalid() {
             return new TokenValidationResult(false, null);
@@ -263,33 +225,33 @@ public class EvidenceUploadService {
     public record TokenInfo(String punishmentId, String playerName, String issuerName) {
     }
 
-    public record PresignUploadResult(PresignUploadStatus status, String message, PresignUploadResponse upload) {
-        private static PresignUploadResult of(PresignUploadStatus status, String message, PresignUploadResponse upload) {
-            return new PresignUploadResult(status, message, upload);
-        }
+    public sealed interface PresignUploadResult {
+        record InvalidToken() implements PresignUploadResult {}
+
+        record StorageNotConfigured() implements PresignUploadResult {}
+
+        record ServerNotFound() implements PresignUploadResult {}
+
+        record Orchestrated(UploadOrchestrationService.PresignOutcome outcome) implements PresignUploadResult {}
     }
 
-    public record ConfirmUploadResult(ConfirmUploadStatus status, UploadResponse upload) {
-        private static ConfirmUploadResult of(ConfirmUploadStatus status, UploadResponse upload) {
-            return new ConfirmUploadResult(status, upload);
-        }
+    public sealed interface ConfirmUploadResult {
+        record InvalidToken() implements ConfirmUploadResult {}
+
+        record InvalidKey() implements ConfirmUploadResult {}
+
+        record Orchestrated(UploadOrchestrationService.ConfirmOutcome outcome) implements ConfirmUploadResult {}
     }
 
-    public record SubmitEvidenceResult(SubmitEvidenceStatus status, String message) {
-        private static SubmitEvidenceResult of(SubmitEvidenceStatus status, String message) {
-            return new SubmitEvidenceResult(status, message);
-        }
+    public sealed interface SubmitEvidenceResult {
+        record InvalidToken() implements SubmitEvidenceResult {}
 
-        public HttpStatus httpStatus() {
-            return switch (status) {
-                case SUCCESS -> HttpStatus.OK;
-                case INVALID_TOKEN, SERVER_NOT_FOUND, PUNISHMENT_NOT_FOUND -> HttpStatus.NOT_FOUND;
-                case INVALID_URL -> HttpStatus.BAD_REQUEST;
-            };
-        }
-    }
+        record ServerNotFound() implements SubmitEvidenceResult {}
 
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
+        record InvalidUrl() implements SubmitEvidenceResult {}
+
+        record PunishmentNotFound(String message) implements SubmitEvidenceResult {}
+
+        record Success() implements SubmitEvidenceResult {}
     }
 }

@@ -1,17 +1,16 @@
 package gg.modl.backend.replaylite.service;
 
 import gg.modl.backend.infrastructure.exception.ValidationException;
-import java.time.Clock;
+import gg.modl.backend.infrastructure.ratelimit.BucketPool;
+import io.github.bucket4j.Bucket;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class ReplayLiteAbuseGuard {
-    private static final int MAX_TRACKED_KEYS = 50_000;
     private static final int MAX_INIT_ATTEMPTS_PER_HOUR = 40;
     private static final int MAX_CONFIRMS_PER_HOUR = 80;
     private static final int MAX_LABELS_PER_HOUR = 80;
@@ -19,40 +18,40 @@ public class ReplayLiteAbuseGuard {
     private static final int MAX_REQUESTS_PER_IP_PER_MINUTE = 120;
     private static final int MAX_ACTIVE_PENDING_PER_SERVER = 25;
 
-    private final Clock clock;
-    private final Map<String, WindowCounter> counters = new LinkedHashMap<>(64, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, WindowCounter> eldest) {
-            return size() > MAX_TRACKED_KEYS;
-        }
-    };
+    private static final Duration HOURLY_WINDOW = Duration.ofHours(1);
+    private static final Duration PER_MINUTE_WINDOW = Duration.ofMinutes(1);
 
-    public ReplayLiteAbuseGuard() {
-        this(Clock.systemUTC());
-    }
+    private static final String INIT_NAMESPACE = "replaylite:init";
+    private static final String CONFIRM_NAMESPACE = "replaylite:confirm";
+    private static final String LABEL_NAMESPACE = "replaylite:label";
+    private static final String DOWNLOAD_NAMESPACE = "replaylite:download";
+    private static final String IP_NAMESPACE = "replaylite:ip";
 
-    ReplayLiteAbuseGuard(Clock clock) {
-        this.clock = clock;
-    }
+    private final BucketPool bucketPool;
 
     public void checkInit(UUID pluginServerUuid) {
-        consume("init:" + pluginServerUuid, MAX_INIT_ATTEMPTS_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite upload attempts");
+        consume(INIT_NAMESPACE, pluginServerUuid.toString(), MAX_INIT_ATTEMPTS_PER_HOUR, HOURLY_WINDOW,
+            "Too many Replay Lite upload attempts");
     }
 
     public void checkConfirm(UUID pluginServerUuid) {
-        consume("confirm:" + pluginServerUuid, MAX_CONFIRMS_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite confirm attempts");
+        consume(CONFIRM_NAMESPACE, pluginServerUuid.toString(), MAX_CONFIRMS_PER_HOUR, HOURLY_WINDOW,
+            "Too many Replay Lite confirm attempts");
     }
 
     public void checkLabel(String replayId) {
-        consume("label:" + replayId, MAX_LABELS_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite label submissions");
+        consume(LABEL_NAMESPACE, replayId, MAX_LABELS_PER_HOUR, HOURLY_WINDOW,
+            "Too many Replay Lite label submissions");
     }
 
     public void checkDownload(String replayId) {
-        consume("download:" + replayId, MAX_DOWNLOADS_PER_REPLAY_PER_HOUR, Duration.ofHours(1), "Too many Replay Lite download requests");
+        consume(DOWNLOAD_NAMESPACE, replayId, MAX_DOWNLOADS_PER_REPLAY_PER_HOUR, HOURLY_WINDOW,
+            "Too many Replay Lite download requests");
     }
 
     public void checkIp(String clientIp) {
-        consume("ip:" + clientIp, MAX_REQUESTS_PER_IP_PER_MINUTE, Duration.ofMinutes(1), "Too many Replay Lite requests");
+        consume(IP_NAMESPACE, clientIp, MAX_REQUESTS_PER_IP_PER_MINUTE, PER_MINUTE_WINDOW,
+            "Too many Replay Lite requests");
     }
 
     public void checkPendingUploads(long activePendingCount) {
@@ -61,20 +60,10 @@ public class ReplayLiteAbuseGuard {
         }
     }
 
-    private synchronized void consume(String key, int limit, Duration window, String message) {
-        Instant now = clock.instant();
-        WindowCounter counter = counters.get(key);
-        if (counter == null || !now.isBefore(counter.expiresAt())) {
-            counters.put(key, new WindowCounter(1, now.plus(window)));
-            return;
-        }
-
-        if (counter.count() >= limit) {
+    private void consume(String namespace, String key, int limit, Duration window, String message) {
+        Bucket bucket = bucketPool.resolveBucket(namespace, key, limit, window);
+        if (!bucket.tryConsume(1)) {
             throw new ValidationException(message);
         }
-
-        counters.put(key, new WindowCounter(counter.count() + 1, counter.expiresAt()));
     }
-
-    private record WindowCounter(int count, Instant expiresAt) {}
 }

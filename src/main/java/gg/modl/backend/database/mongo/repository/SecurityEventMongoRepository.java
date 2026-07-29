@@ -1,6 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.admin.data.SecurityEvent;
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.SecurityEventFields;
@@ -12,13 +13,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
+import org.springframework.util.StringUtils;
 
 @Repository
 public class SecurityEventMongoRepository extends AbstractGlobalMongoRepository<SecurityEvent> {
-    public static final String COLLECTION_NAME = "security_events";
-
     public SecurityEventMongoRepository(TenantMongoAccess tenantMongoAccess) {
-        super(SecurityEvent.class, COLLECTION_NAME, tenantMongoAccess);
+        super(SecurityEvent.class, CollectionName.SECURITY_EVENTS, tenantMongoAccess);
     }
 
     public List<SecurityEvent> findSecurityEvents(
@@ -48,16 +48,16 @@ public class SecurityEventMongoRepository extends AbstractGlobalMongoRepository<
         Query query = new Query();
         List<Criteria> criteriaList = new ArrayList<>();
 
-        if (hasText(type)) {
+        if (StringUtils.hasText(type)) {
             criteriaList.add(Criteria.where(SecurityEventFields.TYPE).is(type));
         }
-        if (hasText(severity)) {
+        if (StringUtils.hasText(severity)) {
             criteriaList.add(Criteria.where(SecurityEventFields.SEVERITY).is(severity));
         }
-        if (hasText(source)) {
+        if (StringUtils.hasText(source)) {
             criteriaList.add(Criteria.where(SecurityEventFields.SOURCE).is(source));
         }
-        if (hasText(search)) {
+        if (StringUtils.hasText(search)) {
             criteriaList.add(Criteria.where(SecurityEventFields.DESCRIPTION).regex(Pattern.quote(search), "i"));
         }
         if (startDate != null || endDate != null) {
@@ -74,10 +74,6 @@ public class SecurityEventMongoRepository extends AbstractGlobalMongoRepository<
             query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
         }
         return query;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
     }
 
     public long countSecurityEvents(

@@ -1,296 +1,261 @@
 package gg.modl.backend.settings.service;
 
-import gg.modl.backend.infrastructure.cors.DynamicCorsConfigurationSource;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.cloudflare.config.CloudflareConfiguration;
 import gg.modl.backend.cloudflare.external.CloudflareClient;
+import gg.modl.backend.database.mongo.repository.ServerCustomDomainRepository;
+import gg.modl.backend.infrastructure.config.ModlCorsProperties;
 import gg.modl.backend.infrastructure.exception.ConflictException;
+import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
+import gg.modl.backend.infrastructure.exception.ServiceUnavailableException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.server.data.CustomDomainStatus;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.DomainSettings;
-import gg.modl.backend.settings.data.Settings;
 import java.net.IDN;
 import java.time.Instant;
-import java.util.HashMap;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class DomainSettingsService {
-    private final SettingsRepositoryAccess settingsRepositoryAccess;
-    private final ServerMongoRepository serverRepository;
+    private final ServerCustomDomainRepository serverCustomDomainRepository;
     private final CloudflareClient cloudflareClient;
-    private final DynamicCorsConfigurationSource corsConfigurationSource;
+    private final CloudflareConfiguration cloudflareConfiguration;
     private final CustomDomainAccessService customDomainAccessService;
+    private final CustomDomainStatusMapper statusMapper;
+    private final CustomDomainStateWriter stateWriter;
+    private final CustomDomainLockRegistry lockRegistry;
+    private final SettingsDocumentService settingsDocumentService;
+    private final Set<String> reservedSuffixes;
     private static final String SETTINGS_TYPE_DOMAIN = "domain";
+    private static final String DOMAIN_UNAVAILABLE_MESSAGE = "This domain is not available.";
     private static final Pattern HOSTNAME_PATTERN = Pattern.compile("^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\\.(?!-)[a-z0-9-]{1,63}(?<!-))+$");
     private static final Pattern IPV4_PATTERN = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$");
     private static final Set<String> RESERVED_SUFFIXES = Set.of(
         "modl.gg", "modl.top", "localhost", "local", "internal", "test", "example", "invalid"
     );
 
+    public DomainSettingsService(
+        SettingsDocumentService settingsDocumentService,
+        ServerCustomDomainRepository serverCustomDomainRepository,
+        CloudflareClient cloudflareClient,
+        CloudflareConfiguration cloudflareConfiguration,
+        CustomDomainAccessService customDomainAccessService,
+        CustomDomainStatusMapper statusMapper,
+        CustomDomainStateWriter stateWriter,
+        CustomDomainLockRegistry lockRegistry,
+        ModlCorsProperties corsProperties
+    ) {
+        this.serverCustomDomainRepository = serverCustomDomainRepository;
+        this.cloudflareClient = cloudflareClient;
+        this.cloudflareConfiguration = cloudflareConfiguration;
+        this.customDomainAccessService = customDomainAccessService;
+        this.statusMapper = statusMapper;
+        this.stateWriter = stateWriter;
+        this.lockRegistry = lockRegistry;
+        this.settingsDocumentService = settingsDocumentService;
+        this.reservedSuffixes = buildReservedSuffixes(corsProperties);
+    }
+
+    private static Set<String> buildReservedSuffixes(ModlCorsProperties corsProperties) {
+        Set<String> combined = new HashSet<>(RESERVED_SUFFIXES);
+        Arrays.stream(corsProperties.getAppDomains().split(","))
+            .map(String::trim)
+            .filter(suffix -> !suffix.isBlank())
+            .map(suffix -> suffix.toLowerCase(Locale.ROOT))
+            .forEach(combined::add);
+        return Set.copyOf(combined);
+    }
+
     public DomainSettings getDomainSettings(Server server, String requestHost) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-
-        String modlSubdomainUrl = "https://" + server.getCustomDomain() + ".modl.gg";
-        boolean canManageCustomDomain = customDomainAccessService.canManageCustomDomain(server);
-
-        if (settings == null || settings.getData() == null) {
-            return DomainSettings.builder()
-                .customDomain(null)
-                .status(null)
-                .accessingFromCustomDomain(false)
-                .modlSubdomainUrl(modlSubdomainUrl)
-                .canManageCustomDomain(canManageCustomDomain)
-                .build();
-        }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) settings.getData();
-        String customDomain = getStringValue(data, "customDomain");
-
+        String customDomain = server.getCustomDomainOverride();
         boolean accessingFromCustomDomain = customDomain != null && !customDomain.isEmpty()
                                             && requestHost != null && requestHost.equalsIgnoreCase(customDomain);
+        DomainSettings.DomainStatus status = customDomain == null || customDomain.isEmpty()
+                                             ? null : statusFromServer(server);
+        return buildResponse(server, customDomain, status, accessingFromCustomDomain);
+    }
 
-        DomainSettings.DomainStatus status = null;
-        if (customDomain != null && !customDomain.isEmpty()) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> statusData = (Map<String, Object>) data.get("status");
-            if (statusData != null) {
-                status = DomainSettings.DomainStatus.builder()
-                    .domain(getStringValue(statusData, "domain"))
-                    .status(getStringValue(statusData, "status"))
-                    .cnameConfigured(getBooleanValue(statusData, "cnameConfigured"))
-                    .sslStatus(getStringValue(statusData, "sslStatus"))
-                    .lastChecked(getStringValue(statusData, "lastChecked"))
-                    .error(getStringValue(statusData, "error"))
-                    .build();
+    public DomainSettings configureDomain(Server server, String requestedDomain) {
+        String customDomain = normalizeAndValidateCustomDomain(requestedDomain);
+        requireCloudflareConfigured();
+
+        try (CustomDomainLockRegistry.LockHold hold = lockRegistry.acquire(server.getId(), customDomain)) {
+            return configureDomainLocked(server, customDomain);
+        }
+    }
+
+    private DomainSettings configureDomainLocked(Server staleServer, String customDomain) {
+        Server server = serverCustomDomainRepository.findById(staleServer.getId())
+            .orElseThrow(() -> new ResourceNotFoundException("Server not found"));
+        String currentDomain = server.getCustomDomainOverride();
+        String currentCloudflareId = server.getCustomDomainCloudflareId();
+        boolean sameDomain = currentDomain != null && currentDomain.equalsIgnoreCase(customDomain);
+
+        if (serverCustomDomainRepository.isCustomDomainOwnedByAnotherServer(customDomain, server.getId())) {
+            throw new ConflictException(DOMAIN_UNAVAILABLE_MESSAGE);
+        }
+
+        if (sameDomain && server.getCustomDomainStatus() == CustomDomainStatus.ACTIVE) {
+            CloudflareClient.CustomHostnameResult existing = currentCloudflareId == null
+                                                             ? null : cloudflareClient.getCustomHostname(currentCloudflareId);
+            if (existing != null && customDomain.equalsIgnoreCase(existing.hostname())) {
+                return getDomainSettings(server, null);
             }
         }
 
-        return DomainSettings.builder()
-            .customDomain(customDomain)
-            .status(status)
-            .accessingFromCustomDomain(accessingFromCustomDomain)
-            .modlSubdomainUrl(modlSubdomainUrl)
-            .canManageCustomDomain(canManageCustomDomain)
-            .build();
-    }
-
-    private String getStringValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        return value instanceof String ? (String) value : null;
-    }
-
-    private boolean getBooleanValue(Map<String, Object> data, String key) {
-        Object value = data.get(key);
-        return value instanceof Boolean ? (Boolean) value : false;
-    }
-
-    public DomainSettings configureDomain(Server server, String customDomain) {
-        customDomain = normalizeAndValidateCustomDomain(customDomain);
-
-        String currentDomain = extractCurrentDomain(server);
-
-        if (currentDomain != null && currentDomain.equalsIgnoreCase(customDomain)) {
-            throw new ConflictException("This domain is already configured. Please verify the existing configuration or remove it first.");
+        if (!sameDomain && currentDomain != null) {
+            deleteExistingHostname(currentCloudflareId, currentDomain);
         }
 
-        String currentCloudflareHostnameId = extractCurrentCloudflareHostnameId(server);
-        CloudflareClient.CustomHostnameResult existingHostname = cloudflareClient.findCustomHostnameByName(customDomain);
-        if (existingHostname != null) {
-            if (currentCloudflareHostnameId == null || !existingHostname.id().equals(currentCloudflareHostnameId)) {
-                throw new ConflictException("This domain is already configured by another server.");
-            }
-            cloudflareClient.deleteCustomHostname(existingHostname.id());
+        CloudflareClient.CustomHostnameResult collision = cloudflareClient.findCustomHostnameByName(customDomain);
+        if (collision != null) {
+            cloudflareClient.deleteCustomHostname(collision.id());
         }
 
         CloudflareClient.CustomHostnameResult cfResult = cloudflareClient.createCustomHostname(customDomain);
-
-        String initialStatus = "pending";
-        String sslStatus = "pending";
-        String error = null;
-        String cloudflareHostnameId = null;
-
         if (cfResult == null) {
-            initialStatus = "error";
-            sslStatus = "error";
-            error = "Failed to create custom hostname in Cloudflare. Please check your configuration.";
-            log.error("Failed to create Cloudflare custom hostname for domain: {}", customDomain);
-        } else {
-            cloudflareHostnameId = cfResult.id();
-            initialStatus = mapCloudflareStatus(cfResult.status());
-            if (cfResult.ssl() != null) {
-                sslStatus = mapCloudflareStatus(cfResult.ssl().status());
-            }
+            throw new ExternalServiceException("Failed to provision the custom domain. Please try again.");
         }
 
-        DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
-            .domain(customDomain)
-            .status(initialStatus)
-            .cnameConfigured(false)
-            .sslStatus(sslStatus)
-            .lastChecked(Instant.now().toString())
-            .error(error)
-            .build();
+        CustomDomainStatusMapper.Resolution resolution = statusMapper.resolve(cfResult);
+        DomainSettings.DomainStatus status = buildStatus(customDomain, resolution);
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("customDomain", customDomain);
-        data.put("status", buildDomainStatusMap(status));
-        data.put("cloudflareHostnameId", cloudflareHostnameId);
-
-        settingsRepositoryAccess.upsertSettings(server, SETTINGS_TYPE_DOMAIN, data);
-
-        updateServerDocument(server.getId(), customDomain, initialStatus, cloudflareHostnameId, error);
-
-        return buildDomainSettingsResponse(server, customDomain, status);
-    }
-
-    private void updateServerDocument(String serverId, String customDomain, String status,
-                                      String cloudflareHostnameId, String error) {
-        serverRepository.updateCustomDomain(serverId, customDomain, status, cloudflareHostnameId, error);
-        corsConfigurationSource.invalidateCache(customDomain);
-        log.debug("Invalidated CORS cache for domain: {}", customDomain);
-    }
-
-    private String extractCurrentDomain(Server server) {
-        String currentDomain = server.getCustomDomainOverride();
-        if (currentDomain == null) {
-            Settings existingSettings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-            if (existingSettings != null && existingSettings.getData() != null) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
-                currentDomain = getStringValue(data, "customDomain");
-            }
+        try {
+            stateWriter.persist(server.getId(), customDomain, statusMapper.toEnum(resolution.status()),
+                cfResult.id(), resolution.error());
+        } catch (DuplicateKeyException duplicateKeyException) {
+            cloudflareClient.deleteCustomHostname(cfResult.id());
+            throw new ConflictException(DOMAIN_UNAVAILABLE_MESSAGE);
         }
-        return currentDomain;
+
+        stateWriter.evict(currentDomain);
+        settingsDocumentService.deleteState(server, SETTINGS_TYPE_DOMAIN);
+
+        return buildResponse(server, customDomain, status, false);
     }
 
-    private String extractCurrentCloudflareHostnameId(Server server) {
-        String currentCloudflareHostnameId = server.getCustomDomainCloudflareId();
-        if (currentCloudflareHostnameId == null) {
-            Settings existingSettings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-            if (existingSettings != null && existingSettings.getData() != null) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> data = (Map<String, Object>) existingSettings.getData();
-                currentCloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
-            }
-        }
-        return currentCloudflareHostnameId;
-    }
-
-    private Map<String, Object> buildDomainStatusMap(DomainSettings.DomainStatus status) {
-        Map<String, Object> statusMap = new HashMap<>();
-        statusMap.put("domain", status.getDomain());
-        statusMap.put("status", status.getStatus());
-        statusMap.put("cnameConfigured", status.isCnameConfigured());
-        statusMap.put("sslStatus", status.getSslStatus());
-        statusMap.put("lastChecked", status.getLastChecked());
-        statusMap.put("error", status.getError());
-        return statusMap;
-    }
-
-    private DomainSettings buildDomainSettingsResponse(Server server, String customDomain,
-                                                       DomainSettings.DomainStatus status) {
-        return DomainSettings.builder()
-            .customDomain(customDomain)
-            .status(status)
-            .accessingFromCustomDomain(false)
-            .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
-            .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
-            .build();
-    }
-
-    private String mapCloudflareStatus(String cfStatus) {
-        if (cfStatus == null) {
-            return "pending";
-        }
-        return switch (cfStatus.toLowerCase()) {
-            case "active" -> "active";
-            case "pending", "pending_validation", "pending_issuance", "pending_deployment", "initializing" -> "pending";
-            case "pending_deletion", "deleted" -> "pending";
-            case "blocked", "moved" -> "error";
-            default -> "pending";
-        };
-    }
-
-    public DomainSettings verifyDomain(Server server, String domain) {
-        domain = normalizeAndValidateCustomDomain(domain);
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-
-        if (settings == null || settings.getData() == null) {
+    public DomainSettings verifyDomain(Server server, String requestedDomain) {
+        String domain = normalizeAndValidateCustomDomain(requestedDomain);
+        requireCloudflareConfigured();
+        String configuredDomain = server.getCustomDomainOverride();
+        if (configuredDomain == null || configuredDomain.isEmpty()) {
             throw new ResourceNotFoundException("No domain configured");
         }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) settings.getData();
-        String configuredDomain = getStringValue(data, "customDomain");
-        String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
-
         if (!domain.equalsIgnoreCase(configuredDomain)) {
             throw new ValidationException("Domain does not match configured domain");
         }
 
-        String verifiedStatus = "pending";
-        String sslStatus = "pending";
-        boolean cnameConfigured = false;
-        String error = null;
+        try (CustomDomainLockRegistry.LockHold hold = lockRegistry.acquire(server.getId(), configuredDomain)) {
+            String cloudflareHostnameId = server.getCustomDomainCloudflareId();
+            CloudflareClient.CustomHostnameResult cfResult;
+            if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
+                cfResult = cloudflareClient.getCustomHostname(cloudflareHostnameId);
+            } else {
+                cfResult = cloudflareClient.findCustomHostnameByName(domain);
+                cloudflareHostnameId = cfResult == null ? null : cfResult.id();
+            }
 
-        CloudflareClient.CustomHostnameResult cfResult = null;
+            if (cfResult == null) {
+                log.warn("Custom hostname not found in Cloudflare for domain: {}", domain);
+            }
 
-        if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
-            cfResult = cloudflareClient.getCustomHostname(cloudflareHostnameId);
-        } else {
-            cfResult = cloudflareClient.findCustomHostnameByName(domain);
-            if (cfResult != null) {
-                cloudflareHostnameId = cfResult.id();
+            CustomDomainStatusMapper.Resolution resolution = statusMapper.resolve(cfResult);
+            DomainSettings.DomainStatus status = buildStatus(domain, resolution);
+
+            boolean updated = stateWriter.reconcileStatus(server.getId(), domain,
+                statusMapper.toEnum(resolution.status()), cloudflareHostnameId, resolution.error());
+            if (!updated) {
+                throw new ResourceNotFoundException("No domain configured");
+            }
+
+            return buildResponse(server, domain, status, false);
+        }
+    }
+
+    public void removeDomain(Server server) {
+        String customDomain = server.getCustomDomainOverride();
+        String[] lockKeys = customDomain == null
+                            ? new String[] {server.getId()}
+                            : new String[] {server.getId(), customDomain};
+        try (CustomDomainLockRegistry.LockHold hold = lockRegistry.acquire(lockKeys)) {
+            deleteExistingHostname(server.getCustomDomainCloudflareId(), customDomain);
+            stateWriter.clear(server.getId(), customDomain);
+            settingsDocumentService.deleteState(server, SETTINGS_TYPE_DOMAIN);
+        }
+    }
+
+    private void requireCloudflareConfigured() {
+        if (!cloudflareConfiguration.isConfigured()) {
+            throw new ServiceUnavailableException("Custom domains are not available on this deployment.");
+        }
+    }
+
+    private void deleteExistingHostname(String cloudflareId, String domain) {
+        String hostnameId = cloudflareId;
+        if (hostnameId == null && domain != null && !domain.isEmpty()) {
+            try {
+                CloudflareClient.CustomHostnameResult existing = cloudflareClient.findCustomHostnameByName(domain);
+                hostnameId = existing == null ? null : existing.id();
+            } catch (ExternalServiceException exception) {
+                log.warn("Could not look up Cloudflare custom hostname for domain {}; leaving it for orphan collection",
+                    domain, exception);
+                return;
             }
         }
-
-        if (cfResult != null) {
-            verifiedStatus = mapCloudflareStatus(cfResult.status());
-            cnameConfigured = "active".equals(verifiedStatus);
-
-            if (cfResult.ssl() != null) {
-                sslStatus = mapCloudflareStatus(cfResult.ssl().status());
-            }
-
-            if ("blocked".equals(cfResult.status()) || "moved".equals(cfResult.status())) {
-                error = "Domain verification failed. Status: " + cfResult.status();
-            }
-        } else {
-            verifiedStatus = "error";
-            sslStatus = "error";
-            error = "Custom hostname not found in Cloudflare. Please reconfigure the domain.";
-            log.warn("Custom hostname not found in Cloudflare for domain: {}", domain);
+        if (hostnameId == null) {
+            return;
         }
+        if (!cloudflareClient.deleteCustomHostname(hostnameId)) {
+            log.warn("Failed to delete Cloudflare custom hostname for domain: {}", domain);
+        }
+    }
 
-        DomainSettings.DomainStatus status = DomainSettings.DomainStatus.builder()
+    private DomainSettings.DomainStatus buildStatus(String domain, CustomDomainStatusMapper.Resolution resolution) {
+        return DomainSettings.DomainStatus.builder()
             .domain(domain)
-            .status(verifiedStatus)
-            .cnameConfigured(cnameConfigured)
-            .sslStatus(sslStatus)
+            .status(resolution.status())
+            .cnameConfigured(resolution.cnameConfigured())
+            .sslStatus(resolution.sslStatus())
             .lastChecked(Instant.now().toString())
-            .error(error)
+            .error(resolution.error())
             .build();
+    }
 
-        data.put("status", buildDomainStatusMap(status));
-        if (cloudflareHostnameId != null) {
-            data.put("cloudflareHostnameId", cloudflareHostnameId);
-        }
+    private DomainSettings.DomainStatus statusFromServer(Server server) {
+        CustomDomainStatus stored = server.getCustomDomainStatus();
+        String status = stored == null ? "pending" : stored.name().toLowerCase(Locale.ROOT);
+        boolean active = stored == CustomDomainStatus.ACTIVE;
+        String sslStatus = active ? "active" : (stored == CustomDomainStatus.ERROR ? "error" : "pending");
+        String lastChecked = server.getCustomDomainLastChecked() == null
+                             ? null : server.getCustomDomainLastChecked().toInstant().toString();
+        return DomainSettings.DomainStatus.builder()
+            .domain(server.getCustomDomainOverride())
+            .status(status)
+            .cnameConfigured(active)
+            .sslStatus(sslStatus)
+            .lastChecked(lastChecked)
+            .error(server.getCustomDomainError())
+            .build();
+    }
 
-        settingsRepositoryAccess.updateDataSettings(server, SETTINGS_TYPE_DOMAIN, data);
-
-        updateServerDocument(server.getId(), domain, verifiedStatus, cloudflareHostnameId, error);
-
-        return buildDomainSettingsResponse(server, domain, status);
+    private DomainSettings buildResponse(Server server, String customDomain,
+                                         DomainSettings.DomainStatus status, boolean accessingFromCustomDomain) {
+        return DomainSettings.builder()
+            .customDomain(customDomain)
+            .status(status)
+            .accessingFromCustomDomain(accessingFromCustomDomain)
+            .modlSubdomainUrl("https://" + server.getCustomDomain() + ".modl.gg")
+            .canManageCustomDomain(customDomainAccessService.canManageCustomDomain(server))
+            .build();
     }
 
     private String normalizeAndValidateCustomDomain(String domain) {
@@ -317,48 +282,11 @@ public class DomainSettingsService {
     }
 
     private boolean isReservedDomain(String domain) {
-        for (String suffix : RESERVED_SUFFIXES) {
+        for (String suffix : reservedSuffixes) {
             if (domain.equals(suffix) || domain.endsWith("." + suffix)) {
                 return true;
             }
         }
         return false;
-    }
-
-    public void removeDomain(Server server) {
-        Settings settings = settingsRepositoryAccess.findSettings(server, SETTINGS_TYPE_DOMAIN).orElse(null);
-
-        String customDomain = null;
-
-        if (settings != null && settings.getData() != null) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> data = (Map<String, Object>) settings.getData();
-            String cloudflareHostnameId = getStringValue(data, "cloudflareHostnameId");
-            customDomain = getStringValue(data, "customDomain");
-
-            if (cloudflareHostnameId != null && !cloudflareHostnameId.isEmpty()) {
-                boolean deleted = cloudflareClient.deleteCustomHostname(cloudflareHostnameId);
-                if (!deleted) {
-                    log.warn("Failed to delete Cloudflare custom hostname for domain: {}", customDomain);
-                }
-            }
-        }
-
-        if (customDomain == null && server.getCustomDomainOverride() != null) {
-            customDomain = server.getCustomDomainOverride();
-        }
-
-        settingsRepositoryAccess.removeSettings(server, SETTINGS_TYPE_DOMAIN);
-
-        clearServerDomainFields(server.getId());
-
-        if (customDomain != null && !customDomain.isEmpty()) {
-            corsConfigurationSource.invalidateCache(customDomain);
-            log.debug("Invalidated CORS cache for removed domain: {}", customDomain);
-        }
-    }
-
-    private void clearServerDomainFields(String serverId) {
-        serverRepository.clearCustomDomain(serverId);
     }
 }

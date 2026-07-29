@@ -1,6 +1,6 @@
 package gg.modl.backend.billing.service;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
@@ -16,14 +16,14 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class SubscriptionExpiryService {
-    private final ServerMongoRepository serverRepository;
+    private final ServerLookupRepository serverLookupRepository;
     private final UsageTrackingService usageTrackingService;
     private final ServerMutationHelper serverMutationHelper;
 
     @Scheduled(fixedRate = 3600000)
     public void checkExpiredSubscriptions() {
         try {
-            List<Server> cancelledServers = serverRepository.findCancelledWithPeriodEnd();
+            List<Server> cancelledServers = serverLookupRepository.findCancelledWithPeriodEnd();
             Date now = new Date();
 
             for (Server server : cancelledServers) {

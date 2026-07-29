@@ -1,0 +1,14 @@
+success: true
+data {
+  last24_hours {
+    critical: 1
+    high: 2
+    medium: 3
+  }
+  last7_days {
+    total: 10
+  }
+  timestamp {
+    seconds: 1700000000
+  }
+}

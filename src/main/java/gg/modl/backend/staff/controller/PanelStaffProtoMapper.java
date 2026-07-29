@@ -1,5 +1,9 @@
 package gg.modl.backend.staff.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalEpochMillis;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+
 import gg.modl.backend.staff.dto.request.AssignMinecraftPlayerRequest;
 import gg.modl.backend.staff.dto.request.CreateStaffRequest;
 import gg.modl.backend.staff.dto.request.InviteStaffRequest;
@@ -12,9 +16,7 @@ import gg.modl.proto.modl.v1.CheckUsernameResponse;
 import gg.modl.proto.modl.v1.InviteResultResponse.FailedInvite;
 import gg.modl.proto.modl.v1.PanelStaffListResponse;
 import gg.modl.proto.modl.v1.StaffMutationResponse;
-import java.util.Date;
 import java.util.List;
-import java.util.function.Consumer;
 
 final class PanelStaffProtoMapper {
     private PanelStaffProtoMapper() {
@@ -61,14 +63,14 @@ final class PanelStaffProtoMapper {
 
     static gg.modl.proto.modl.v1.StaffResponse toStaffResponse(StaffResponse staff) {
         gg.modl.proto.modl.v1.StaffResponse.Builder builder = gg.modl.proto.modl.v1.StaffResponse.newBuilder();
-        setIfNotNull(builder::setId, staff.id());
-        setIfNotNull(builder::setEmail, staff.email());
-        setIfNotNull(builder::setUsername, staff.username());
-        setIfNotNull(builder::setRole, staff.role());
-        setIfNotNull(builder::setStatus, staff.status());
-        setIfNotNull(builder::setAssignedMinecraftUuid, staff.assignedMinecraftUuid());
-        setIfNotNull(builder::setAssignedMinecraftUsername, staff.assignedMinecraftUsername());
-        setEpochMillisIfNotNull(builder::setCreatedAt, staff.createdAt());
+        setOptionalString(builder::setId, staff.id());
+        setOptionalString(builder::setEmail, staff.email());
+        setOptionalString(builder::setUsername, staff.username());
+        setOptionalString(builder::setRole, staff.role());
+        setOptionalString(builder::setStatus, staff.status());
+        setOptionalString(builder::setAssignedMinecraftUuid, staff.assignedMinecraftUuid());
+        setOptionalString(builder::setAssignedMinecraftUsername, staff.assignedMinecraftUsername());
+        setOptionalEpochMillis(builder::setCreatedAt, staff.createdAt());
         return builder.build();
     }
 
@@ -83,7 +85,7 @@ final class PanelStaffProtoMapper {
     static gg.modl.proto.modl.v1.InviteResultResponse toInviteResultResponse(InviteResultResponse result) {
         gg.modl.proto.modl.v1.InviteResultResponse.Builder builder =
             gg.modl.proto.modl.v1.InviteResultResponse.newBuilder();
-        setIfNotNull(builder::setMessage, result.message());
+        setOptionalString(builder::setMessage, result.message());
         if (result.success() != null) {
             builder.addAllSuccess(result.success());
         }
@@ -107,21 +109,5 @@ final class PanelStaffProtoMapper {
                 .build())
             .forEach(builder::addPlayers);
         return builder.build();
-    }
-
-    private static void setIfNotNull(Consumer<String> setter, String value) {
-        if (value != null) {
-            setter.accept(value);
-        }
-    }
-
-    private static void setEpochMillisIfNotNull(Consumer<Long> setter, Date date) {
-        if (date != null) {
-            setter.accept(date.getTime());
-        }
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

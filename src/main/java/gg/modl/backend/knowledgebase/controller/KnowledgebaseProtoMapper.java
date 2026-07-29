@@ -1,6 +1,7 @@
 package gg.modl.backend.knowledgebase.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.nullToEmpty;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
@@ -17,6 +18,7 @@ import gg.modl.proto.modl.v1.PanelKnowledgebaseCategoryWithArticlesResponse;
 import gg.modl.proto.modl.v1.PublicKnowledgebaseCategoriesResponse;
 import gg.modl.proto.modl.v1.PublicKnowledgebaseCategoryWithArticlesResponse;
 import java.util.List;
+import java.util.function.Function;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -71,7 +73,7 @@ public class KnowledgebaseProtoMapper {
 
     public PanelKnowledgebaseCategoriesResponse toPanelCategoriesResponse(
         List<KnowledgebaseCategory> categories,
-        java.util.function.Function<KnowledgebaseCategory, List<KnowledgebaseArticle>> articlesForCategory
+        Function<KnowledgebaseCategory, List<KnowledgebaseArticle>> articlesForCategory
     ) {
         PanelKnowledgebaseCategoriesResponse.Builder builder = PanelKnowledgebaseCategoriesResponse.newBuilder();
         addAll(categories,
@@ -82,7 +84,7 @@ public class KnowledgebaseProtoMapper {
 
     public PublicKnowledgebaseCategoriesResponse toPublicCategoriesResponse(
         List<KnowledgebaseCategory> categories,
-        java.util.function.Function<KnowledgebaseCategory, List<KnowledgebaseArticle>> articlesForCategory
+        Function<KnowledgebaseCategory, List<KnowledgebaseArticle>> articlesForCategory
     ) {
         PublicKnowledgebaseCategoriesResponse.Builder builder = PublicKnowledgebaseCategoriesResponse.newBuilder();
         addAll(categories,
@@ -135,9 +137,5 @@ public class KnowledgebaseProtoMapper {
             .setSlug(nullToEmpty(article.getSlug()))
             .setOrdinal(article.getOrdinal())
             .build();
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

@@ -11,9 +11,9 @@ import gg.modl.backend.realtime.publish.RealtimeEventPublisher;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.data.TicketCategory;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.proto.modl.v1.SyncPlayerNotification;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,25 +54,20 @@ public class TicketNotificationService {
 
     private void sendEmailNotification(Server server, Ticket ticket, TicketReply reply, String toEmail) {
         try {
-            String serverName = HtmlUtils.htmlEscape(server.getServerName() != null ? server.getServerName() : "Server");
-            String playerName = HtmlUtils.htmlEscape(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player");
-            String ticketType = HtmlUtils.htmlEscape(resolveTicketLabel(ticket));
-            String ticketId = HtmlUtils.htmlEscape(ticket.getId());
-            String ticketSubject = HtmlUtils.htmlEscape(ticket.getSubject() != null ? ticket.getSubject() : "No Subject");
+            EscapedTicketHeader header = buildEscapedHeader(server, ticket);
             String replyAuthor = HtmlUtils.htmlEscape(reply.getName() != null ? reply.getName() : "Staff");
             String replyContent = HtmlUtils.htmlEscape(reply.getContent() != null ? reply.getContent() : "");
-            String ticketUrl = buildTicketUrl(server, ticketId);
 
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_REPLY_TEMPLATE.build(
-                serverName,
-                playerName,
+                header.serverName(),
+                header.playerName(),
                 true,
-                ticketType,
-                ticketId,
-                ticketSubject,
+                header.ticketType(),
+                header.ticketId(),
+                header.ticketSubject(),
                 replyAuthor,
                 replyContent,
-                ticketUrl
+                header.ticketUrl()
             );
 
             emailService.send(toEmail, email);
@@ -103,17 +98,9 @@ public class TicketNotificationService {
                 return;
             }
 
-            Map<String, Object> notification = new LinkedHashMap<>();
-            notification.put("id", UUID.randomUUID().toString());
-            notification.put("type", "TICKET_REPLY");
-            notification.put("message", buildNotificationMessage(ticket, reply));
-            notification.put("timestamp", System.currentTimeMillis());
-
-            Map<String, Object> notificationData = new LinkedHashMap<>();
-            notificationData.put("ticketId", ticket.getId());
-            notificationData.put("ticketUrl", buildTicketUrl(server, ticket.getId()));
+            Map<String, Object> notificationData = buildNotificationData(server, ticket);
             notificationData.put("replyAuthor", reply.getName());
-            notification.put("data", notificationData);
+            Map<String, Object> notification = buildNotification("TICKET_REPLY", buildNotificationMessage(ticket, reply), notificationData);
 
             appendNotification(server, player, notification);
         } catch (Exception exception) {
@@ -123,14 +110,14 @@ public class TicketNotificationService {
     }
 
     private Player findPlayer(Server server, String playerUuid) {
-        return playerRepository.findByMinecraftUuid(server, normalizeUuid(playerUuid)).orElse(null);
+        return playerRepository.findByMinecraftUuid(server, UuidUtils.normalize(playerUuid)).orElse(null);
     }
 
     private void appendNotification(Server server, Player player, Map<String, Object> notification) {
         if (player.getMinecraftUuid() != null) {
             String playerUuid = player.getMinecraftUuid().toString();
             notification.putIfAbsent("targetPlayerUuid", playerUuid);
-            playerRepository.pushPendingNotification(server, normalizeUuid(playerUuid), notification);
+            playerRepository.pushPendingNotification(server, UuidUtils.normalize(playerUuid), notification);
         }
 
         pushPlayerNotification(server, notification);
@@ -182,12 +169,7 @@ public class TicketNotificationService {
 
     private void sendTranscriptEmail(Server server, Ticket ticket, String toEmail) {
         try {
-            String serverName = HtmlUtils.htmlEscape(server.getServerName() != null ? server.getServerName() : "Server");
-            String playerName = HtmlUtils.htmlEscape(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player");
-            String ticketType = HtmlUtils.htmlEscape(resolveTicketLabel(ticket));
-            String ticketId = HtmlUtils.htmlEscape(ticket.getId());
-            String ticketSubject = HtmlUtils.htmlEscape(ticket.getSubject() != null ? ticket.getSubject() : "No Subject");
-            String ticketUrl = buildTicketUrl(server, ticketId);
+            EscapedTicketHeader header = buildEscapedHeader(server, ticket);
 
             StringBuilder messagesHtml = new StringBuilder();
             if (ticket.getReplies() != null) {
@@ -210,7 +192,7 @@ public class TicketNotificationService {
             }
 
             EmailHTMLTemplate.HTMLEmail email = EmailHTMLTemplate.TICKET_TRANSCRIPT_TEMPLATE.build(
-                serverName, playerName, ticketType, ticketId, ticketSubject, messagesHtml.toString(), ticketUrl
+                header.serverName(), header.playerName(), header.ticketType(), header.ticketId(), header.ticketSubject(), messagesHtml.toString(), header.ticketUrl()
             );
 
             emailService.send(toEmail, email);
@@ -227,16 +209,10 @@ public class TicketNotificationService {
                 return;
             }
 
-            Map<String, Object> notification = new LinkedHashMap<>();
-            notification.put("id", UUID.randomUUID().toString());
-            notification.put("type", "TICKET_CLOSED");
-            notification.put("message", String.format("Your ticket #%s has been closed", ticket.getId()));
-            notification.put("timestamp", System.currentTimeMillis());
-
-            Map<String, Object> notificationData = new LinkedHashMap<>();
-            notificationData.put("ticketId", ticket.getId());
-            notificationData.put("ticketUrl", buildTicketUrl(server, ticket.getId()));
-            notification.put("data", notificationData);
+            Map<String, Object> notification = buildNotification(
+                "TICKET_CLOSED",
+                String.format("Your ticket #%s has been closed", ticket.getId()),
+                buildNotificationData(server, ticket));
 
             appendNotification(server, player, notification);
         } catch (Exception exception) {
@@ -245,7 +221,40 @@ public class TicketNotificationService {
         }
     }
 
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
+    private EscapedTicketHeader buildEscapedHeader(Server server, Ticket ticket) {
+        String serverName = HtmlUtils.htmlEscape(server.getServerName() != null ? server.getServerName() : "Server");
+        String playerName = HtmlUtils.htmlEscape(ticket.getCreatorName() != null ? ticket.getCreatorName() : "Player");
+        String ticketType = HtmlUtils.htmlEscape(resolveTicketLabel(ticket));
+        String ticketId = HtmlUtils.htmlEscape(ticket.getId());
+        String ticketSubject = HtmlUtils.htmlEscape(ticket.getSubject() != null ? ticket.getSubject() : "No Subject");
+        String ticketUrl = buildTicketUrl(server, ticketId);
+        return new EscapedTicketHeader(serverName, playerName, ticketType, ticketId, ticketSubject, ticketUrl);
+    }
+
+    private Map<String, Object> buildNotification(String type, String message, Map<String, Object> data) {
+        Map<String, Object> notification = new LinkedHashMap<>();
+        notification.put("id", UUID.randomUUID().toString());
+        notification.put("type", type);
+        notification.put("message", message);
+        notification.put("timestamp", System.currentTimeMillis());
+        notification.put("data", data);
+        return notification;
+    }
+
+    private Map<String, Object> buildNotificationData(Server server, Ticket ticket) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("ticketId", ticket.getId());
+        data.put("ticketUrl", buildTicketUrl(server, ticket.getId()));
+        return data;
+    }
+
+    private record EscapedTicketHeader(
+        String serverName,
+        String playerName,
+        String ticketType,
+        String ticketId,
+        String ticketSubject,
+        String ticketUrl
+    ) {
     }
 }

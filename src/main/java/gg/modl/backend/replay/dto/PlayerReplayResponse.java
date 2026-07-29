@@ -35,9 +35,17 @@ public record PlayerReplayResponse(
 
     public String deduplicationKey() {
         if (replayId != null && !replayId.isBlank()) {
-            return "id:" + replayId;
+            return idKey(replayId);
         }
-        return replayUrl != null ? "url:" + replayUrl : "empty";
+        return replayUrl != null ? urlKey(replayUrl) : "empty";
+    }
+
+    public static String idKey(String replayId) {
+        return "id:" + replayId;
+    }
+
+    public static String urlKey(String replayUrl) {
+        return "url:" + replayUrl;
     }
 
     private static String firstNonBlank(String first, String second) {

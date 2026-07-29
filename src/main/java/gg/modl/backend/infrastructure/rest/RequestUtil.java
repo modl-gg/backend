@@ -9,11 +9,12 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Objects;
 import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+@Slf4j
 public final class RequestUtil {
-    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(RequestUtil.class);
     private static volatile boolean warnedAboutProxy = false;
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final boolean TRUST_PROXY_HEADERS = resolveTrustProxyHeaders();
@@ -21,25 +22,26 @@ public final class RequestUtil {
     private static final int TRUSTED_PROXY_COUNT = resolveTrustedProxyCount();
     private static final Pattern IPV6_LITERAL_CHARS = Pattern.compile("[0-9A-Fa-f:.%]+");
 
+    private RequestUtil() {
+    }
+
+    private static String resolveConfig(String propertyKey, String envKey) {
+        String value = System.getProperty(propertyKey);
+        if (value == null) {
+            value = System.getProperty(envKey);
+        }
+        if (value == null) {
+            value = System.getenv(envKey);
+        }
+        return value;
+    }
+
     private static boolean resolveTrustProxyHeaders() {
-        String value = System.getProperty("modl.trust-proxy-headers");
-        if (value == null) {
-            value = System.getProperty("MODL_TRUST_PROXY_HEADERS");
-        }
-        if (value == null) {
-            value = System.getenv("MODL_TRUST_PROXY_HEADERS");
-        }
-        return Boolean.parseBoolean(value);
+        return Boolean.parseBoolean(resolveConfig("modl.trust-proxy-headers", "MODL_TRUST_PROXY_HEADERS"));
     }
 
     private static String resolveClientIpHeaderName() {
-        String value = System.getProperty("modl.client-ip-header");
-        if (value == null) {
-            value = System.getProperty("MODL_CLIENT_IP_HEADER");
-        }
-        if (value == null) {
-            value = System.getenv("MODL_CLIENT_IP_HEADER");
-        }
+        String value = resolveConfig("modl.client-ip-header", "MODL_CLIENT_IP_HEADER");
         if (value == null || value.isBlank()) {
             return "CF-Connecting-IP";
         }
@@ -47,13 +49,7 @@ public final class RequestUtil {
     }
 
     private static int resolveTrustedProxyCount() {
-        String value = System.getProperty("modl.trusted-proxy-count");
-        if (value == null) {
-            value = System.getProperty("MODL_TRUSTED_PROXY_COUNT");
-        }
-        if (value == null) {
-            value = System.getenv("MODL_TRUSTED_PROXY_COUNT");
-        }
+        String value = resolveConfig("modl.trusted-proxy-count", "MODL_TRUSTED_PROXY_COUNT");
         if (value == null || value.isBlank()) {
             return 1;
         }
@@ -96,7 +92,6 @@ public final class RequestUtil {
         if (session == null || session.getEmail() == null) {
             return "Unknown";
         }
-        // Use email as username fallback - the service layer should resolve actual username if needed
         return session.getEmail();
     }
 

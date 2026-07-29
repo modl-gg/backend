@@ -23,10 +23,10 @@ public class DomainSettings {
     public static class DomainStatus {
         private String domain;
         @Builder.Default
-        private String status = "pending"; // pending, active, error, verifying
+        private String status = "pending";
         private boolean cnameConfigured;
         @Builder.Default
-        private String sslStatus = "pending"; // pending, active, error
+        private String sslStatus = "pending";
         private String lastChecked;
         private String error;
     }

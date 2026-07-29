@@ -1,6 +1,5 @@
 package gg.modl.backend.player.controller;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import gg.modl.backend.player.dto.request.CreateUploadTokenRequest;
 import gg.modl.backend.player.dto.request.ModifyPunishmentTicketsRequest;
 import gg.modl.backend.player.dto.response.PunishmentPreviewView;
@@ -10,11 +9,13 @@ import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
+import gg.modl.backend.player.dto.response.PunishmentView;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.infrastructure.validation.RegExpConstants;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
+import gg.modl.backend.player.dto.request.MinecraftCreatePunishmentRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -77,7 +78,7 @@ public class MinecraftPunishmentController {
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        Map<String, Object> punishment = punishmentQueryService.getMinecraftPunishmentById(server, punishmentId).orElse(null);
+        PunishmentView punishment = punishmentQueryService.getMinecraftPunishmentById(server, punishmentId).orElse(null);
         if (punishment == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
                 "status", 404,
@@ -382,21 +383,6 @@ public class MinecraftPunishmentController {
             "success", true,
             "message", result.message()
         ));
-    }
-
-    public record MinecraftCreatePunishmentRequest(
-        @NotBlank @Pattern(regexp = RegExpConstants.UUID) String targetUuid,
-        @Size(max = RequestValidationLimits.PLAYER_ISSUER_NAME_MAX_LENGTH) String issuerName,
-        @Size(max = RequestValidationLimits.PLAYER_ISSUER_ID_MAX_LENGTH) String issuerId,
-        @JsonProperty("type_ordinal") @Min(0) int typeOrdinal,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_REASON_MAX_LENGTH) String reason,
-        @Min(0) Long duration,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_DATA_MAX_ENTRIES) Map<String, Object> data,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_NOTES_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.PLAYER_NOTE_TEXT_MAX_LENGTH) String> notes,
-        @Size(max = RequestValidationLimits.PLAYER_PUNISHMENT_TICKETS_MAX_ENTRIES) List<@Size(max = RequestValidationLimits.ID_MAX_LENGTH) String> attachedTicketIds,
-        @Size(max = RequestValidationLimits.PLAYER_SEVERITY_MAX_LENGTH) String severity,
-        @Size(max = RequestValidationLimits.PLAYER_STATUS_MAX_LENGTH) String status
-    ) {
     }
 
     public record AcknowledgeRequest(

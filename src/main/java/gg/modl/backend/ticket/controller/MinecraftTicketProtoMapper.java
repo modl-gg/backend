@@ -1,20 +1,25 @@
 package gg.modl.backend.ticket.controller;
 
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValueOrZero;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalEpochMillis;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalTimestamp;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 import static gg.modl.backend.infrastructure.proto.ProtoValidationSupport.optionalString;
 
 import com.google.protobuf.Struct;
-import com.google.protobuf.Timestamp;
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
+import gg.modl.backend.ticket.dto.response.MinecraftPlayerTicketView;
+import gg.modl.backend.ticket.dto.response.MinecraftReportView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailReplyView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketListItemView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketLookupView;
 import gg.modl.proto.modl.v1.ClaimTicketResponse;
 import gg.modl.proto.modl.v1.MinecraftClaimTicketRequestOrBuilder;
 import gg.modl.proto.modl.v1.MinecraftCreateTicketRequestOrBuilder;
@@ -27,38 +32,44 @@ import gg.modl.proto.modl.v1.MinecraftTicketListItem;
 import gg.modl.proto.modl.v1.ReportEntry;
 import gg.modl.proto.modl.v1.ReportsResponse;
 import gg.modl.proto.modl.v1.TicketsResponse;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
-import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Consumer;
 
 final class MinecraftTicketProtoMapper {
     private MinecraftTicketProtoMapper() {
     }
 
-    static TicketsResponse toTicketsResponse(int status, List<Map<String, Object>> tickets) {
+    static TicketsResponse toTicketsResponse(int status, List<MinecraftTicketListItemView> tickets) {
         TicketsResponse.Builder response = TicketsResponse.newBuilder()
             .setStatus(status);
-        tickets.stream()
-            .map(MinecraftTicketProtoMapper::toTicketListItem)
-            .forEach(response::addTickets);
+        addAll(tickets, MinecraftTicketProtoMapper::toTicketListItem, response::addTickets);
         return response.build();
     }
 
-    static ReportsResponse toReportsResponse(int status, List<Map<String, Object>> reports) {
+    static TicketsResponse toPlayerTicketsResponse(int status, List<MinecraftPlayerTicketView> tickets) {
+        TicketsResponse.Builder response = TicketsResponse.newBuilder()
+            .setStatus(status);
+        addAll(tickets, MinecraftTicketProtoMapper::toTicketListItem, response::addTickets);
+        return response.build();
+    }
+
+    static TicketsResponse toLookupTicketsResponse(int status, List<MinecraftTicketLookupView> tickets) {
+        TicketsResponse.Builder response = TicketsResponse.newBuilder()
+            .setStatus(status);
+        addAll(tickets, MinecraftTicketProtoMapper::toTicketListItem, response::addTickets);
+        return response.build();
+    }
+
+    static ReportsResponse toReportsResponse(int status, List<MinecraftReportView> reports) {
         ReportsResponse.Builder response = ReportsResponse.newBuilder()
             .setStatus(status);
-        reports.stream()
-            .map(MinecraftTicketProtoMapper::toReportEntry)
-            .forEach(response::addReports);
+        addAll(reports, MinecraftTicketProtoMapper::toReportEntry, response::addReports);
         return response.build();
     }
 
-    static MinecraftTicketDetailResponse toTicketDetailResponse(int status, Map<String, Object> ticket) {
+    static MinecraftTicketDetailResponse toTicketDetailResponse(int status, MinecraftTicketDetailView ticket) {
         return MinecraftTicketDetailResponse.newBuilder()
             .setStatus(status)
             .setTicket(toTicketDetail(ticket))
@@ -120,170 +131,117 @@ final class MinecraftTicketProtoMapper {
             .build();
     }
 
-    private static ReportEntry toReportEntry(Map<String, Object> report) {
+    private static ReportEntry toReportEntry(MinecraftReportView report) {
         ReportEntry.Builder builder = ReportEntry.newBuilder()
-            .setId(stringValue(report.get("id")))
-            .setType(stringValue(report.get("type")))
-            .setCategory(stringValue(report.getOrDefault("category", report.get("type"))))
-            .setReporterName(stringValue(report.get("reporterName")))
-            .setReporterUuid(stringValue(report.get("reporterUuid")))
-            .setReportedPlayerUuid(stringValue(report.get("reportedPlayerUuid")))
-            .setReportedPlayerName(stringValue(report.get("reportedPlayerName")))
-            .setSubject(stringValue(report.get("subject")))
-            .setContent(stringValue(report.get("content")))
-            .setStatus(stringValue(report.get("status")))
-            .setPriority(stringValue(report.get("priority")))
-            .setCreatedAt(epochMillis(report.get("createdAt")));
+            .setId(stringValue(report.id()))
+            .setType(stringValue(report.type()))
+            .setCategory(stringValue(report.type()))
+            .setReporterName(stringValue(report.reporterName()))
+            .setReporterUuid(stringValue(report.reporterUuid()))
+            .setReportedPlayerUuid(stringValue(report.reportedPlayerUuid()))
+            .setReportedPlayerName(stringValue(report.reportedPlayerName()))
+            .setSubject(stringValue(report.subject()))
+            .setContent(stringValue(report.content()))
+            .setStatus(stringValue(report.status()))
+            .setPriority(stringValue(report.priority()))
+            .setCreatedAt(longValue(report.createdAt()));
 
-        list(report.get("assignedTo")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAssignedTo);
-        list(report.get("chatMessages")).stream()
-            .map(MinecraftTicketProtoMapper::toStruct)
-            .forEach(builder::addChatMessages);
-        setOptionalString(builder::setReplayUrl, report.get("replayUrl"));
+        addAll(report.assignedTo(), Objects::toString, builder::addAssignedTo);
+        addAll(report.chatMessages(), MinecraftTicketProtoMapper::toStruct, builder::addChatMessages);
+        setOptionalString(builder::setReplayUrl, report.replayUrl());
 
         return builder.build();
     }
 
-    private static MinecraftTicketListItem toTicketListItem(Map<String, Object> ticket) {
+    private static MinecraftTicketListItem toTicketListItem(MinecraftTicketListItemView ticket) {
         MinecraftTicketListItem.Builder builder = MinecraftTicketListItem.newBuilder()
-            .setId(stringValue(ticket.get("id")))
-            .setType(stringValue(ticket.get("type")))
-            .setCategory(stringValue(ticket.get("category")))
-            .setSubject(stringValue(ticket.get("subject")))
-            .setStatus(stringValue(ticket.get("status")))
-            .setPlayerName(stringValue(ticket.get("playerName")))
-            .setPlayerUuid(stringValue(ticket.get("playerUuid")))
-            .setPriority(stringValue(ticket.get("priority")))
-            .setCreatedAt(epochMillis(ticket.get("createdAt")))
-            .setHasStaffResponse(booleanValue(ticket.get("hasStaffResponse")))
-            .setLocked(booleanValue(ticket.get("locked")))
-            .setReplyCount(intValueOrZero(ticket.get("replyCount")));
+            .setId(stringValue(ticket.id()))
+            .setType(stringValue(ticket.type()))
+            .setCategory(stringValue(ticket.category()))
+            .setSubject(stringValue(ticket.subject()))
+            .setStatus(stringValue(ticket.status()))
+            .setPlayerName(stringValue(ticket.playerName()))
+            .setPlayerUuid(stringValue(ticket.playerUuid()))
+            .setPriority(stringValue(ticket.priority()))
+            .setCreatedAt(longValue(ticket.createdAt()))
+            .setHasStaffResponse(ticket.hasStaffResponse())
+            .setLocked(ticket.locked())
+            .setReplyCount(ticket.replyCount());
 
-        setOptionalString(builder::setFirstReplyContent, ticket.get("firstReplyContent"));
-        setOptionalLong(builder::setUpdatedAt, ticket.get("updatedAt"));
-        list(ticket.get("assignedTo")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAssignedTo);
+        setOptionalEpochMillis(builder::setUpdatedAt, ticket.updatedAt());
+        addAll(ticket.assignedTo(), Objects::toString, builder::addAssignedTo);
 
         return builder.build();
     }
 
-    private static MinecraftTicketDetail toTicketDetail(Map<String, Object> ticket) {
+    private static MinecraftTicketListItem toTicketListItem(MinecraftPlayerTicketView ticket) {
+        return MinecraftTicketListItem.newBuilder()
+            .setId(stringValue(ticket.id()))
+            .setType(stringValue(ticket.type()))
+            .setCategory(stringValue(ticket.category()))
+            .setSubject(stringValue(ticket.subject()))
+            .setStatus(stringValue(ticket.status()))
+            .setCreatedAt(longValue(ticket.createdAt()))
+            .build();
+    }
+
+    private static MinecraftTicketListItem toTicketListItem(MinecraftTicketLookupView ticket) {
+        MinecraftTicketListItem.Builder builder = MinecraftTicketListItem.newBuilder()
+            .setId(stringValue(ticket.id()))
+            .setType(stringValue(ticket.type()))
+            .setCategory(stringValue(ticket.category()))
+            .setSubject(stringValue(ticket.subject()))
+            .setStatus(stringValue(ticket.status()))
+            .setPlayerName(stringValue(ticket.playerName()))
+            .setPlayerUuid(stringValue(ticket.playerUuid()))
+            .setCreatedAt(longValue(ticket.createdAt()));
+
+        setOptionalString(builder::setFirstReplyContent, ticket.firstReplyContent());
+
+        return builder.build();
+    }
+
+    private static MinecraftTicketDetail toTicketDetail(MinecraftTicketDetailView ticket) {
         MinecraftTicketDetail.Builder builder = MinecraftTicketDetail.newBuilder()
-            .setId(stringValue(ticket.get("id")))
-            .setType(stringValue(ticket.get("type")))
-            .setCategory(stringValue(ticket.get("category")))
-            .setSubject(stringValue(ticket.get("subject")))
-            .setStatus(stringValue(ticket.get("status")))
-            .setPlayerName(stringValue(ticket.get("playerName")))
-            .setPlayerUuid(stringValue(ticket.get("playerUuid")))
-            .setPriority(stringValue(ticket.get("priority")))
-            .setCreatedAt(timestampValue(ticket.get("createdAt")))
-            .setLocked(booleanValue(ticket.get("locked")));
+            .setId(stringValue(ticket.id()))
+            .setType(stringValue(ticket.type()))
+            .setCategory(stringValue(ticket.category()))
+            .setSubject(stringValue(ticket.subject()))
+            .setStatus(stringValue(ticket.status()))
+            .setPlayerName(stringValue(ticket.playerName()))
+            .setPlayerUuid(stringValue(ticket.playerUuid()))
+            .setPriority(stringValue(ticket.priority()))
+            .setCreatedAt(toTimestamp(ticket.createdAt()))
+            .setLocked(ticket.locked());
 
-        setOptionalTimestamp(builder::setUpdatedAt, ticket.get("updatedAt"));
-        setOptionalString(builder::setReplayUrl, ticket.get("replayUrl"));
-        list(ticket.get("assignedTo")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAssignedTo);
-        listOfMaps(ticket.get("replies")).stream()
-            .map(MinecraftTicketProtoMapper::toTicketDetailReply)
-            .forEach(builder::addReplies);
-        list(ticket.get("chatMessages")).stream()
-            .map(MinecraftTicketProtoMapper::toStruct)
-            .forEach(builder::addChatMessages);
+        setOptionalTimestamp(builder::setUpdatedAt, ticket.updatedAt());
+        setOptionalString(builder::setReplayUrl, ticket.replayUrl());
+        addAll(ticket.assignedTo(), Objects::toString, builder::addAssignedTo);
+        addAll(ticket.replies(), MinecraftTicketProtoMapper::toTicketDetailReply, builder::addReplies);
+        addAll(ticket.chatMessages(), MinecraftTicketProtoMapper::toStruct, builder::addChatMessages);
 
         return builder.build();
     }
 
-    private static MinecraftTicketDetailReply toTicketDetailReply(Map<String, Object> reply) {
+    private static MinecraftTicketDetailReply toTicketDetailReply(MinecraftTicketDetailReplyView reply) {
         return MinecraftTicketDetailReply.newBuilder()
-            .setId(stringValue(reply.get("id")))
-            .setContent(stringValue(reply.get("content")))
-            .setAuthorName(stringValue(reply.get("authorName")))
-            .setAuthorId(stringValue(reply.get("authorId")))
-            .setIsStaff(booleanValue(reply.get("isStaff")))
-            .setCreatedAt(timestampValue(reply.get("createdAt")))
+            .setId(stringValue(reply.id()))
+            .setContent(stringValue(reply.content()))
+            .setAuthorName(stringValue(reply.authorName()))
+            .setAuthorId(stringValue(reply.authorId()))
+            .setIsStaff(reply.isStaff())
+            .setCreatedAt(toTimestamp(reply.createdAt()))
             .build();
     }
 
-    private static Struct toStruct(Object value) {
-        if (value instanceof Ticket.ChatMessage chatMessage) {
-            Map<String, Object> message = new LinkedHashMap<>();
-            message.put("content", chatMessage.getContent());
-            message.put("timestamp", chatMessage.getTimestamp());
-            if (chatMessage.getSender() != null) {
-                message.put("sender", chatMessage.getSender());
-            }
-            return ProtoMapperSupport.legacyStruct(message);
+    private static Struct toStruct(Ticket.ChatMessage chatMessage) {
+        Map<String, Object> message = new LinkedHashMap<>();
+        message.put("content", chatMessage.getContent());
+        message.put("timestamp", chatMessage.getTimestamp());
+        if (chatMessage.getSender() != null) {
+            message.put("sender", chatMessage.getSender());
         }
-        return ProtoMapperSupport.legacyStruct(map(value));
-    }
-
-    private static void setOptionalLong(Consumer<Long> setter, Object value) {
-        if (value != null) {
-            setter.accept(epochMillis(value));
-        }
-    }
-
-    private static void setOptionalTimestamp(Consumer<Timestamp> setter, Object value) {
-        if (value != null) {
-            setter.accept(timestampValue(value));
-        }
-    }
-
-    private static Timestamp timestampValue(Object value) {
-        Instant instant = instantValue(value);
-        return Timestamp.newBuilder()
-            .setSeconds(instant.getEpochSecond())
-            .setNanos(instant.getNano())
-            .build();
-    }
-
-    private static Instant instantValue(Object value) {
-        if (value instanceof Date date) {
-            return date.toInstant();
-        }
-        if (value instanceof Instant instant) {
-            return instant;
-        }
-        if (value instanceof Number number) {
-            return Instant.ofEpochMilli(number.longValue());
-        }
-        if (value instanceof CharSequence chars) {
-            try {
-                return Instant.parse(chars);
-            } catch (DateTimeParseException ignored) {
-                try {
-                    return Instant.ofEpochMilli(Long.parseLong(chars.toString()));
-                } catch (NumberFormatException ignoredToo) {
-                    return Instant.EPOCH;
-                }
-            }
-        }
-        return Instant.EPOCH;
-    }
-
-    private static long epochMillis(Object value) {
-        if (value instanceof Date date) {
-            return date.getTime();
-        }
-        if (value instanceof Instant instant) {
-            return instant.toEpochMilli();
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof CharSequence chars) {
-            try {
-                return Long.parseLong(chars.toString());
-            } catch (NumberFormatException ignored) {
-                return instantValue(value).toEpochMilli();
-            }
-        }
-        return 0L;
+        return ProtoMapperSupport.legacyStruct(message);
     }
 
 }

@@ -7,7 +7,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import gg.modl.backend.audit.data.AuditLog;
-import gg.modl.backend.database.mongo.repository.AuditMongoRepository;
+import gg.modl.backend.database.mongo.repository.AuditLogRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
@@ -31,7 +33,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AuditServiceTest {
 
     @Mock
-    private AuditMongoRepository auditRepository;
+    private AuditLogRepository auditLogRepository;
+
+    @Mock
+    private PunishmentMongoRepository punishmentRepository;
+
+    @Mock
+    private StaffMongoRepository staffMongoRepository;
 
     @Mock
     private PunishmentTypeService punishmentTypeService;
@@ -56,7 +64,9 @@ class AuditServiceTest {
     @BeforeEach
     void setUp() {
         auditService = new AuditService(
-            auditRepository,
+            auditLogRepository,
+            punishmentRepository,
+            staffMongoRepository,
             punishmentTypeService,
             staffService,
             statusCalculator,
@@ -83,7 +93,7 @@ class AuditServiceTest {
             .append("punishments", List.of(punishmentDoc));
 
         when(server.getId()).thenReturn("server-1");
-        when(auditRepository.findPlayersForBulkAction(server, List.of(typeOrdinal)))
+        when(punishmentRepository.findPlayersForBulkAction(server, List.of(typeOrdinal)))
             .thenReturn(List.of(playerDoc));
         when(punishmentTypeService.getPunishmentTypeName(server, typeOrdinal)).thenReturn("Ban");
         when(statusCalculator.isPunishmentActive(org.mockito.ArgumentMatchers.any(Punishment.class))).thenReturn(true);
@@ -105,7 +115,7 @@ class AuditServiceTest {
             eq(server), eq(punishmentId), eq("Moderator"), isNull(), eq("Cleanup reason"));
 
         ArgumentCaptor<AuditLog> auditLogCaptor = ArgumentCaptor.forClass(AuditLog.class);
-        verify(auditRepository).saveAuditLog(eq(server), auditLogCaptor.capture());
+        verify(auditLogRepository).saveAuditLog(eq(server), auditLogCaptor.capture());
         assertEquals(playerId, auditLogCaptor.getValue().getMetadata().get("playerId"));
         assertEquals(punishmentId, auditLogCaptor.getValue().getMetadata().get("punishmentId"));
     }

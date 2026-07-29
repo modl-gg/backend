@@ -1,7 +1,9 @@
 package gg.modl.backend.ticket.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.asMap;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structListToObjects;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
@@ -12,6 +14,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.dto.request.SubmitTicketFormRequest;
 import gg.modl.backend.ticket.dto.response.TicketResponse;
 import gg.modl.proto.modl.v1.CreateTicketResponse;
+import gg.modl.proto.modl.v1.PublicTicketReply;
 import gg.modl.proto.modl.v1.PublicTicketResponse;
 import gg.modl.proto.modl.v1.PublicTicketStatusResponse;
 import gg.modl.proto.modl.v1.SubmitPublicTicketResponse;
@@ -39,7 +42,7 @@ final class PublicTicketProtoMapper {
 
     static PublicTicketResponse toPublicTicketResponse(TicketResponse ticket, Ticket rawTicket, Set<String> formFieldAllowlist) {
         String creatorName = ticket.creatorName() != null ? ticket.creatorName() : "";
-        List<gg.modl.proto.modl.v1.PublicTicketReply> publicReplies =
+        List<PublicTicketReply> publicReplies =
             (ticket.messages() == null ? List.<TicketReply>of() : ticket.messages()).stream()
                 .map(PublicTicketProtoMapper::toPublicReply)
                 .toList();
@@ -117,8 +120,8 @@ final class PublicTicketProtoMapper {
         );
     }
 
-    static gg.modl.proto.modl.v1.PublicTicketReply toPublicReply(TicketReply reply) {
-        gg.modl.proto.modl.v1.PublicTicketReply.Builder builder = gg.modl.proto.modl.v1.PublicTicketReply.newBuilder()
+    static PublicTicketReply toPublicReply(TicketReply reply) {
+        PublicTicketReply.Builder builder = PublicTicketReply.newBuilder()
             .setId(stringValue(reply.getId()))
             .setName(stringValue(reply.getName()))
             .setAvatar(stringValue(reply.getAvatar()))
@@ -133,24 +136,7 @@ final class PublicTicketProtoMapper {
         return builder.build();
     }
 
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> asMap(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            return (Map<String, Object>) map;
-        }
-        return Map.of();
-    }
-
     static List<Object> attachmentsFromReply(gg.modl.proto.modl.v1.AddReplyRequest request) {
         return structListToObjects(request.getAttachmentsList());
-    }
-
-    private static List<Object> structListToObjects(List<com.google.protobuf.Struct> structs) {
-        if (structs.isEmpty()) {
-            return null;
-        }
-        return structs.stream()
-            .map(struct -> (Object) structToMap(struct))
-            .toList();
     }
 }

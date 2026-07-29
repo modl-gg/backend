@@ -16,7 +16,7 @@ public class MetricSnapshot {
     private String id;
 
     @Field
-    private Date date; // truncated to hour (UTC)
+    private Date date;
 
     @Field
     private long activeServers;

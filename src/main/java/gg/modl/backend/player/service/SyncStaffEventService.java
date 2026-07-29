@@ -2,11 +2,13 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
-import gg.modl.backend.infrastructure.config.ModlProperties;
+import gg.modl.backend.server.service.PanelDomainResolver;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
+import gg.modl.backend.player.dto.response.SyncPunishmentEntry;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -31,14 +33,14 @@ public class SyncStaffEventService {
     private final TicketMongoRepository ticketRepository;
     private final PunishmentMongoRepository punishmentRepository;
     private final IssuerNameResolver issuerNameResolver;
-    private final ModlProperties modlProperties;
+    private final PanelDomainResolver panelDomainResolver;
     private final PlayerStatusCalculator statusCalculator;
 
     public List<Map<String, Object>> collectStaffEvents(
         Server server,
         Instant lastSync,
         List<PunishmentType> types,
-        List<Map<String, Object>> recentlyModifiedPunishments
+        List<SyncPunishmentEntry> recentlyModifiedPunishments
     ) {
         List<Map<String, Object>> notifications = new ArrayList<>();
         collectTicketNotifications(server, lastSync, notifications);
@@ -102,10 +104,7 @@ public class SyncStaffEventService {
                 }
                 ticketData.put("firstReplyContent", firstReply);
 
-                String domain = server.getCustomDomainOverride();
-                if (domain == null || domain.isBlank()) {
-                    domain = server.getCustomDomain() + "." + modlProperties.getDomain();
-                }
+                String domain = panelDomainResolver.panelDomain(server);
                 ticketData.put("ticketUrl", "https://" + domain + "/ticket/" + ticket.getId());
                 ticketData.put("ticketType", ticketType != null ? ticketType.getId() : "");
                 if (ticketType != null && ticketType.isReport()) {
@@ -153,7 +152,7 @@ public class SyncStaffEventService {
                                   : EnforcementCategory.MUTE.name().equals(category) ? "muted"
                                   : "punished";
 
-                    String issuerName = issuerNameResolver.resolve(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
+                    String issuerName = PunishmentMapper.resolveIssuer(punishment.getIssuerId(), punishment.getIssuerName(), resolvedIssuers);
                     notifications.add(Map.of(
                         "id", "punishment_" + punishment.getId(),
                         "type", "PUNISHMENT_ISSUED",
@@ -167,37 +166,25 @@ public class SyncStaffEventService {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private void collectPardonNotifications(List<Map<String, Object>> recentlyModifiedPunishments, List<Map<String, Object>> notifications) {
+    private void collectPardonNotifications(List<SyncPunishmentEntry> recentlyModifiedPunishments, List<Map<String, Object>> notifications) {
         try {
-            for (Map<String, Object> modified : recentlyModifiedPunishments) {
-                if (!(modified.get("punishment") instanceof Map<?, ?> rawPunishment)) {
-                    continue;
-                }
-                Map<String, Object> punishment = (Map<String, Object>) rawPunishment;
-                String username = modified.get("username") instanceof String value ? value : "Unknown";
+            for (SyncPunishmentEntry modified : recentlyModifiedPunishments) {
+                SimplePunishmentView punishment = modified.punishment();
+                String username = modified.username() != null ? modified.username() : "Unknown";
 
-                if (!(punishment.get("modifications") instanceof List<?> rawModifications)) {
-                    continue;
-                }
-
-                for (Object rawModification : rawModifications) {
-                    if (!(rawModification instanceof Map<?, ?> rawModificationMap)) {
+                for (SimplePunishmentView.Modification modification : punishment.modifications()) {
+                    if (!PunishmentModificationType.isPardon(modification.type())) {
                         continue;
                     }
-                    Map<String, Object> modification = (Map<String, Object>) rawModificationMap;
-                    String type = modification.get("type") instanceof String value ? value : null;
-                    if (PunishmentModificationType.isPardon(type)) {
-                        String pardoner = modification.get("issuerName") instanceof String value ? value : "System";
-                        String punishmentType = punishment.get("type") instanceof String value ? value : "punishment";
-                        Object timestamp = modification.get("timestamp");
-                        Map<String, Object> notification = new LinkedHashMap<>();
-                        notification.put("id", "pardon_" + punishment.get("id"));
-                        notification.put("type", "PUNISHMENT_PARDONED");
-                        notification.put("message", pardoner + ": pardoned " + username + "'s " + punishmentType);
-                        notification.put("timestamp", timestamp != null ? timestamp : System.currentTimeMillis());
-                        notifications.add(notification);
-                    }
+                    String pardoner = modification.issuerName() != null ? modification.issuerName() : "System";
+                    String punishmentType = punishment.type() != null ? punishment.type() : "punishment";
+                    Long timestamp = modification.timestamp();
+                    Map<String, Object> notification = new LinkedHashMap<>();
+                    notification.put("id", "pardon_" + punishment.id());
+                    notification.put("type", "PUNISHMENT_PARDONED");
+                    notification.put("message", pardoner + ": pardoned " + username + "'s " + punishmentType);
+                    notification.put("timestamp", timestamp != null ? timestamp : System.currentTimeMillis());
+                    notifications.add(notification);
                 }
             }
         } catch (Exception e) {

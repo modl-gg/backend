@@ -44,13 +44,9 @@ public class WebAuthnController {
     private final ObjectMapper objectMapper;
     private final CookieUtil cookieUtil;
 
-
     @PostMapping("/register/options")
     public ResponseEntity<?> registerOptions(HttpServletRequest request) throws JsonProcessingException {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null) {
-            throw new UnauthorizedException("Not authenticated");
-        }
+        String email = requireSessionEmail(request);
 
         Server server = RequestUtil.getRequestServer(request);
         WebAuthnService.StartRegistrationResult result = webAuthnService.startRegistration(server, email);
@@ -62,10 +58,7 @@ public class WebAuthnController {
     public ResponseEntity<?> registerVerify(
         HttpServletRequest request,
         @RequestBody @Valid RegisterVerifyRequest body) throws Exception {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null) {
-            throw new UnauthorizedException("Not authenticated");
-        }
+        String email = requireSessionEmail(request);
 
         Server server = RequestUtil.getRequestServer(request);
         webAuthnService.finishRegistration(server, email, body.challengeId(), body.response(), body.name());
@@ -74,10 +67,7 @@ public class WebAuthnController {
 
     @GetMapping("/credentials")
     public ResponseEntity<WebAuthnCredentialsResponse> listCredentials(HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null) {
-            throw new UnauthorizedException("Not authenticated");
-        }
+        String email = requireSessionEmail(request);
 
         Server server = RequestUtil.getRequestServer(request);
         List<WebAuthnService.CredentialInfo> credentials = webAuthnService.listCredentials(server, email);
@@ -89,10 +79,7 @@ public class WebAuthnController {
         HttpServletRequest request,
         @PathVariable String id,
         @RequestBody RenameWebAuthnCredentialRequest body) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null) {
-            throw new UnauthorizedException("Not authenticated");
-        }
+        String email = requireSessionEmail(request);
 
         Server server = RequestUtil.getRequestServer(request);
         boolean updated = webAuthnService.renameCredential(server, email, id, body.getName());
@@ -102,15 +89,11 @@ public class WebAuthnController {
         return ResponseEntity.ok(WebAuthnProtoMapper.toMutationResponse(true));
     }
 
-
     @DeleteMapping("/credentials/{id}")
     public ResponseEntity<WebAuthnCredentialMutationResponse> deleteCredential(
         HttpServletRequest request,
         @PathVariable String id) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (email == null) {
-            throw new UnauthorizedException("Not authenticated");
-        }
+        String email = requireSessionEmail(request);
 
         Server server = RequestUtil.getRequestServer(request);
         boolean deleted = webAuthnService.deleteCredential(server, email, id);
@@ -134,7 +117,6 @@ public class WebAuthnController {
         @RequestBody @Valid LoginOptionsRequest body) throws JsonProcessingException {
         Server server = RequestUtil.getRequestServer(request);
 
-        // Prevent email enumeration: check if email is authorized first
         if (!permissionService.isAuthorizedEmail(server, body.email())) {
             return ResponseEntity.ok(Map.of("hasPasskeys", false));
         }
@@ -153,7 +135,6 @@ public class WebAuthnController {
         ));
     }
 
-
     @PostMapping("/login/verify")
     public ResponseEntity<?> loginVerify(
         HttpServletRequest request,
@@ -170,6 +151,13 @@ public class WebAuthnController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
+    private String requireSessionEmail(HttpServletRequest request) {
+        String email = RequestUtil.getSessionEmail(request);
+        if (email == null) {
+            throw new UnauthorizedException("Not authenticated");
+        }
+        return email;
+    }
 
     public record RegisterVerifyRequest(
         @NotBlank @Size(max = 256) String challengeId,

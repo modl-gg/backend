@@ -9,15 +9,17 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.dto.request.MinecraftClaimTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftCreateTicketRequest;
 import gg.modl.backend.ticket.dto.request.MinecraftTicketsByIdsRequest;
+import gg.modl.backend.ticket.dto.response.MinecraftPlayerTicketView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketListItemView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketLookupView;
+import gg.modl.backend.ticket.dto.response.MinecraftV1Response;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -41,7 +43,7 @@ public class MinecraftTicketsController {
     private final AITicketAnalysisService aiTicketAnalysisService;
 
     @PostMapping
-    public ResponseEntity<Map<String, Object>> createTicket(
+    public ResponseEntity<MinecraftV1Response> createTicket(
         @RequestBody @Valid MinecraftCreateTicketRequest request,
         HttpServletRequest httpRequest
     ) {
@@ -54,88 +56,69 @@ public class MinecraftTicketsController {
             aiTicketAnalysisService.analyzeTicketAsync(server, ticket.getId());
         }
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "success", true,
-            "ticketId", ticket.getId(),
-            "message", "Ticket created successfully"
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.TicketCreated(
+            200, true, ticket.getId(), "Ticket created successfully"));
     }
 
     @PostMapping("/unfinished")
-    public ResponseEntity<Map<String, Object>> createUnfinishedTicket(
+    public ResponseEntity<MinecraftV1Response> createUnfinishedTicket(
         @RequestBody @Valid MinecraftCreateTicketRequest request,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         Ticket ticket = minecraftTicketService.createUnfinishedMinecraftTicket(server, request);
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "success", true,
-            "ticketId", ticket.getId(),
-            "message", "Ticket draft created - complete the form on the panel"
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.TicketCreated(
+            200, true, ticket.getId(), "Ticket draft created - complete the form on the panel"));
     }
 
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getAllTickets(
+    public ResponseEntity<MinecraftV1Response> getAllTickets(
         @RequestParam(required = false) String status,
         @RequestParam(required = false) String type,
         @RequestParam(defaultValue = "50") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTickets(server, status, type, limit)
+        List<MinecraftTicketListItemView> ticketList = minecraftTicketService.getMinecraftTickets(server, status, type, limit)
             .stream()
             .map(minecraftTicketService::toTicketListItem)
             .toList();
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "tickets", ticketList
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.TicketList(200, ticketList));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> getTicket(
+    public ResponseEntity<MinecraftV1Response> getTicket(
         @PathVariable String id,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
         Ticket ticket = minecraftTicketService.getMinecraftTicket(server, id).orElse(null);
         if (ticket == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "message", "Ticket not found"
-            ));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new MinecraftV1Response.NotFound(404, "Ticket not found"));
         }
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "ticket", minecraftTicketService.toTicketDetail(ticket)
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.TicketDetail(200, minecraftTicketService.toTicketDetail(ticket)));
     }
 
     @GetMapping("/player/{uuid}")
-    public ResponseEntity<Map<String, Object>> getPlayerTickets(
+    public ResponseEntity<MinecraftV1Response> getPlayerTickets(
         @PathVariable String uuid,
         HttpServletRequest httpRequest
     ) {
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
+        List<MinecraftPlayerTicketView> tickets = minecraftTicketService.getMinecraftTicketsByCreator(server, uuid, 50)
             .stream()
             .map(minecraftTicketService::toPlayerTicketItem)
             .toList();
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "tickets", tickets
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.PlayerTicketList(200, tickets));
     }
 
     @PostMapping("/{id}/claim")
-    public ResponseEntity<Map<String, Object>> claimTicket(
+    public ResponseEntity<MinecraftV1Response> claimTicket(
         @PathVariable String id,
         @RequestBody @Valid MinecraftClaimTicketRequest request,
         HttpServletRequest httpRequest
@@ -144,53 +127,31 @@ public class MinecraftTicketsController {
         MinecraftTicketService.MinecraftTicketClaimResult result = minecraftTicketService.claimMinecraftTicket(server, id, request);
 
         return switch (result.status()) {
-            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                "status", 404,
-                "success", false,
-                "message", "Ticket not found"
-            ));
-            case ALREADY_LINKED -> ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                "status", 409,
-                "success", false,
-                "message", "Ticket is already linked to a Minecraft account"
-            ));
-            case SUCCESS -> {
-                Map<String, Object> body = new LinkedHashMap<>();
-                body.put("status", 200);
-                body.put("success", true);
-                body.put("message", "Ticket successfully linked to your account");
-                body.put("ticketId", id);
-                String subject = result.ticket().getSubject();
-                if (subject != null) {
-                    body.put("subject", subject);
-                }
-                yield ResponseEntity.ok(body);
-            }
+            case NOT_FOUND -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(
+                new MinecraftV1Response.TicketClaim(404, false, "Ticket not found", null, null));
+            case ALREADY_LINKED -> ResponseEntity.status(HttpStatus.CONFLICT).body(
+                new MinecraftV1Response.TicketClaim(409, false, "Ticket is already linked to a Minecraft account", null, null));
+            case SUCCESS -> ResponseEntity.ok(new MinecraftV1Response.TicketClaim(
+                200, true, "Ticket successfully linked to your account", id, result.ticket().getSubject()));
         };
     }
 
     @PostMapping("/by-ids")
-    public ResponseEntity<Map<String, Object>> getTicketsByIds(
+    public ResponseEntity<MinecraftV1Response> getTicketsByIds(
         @RequestBody @Valid MinecraftTicketsByIdsRequest request,
         HttpServletRequest httpRequest
     ) {
         if (request.ids() == null || request.ids().isEmpty()) {
-            return ResponseEntity.ok(Map.of(
-                "status", 200,
-                "tickets", List.of()
-            ));
+            return ResponseEntity.ok(new MinecraftV1Response.TicketLookupList(200, List.of()));
         }
 
         Server server = RequestUtil.getRequestServer(httpRequest);
-        List<Map<String, Object>> ticketList = minecraftTicketService.getMinecraftTicketsByIds(server, request.ids())
+        List<MinecraftTicketLookupView> ticketList = minecraftTicketService.getMinecraftTicketsByIds(server, request.ids())
             .stream()
             .map(minecraftTicketService::toTicketLookupItem)
             .toList();
 
-        return ResponseEntity.ok(Map.of(
-            "status", 200,
-            "tickets", ticketList
-        ));
+        return ResponseEntity.ok(new MinecraftV1Response.TicketLookupList(200, ticketList));
     }
 
 }

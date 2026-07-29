@@ -1,6 +1,6 @@
 package gg.modl.backend.server.service;
 
-import gg.modl.backend.database.MongoIndexBootstrapService;
+import gg.modl.backend.database.MongoIndexReconciler;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.repository.HomepageCardMongoRepository;
 import gg.modl.backend.database.mongo.repository.KnowledgebaseCategoryMongoRepository;
@@ -28,7 +28,7 @@ public class ServerProvisioningService {
     private static final String AI_ANTI_SOCIAL_CONFIG_ID = "7";
 
     private final TenantMongoAccess tenantMongoAccess;
-    private final MongoIndexBootstrapService mongoIndexBootstrapService;
+    private final MongoIndexReconciler mongoIndexReconciler;
     private final SettingsMongoRepository settingsRepository;
     private final KnowledgebaseCategoryMongoRepository knowledgebaseCategoryRepository;
     private final HomepageCardMongoRepository homepageCardRepository;
@@ -57,9 +57,33 @@ public class ServerProvisioningService {
         }
     }
 
+    public boolean tenantDatabaseExists(Server server) {
+        try {
+            return !tenantMongoAccess.forServer(server).getCollectionNames().isEmpty();
+        } catch (Exception e) {
+            log.warn("[Provisioning] Could not determine whether tenant database '{}' already exists for {}; assuming it does",
+                server.getDatabaseName(), server.getCustomDomain(), e);
+            return true;
+        }
+    }
+
+    public void teardownProvisionedDatabase(Server server, boolean databaseExistedBeforeProvisioning) {
+        if (databaseExistedBeforeProvisioning) {
+            return;
+        }
+        try {
+            tenantMongoAccess.forServer(server).getDb().drop();
+            log.warn("[Provisioning] Dropped tenant database '{}' created by a failed provisioning attempt for {}",
+                server.getDatabaseName(), server.getCustomDomain());
+        } catch (Exception e) {
+            log.error("[Provisioning] Failed to drop tenant database '{}' after a failed provisioning attempt for {}",
+                server.getDatabaseName(), server.getCustomDomain(), e);
+        }
+    }
+
     private Map<String, Runnable> provisioningSteps(Server server) {
         Map<String, Runnable> steps = new LinkedHashMap<>();
-        steps.put("createTenantIndexes", () -> mongoIndexBootstrapService.createTenantIndexes(tenantMongoAccess.forServer(server)));
+        steps.put("createTenantIndexes", () -> mongoIndexReconciler.createTenantIndexes(tenantMongoAccess.forServer(server)));
         steps.put("seedAIModerationSettings", () -> seedAIModerationSettings(server));
         steps.put("seedTicketForms", () -> seedTicketForms(server));
         steps.put("seedQuickResponses", () -> seedQuickResponses(server));
@@ -115,7 +139,6 @@ public class ServerProvisioningService {
             return;
         }
 
-        // Bug report form
         Map<String, Object> bugForm = new LinkedHashMap<>();
         bugForm.put("fields", List.of(
             formField("1753243804677", "textarea", "Bug Description", "Describe the bug in full detail", true, 3, "1753243782799"),
@@ -128,7 +151,6 @@ public class ServerProvisioningService {
             formSection("1753243782799", "General", 0, false)
         ));
 
-        // Support form
         Map<String, Object> supportForm = new LinkedHashMap<>();
         supportForm.put("fields", List.of(
             formField("1753243961223", "textarea", "Description", "How can we assist you?", true, 0, "1753243900648"),
@@ -138,7 +160,6 @@ public class ServerProvisioningService {
             formSection("1753243900648", "General", 0, false)
         ));
 
-        // Application form
         Map<String, Object> applicationForm = buildApplicationForm();
 
         Map<String, Object> data = new LinkedHashMap<>();
@@ -152,7 +173,6 @@ public class ServerProvisioningService {
     private Map<String, Object> buildApplicationForm() {
         List<Map<String, Object>> fields = new ArrayList<>();
 
-        // General section fields
         fields.add(formField("1753244313811", "text", "First Name", null, true, 0, "1753244011186"));
         fields.add(formField("1753244038340", "text", "Discord username", "Please use the new username format, starting with an @.", true, 1, "1753244011186"));
         fields.add(formField("1753244070995", "text", "Age", null, true, 2, "1753244011186"));
@@ -163,7 +183,6 @@ public class ServerProvisioningService {
         fields.add(
             formField("1753244114967", "checkbox", "Do you have access to both a working microphone and recording software?", null, true, 5, "1753244011186"));
 
-        // Position dropdown with section mapping
         Map<String, Object> positionField = new LinkedHashMap<>();
         positionField.put("id", "1753244244863");
         positionField.put("type", "dropdown");
@@ -181,7 +200,6 @@ public class ServerProvisioningService {
         ));
         fields.add(positionField);
 
-        // Moderator section fields
         fields.add(formField("1753244506417", "textarea", "Have you ever been banned or muted on this server? If yes, what have you learned moving forward?",
             "If so, please explain each occurrence.", true, 0, "1753244183109"));
         fields.add(formField("1753244551193", "textarea", "Describe your moderation background and previous experience.",
@@ -207,19 +225,16 @@ public class ServerProvisioningService {
             "You are a Moderator with the ability to mute and ban. You notice a well-known streamer/YouTuber closely affiliated with the server is nicked. They message a player words encouraging suicide under their disguised alias. What steps do you take to resolve the situation?",
             null, true, 15, "1753244183109"));
 
-        // Builder section fields
         fields.add(formField("1753245081481", "textarea", "Do you have experience building for other servers?", null, true, 16, "1753244277605"));
         fields.add(formField("1753245137086", "textarea", "Please provide proof of previous work in link form here (Imgur, YouTube, etc)", null, true, 17,
             "1753244277605"));
         fields.add(formField("1753245154307", "textarea", "Anything else you would like to say?", null, false, 23, "1753244277605"));
 
-        // Developer section fields
         fields.add(formField("1753245191475", "textarea", "Why do you want to be a developer on this server?", null, true, 0, "1753244282540"));
         fields.add(formField("1753245262717", "textarea", "Do you have experience developing for other servers?", null, true, 1, "1753244282540"));
         fields.add(formField("1753245280773", "text", "Please provide proof of previous work in the form of a GitHub link", null, true, 2, "1753244282540"));
         fields.add(formField("1753245291714", "textarea", "Anything else you would like to say?", null, false, 3, "1753244282540"));
 
-        // Media section fields
         fields.add(formField("1753245348514", "text", "Have you ever been banned or muted on this server? If yes, what have you learned moving forward?",
             "If so, please explain each occurrence.", true, 23, "1753244286527"));
         fields.add(formField("1753245358313", "text", "A link to your YouTube and/or Stream Channel", null, true, 24, "1753244286527"));
@@ -272,7 +287,6 @@ public class ServerProvisioningService {
 
         List<Map<String, Object>> categories = new ArrayList<>();
 
-        // Chat Report Actions
         categories.add(quickResponseCategory("chat_report_actions", "Chat Report Actions", List.of("chat_report"), 1, List.of(
             quickResponseAction("accept_report", "Accept Report",
                 "Thank you for creating this report. After careful review, we have accepted this and the reported player will be receiving a punishment.", 1,
@@ -285,7 +299,6 @@ public class ServerProvisioningService {
                 3, true, false, null)
         )));
 
-        // Player Report Actions
         categories.add(quickResponseCategory("player_report_actions", "Player Report Actions", List.of("player_report"), 2, List.of(
             quickResponseAction("accept_report", "Accept Report",
                 "Thank you for creating this report. After careful review, we have accepted this and the reported player will be receiving a punishment.", 1,
@@ -298,7 +311,6 @@ public class ServerProvisioningService {
                 3, true, false, null)
         )));
 
-        // Appeal Actions
         categories.add(quickResponseCategory("appeal_actions", "Appeal Actions", List.of("appeal"), 3, List.of(
             quickResponseAction("pardon_full", "Pardon - Full",
                 "After reviewing your appeal, we have decided to remove the punishment completely. We apologize for any inconvenience.", 1, true, false,
@@ -312,7 +324,6 @@ public class ServerProvisioningService {
                 "We need additional information to process your appeal. Please provide more details about your situation.", 4, false, false, null)
         )));
 
-        // Staff Application Actions
         categories.add(quickResponseCategory("application_actions", "Staff Application Actions", List.of("application"), 4, List.of(
             quickResponseAction("accept_builder", "Accept - Builder",
                 "Congratulations! Your Builder application has been accepted. Welcome to the Builder team! You will receive further instructions and permissions shortly.",
@@ -335,7 +346,6 @@ public class ServerProvisioningService {
                 null)
         )));
 
-        // Bug Report Actions
         categories.add(quickResponseCategory("bug_actions", "Bug Report Actions", List.of("bug"), 5, List.of(
             quickResponseAction("completed", "Fixed", "Thank you for reporting this bug. We have fixed the issue and it will be included in our next update.",
                 1, true, false, null),
@@ -351,7 +361,6 @@ public class ServerProvisioningService {
                 "We were unable to reproduce this issue. If you continue to experience this problem, please provide additional details.", 5, true, false, null)
         )));
 
-        // Support Actions
         categories.add(quickResponseCategory("support_actions", "Support Actions", List.of("support"), 6, List.of(
             quickResponseAction("resolved", "Resolved",
                 "Your support request has been resolved. If you need further assistance, please feel free to create a new ticket.", 1, true, false, null),
@@ -361,7 +370,6 @@ public class ServerProvisioningService {
                 "We need additional information to assist you with your request. Please provide more details about your issue.", 3, false, false, null)
         )));
 
-        // General Actions
         categories.add(
             quickResponseCategory("general_actions", "General Actions", List.of("player_report", "chat_report", "bug", "appeal", "support", "application"), 7,
                 List.of(
@@ -402,8 +410,6 @@ public class ServerProvisioningService {
         }
         return action;
     }
-
-    // Helper methods for building form data structures
 
     private void seedGeneralSettings(Server server) {
         if (settingsExist(server, "general")) {
@@ -496,7 +502,6 @@ public class ServerProvisioningService {
 
         List<KnowledgebaseCategory> categories = knowledgebaseCategoryRepository.findAllOrdered(server);
 
-        // Find category IDs for category_dropdown cards
         String rulesCategoryId = categories.stream()
             .filter(c -> "rules-policies".equals(c.getSlug()))
             .findFirst().map(KnowledgebaseCategory::getId).orElse(null);

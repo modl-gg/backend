@@ -5,10 +5,10 @@ import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.dateAwareS
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.legacyStruct;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.list;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOf;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.listOfMaps;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.longValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.map;
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalBoolean;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalInt;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalLong;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
@@ -16,6 +16,18 @@ import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringObje
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
 
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
+import gg.modl.backend.player.dto.response.CreateNoteResult;
+import gg.modl.backend.player.dto.response.LinkedAccountsResult;
+import gg.modl.backend.player.dto.response.OnlinePlayersResult;
+import gg.modl.backend.player.dto.response.PaginatedNotesResult;
+import gg.modl.backend.player.dto.response.PaginatedPunishmentsResult;
+import gg.modl.backend.player.dto.response.PardonResult;
+import gg.modl.backend.player.dto.response.PlayerFetchResult;
+import gg.modl.backend.player.dto.response.PlayerLookupResult;
+import gg.modl.backend.player.dto.response.PlayerLoginResult;
+import gg.modl.backend.player.dto.response.PlayerReportsResult;
+import gg.modl.backend.player.dto.response.PunishmentView;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
 import gg.modl.proto.modl.v1.Account;
 import gg.modl.proto.modl.v1.IPEntry;
 import gg.modl.proto.modl.v1.LinkedAccountsResponse;
@@ -48,164 +60,180 @@ public final class MinecraftPlayerProtoMapper {
     private MinecraftPlayerProtoMapper() {
     }
 
-    static PlayerLoginResponse toPlayerLoginResponse(Map<String, Object> body) {
+    static PlayerLoginResponse toPlayerLoginResponse(PlayerLoginResult result) {
         PlayerLoginResponse.Builder response = PlayerLoginResponse.newBuilder()
-            .setStatus(intValue(body.get("status")));
+            .setStatus(result.status());
 
-        listOfMaps(body.get("activePunishments")).stream()
+        result.activePunishments().stream()
             .map(MinecraftPlayerProtoMapper::toSimplePunishment)
             .forEach(response::addActivePunishments);
 
-        listOfMaps(body.get("pendingNotifications")).stream()
+        result.pendingNotifications().stream()
             .map(ProtoMapperSupport::legacyStruct)
             .forEach(response::addPendingNotifications);
 
-        list(body.get("pendingIpLookups")).stream()
-            .map(Objects::toString)
-            .forEach(response::addPendingIpLookups);
+        result.pendingIpLookups().forEach(response::addPendingIpLookups);
 
-        listOfMaps(body.get("pendingStatWipes")).stream()
+        result.pendingStatWipes().stream()
             .map(MinecraftPlayerProtoMapper::toPendingStatWipe)
             .forEach(response::addPendingStatWipes);
 
         return response.build();
     }
 
-    static SimpleResponse toSimpleResponse(Map<String, Object> body) {
+    static SimpleResponse toSimpleResponse(boolean success) {
         return SimpleResponse.newBuilder()
-            .setSuccess(booleanValue(body.get("success")))
+            .setSuccess(success)
             .build();
     }
 
-    static OnlinePlayersResponse toOnlinePlayersResponse(Map<String, Object> body) {
+    static OnlinePlayersResponse toOnlinePlayersResponse(OnlinePlayersResult result) {
         OnlinePlayersResponse.Builder response = OnlinePlayersResponse.newBuilder()
-            .setStatus(intValue(body.get("status")));
+            .setStatus(200);
 
-        listOfMaps(body.get("players")).stream()
+        result.players().stream()
             .map(MinecraftPlayerProtoMapper::toOnlinePlayer)
             .forEach(response::addPlayers);
 
         return response.build();
     }
 
-    static PlayerProfileResponse toPlayerProfileResponse(Map<String, Object> body) {
-        Map<String, Object> profile = map(body.get("profile"));
+    static PlayerProfileResponse toPlayerProfileResponse(Map<String, Object> profile) {
         PlayerProfileResponse.Builder response = PlayerProfileResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
+            .setStatus(200)
             .setProfile(toAccount(profile));
 
-        setOptionalInt(response::setPunishmentCount, nestedOrTopLevel(profile, body, "punishmentCount"));
-        setOptionalInt(response::setNoteCount, nestedOrTopLevel(profile, body, "noteCount"));
+        setOptionalInt(response::setPunishmentCount, profile.get("punishmentCount"));
+        setOptionalInt(response::setNoteCount, profile.get("noteCount"));
         return response.build();
     }
 
-    static PlayerGetResponse toPlayerGetResponse(Map<String, Object> body) {
+    static PlayerGetResponse toPlayerGetResponse(PlayerFetchResult.Found found) {
         return PlayerGetResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setMessage(stringValue(body.get("message")))
-            .setPlayer(toAccount(map(body.get("player"))))
+            .setStatus(200)
+            .setMessage(stringValue(found.message()))
+            .setPlayer(toAccount(found.player()))
             .build();
     }
 
-    static PlayerNameResponse toPlayerNameResponse(Map<String, Object> body) {
+    static PlayerNameResponse toPlayerNameResponse(PlayerFetchResult.Found found) {
         return PlayerNameResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setMessage(stringValue(body.get("message")))
-            .setPlayer(toAccount(map(body.get("player"))))
+            .setStatus(200)
+            .setMessage(stringValue(found.message()))
+            .setPlayer(toAccount(found.player()))
             .build();
     }
 
-    static PlayerLookupResponse toPlayerLookupResponse(Map<String, Object> body) {
+    static PlayerLookupResponse toPlayerLookupResponse(PlayerLookupResult.Found found) {
         return PlayerLookupResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setMessage(stringValue(body.get("message")))
-            .setData(toPlayerLookupData(map(body.get("data"))))
+            .setStatus(200)
+            .setMessage(stringValue(found.message()))
+            .setData(toPlayerLookupData(found.data()))
             .build();
     }
 
-    static PlayerNoteCreateResponse toPlayerNoteCreateResponse(Map<String, Object> body) {
-        PlayerNoteCreateResponse.Builder builder = PlayerNoteCreateResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setMessage(stringValue(body.get("message")));
-        setBooleanIfPresent(builder, "setSuccess", body.get("success"));
-        return builder.build();
+    static PlayerNoteCreateResponse toPlayerNoteCreateResponse(CreateNoteResult result) {
+        return switch (result) {
+            case CreateNoteResult.Created created -> PlayerNoteCreateResponse.newBuilder()
+                .setStatus(200)
+                .setMessage(stringValue(created.message()))
+                .setSuccess(true)
+                .build();
+            case CreateNoteResult.NotFound notFound -> PlayerNoteCreateResponse.newBuilder()
+                .setStatus(404)
+                .setMessage(stringValue(notFound.message()))
+                .setSuccess(false)
+                .build();
+        };
     }
 
-    static LinkedAccountsResponse toLinkedAccountsResponse(Map<String, Object> body) {
+    static LinkedAccountsResponse toLinkedAccountsResponse(LinkedAccountsResult.Found found) {
         LinkedAccountsResponse.Builder response = LinkedAccountsResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setPage(intValue(body.get("page")))
-            .setHasMore(booleanValue(body.get("hasMore")));
+            .setStatus(200)
+            .setPage(intValue(found.page()))
+            .setHasMore(booleanValue(found.hasMore()));
 
-        setOptionalInt(response::setTotalCount, body.get("totalCount"));
-        listOfMaps(body.get("linkedAccounts")).stream()
+        setOptionalInt(response::setTotalCount, found.totalCount());
+        found.linkedAccounts().stream()
             .map(MinecraftPlayerProtoMapper::toAccount)
             .forEach(response::addLinkedAccounts);
 
         return response.build();
     }
 
-    static PaginatedPunishmentsResponse toPaginatedPunishmentsResponse(Map<String, Object> body) {
+    static PaginatedPunishmentsResponse toPaginatedPunishmentsResponse(PaginatedPunishmentsResult.Found found) {
         PaginatedPunishmentsResponse.Builder response = PaginatedPunishmentsResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setTotalCount(intValue(body.get("totalCount")))
-            .setPage(intValue(body.get("page")))
-            .setHasMore(booleanValue(body.get("hasMore")));
+            .setStatus(200)
+            .setTotalCount(found.totalCount())
+            .setPage(found.page())
+            .setHasMore(found.hasMore());
 
-        listOfMaps(body.get("punishments")).stream()
+        found.punishments().stream()
             .map(MinecraftPlayerProtoMapper::toPunishmentListEntry)
             .forEach(response::addPunishments);
 
         return response.build();
     }
 
-    static PaginatedNotesResponse toPaginatedNotesResponse(Map<String, Object> body) {
+    static PaginatedNotesResponse toPaginatedNotesResponse(PaginatedNotesResult.Found found) {
         PaginatedNotesResponse.Builder response = PaginatedNotesResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setTotalCount(intValue(body.get("totalCount")))
-            .setPage(intValue(body.get("page")))
-            .setHasMore(booleanValue(body.get("hasMore")));
+            .setStatus(200)
+            .setTotalCount(found.totalCount())
+            .setPage(found.page())
+            .setHasMore(found.hasMore());
 
-        listOfMaps(body.get("notes")).stream()
+        found.notes().stream()
             .map(MinecraftPlayerProtoMapper::toNoteEntry)
             .forEach(response::addNotes);
 
         return response.build();
     }
 
-    static ReportsResponse toReportsResponse(Map<String, Object> body) {
+    static ReportsResponse toReportsResponse(PlayerReportsResult result) {
         ReportsResponse.Builder response = ReportsResponse.newBuilder()
-            .setStatus(intValue(body.get("status")));
+            .setStatus(200);
 
-        listOfMaps(body.get("reports")).stream()
+        result.reports().stream()
             .map(MinecraftPlayerProtoMapper::toReportEntry)
             .forEach(response::addReports);
 
         return response.build();
     }
 
-    static PardonResponse toPardonResponse(Map<String, Object> body) {
-        return PardonResponse.newBuilder()
-            .setStatus(intValue(body.get("status")))
-            .setSuccess(booleanValue(body.get("success")))
-            .setPardonedCount(intValue(body.get("pardonedCount")))
-            .setMessage(stringValue(body.get("message")))
-            .build();
+    static PardonResponse toPardonResponse(PardonResult result) {
+        return switch (result) {
+            case PardonResult.Pardoned pardoned -> PardonResponse.newBuilder()
+                .setStatus(200)
+                .setSuccess(pardoned.success())
+                .setPardonedCount(pardoned.pardonedCount())
+                .setMessage(stringValue(pardoned.message()))
+                .build();
+            case PardonResult.PlayerNotFound notFound -> PardonResponse.newBuilder()
+                .setStatus(404)
+                .setSuccess(false)
+                .setPardonedCount(0)
+                .setMessage(stringValue(notFound.message()))
+                .build();
+        };
     }
 
-    public static SimplePunishment toSimplePunishment(Map<String, Object> punishment) {
-        SimplePunishment.Builder builder = SimplePunishment.newBuilder()
-            .setType(stringValue(punishment.get("type")))
-            .setDescription(stringValue(punishment.get("description")))
-            .setId(stringValue(punishment.get("id")))
-            .setStarted(booleanValue(punishment.get("started")))
-            .setOrdinal(intValue(punishment.get("ordinal")));
+    public static SimplePunishment toSimplePunishment(SimplePunishmentView view) {
+        if (view == null) {
+            return SimplePunishment.getDefaultInstance();
+        }
 
-        setOptionalString(builder::setCategory, punishment.get("category"));
-        setOptionalLong(builder::setExpiration, punishment.get("expiration"));
-        setOptionalString(builder::setIssuerName, punishment.get("issuerName"));
-        setOptionalLong(builder::setIssuedAt, punishment.get("issuedAt"));
-        setOptionalString(builder::setPlayerDescription, punishment.get("playerDescription"));
+        SimplePunishment.Builder builder = SimplePunishment.newBuilder()
+            .setType(stringValue(view.type()))
+            .setDescription(stringValue(view.description()))
+            .setId(stringValue(view.id()))
+            .setStarted(view.started())
+            .setOrdinal(view.ordinal());
+
+        setOptionalString(builder::setCategory, view.category());
+        setOptionalLong(builder::setExpiration, view.expiration());
+        setOptionalString(builder::setIssuerName, view.issuerName());
+        setOptionalLong(builder::setIssuedAt, view.issuedAt());
+        setOptionalString(builder::setPlayerDescription, view.playerDescription());
         return builder.build();
     }
 
@@ -244,7 +272,7 @@ public final class MinecraftPlayerProtoMapper {
             .map(MinecraftPlayerProtoMapper::toIpEntry)
             .forEach(builder::addIpAddresses);
 
-        listOfMaps(account.get("punishments")).stream()
+        listOf(account.get("punishments"), PunishmentView.class).stream()
             .map(MinecraftPlayerProtoMapper::toPunishmentResponse)
             .forEach(builder::addPunishments);
 
@@ -273,7 +301,10 @@ public final class MinecraftPlayerProtoMapper {
             .setDate(dateAwareString(note.get("date")))
             .setIssuerName(stringValue(note.get("issuerName")))
             .setIssuerId(stringValue(note.get("issuerId")));
-        setStringIfPresent(builder, "setId", note.get("id"));
+        Object id = note.get("id");
+        if (id != null) {
+            builder.setId(Objects.toString(id));
+        }
         return builder.build();
     }
 
@@ -295,63 +326,48 @@ public final class MinecraftPlayerProtoMapper {
         return builder.build();
     }
 
-    private static PunishmentResponse toPunishmentResponse(Map<String, Object> punishment) {
+    private static PunishmentResponse toPunishmentResponse(PunishmentView punishment) {
         PunishmentResponse.Builder builder = PunishmentResponse.newBuilder()
-            .setId(stringValue(punishment.get("id")))
-            .setType(stringValue(punishment.get("type")))
-            .setTypeOrdinal(intValue(punishment.get("typeOrdinal")))
-            .setIssuerName(stringValue(punishment.get("issuerName")))
-            .setIssued(longValue(punishment.get("issued")))
-            .setIsAppealable(booleanValue(punishment.get("isAppealable")))
-            .setActive(booleanValue(punishment.get("active")));
+            .setId(stringValue(punishment.id()))
+            .setType(stringValue(punishment.type()))
+            .setTypeOrdinal(punishment.typeOrdinal())
+            .setIssuerName(stringValue(punishment.issuerName()))
+            .setIssued(longValue(punishment.issued()));
 
-        setOptionalLong(builder::setStarted, punishment.get("started"));
-        setOptionalString(builder::setReason, punishment.get("reason"));
-        setOptionalString(builder::setSeverity, punishment.get("severity"));
-        setOptionalString(builder::setStatus, punishment.get("status"));
-        setOptionalLong(builder::setExpires, punishment.get("expires"));
-        setOptionalString(builder::setPlayerUuid, punishment.get("playerUuid"));
-        setOptionalString(builder::setPlayerUsername, punishment.get("playerUsername"));
-        setOptionalBoolean(builder::setAltBlocking, punishment.get("altBlocking"));
-        setOptionalBoolean(builder::setStatWiping, punishment.get("statWiping"));
-        setOptionalString(builder::setEffectiveCategory, punishment.get("effectiveCategory"));
+        setOptionalLong(builder::setStarted, punishment.started());
+        setOptionalString(builder::setPlayerUuid, punishment.playerUuid());
 
-        list(punishment.get("attachedTicketIds")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAttachedTicketIds);
+        punishment.attachedTicketIds().forEach(builder::addAttachedTicketIds);
 
         return builder.build();
     }
 
-    private static PunishmentListEntry toPunishmentListEntry(Map<String, Object> punishment) {
+    private static PunishmentListEntry toPunishmentListEntry(PunishmentView punishment) {
         PunishmentListEntry.Builder builder = PunishmentListEntry.newBuilder()
-            .setId(stringValue(punishment.get("id")))
-            .setIssuerName(stringValue(punishment.get("issuerName")))
-            .setIssued(longValue(punishment.get("issued")))
-            .setType(stringValue(punishment.get("type")));
+            .setId(stringValue(punishment.id()))
+            .setIssuerName(stringValue(punishment.issuerName()))
+            .setIssued(longValue(punishment.issued()))
+            .setType(stringValue(punishment.type()));
 
-        setOptionalLong(builder::setStarted, punishment.get("started"));
-        setOptionalInt(builder::setTypeOrdinal, punishment.get("typeOrdinal"));
+        setOptionalLong(builder::setStarted, punishment.started());
+        builder.setTypeOrdinal(punishment.typeOrdinal());
 
-        listOfMaps(punishment.get("modifications")).stream()
+        punishment.modifications().stream()
             .map(MinecraftPlayerProtoMapper::toPunishmentModification)
             .forEach(builder::addModifications);
 
-        listOfMaps(punishment.get("notes")).stream()
+        punishment.notes().stream()
             .map(MinecraftPlayerProtoMapper::toPunishmentNote)
             .forEach(builder::addNotes);
 
-        listOfMaps(punishment.get("evidence")).stream()
+        punishment.evidence().stream()
             .map(MinecraftPlayerProtoMapper::toPunishmentEvidence)
             .forEach(builder::addEvidence);
 
-        list(punishment.get("attachedTicketIds")).stream()
-            .map(Objects::toString)
-            .forEach(builder::addAttachedTicketIds);
+        punishment.attachedTicketIds().forEach(builder::addAttachedTicketIds);
 
-        Object data = punishment.get("data");
-        if (data instanceof Map<?, ?> dataMap) {
-            builder.setData(legacyStruct(stringObjectMap(dataMap)));
+        if (punishment.data() != null) {
+            builder.setData(legacyStruct(punishment.data()));
         }
 
         return builder.build();
@@ -492,30 +508,5 @@ public final class MinecraftPlayerProtoMapper {
             .setCreatedAt(dateAwareString(ticket.get("createdAt")))
             .setLastUpdated(dateAwareString(ticket.get("lastUpdated")))
             .build();
-    }
-
-    private static Object nestedOrTopLevel(Map<String, Object> nested, Map<String, Object> topLevel, String key) {
-        return nested.containsKey(key) ? nested.get(key) : topLevel.get(key);
-    }
-
-    private static void setStringIfPresent(Object target, String methodName, Object value) {
-        if (value == null) {
-            return;
-        }
-        try {
-            target.getClass().getMethod(methodName, String.class).invoke(target, Objects.toString(value));
-        } catch (NoSuchMethodException ignored) {
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
-        }
-    }
-
-    private static void setBooleanIfPresent(Object target, String methodName, Object value) {
-        try {
-            target.getClass().getMethod(methodName, boolean.class).invoke(target, booleanValue(value));
-        } catch (NoSuchMethodException ignored) {
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Failed to set protobuf field with " + methodName, e);
-        }
     }
 }

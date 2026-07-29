@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.stripe.model.Event;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerLookupRepository;
 import gg.modl.backend.database.mongo.repository.StripeWebhookEventMongoRepository;
 import gg.modl.backend.server.service.ServerMutationHelper;
 import java.util.Date;
@@ -19,7 +19,7 @@ class StripeWebhookServiceTest {
     @Test
     void duplicateEventIdIsIgnoredBeforeBillingMutation() {
         StripeService stripeService = mock(StripeService.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        ServerLookupRepository serverRepository = mock(ServerLookupRepository.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         ServerMutationHelper serverMutationHelper = mock(ServerMutationHelper.class);
         StripeWebhookEventMongoRepository webhookEventRepository = mock(StripeWebhookEventMongoRepository.class);
@@ -44,7 +44,7 @@ class StripeWebhookServiceTest {
     @Test
     void failedHandlerMarksEventFailedSoRetryCanClaimLater() {
         StripeService stripeService = mock(StripeService.class);
-        ServerMongoRepository serverRepository = mock(ServerMongoRepository.class);
+        ServerLookupRepository serverRepository = mock(ServerLookupRepository.class);
         UsageTrackingService usageTrackingService = mock(UsageTrackingService.class);
         ServerMutationHelper serverMutationHelper = mock(ServerMutationHelper.class);
         StripeWebhookEventMongoRepository webhookEventRepository = mock(StripeWebhookEventMongoRepository.class);

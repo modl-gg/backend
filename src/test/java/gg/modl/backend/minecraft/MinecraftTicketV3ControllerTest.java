@@ -22,6 +22,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
@@ -33,6 +34,11 @@ import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketPriority;
 import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
+import gg.modl.backend.ticket.dto.response.MinecraftPlayerTicketView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailReplyView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketDetailView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketListItemView;
+import gg.modl.backend.ticket.dto.response.MinecraftTicketLookupView;
 import gg.modl.backend.ticket.service.MinecraftTicketService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.ClaimTicketResponse;
@@ -44,9 +50,7 @@ import gg.modl.proto.modl.v1.MinecraftTicketsByIdsRequest;
 import gg.modl.proto.modl.v1.TicketsResponse;
 import java.time.Instant;
 import java.util.Date;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -71,7 +75,7 @@ class MinecraftTicketV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftTicketsV3Controller(ticketService, aiTicketAnalysisService))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
@@ -572,62 +576,75 @@ class MinecraftTicketV3ControllerTest {
             .build();
     }
 
-    private static Map<String, Object> ticketListItem(Ticket ticket) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("id", ticket.getId());
-        item.put("type", "support");
-        item.put("category", "support");
-        item.put("subject", "Need help");
-        item.put("status", "open");
-        item.put("playerName", "PlayerOne");
-        item.put("playerUuid", PLAYER_UUID);
-        item.put("priority", "high");
-        item.put("assignedTo", List.of("staff-1"));
-        item.put("createdAt", new Date(1_700_000_000_000L));
-        item.put("updatedAt", new Date(1_700_000_010_000L));
-        item.put("hasStaffResponse", true);
-        item.put("locked", true);
-        item.put("replyCount", 1);
-        return item;
+    private static MinecraftTicketListItemView ticketListItem(Ticket ticket) {
+        return new MinecraftTicketListItemView(
+            ticket.getId(),
+            "support",
+            "support",
+            "Need help",
+            "open",
+            "PlayerOne",
+            PLAYER_UUID,
+            "high",
+            List.of("staff-1"),
+            new Date(1_700_000_000_000L),
+            new Date(1_700_000_010_000L),
+            true,
+            1,
+            true
+        );
     }
 
-    private static Map<String, Object> ticketDetail(Ticket ticket) {
-        Map<String, Object> item = ticketListItem(ticket);
-        Map<String, Object> reply = new LinkedHashMap<>();
-        reply.put("id", "reply-2");
-        reply.put("content", "Handled");
-        reply.put("authorName", "StaffOne");
-        reply.put("authorId", "staff-uuid");
-        reply.put("isStaff", true);
-        reply.put("createdAt", new Date(1_700_000_020_000L));
-        item.put("replies", List.of(reply));
-        item.put("chatMessages", ticket.getChatMessages());
-        item.put("replayUrl", "https://cdn.example/replay.modl");
-        return item;
+    private static MinecraftTicketDetailView ticketDetail(Ticket ticket) {
+        MinecraftTicketDetailReplyView reply = new MinecraftTicketDetailReplyView(
+            "reply-2",
+            "Handled",
+            "StaffOne",
+            "staff-uuid",
+            true,
+            new Date(1_700_000_020_000L)
+        );
+        return new MinecraftTicketDetailView(
+            ticket.getId(),
+            "support",
+            "support",
+            "Need help",
+            "open",
+            "PlayerOne",
+            PLAYER_UUID,
+            "high",
+            List.of("staff-1"),
+            new Date(1_700_000_000_000L),
+            new Date(1_700_000_010_000L),
+            true,
+            List.of(reply),
+            ticket.getChatMessages(),
+            "https://cdn.example/replay.modl"
+        );
     }
 
-    private static Map<String, Object> playerTicketItem(Ticket ticket) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("id", ticket.getId());
-        item.put("type", "support");
-        item.put("category", "support");
-        item.put("subject", "Need help");
-        item.put("status", "open");
-        item.put("createdAt", new Date(1_700_000_000_000L));
-        return item;
+    private static MinecraftPlayerTicketView playerTicketItem(Ticket ticket) {
+        return new MinecraftPlayerTicketView(
+            ticket.getId(),
+            "support",
+            "support",
+            "Need help",
+            "open",
+            new Date(1_700_000_000_000L)
+        );
     }
 
-    private static Map<String, Object> ticketLookupItem(Ticket ticket) {
-        Map<String, Object> item = new LinkedHashMap<>();
-        item.put("id", ticket.getId());
-        item.put("type", "support");
-        item.put("category", "support");
-        item.put("subject", "Need help");
-        item.put("status", "open");
-        item.put("playerName", "PlayerOne");
-        item.put("playerUuid", PLAYER_UUID);
-        item.put("createdAt", new Date(1_700_000_000_000L));
-        item.put("firstReplyContent", "Initial content");
-        return item;
+    private static MinecraftTicketLookupView ticketLookupItem(Ticket ticket) {
+        return new MinecraftTicketLookupView(
+            ticket.getId(),
+            "support",
+            "support",
+            "Need help",
+            "open",
+            "PlayerOne",
+            PLAYER_UUID,
+            new Date(1_700_000_000_000L),
+            "Initial content"
+        );
     }
 }

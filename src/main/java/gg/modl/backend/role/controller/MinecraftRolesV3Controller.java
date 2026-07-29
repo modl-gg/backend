@@ -8,7 +8,6 @@ import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.role.service.RoleService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.ApiError;
-import gg.modl.proto.modl.v1.MinecraftRoleDetailResponse;
 import gg.modl.proto.modl.v1.MinecraftRoleListResponse;
 import gg.modl.proto.modl.v1.MinecraftRoleMutationResponse;
 import gg.modl.proto.modl.v1.UpdateRolePermissionsRequest;

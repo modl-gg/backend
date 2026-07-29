@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentNote;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -41,9 +42,9 @@ class PunishmentMapperTest {
         data.put("duration", 3600_000L);
         Punishment punishment = punishment(6, List.of(autoNote()), data);
 
-        Map<String, Object> simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
+        SimplePunishmentView simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
 
-        assertEquals("spam in chat", simple.get("description"));
+        assertEquals("spam in chat", simple.description());
     }
 
     @Test
@@ -52,9 +53,9 @@ class PunishmentMapperTest {
         data.put("duration", 3600_000L);
         Punishment punishment = punishment(6, List.of(autoNote(), note("used slurs")), data);
 
-        Map<String, Object> simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
+        SimplePunishmentView simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
 
-        assertEquals("used slurs", simple.get("description"));
+        assertEquals("used slurs", simple.description());
     }
 
     @Test
@@ -63,9 +64,9 @@ class PunishmentMapperTest {
         data.put("duration", 3600_000L);
         Punishment punishment = punishment(6, List.of(autoNote()), data);
 
-        Map<String, Object> simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
+        SimplePunishmentView simple = PunishmentMapper.toSimplePunishment(punishment, types, statusCalculator, Map.of());
 
-        assertEquals("No reason specified", simple.get("description"));
+        assertEquals("No reason specified", simple.description());
     }
 
     private PunishmentNote autoNote() {

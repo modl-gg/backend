@@ -37,7 +37,7 @@ public class PunishmentEvidenceService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
         Date now = new Date();
         PunishmentEvidence evidence = new PunishmentEvidence(
             null,
@@ -70,13 +70,13 @@ public class PunishmentEvidenceService {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
-        Punishment punishment = findPunishment(player, punishmentId);
+        Punishment punishment = PunishmentQueryService.findPunishment(player, punishmentId);
         if (punishment == null) {
             throw new ResourceNotFoundException("Punishment not found");
         }
 
         String evIssuerId = request.issuerId();
-        String evIssuerName = evIssuerId != null ? null : (request.issuerName() != null ? request.issuerName() : "System");
+        String evIssuerName = PunishmentMapper.storedName(evIssuerId, request.issuerName() != null ? request.issuerName() : "System");
 
         PunishmentEvidence evidence = new PunishmentEvidence(
             request.text(),
@@ -95,17 +95,13 @@ public class PunishmentEvidenceService {
         return player;
     }
 
-    private Punishment findPunishment(Player player, String punishmentId) {
-        return PunishmentQueryService.findPunishment(player, punishmentId);
-    }
-
     public PunishmentOperationResult addUploadedEvidence(Server server, String punishmentId, String issuerName, String issuerId, List<UploadedEvidenceItem> evidenceItems) {
         PunishmentContext context = punishmentQueryService.findPunishmentContext(server, punishmentId).orElse(null);
         if (context == null) {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
         Date now = new Date();
         List<PunishmentEvidence> evidenceList = new ArrayList<>();
         for (UploadedEvidenceItem evidenceItem : evidenceItems) {
@@ -142,7 +138,7 @@ public class PunishmentEvidenceService {
             return new PunishmentOperationResult(PunishmentOperationStatus.NOT_FOUND, "Punishment not found", false, 0);
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
         PunishmentNote note = new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId);
         context.punishment().getNotes().add(note);
         punishmentRepository.addPunishmentNote(server, context.player().getMinecraftUuid().toString(), punishmentId, note, null);
@@ -154,12 +150,12 @@ public class PunishmentEvidenceService {
         Player player = playerRepository.findByMinecraftUuid(server, playerUuid.toString())
             .orElseThrow(() -> new ResourceNotFoundException("Player not found"));
 
-        Punishment punishment = findPunishment(player, punishmentId);
+        Punishment punishment = PunishmentQueryService.findPunishment(player, punishmentId);
         if (punishment == null) {
             throw new ResourceNotFoundException("Punishment not found");
         }
 
-        String resolvedIssuerName = issuerId != null ? null : issuerName;
+        String resolvedIssuerName = PunishmentMapper.storedName(issuerId, issuerName);
         PunishmentNote note = new PunishmentNote(IdGenerator.generateShortId(), text, new Date(), resolvedIssuerName, issuerId);
         punishment.getNotes().add(note);
         punishmentRepository.addPunishmentNote(server, player.getMinecraftUuid().toString(), punishmentId, note, null);

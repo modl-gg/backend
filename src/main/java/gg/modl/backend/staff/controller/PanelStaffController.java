@@ -1,6 +1,7 @@
 package gg.modl.backend.staff.controller;
 
-import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
+import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.log.service.PanelActionAuditor;
@@ -14,6 +15,7 @@ import gg.modl.backend.staff.dto.request.UpdateStaffRequest;
 import gg.modl.backend.staff.dto.response.InviteResultResponse;
 import gg.modl.backend.staff.dto.response.StaffResponse;
 import gg.modl.backend.staff.service.InvitationService;
+import gg.modl.backend.staff.service.MinecraftStaffService;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.proto.modl.v1.AvailablePlayersResponse;
 import gg.modl.proto.modl.v1.CheckUsernameResponse;
@@ -21,9 +23,6 @@ import gg.modl.proto.modl.v1.PanelResource;
 import gg.modl.proto.modl.v1.PanelStaffListResponse;
 import gg.modl.proto.modl.v1.StaffMutationResponse;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validator;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -38,14 +37,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_STAFF)
+@RequiresPanelPermission("admin.staff.manage.members")
 @RequiredArgsConstructor
 public class PanelStaffController {
     private final StaffService staffService;
+    private final MinecraftStaffService minecraftStaffService;
     private final InvitationService invitationService;
     private final RoleAuthorization roleAuthorization;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final PanelActionAuditor panelActionAuditor;
-    private final Validator validator;
+    private final BeanValidationRunner validationRunner;
 
     @GetMapping
     public ResponseEntity<PanelStaffListResponse> getAllStaff(HttpServletRequest request) {
@@ -86,7 +87,7 @@ public class PanelStaffController {
             roleAuthorization.panelPerformer(server, RequestUtil.getSessionEmail(request));
 
         CreateStaffRequest mappedRequest = PanelStaffProtoMapper.toCreateStaffRequest(createRequest);
-        validate(mappedRequest);
+        validationRunner.validate(mappedRequest);
         StaffResponse staff = staffService.createStaff(server, mappedRequest, performer);
         invalidateStaff(server);
         return ResponseEntity.status(HttpStatus.CREATED).body(PanelStaffProtoMapper.toStaffResponse(staff));
@@ -202,7 +203,7 @@ public class PanelStaffController {
 
         boolean clearing = !assignRequest.hasMinecraftUuid() && !assignRequest.hasMinecraftUsername();
         AssignMinecraftPlayerRequest mappedRequest = PanelStaffProtoMapper.toAssignMinecraftPlayerRequest(assignRequest);
-        return staffService.assignMinecraftPlayer(server, email, mappedRequest, performer)
+        return minecraftStaffService.assignMinecraftPlayer(server, email, mappedRequest, performer)
             .map(staff -> {
                 invalidateStaff(server);
                 String message = clearing
@@ -217,17 +218,11 @@ public class PanelStaffController {
     public ResponseEntity<AvailablePlayersResponse> getAvailablePlayers(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         return ResponseEntity.ok(
-            PanelStaffProtoMapper.toAvailablePlayersResponse(staffService.getAvailablePlayers(server)));
+            PanelStaffProtoMapper.toAvailablePlayersResponse(minecraftStaffService.getAvailablePlayers(server)));
     }
 
     private void invalidateStaff(Server server) {
         realtimeEventPublisher.invalidatePanel(server, PanelResource.PANEL_RESOURCE_STAFF);
     }
 
-    private <T> void validate(T request) {
-        Set<ConstraintViolation<T>> violations = validator.validate(request);
-        if (!violations.isEmpty()) {
-            throw new ValidationException(violations.iterator().next().getMessage());
-        }
-    }
 }

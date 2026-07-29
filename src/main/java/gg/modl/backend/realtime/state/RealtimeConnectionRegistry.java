@@ -95,15 +95,6 @@ public class RealtimeConnectionRegistry {
         return new RealtimeConnectionSnapshot(sessionId, entry.session(), entry.state());
     }
 
-    public void removeClosedSessions() {
-        connections.forEach((sessionId, entry) -> {
-            if (!entry.session().isOpen()) {
-                connections.remove(sessionId, entry);
-                pruneServerIndex(sessionId, entry);
-            }
-        });
-    }
-
     private void pruneServerIndex(String sessionId, ConnectionEntry entry) {
         String serverId = entry.state().getServerId();
         if (serverId == null) {

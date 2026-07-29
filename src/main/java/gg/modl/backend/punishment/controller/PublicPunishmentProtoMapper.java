@@ -1,52 +1,41 @@
 package gg.modl.backend.punishment.controller;
 
 import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
+import gg.modl.backend.player.dto.response.AppealInfoView;
 import gg.modl.proto.modl.v1.PublicPunishmentAppealInfoResponse;
 import java.util.Date;
-import java.util.Map;
-import java.util.Objects;
 
 final class PublicPunishmentProtoMapper {
 
     private PublicPunishmentProtoMapper() {
     }
 
-    static PublicPunishmentAppealInfoResponse toAppealInfo(Map<String, Object> appealInfo) {
+    static PublicPunishmentAppealInfoResponse toAppealInfo(AppealInfoView appealInfo) {
         PublicPunishmentAppealInfoResponse.Builder builder = PublicPunishmentAppealInfoResponse.newBuilder()
-            .setId(string(appealInfo.get("id")))
-            .setType(string(appealInfo.get("type")))
-            .setActive(Boolean.TRUE.equals(appealInfo.get("active")))
-            .setAppealable(Boolean.TRUE.equals(appealInfo.get("appealable")))
-            .setPlayerUuid(string(appealInfo.get("playerUuid")));
+            .setId(ProtoMapperSupport.stringValue(appealInfo.id()))
+            .setType(ProtoMapperSupport.stringValue(appealInfo.type()))
+            .setActive(appealInfo.active())
+            .setAppealable(appealInfo.appealable())
+            .setPlayerUuid(ProtoMapperSupport.stringValue(appealInfo.playerUuid()));
 
-        Long issued = epochMillis(appealInfo.get("issued"));
+        Long issued = epochMillis(appealInfo.issued());
         if (issued != null) {
             builder.setIssued(issued);
         }
-        Long expires = epochMillis(appealInfo.get("expires"));
+        Long expires = epochMillis(appealInfo.expires());
         if (expires != null) {
             builder.setExpires(expires);
         }
-        if (appealInfo.get("existingAppeal") instanceof Map<?, ?> existingAppeal) {
-            builder.setExistingAppeal(ProtoMapperSupport.legacyStruct(ProtoMapperSupport.stringObjectMap(existingAppeal)));
+        if (appealInfo.existingAppeal() != null) {
+            builder.setExistingAppeal(ProtoMapperSupport.legacyStruct(appealInfo.existingAppeal()));
         }
-        if (appealInfo.get("appealForm") instanceof Map<?, ?> appealForm) {
-            builder.setAppealForm(ProtoMapperSupport.legacyStruct(ProtoMapperSupport.stringObjectMap(appealForm)));
+        if (appealInfo.appealForm() != null) {
+            builder.setAppealForm(ProtoMapperSupport.legacyStruct(appealInfo.appealForm()));
         }
         return builder.build();
     }
 
-    private static Long epochMillis(Object value) {
-        if (value instanceof Date date) {
-            return date.getTime();
-        }
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        return null;
-    }
-
-    private static String string(Object value) {
-        return value == null ? "" : Objects.toString(value);
+    private static Long epochMillis(Date value) {
+        return value != null ? value.getTime() : null;
     }
 }

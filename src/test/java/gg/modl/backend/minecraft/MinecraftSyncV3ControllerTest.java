@@ -15,12 +15,17 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.player.controller.MinecraftSyncV3Controller;
 import gg.modl.backend.player.service.MinecraftSyncService;
+import gg.modl.backend.player.dto.response.SimplePunishmentView;
+import gg.modl.backend.player.dto.response.SyncDataView;
 import gg.modl.backend.player.service.SyncProtoFactory;
+import gg.modl.backend.player.dto.response.SyncPunishmentEntry;
+import gg.modl.backend.player.dto.response.SyncResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.SyncOnlinePlayer;
@@ -28,7 +33,6 @@ import gg.modl.proto.modl.v1.SyncRequest;
 import gg.modl.proto.modl.v1.SyncResponse;
 import gg.modl.proto.modl.v1.SyncServerStatus;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,7 +50,7 @@ class MinecraftSyncV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         mockMvc = MockMvcBuilders.standaloneSetup(new MinecraftSyncV3Controller(minecraftSyncService, new SyncProtoFactory()))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/")
                 .requestAttr(RequestAttribute.SERVER, server)
@@ -65,29 +69,36 @@ class MinecraftSyncV3ControllerTest {
             any(),
             any(),
             eq("127.0.0.1")
-        )).thenReturn(Map.of(
-            "timestamp", "2026-05-12T00:00:01Z",
-            "data", Map.of(
-                "pendingPunishments", List.of(Map.of(
-                    "minecraftUuid", "11111111-2222-3333-4444-555555555555",
-                    "username", "Byteful",
-                    "punishment", Map.of(
-                        "type", "Ban",
-                        "description", "Rule violation",
-                        "id", "punishment-1",
-                        "started", true,
-                        "ordinal", 2
-                    )
-                )),
-                "recentlyStartedPunishments", List.of(),
-                "recentlyModifiedPunishments", List.of(),
-                "playerNotifications", List.of(),
-                "activeStaffMembers", List.of(),
-                "staffNotifications", List.of(),
-                "pendingStatWipes", List.of(),
-                "staff2faVerifications", List.of(),
-                "staffPermissionsUpdatedAt", 1_700_000_000_000L,
-                "punishmentTypesUpdatedAt", 1_700_000_001_000L
+        )).thenReturn(new SyncResult(
+            "2026-05-12T00:00:01Z",
+            new SyncDataView(
+                List.of(new SyncPunishmentEntry(
+                    "11111111-2222-3333-4444-555555555555",
+                    "Byteful",
+                    new SimplePunishmentView(
+                        "punishment-1",
+                        "Ban",
+                        null,
+                        0,
+                        2,
+                        true,
+                        null,
+                        "Rule violation",
+                        null,
+                        0L,
+                        null,
+                        List.of()
+                    ))),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                1_700_000_000_000L,
+                1_700_000_001_000L,
+                List.of(),
+                null
             )
         ));
 

@@ -1,6 +1,5 @@
 package gg.modl.backend.beta;
 
-import gg.modl.backend.admin.service.AdminAuthService;
 import gg.modl.backend.infrastructure.filter.AdminAuthFilter;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.proto.modl.v1.BetaAuditResponse;
@@ -83,10 +82,7 @@ public class AdminBetaTesterController {
     }
 
     private String actingAdminEmail(HttpServletRequest request) {
-        Object attribute = request.getAttribute(AdminAuthFilter.ADMIN_SESSION_ATTR);
-        if (attribute instanceof AdminAuthService.AdminSession session) {
-            return session.email();
-        }
-        throw new BetaRequestException("Admin authentication required.", HttpStatus.UNAUTHORIZED);
+        return AdminAuthFilter.actingEmail(request)
+            .orElseThrow(() -> new BetaRequestException("Admin authentication required.", HttpStatus.UNAUTHORIZED));
     }
 }

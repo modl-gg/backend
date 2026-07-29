@@ -6,6 +6,7 @@ import gg.modl.backend.analytics.dto.response.PlayerActivityResponse;
 import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.analytics.service.AnalyticsService;
+import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.server.data.Server;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_ANALYTICS)
+@RequiresPanelPermission("admin.audit.view.analytics")
 @RequiredArgsConstructor
 public class AnalyticsController {
     private final AnalyticsService analyticsService;

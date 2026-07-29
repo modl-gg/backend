@@ -9,6 +9,6 @@ public record ReplayLiteLabelRange(
 ) {
     @AssertTrue
     public boolean isEndAfterStart() {
-        return endMs > startMs;
+        return endMs >= startMs;
     }
 }

@@ -8,6 +8,7 @@ import gg.modl.backend.ticket.data.TicketReply;
 import gg.modl.backend.ticket.data.TicketStatus;
 import gg.modl.backend.ticket.dto.response.PaginatedTicketsResponse;
 import gg.modl.backend.infrastructure.util.PaginationHelper;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import gg.modl.backend.ticket.dto.response.PlayerTicketResponse;
 import gg.modl.backend.ticket.dto.response.TicketListItemResponse;
 import java.util.ArrayList;
@@ -21,11 +22,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class TicketSearchService {
     private final TicketMongoRepository ticketRepository;
-
-    public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, String type) {
-        List<String> types = type != null && !type.isBlank() ? List.of(type) : null;
-        return searchTickets(server, page, limit, search, status, types, null, null, null, "newest");
-    }
 
     public PaginatedTicketsResponse searchTickets(Server server, int page, int limit, String search, String status, List<String> types,
                                                   String author, List<String> labels, List<String> assignees, String sort) {
@@ -107,7 +103,7 @@ public class TicketSearchService {
     }
 
     public List<PlayerTicketResponse> getTicketsByPlayer(Server server, String playerUuid) {
-        return ticketRepository.findByPlayer(server, normalizeUuid(playerUuid))
+        return ticketRepository.findByPlayer(server, UuidUtils.normalize(playerUuid))
             .stream()
             .map(this::toPlayerTicketResponse)
             .toList();
@@ -135,9 +131,5 @@ public class TicketSearchService {
             .stream()
             .map(this::toPlayerTicketResponse)
             .toList();
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(java.util.Locale.ROOT);
     }
 }

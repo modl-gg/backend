@@ -12,8 +12,10 @@ import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.UpdateResult;
 import gg.modl.backend.database.mongo.fields.AuditLogFields;
+import gg.modl.backend.database.mongo.fields.InvitationFields;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.database.mongo.fields.SettingsFields;
+import gg.modl.backend.database.mongo.fields.StaffFields;
 import gg.modl.backend.database.mongo.fields.StaffRoleFields;
 import gg.modl.backend.database.mongo.fields.TicketFields;
 import gg.modl.backend.player.data.Player;
@@ -53,7 +55,6 @@ public class TenantMigrationService {
     static final String NORMALIZE_PLAYER_IDS_MIGRATION_ID = "normalize-player-ids";
     static final String BACKFILL_TICKET_REPLAY_ID_MIGRATION_ID = "backfill-ticket-replay-id";
     private static final Pattern UPPERCASE_HEX_PATTERN = Pattern.compile("[A-F]");
-    private static final String ROLE_FIELD = "role";
     private static final String ID_FIELD = "_id";
     private static final String LOG_METADATA_PLAYER_ID = AuditLogFields.METADATA + ".playerId";
     private static final String STATUS_FIELD = "status";
@@ -224,12 +225,12 @@ public class TenantMigrationService {
                     name, template.getDb().getName());
                 continue;
             }
-            staffUpdated += staff.updateMany(Filters.eq(ROLE_FIELD, name), Updates.set(ROLE_FIELD, id)).getModifiedCount();
-            invitationsUpdated += invitations.updateMany(Filters.eq(ROLE_FIELD, name), Updates.set(ROLE_FIELD, id)).getModifiedCount();
+            staffUpdated += staff.updateMany(Filters.eq(StaffFields.ROLE_ID, name), Updates.set(StaffFields.ROLE_ID, id)).getModifiedCount();
+            invitationsUpdated += invitations.updateMany(Filters.eq(InvitationFields.ROLE_ID, name), Updates.set(InvitationFields.ROLE_ID, id)).getModifiedCount();
         }
 
-        long staffOrphans = staff.countDocuments(Filters.nin(ROLE_FIELD, roleIds));
-        long invitationOrphans = invitations.countDocuments(Filters.nin(ROLE_FIELD, roleIds));
+        long staffOrphans = staff.countDocuments(Filters.nin(StaffFields.ROLE_ID, roleIds));
+        long invitationOrphans = invitations.countDocuments(Filters.nin(InvitationFields.ROLE_ID, roleIds));
         if (staffOrphans > 0 || invitationOrphans > 0) {
             log.warn("Role-id backfill left unresolved role references in database={} staffOrphans={} invitationOrphans={}",
                 template.getDb().getName(), staffOrphans, invitationOrphans);

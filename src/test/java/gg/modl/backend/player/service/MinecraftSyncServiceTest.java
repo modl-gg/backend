@@ -1,4 +1,5 @@
 package gg.modl.backend.player.service;
+import gg.modl.backend.player.dto.response.SyncResult;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,14 +11,13 @@ import static org.mockito.Mockito.when;
 import gg.modl.backend.database.mongo.repository.MigrationMongoRepository;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.ServerInstanceSnapshotMongoRepository;
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerActivityRepository;
 import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,7 +35,7 @@ class MinecraftSyncServiceTest {
     private StaffMongoRepository staffRepository;
 
     @Mock
-    private ServerMongoRepository serverRepository;
+    private ServerActivityRepository serverRepository;
 
     @Mock
     private MigrationMongoRepository migrationRepository;
@@ -84,14 +84,14 @@ class MinecraftSyncServiceTest {
         );
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void syncReturnsEnvelopeWhenNoPlayersAreOnline() {
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
 
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
+        when(syncStaffEventService.collectStaffEvents(eq(server), any(), any(), any())).thenReturn(List.of());
 
-        Map<String, Object> response = minecraftSyncService.sync(
+        SyncResult response = minecraftSyncService.sync(
             server,
             "2025-01-01T00:00:00Z",
             List.of(),
@@ -102,11 +102,10 @@ class MinecraftSyncServiceTest {
             null
         );
 
-        assertNotNull(response.get("timestamp"));
-        assertTrue(response.containsKey("data"));
-        Map<String, Object> data = (Map<String, Object>) response.get("data");
-        assertTrue(data.containsKey("pendingPunishments"));
-        assertTrue(data.containsKey("staffNotifications"));
+        assertNotNull(response.timestamp());
+        assertNotNull(response.data());
+        assertNotNull(response.data().pendingPunishments());
+        assertNotNull(response.data().staffNotifications());
     }
 
     @SuppressWarnings("unchecked")

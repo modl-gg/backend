@@ -1,6 +1,7 @@
 package gg.modl.backend.storage.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -113,7 +114,7 @@ class EvidenceUploadServiceTest {
             ))
         );
 
-        assertEquals(EvidenceUploadService.SubmitEvidenceStatus.SUCCESS, result.status());
+        assertInstanceOf(EvidenceUploadService.SubmitEvidenceResult.Success.class, result);
         verify(punishmentEvidenceService).addUploadedEvidence(eq(server), eq("PUN-1"), eq("Moderator"), any(), any());
         verify(tokenService).invalidateToken("token-1");
     }
@@ -135,7 +136,9 @@ class EvidenceUploadServiceTest {
             new EvidenceConfirmUploadRequest(key)
         );
 
-        assertEquals(EvidenceUploadService.ConfirmUploadStatus.QUOTA_EXCEEDED, result.status());
+        EvidenceUploadService.ConfirmUploadResult.Orchestrated orchestrated =
+            assertInstanceOf(EvidenceUploadService.ConfirmUploadResult.Orchestrated.class, result);
+        assertEquals(UploadOrchestrationService.ConfirmStatus.QUOTA_EXCEEDED, orchestrated.outcome().status());
     }
 
     @Test
@@ -156,8 +159,10 @@ class EvidenceUploadServiceTest {
             new EvidenceConfirmUploadRequest(key)
         );
 
-        assertEquals(EvidenceUploadService.ConfirmUploadStatus.SUCCESS, result.status());
-        assertEquals(details, result.upload());
+        EvidenceUploadService.ConfirmUploadResult.Orchestrated orchestrated =
+            assertInstanceOf(EvidenceUploadService.ConfirmUploadResult.Orchestrated.class, result);
+        assertEquals(UploadOrchestrationService.ConfirmStatus.SUCCESS, orchestrated.outcome().status());
+        assertEquals(details, orchestrated.outcome().upload());
     }
 
     @Test
@@ -172,7 +177,7 @@ class EvidenceUploadServiceTest {
             new EvidenceConfirmUploadRequest(key)
         );
 
-        assertEquals(EvidenceUploadService.ConfirmUploadStatus.INVALID_KEY, result.status());
+        assertInstanceOf(EvidenceUploadService.ConfirmUploadResult.InvalidKey.class, result);
         verify(uploadOrchestrationService, never()).confirm(any(), any(), anyBoolean());
     }
 
@@ -192,6 +197,8 @@ class EvidenceUploadServiceTest {
             new EvidencePresignUploadRequest("file.png", "image/png", 42L)
         );
 
-        assertEquals(EvidenceUploadService.PresignUploadStatus.QUOTA_EXCEEDED, result.status());
+        EvidenceUploadService.PresignUploadResult.Orchestrated orchestrated =
+            assertInstanceOf(EvidenceUploadService.PresignUploadResult.Orchestrated.class, result);
+        assertEquals(UploadOrchestrationService.PresignStatus.QUOTA_EXCEEDED, orchestrated.outcome().status());
     }
 }

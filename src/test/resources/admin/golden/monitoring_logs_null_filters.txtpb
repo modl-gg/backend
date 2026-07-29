@@ -1,0 +1,9 @@
+success: true
+data {
+  pagination {
+    page: 1
+    limit: 50
+  }
+  filters {
+  }
+}

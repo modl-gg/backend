@@ -7,6 +7,7 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.player.service.MinecraftSyncService;
 import gg.modl.backend.player.service.SyncProtoFactory;
+import gg.modl.backend.player.dto.response.SyncResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.SimpleResponse;
 import gg.modl.proto.modl.v1.SyncRequest;
@@ -14,7 +15,6 @@ import gg.modl.proto.modl.v1.SyncResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Instant;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,7 +41,7 @@ public class MinecraftSyncV3Controller {
         Server server = RequestUtil.getRequestServer(httpRequest);
         requireLogBatchesWithinLimit(request);
         String clientIp = RequestUtil.getClientIp(httpRequest);
-        Map<String, Object> response = minecraftSyncService.sync(
+        SyncResult response = minecraftSyncService.sync(
             server,
             request.getLastSyncTimestamp(),
             MinecraftSyncProtoMapper.toOnlinePlayers(request),

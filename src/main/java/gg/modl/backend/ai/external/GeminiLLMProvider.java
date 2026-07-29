@@ -16,6 +16,7 @@ public class GeminiLLMProvider implements LLMProvider {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final Client client;
+    private final boolean connected;
     private final String geminiModelId;
     private final Schema responseSchema;
     private final float temperature;
@@ -23,9 +24,11 @@ public class GeminiLLMProvider implements LLMProvider {
     private final int maxOutputTokens;
 
     public GeminiLLMProvider(LLMConfiguration config) {
+        String apiKey = config.getGeminiApiKey();
         this.client = Client.builder()
-            .apiKey(config.getGeminiApiKey())
+            .apiKey(apiKey)
             .build();
+        this.connected = apiKey != null && !apiKey.isBlank();
         this.responseSchema = parseSchema(DefaultPrompts.JSON_FORMAT);
         this.temperature = config.getGeminiTemperature();
         this.topP = config.getGeminiTopP();
@@ -59,6 +62,6 @@ public class GeminiLLMProvider implements LLMProvider {
 
     @Override
     public boolean isConnected() {
-        return client != null;
+        return connected;
     }
 }

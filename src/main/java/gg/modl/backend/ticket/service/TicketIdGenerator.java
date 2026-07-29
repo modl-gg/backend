@@ -22,7 +22,7 @@ public class TicketIdGenerator {
             ticket.setId(prefix + "-" + idGenerator.nextSixDigitInt());
             try {
                 return ticketRepository.insertTicket(server, ticket);
-            } catch (DuplicateKeyException duplicate) {
+            } catch (DuplicateKeyException ignored) {
             }
         }
         throw new IllegalStateException("Unable to allocate a unique ticket id after " + MAX_ATTEMPTS + " attempts");

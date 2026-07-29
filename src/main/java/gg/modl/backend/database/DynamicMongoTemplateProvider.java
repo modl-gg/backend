@@ -4,12 +4,14 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.mongodb.client.MongoClient;
 import java.time.Duration;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 import org.springframework.data.mongodb.core.convert.MappingMongoConverter;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class DynamicMongoTemplateProvider {
     private final MongoClient mongoClient;
     private final MappingMongoConverter mongoConverter;
@@ -18,14 +20,6 @@ public class DynamicMongoTemplateProvider {
         .expireAfterAccess(Duration.ofMinutes(30))
         .build();
     private static final String GLOBAL_DATABASE_NAME = "modl";
-
-    public DynamicMongoTemplateProvider(
-        MongoClient mongoClient,
-        MappingMongoConverter mongoConverter
-    ) {
-        this.mongoClient = mongoClient;
-        this.mongoConverter = mongoConverter;
-    }
 
     public MongoTemplate getGlobalDatabase() {
         return getFromDatabaseName(GLOBAL_DATABASE_NAME);

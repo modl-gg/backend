@@ -5,12 +5,12 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.audit.data.AuditLog;
 import gg.modl.backend.audit.dto.response.ActivePunishmentResponse;
 import gg.modl.backend.audit.dto.response.PunishmentAuditResponse;
-import gg.modl.backend.database.CollectionName;
-import gg.modl.backend.database.mongo.repository.AuditMongoRepository;
+import gg.modl.backend.database.mongo.repository.AuditLogRepository;
+import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.player.data.punishment.Punishment;
-import gg.modl.backend.player.data.punishment.PunishmentModification;
 import gg.modl.backend.player.data.punishment.PunishmentModificationType;
 import gg.modl.backend.player.service.PlayerStatusCalculator;
 import gg.modl.backend.player.service.PunishmentLifecycleService;
@@ -44,7 +44,9 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class AuditService {
 
-    private final AuditMongoRepository auditRepository;
+    private final AuditLogRepository auditLogRepository;
+    private final PunishmentMongoRepository punishmentRepository;
+    private final StaffMongoRepository staffMongoRepository;
     private final PunishmentTypeService punishmentTypeService;
     private final StaffService staffService;
     private final PlayerStatusCalculator statusCalculator;
@@ -56,32 +58,13 @@ public class AuditService {
         .maximumSize(500)
         .build();
 
-    public static final Set<String> ALLOWED_TABLES = Set.of(
-        CollectionName.PLAYERS,
-        CollectionName.SETTINGS,
-        CollectionName.STAFF,
-        CollectionName.STAFF_ROLES,
-        CollectionName.TICKETS,
-        CollectionName.TICKET_VERIFICATIONS,
-        CollectionName.LOGS,
-        CollectionName.KNOWLEDGEBASE_CATEGORIES,
-        CollectionName.KNOWLEDGEBASE_ARTICLES,
-        CollectionName.HOMEPAGE_CARDS
-    );
-
-    private static final Set<String> SAFE_SETTINGS_TYPES = Set.of(
-        "general", "punishmentTypes", "quickResponses", "replayRetention",
-        "statusThresholds", "ticketForms", "ticketLabels");
-    private static final List<String> SECRET_FIELD_NAMES = List.of(
-        "api_key", "ticket_api_key", "minecraft_api_key", "apiKey", "webhookUrl", "token", "secret", "password");
-    private static final String REDACTED = "[REDACTED]";
     private static final long PERMANENT_PUNISHMENT_DURATION = -1L;
 
     public List<PunishmentAuditResponse> getPunishments(
         Server server, int limit, boolean canRollbackOnly) {
         Date thirtyDaysAgo = DateRangeUtil.getStartDate("30d");
         List<AuditLog> logs =
-            auditRepository.findPunishmentLogs(server, thirtyDaysAgo, limit, canRollbackOnly);
+            auditLogRepository.findPunishmentLogs(server, thirtyDaysAgo, limit, canRollbackOnly);
 
         return logs.stream().map(logEntry -> {
             Map<String, Object> metadata = logEntry.getMetadata() != null
@@ -131,10 +114,6 @@ public class AuditService {
         return defaultValue;
     }
 
-    public List<ActivePunishmentResponse> getActivePunishments(Server server) {
-        return getPunishmentsList(server, "active");
-    }
-
     public List<ActivePunishmentResponse> getPunishmentsList(Server server, String statusFilter) {
         List<ActivePunishmentResponse> all =
             activePunishmentsCache.get(server.getId(), key -> computeAllPunishments(server));
@@ -158,12 +137,12 @@ public class AuditService {
     private List<ActivePunishmentResponse> computeAllPunishments(Server server) {
         List<PunishmentType> punishmentTypes = punishmentTypeService.getPunishmentTypes(server);
         Map<Integer, PunishmentType> typesByOrdinal = PunishmentTypeIndex.byOrdinal(punishmentTypes);
-        List<Document> rows = auditRepository.aggregatePunishmentRows(server);
+        List<Document> rows = punishmentRepository.aggregatePunishmentRows(server);
         Map<String, String> resolvedIssuers = resolveIssuerNames(server, rows);
 
         List<ActivePunishmentResponse> results = new ArrayList<>();
         for (Document row : rows) {
-            Punishment punishment = reconstructPunishment(row);
+            Punishment punishment = PunishmentDocumentMapper.reconstructPunishment(row);
             boolean active = statusCalculator.isPunishmentActive(punishment);
             results.add(mapToActivePunishmentResponse(
                 server, row, punishment, active, typesByOrdinal, resolvedIssuers));
@@ -174,17 +153,17 @@ public class AuditService {
     private ActivePunishmentResponse mapToActivePunishmentResponse(
         Server server, Document row, Punishment punishment, boolean active,
         Map<Integer, PunishmentType> typesByOrdinal, Map<String, String> resolvedIssuers) {
-        int typeOrdinal = row.getInteger("typeOrdinal", 0);
+        int typeOrdinal = row.getInteger(AuditProjectionKeys.TYPE_ORDINAL, 0);
         String typeName = punishmentTypeService.getPunishmentTypeName(server, typeOrdinal);
         PunishmentType matchedType = typesByOrdinal.get(typeOrdinal);
         String category = matchedType != null
             ? (matchedType.getCategory() != null ? matchedType.getCategory() : "Administrative")
             : "Administrative";
 
-        Document data = row.get("data", Document.class);
-        String reason = data != null ? data.getString("reason") : null;
+        Document data = row.get(AuditProjectionKeys.DATA, Document.class);
+        String reason = data != null ? data.getString(AuditProjectionKeys.REASON) : null;
         Long duration = extractDuration(data);
-        List<ActivePunishmentResponse.EvidenceItem> evidenceItems = extractEvidenceItems(row);
+        List<ActivePunishmentResponse.EvidenceItem> evidenceItems = PunishmentDocumentMapper.extractEvidenceItems(row);
 
         List<String> ticketIds = row.getList("attachedTicketIds", String.class);
         if (ticketIds == null) {
@@ -192,15 +171,15 @@ public class AuditService {
         }
 
         return new ActivePunishmentResponse(
-            row.getString("punishmentId"),
-            row.getString("playerId"),
+            row.getString(AuditProjectionKeys.PUNISHMENT_ID),
+            row.getString(AuditProjectionKeys.PLAYER_ID),
             AuditDocumentUtil.extractPlayerNameFromDoc(row),
             typeName,
             typeOrdinal,
             category,
             resolveIssuerFromDoc(
-                row.getString("issuerId"),
-                row.getString("issuerName"),
+                row.getString(AuditProjectionKeys.ISSUER_ID),
+                row.getString(AuditProjectionKeys.ISSUER_NAME),
                 resolvedIssuers),
             reason,
             duration,
@@ -213,24 +192,6 @@ public class AuditService {
             evidenceItems,
             ticketIds
         );
-    }
-
-    private List<ActivePunishmentResponse.EvidenceItem> extractEvidenceItems(Document row) {
-        List<Document> evidenceDocs = row.getList("evidence", Document.class);
-        if (evidenceDocs == null) {
-            return Collections.emptyList();
-        }
-
-        List<ActivePunishmentResponse.EvidenceItem> items = new ArrayList<>();
-        for (Document evidenceDoc : evidenceDocs) {
-            items.add(new ActivePunishmentResponse.EvidenceItem(
-                evidenceDoc.getString("text"),
-                evidenceDoc.getString("url"),
-                evidenceDoc.getString("type"),
-                evidenceDoc.getString("fileName")
-            ));
-        }
-        return items;
     }
 
     private static String resolveIssuerFromDoc(
@@ -248,7 +209,7 @@ public class AuditService {
         if (data == null) {
             return null;
         }
-        Object durationObj = data.get("duration");
+        Object durationObj = data.get(AuditProjectionKeys.DURATION);
         if (durationObj instanceof Number number) {
             return number.longValue();
         }
@@ -258,73 +219,17 @@ public class AuditService {
     private Map<String, String> resolveIssuerNames(Server server, List<Document> rows) {
         Set<String> issuerIds = new HashSet<>();
         for (Document doc : rows) {
-            String issuerId = doc.getString("issuerId");
+            String issuerId = doc.getString(AuditProjectionKeys.ISSUER_ID);
             if (issuerId != null) {
                 issuerIds.add(issuerId);
             }
         }
-        return auditRepository.mapStaffUsernamesByIds(server, issuerIds);
-    }
-
-    private Punishment reconstructPunishment(Document doc) {
-        Punishment punishment = new Punishment();
-        String reconstructedId = doc.getString("punishmentId");
-        if (reconstructedId == null) {
-            reconstructedId = doc.getString("id");
-        }
-        punishment.setId(reconstructedId);
-        punishment.setTypeOrdinal(doc.getInteger("typeOrdinal", 0));
-        punishment.setIssuerName(
-            doc.getString("issuerName") != null ? doc.getString("issuerName") : "Unknown");
-        punishment.setIssuerId(doc.getString("issuerId"));
-        punishment.setIssued(
-            doc.getDate("issued") != null ? doc.getDate("issued") : new Date());
-        punishment.setStarted(doc.getDate("started"));
-
-        Document data = doc.get("data", Document.class);
-        if (data != null) {
-            punishment.setData(new HashMap<>(data));
-        }
-
-        punishment.setModifications(extractModifications(doc));
-        punishment.setNotes(Collections.emptyList());
-        punishment.setEvidence(Collections.emptyList());
-        punishment.setAttachedTicketIds(Collections.emptyList());
-
-        return punishment;
-    }
-
-    private List<PunishmentModification> extractModifications(Document doc) {
-        List<Document> modDocs = doc.getList("modifications", Document.class);
-        if (modDocs == null) {
-            return new ArrayList<>();
-        }
-
-        List<PunishmentModification> mods = new ArrayList<>();
-        for (Document modDoc : modDocs) {
-            Long effectiveDuration = null;
-            Object edObj = modDoc.get("effectiveDuration");
-            if (edObj instanceof Number num) {
-                effectiveDuration = num.longValue();
-            }
-            mods.add(new PunishmentModification(
-                modDoc.getString("id"),
-                modDoc.getString("type"),
-                modDoc.getDate("date"),
-                modDoc.getString("issuerName"),
-                modDoc.getString("issuerId"),
-                modDoc.getString("reason"),
-                effectiveDuration,
-                modDoc.getString("appealTicketId"),
-                null
-            ));
-        }
-        return mods;
+        return staffMongoRepository.findUsernamesByIds(server, issuerIds);
     }
 
     public boolean rollbackPunishment(
         Server server, String punishmentId, String reason, String performerUsername) {
-        Document player = auditRepository.findPlayerByPunishmentId(server, punishmentId);
+        Document player = punishmentRepository.findPlayerByPunishmentId(server, punishmentId);
         if (player == null) {
             return false;
         }
@@ -338,7 +243,7 @@ public class AuditService {
 
         Date now = new Date();
         String playerId = player.getString("_id");
-        auditRepository.appendPunishmentModification(
+        punishmentRepository.appendPunishmentModification(
             server, playerId, punishmentId, buildRollbackModification(performerUsername, reason, now));
         saveRollbackAuditLog(
             server, playerId,
@@ -398,63 +303,7 @@ public class AuditService {
             ))
             .build();
 
-        auditRepository.saveAuditLog(server, rollbackLog);
-    }
-
-    public Map<String, Object> getDatabaseTable(
-        Server server, String table, int limit, int skip) {
-        if (!ALLOWED_TABLES.contains(table)) {
-            throw new ValidationException("Invalid table name");
-        }
-
-        List<Document> documents = auditRepository.readTable(server, table, limit, skip);
-        long total = auditRepository.countCollection(server, table);
-
-        return Map.of(
-            "data", redactDocuments(table, documents),
-            "total", total,
-            "limit", limit,
-            "skip", skip
-        );
-    }
-
-    private List<Document> redactDocuments(String table, List<Document> docs) {
-        if (docs == null) {
-            return Collections.emptyList();
-        }
-        List<Document> redacted = new ArrayList<>(docs.size());
-        for (Document orig : docs) {
-            Document copy = (Document) redactSecretFields(orig);
-            if (CollectionName.SETTINGS.equals(table) && !SAFE_SETTINGS_TYPES.contains(copy.getString("type"))) {
-                copy.put("data", REDACTED);
-            }
-            redacted.add(copy);
-        }
-        return redacted;
-    }
-
-    private Object redactSecretFields(Object value) {
-        if (value instanceof Document document) {
-            Document copy = new Document();
-            for (Map.Entry<String, Object> entry : document.entrySet()) {
-                copy.put(entry.getKey(),
-                    isSecretFieldName(entry.getKey()) ? REDACTED : redactSecretFields(entry.getValue()));
-            }
-            return copy;
-        }
-        if (value instanceof List<?> list) {
-            List<Object> copy = new ArrayList<>(list.size());
-            for (Object element : list) {
-                copy.add(redactSecretFields(element));
-            }
-            return copy;
-        }
-        return value;
-    }
-
-    private boolean isSecretFieldName(String key) {
-        String lowerKey = key.toLowerCase();
-        return SECRET_FIELD_NAMES.stream().anyMatch(secret -> lowerKey.contains(secret.toLowerCase()));
+        auditLogRepository.saveAuditLog(server, rollbackLog);
     }
 
     public int rollbackAllPunishmentsByStaff(
@@ -471,7 +320,7 @@ public class AuditService {
         Date startDate, Date endDate, String reason, String performerUsername) {
         try {
             List<Document> players =
-                auditRepository.findPlayersForRollback(server, staffUsername, staffId);
+                punishmentRepository.findPlayersForRollback(server, staffUsername, staffId);
             Date now = new Date();
 
             int rollbackCount = 0;
@@ -510,7 +359,7 @@ public class AuditService {
                 continue;
             }
 
-            auditRepository.appendPunishmentModification(
+            punishmentRepository.appendPunishmentModification(
                 server, playerId, punishment.getString("id"),
                 buildRollbackModification(performerUsername, reason, now));
             saveRollbackAuditLog(
@@ -567,7 +416,7 @@ public class AuditService {
                 AuditLog pardonLog = buildBulkAuditLog(ctx, performerUsername,
                     "Bulk pardon: " + ctx.typeName + " for " + ctx.playerName,
                     Map.of("pardonReason", reason != null ? reason : "", "bulkPardon", true));
-                auditRepository.saveAuditLog(server, pardonLog);
+                auditLogRepository.saveAuditLog(server, pardonLog);
                 return true;
             });
     }
@@ -589,7 +438,7 @@ public class AuditService {
                     "Bulk duration change: " + ctx.typeName + " for " + ctx.playerName,
                     Map.of("reason", reason != null ? reason : "", "newDurationMs", newDurationMs,
                         "bulkDurationChange", true));
-                auditRepository.saveAuditLog(server, durationLog);
+                auditLogRepository.saveAuditLog(server, durationLog);
                 return true;
             });
     }
@@ -598,7 +447,7 @@ public class AuditService {
         Server server, List<Integer> typeOrdinals, String reason,
         String performerUsername, String operationName, BulkPunishmentAction action) {
         try {
-            List<Document> players = auditRepository.findPlayersForBulkAction(server, typeOrdinals);
+            List<Document> players = punishmentRepository.findPlayersForBulkAction(server, typeOrdinals);
             Date now = new Date();
             int count = 0;
 
@@ -617,12 +466,12 @@ public class AuditService {
                 String playerName = AuditDocumentUtil.extractPlayerNameFromDoc(player);
 
                 for (Document punishmentDoc : punishments) {
-                    int typeOrdinal = punishmentDoc.getInteger("typeOrdinal", 0);
+                    int typeOrdinal = punishmentDoc.getInteger(AuditProjectionKeys.TYPE_ORDINAL, 0);
                     if (!typeOrdinals.contains(typeOrdinal)) {
                         continue;
                     }
 
-                    Punishment punishment = reconstructPunishment(punishmentDoc);
+                    Punishment punishment = PunishmentDocumentMapper.reconstructPunishment(punishmentDoc);
                     if (!statusCalculator.isPunishmentActive(punishment)) {
                         continue;
                     }

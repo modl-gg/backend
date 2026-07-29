@@ -94,10 +94,6 @@ public abstract class AbstractTenantMongoRepository<T> {
         return template.aggregate(aggregation, collectionName, outputType);
     }
 
-    protected MongoTemplate rawTemplate(MongoTemplate template) {
-        return template;
-    }
-
     protected Class<T> entityType() {
         return entityType;
     }

@@ -63,23 +63,25 @@ public class PunishmentType {
     }
 
     public boolean isBan() {
-        // Core types (ordinals 0-5) are hardcoded
-        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
-            return ordinal >= 2;
+        PunishmentCategory coreCategory = PunishmentCategory.fromCoreOrdinal(ordinal);
+        if (coreCategory != null) {
+            return coreCategory == PunishmentCategory.BAN;
         }
         return category != null && category.toLowerCase().contains("ban");
     }
 
     public boolean isMute() {
-        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
-            return ordinal == 1;
+        PunishmentCategory coreCategory = PunishmentCategory.fromCoreOrdinal(ordinal);
+        if (coreCategory != null) {
+            return coreCategory == PunishmentCategory.MUTE;
         }
         return category != null && category.toLowerCase().contains("mute");
     }
 
     public boolean isKick() {
-        if (ordinal != null && ordinal >= 0 && ordinal <= 5) {
-            return ordinal == 0;
+        PunishmentCategory coreCategory = PunishmentCategory.fromCoreOrdinal(ordinal);
+        if (coreCategory != null) {
+            return coreCategory == PunishmentCategory.KICK;
         }
         return category != null && category.toLowerCase().contains("kick");
     }

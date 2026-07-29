@@ -13,6 +13,7 @@ import gg.modl.proto.modl.v1.AdminServerCreateRequest;
 import gg.modl.proto.modl.v1.AdminServerExportRequest;
 import gg.modl.proto.modl.v1.AdminServerSearchRequest;
 import gg.modl.proto.modl.v1.AdminServerUpdateStatsRequest;
+import gg.modl.proto.modl.v1.AdminServerUsageBatchRequest;
 import gg.modl.proto.modl.v1.UpdateServerRequest;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -64,7 +65,7 @@ public class AdminServerController {
     }
 
     @PostMapping("/usage/batch")
-    public ResponseEntity<?> getUsageBatch(@RequestBody gg.modl.proto.modl.v1.AdminServerUsageBatchRequest request) {
+    public ResponseEntity<?> getUsageBatch(@RequestBody AdminServerUsageBatchRequest request) {
         List<String> serverIds = request.getServerIdsList();
         if (serverIds.isEmpty()) {
             throw new ValidationException("Missing required field: serverIds");

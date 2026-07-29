@@ -251,8 +251,8 @@ class PunishmentServiceTest {
         assertEquals(1, player.getPunishments().size());
         Punishment createdPunishment = player.getPunishments().get(0);
         assertEquals(punishmentId, createdPunishment.getId());
-        assertEquals("Reason text", createdPunishment.getData().get("reason"));
-        assertEquals("Queued", createdPunishment.getData().get("status"));
+        assertEquals("Reason text", createdPunishment.data().reason());
+        assertEquals("Queued", createdPunishment.data().status());
     }
 
     @Test
@@ -279,10 +279,10 @@ class PunishmentServiceTest {
         punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         Punishment created = player.getPunishments().get(0);
-        assertEquals("habitual", created.getData().get("offenseLevel"));
+        assertEquals("habitual", created.data().offenseLevel());
 
-        created.getData().remove("status");
-        assertEquals("habitual", created.getData().get("offenseLevel"));
+        created.data().removeStatus();
+        assertEquals("habitual", created.data().offenseLevel());
     }
 
     @Test
@@ -307,7 +307,7 @@ class PunishmentServiceTest {
         punishmentLifecycleService.createPunishment(server, playerUuid, request);
 
         Punishment created = player.getPunishments().get(0);
-        assertEquals("Unstarted", created.getData().get("status"));
+        assertEquals("Unstarted", created.data().status());
         assertNull(created.getStarted());
     }
 
@@ -344,7 +344,7 @@ class PunishmentServiceTest {
         assertEquals("SYSTEM_PARDON", modification.type());
         assertEquals("Auto-pardoned", modification.reason());
         assertEquals("Auto-pardoned", updatedPunishment.getNotes().get(0).text());
-        assertEquals("Pardoned", updatedPunishment.getData().get("status"));
+        assertEquals("Pardoned", updatedPunishment.data().status());
     }
 
     @Test

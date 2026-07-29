@@ -4,7 +4,6 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Timestamp;
 import gg.modl.backend.realtime.config.RealtimeProperties;
 import gg.modl.proto.modl.v1.ErrorCode;
-import gg.modl.proto.modl.v1.Heartbeat;
 import gg.modl.proto.modl.v1.RealtimeEnvelope;
 import gg.modl.proto.modl.v1.ReconnectAction;
 import gg.modl.proto.modl.v1.ReconnectAdvice;
@@ -45,13 +44,6 @@ public class RealtimeCodec {
         return toMessage(baseEnvelope().setServerHello(hello).build());
     }
 
-    public BinaryMessage heartbeat(long sequence) {
-        Heartbeat heartbeat = Heartbeat.newBuilder()
-            .setSequence(sequence)
-            .build();
-        return toMessage(baseEnvelope().setHeartbeat(heartbeat).build());
-    }
-
     public BinaryMessage error(ErrorCode code, String message) {
         gg.modl.proto.modl.v1.Error error = gg.modl.proto.modl.v1.Error.newBuilder()
             .setCode(code)
@@ -70,7 +62,7 @@ public class RealtimeCodec {
         return toMessage(baseEnvelope().setReconnectAdvice(advice).build());
     }
 
-    public RealtimeEnvelope buildOutboundEnvelope(RealtimeEnvelope envelope) {
+    private RealtimeEnvelope buildOutboundEnvelope(RealtimeEnvelope envelope) {
         RealtimeEnvelope.Builder builder = envelope.toBuilder();
         if (builder.getEventId().isBlank()) {
             builder.setEventId(UUID.randomUUID().toString());
@@ -86,10 +78,6 @@ public class RealtimeCodec {
                 .build());
         }
         return builder.build();
-    }
-
-    public BinaryMessage outbound(RealtimeEnvelope envelope) {
-        return toMessage(buildOutboundEnvelope(envelope));
     }
 
     public byte[] outboundPayload(RealtimeEnvelope envelope) {

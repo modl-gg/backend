@@ -42,7 +42,7 @@ class AnalyticsServiceOverviewTest {
     @Test
     void overviewStaffCountIncludesSuperAdmin() {
         when(analyticsRepository.loadOverviewStats(eq(server), any(Date.class), any(Date.class)))
-            .thenReturn(new AnalyticsMongoRepository.OverviewStats(5, 10, 2, 3, 1));
+            .thenReturn(new AnalyticsMongoRepository.OverviewStats(5, 10, 2, 3, 1, 0, 0));
         when(staffService.countStaffIncludingSuperAdmin(server)).thenReturn(1L);
 
         OverviewResponse overview = service.getOverview(server);
@@ -51,5 +51,28 @@ class AnalyticsServiceOverviewTest {
         assertEquals(5L, overview.totalTickets());
         assertEquals(10L, overview.totalPlayers());
         assertEquals(2L, overview.activeTickets());
+    }
+
+    @Test
+    void overviewComputesPlayerChangeFromRecentVsPreviousPlayers() {
+        when(analyticsRepository.loadOverviewStats(eq(server), any(Date.class), any(Date.class)))
+            .thenReturn(new AnalyticsMongoRepository.OverviewStats(5, 10, 2, 8, 4, 15, 12));
+        when(staffService.countStaffIncludingSuperAdmin(server)).thenReturn(1L);
+
+        OverviewResponse overview = service.getOverview(server);
+
+        assertEquals(100, overview.ticketChange());
+        assertEquals(25, overview.playerChange());
+    }
+
+    @Test
+    void overviewPlayerChangeIsZeroWhenNoPreviousPlayers() {
+        when(analyticsRepository.loadOverviewStats(eq(server), any(Date.class), any(Date.class)))
+            .thenReturn(new AnalyticsMongoRepository.OverviewStats(5, 10, 2, 8, 0, 15, 0));
+        when(staffService.countStaffIncludingSuperAdmin(server)).thenReturn(1L);
+
+        OverviewResponse overview = service.getOverview(server);
+
+        assertEquals(0, overview.playerChange());
     }
 }

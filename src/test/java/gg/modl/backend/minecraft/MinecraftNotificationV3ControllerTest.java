@@ -21,6 +21,7 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -28,6 +29,7 @@ import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.player.controller.MinecraftNotificationController;
 import gg.modl.backend.player.controller.MinecraftNotificationV3Controller;
 import gg.modl.backend.player.service.MinecraftPlayerService;
+import gg.modl.backend.player.dto.response.AcknowledgeResult;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.AcknowledgeNotificationsRequest;
@@ -38,7 +40,6 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -56,13 +57,13 @@ class MinecraftNotificationV3ControllerTest {
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftNotificationV3Controller(minecraftPlayerService))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
 
         v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftNotificationController(minecraftPlayerService))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }
@@ -70,10 +71,7 @@ class MinecraftNotificationV3ControllerTest {
     @Test
     void v3AcknowledgeAcceptsBinaryRequestAndReturnsBinarySimpleResponse() throws Exception {
         when(minecraftPlayerService.acknowledgeNotifications(same(server), any(), any(), any()))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(
-                HttpStatus.ACCEPTED,
-                Map.of("status", 202, "success", true, "message", "Acknowledged 2 notification(s)")
-            ));
+            .thenReturn(new AcknowledgeResult("Acknowledged 2 notification(s)"));
 
         AcknowledgeNotificationsRequest request =
             AcknowledgeNotificationsRequest.newBuilder()
@@ -86,7 +84,7 @@ class MinecraftNotificationV3ControllerTest {
                 .contentType(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .accept(ProtobufMediaTypes.APPLICATION_X_PROTOBUF)
                 .content(request.toByteArray()))
-            .andExpect(status().isAccepted())
+            .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF))
             .andReturn();
 
@@ -108,10 +106,7 @@ class MinecraftNotificationV3ControllerTest {
     @Test
     void v3AcknowledgeOmittedAcknowledgedAtMapsToLegacyNull() throws Exception {
         when(minecraftPlayerService.acknowledgeNotifications(same(server), any(), any(), any()))
-            .thenReturn(new MinecraftPlayerService.ServiceResponse(
-                HttpStatus.OK,
-                Map.of("status", 200, "success", true, "message", "Acknowledged 1 notification(s)")
-            ));
+            .thenReturn(new AcknowledgeResult("Acknowledged 1 notification(s)"));
 
         AcknowledgeNotificationsRequest request =
             AcknowledgeNotificationsRequest.newBuilder()

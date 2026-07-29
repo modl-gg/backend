@@ -1,7 +1,7 @@
 package gg.modl.backend.log.service;
 
 import gg.modl.backend.database.mongo.repository.ServerLogMongoRepository;
-import gg.modl.backend.log.data.SystemLog;
+import gg.modl.backend.log.data.ServerLog;
 import gg.modl.backend.log.dto.response.SystemLogResponse;
 import gg.modl.backend.server.data.Server;
 import java.util.Date;
@@ -23,7 +23,7 @@ public class LogService {
 
     public List<SystemLogResponse> getLogs(Server server, int limit) {
         int safeLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
-        List<SystemLog> logs = serverLogRepository.findRecent(server, safeLimit);
+        List<ServerLog> logs = serverLogRepository.findRecent(server, safeLimit);
 
         return logs.stream()
             .map(l -> new SystemLogResponse(
@@ -45,7 +45,7 @@ public class LogService {
     }
 
     private void write(Server server, String description, String level, String source) {
-        SystemLog entry = SystemLog.builder()
+        ServerLog entry = ServerLog.builder()
             .description(description)
             .level(level)
             .source(source != null && !source.isBlank() ? source : SOURCE_SYSTEM)

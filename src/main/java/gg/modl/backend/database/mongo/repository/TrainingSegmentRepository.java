@@ -6,20 +6,18 @@ import gg.modl.backend.database.mongo.fields.TrainingSegmentDocumentFields;
 import gg.modl.backend.replay.data.TrainingSegmentDocument;
 import java.util.Collection;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class TrainingSegmentRepository {
     private static final String COLLECTION = CollectionName.TRAINING_SEGMENTS;
 
     private final TenantMongoAccess tenantMongoAccess;
-
-    public TrainingSegmentRepository(TenantMongoAccess tenantMongoAccess) {
-        this.tenantMongoAccess = tenantMongoAccess;
-    }
 
     public void save(TrainingSegmentDocument doc) {
         nonTenantTrainingStore().save(doc, COLLECTION);

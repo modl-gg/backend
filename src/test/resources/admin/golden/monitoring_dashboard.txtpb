@@ -1,0 +1,68 @@
+success: true
+data {
+  servers {
+    total: 10
+    active: 7
+    pending: 1
+    failed: 2
+    recent_registrations: 3
+    concurrent_servers: 4
+    concurrent_players: 55
+  }
+  logs {
+    last24h {
+      total: 20
+      critical: 1
+      error: 3
+      warning: 5
+    }
+    unresolved {
+      critical: 1
+      error: 2
+    }
+  }
+  system_health {
+    score: 88.0
+    status: "good"
+  }
+  trends {
+    fields {
+      key: "_id"
+      value {
+        string_value: "2026-07-01"
+      }
+    }
+    fields {
+      key: "levels"
+      value {
+        list_value {
+          values {
+            struct_value {
+              fields {
+                key: "count"
+                value {
+                  number_value: 2.0
+                }
+              }
+              fields {
+                key: "level"
+                value {
+                  string_value: "error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    fields {
+      key: "total"
+      value {
+        number_value: 5.0
+      }
+    }
+  }
+  last_updated {
+    seconds: 1700000000
+  }
+}

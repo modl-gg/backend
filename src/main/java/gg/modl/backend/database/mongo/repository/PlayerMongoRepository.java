@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.PlayerFields;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.PlayerDataView;
 import gg.modl.backend.server.data.Server;
 import java.util.Collection;
 import java.util.Date;
@@ -23,6 +24,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class PlayerMongoRepository extends AbstractServerMongoRepository<Player> {
+    private static final int DEFAULT_QUERY_LIMIT = 1000;
+
     public PlayerMongoRepository(TenantMongoAccess tenantMongoAccess) {
         super(Player.class, CollectionName.PLAYERS, tenantMongoAccess);
     }
@@ -54,8 +57,6 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         return find(server, query);
     }
 
-    private static final int DEFAULT_QUERY_LIMIT = 1000;
-
     public List<Player> findByMinecraftUuids(Server server, Collection<String> minecraftUuids) {
         return findByMinecraftUuids(server, minecraftUuids, DEFAULT_QUERY_LIMIT);
     }
@@ -67,6 +68,15 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
 
         Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).in(minecraftUuids));
         query.limit(limit);
+        return find(server, query);
+    }
+
+    public List<Player> findByMinecraftUuids(Server server, List<UUID> minecraftUuids) {
+        if (minecraftUuids == null || minecraftUuids.isEmpty()) {
+            return List.of();
+        }
+        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).in(minecraftUuids));
+        query.limit(DEFAULT_QUERY_LIMIT);
         return find(server, query);
     }
 
@@ -110,7 +120,7 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         Update update = new Update()
             .set(PlayerFields.USERNAMES, player.getUsernames())
             .set(PlayerFields.IP_ADDRESSES, player.getIpAddresses())
-            .set(PlayerFields.DATA, player.getData());
+            .set(PlayerFields.DATA, player.data().asMap());
         updateById(server, player.getId(), update);
     }
 
@@ -153,17 +163,16 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
     }
 
     public void replaceData(Server server, Player player) {
-        updateById(server, player.getId(), new Update().set(PlayerFields.DATA, player.getData()));
+        updateById(server, player.getId(), new Update().set(PlayerFields.DATA, player.data().asMap()));
     }
 
     public void replaceLinkedAccounts(Server server, Player player) {
-        Map<String, Object> data = player.getData();
-        Object linkedAccounts = data != null ? data.get("linkedAccounts") : null;
-        Object lastLinkedUpdate = data != null ? data.get("lastLinkedUpdate") : null;
+        PlayerDataView data = player.data();
+        Date lastLinkedUpdate = data.lastLinkedUpdate();
 
-        Update update = new Update().set(PlayerFields.DATA_LINKED_ACCOUNTS, linkedAccounts);
-        if (lastLinkedUpdate instanceof Date date) {
-            update.set(PlayerFields.DATA_LAST_LINKED_UPDATE, date);
+        Update update = new Update().set(PlayerFields.DATA_LINKED_ACCOUNTS, data.linkedAccountsValue());
+        if (lastLinkedUpdate != null) {
+            update.set(PlayerFields.DATA_LAST_LINKED_UPDATE, lastLinkedUpdate);
         } else {
             update.unset(PlayerFields.DATA_LAST_LINKED_UPDATE);
         }
@@ -202,16 +211,7 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         updateMulti(server, Query.query(criteria), update);
     }
 
-    public List<Player> findByMinecraftUuids(Server server, List<UUID> minecraftUuids) {
-        if (minecraftUuids == null || minecraftUuids.isEmpty()) {
-            return List.of();
-        }
-        Query query = Query.query(Criteria.where(PlayerFields.MINECRAFT_UUID).in(minecraftUuids));
-        query.limit(DEFAULT_QUERY_LIMIT);
-        return find(server, query);
-    }
-
-    public BulkOperations bulkOps(Server server) {
+    private BulkOperations bulkOps(Server server) {
         return serverTemplate(server).bulkOps(
             BulkOperations.BulkMode.UNORDERED,
             Player.class,
@@ -259,5 +259,4 @@ public class PlayerMongoRepository extends AbstractServerMongoRepository<Player>
         ));
         return count(server, query);
     }
-
 }

@@ -1,5 +1,6 @@
 package gg.modl.backend.replaylite.service;
 
+import gg.modl.backend.infrastructure.scheduling.KeysetDrainer;
 import gg.modl.backend.infrastructure.scheduling.SchedulerLeaseService;
 import gg.modl.backend.replaylite.data.ReplayLiteDocument;
 import gg.modl.backend.replaylite.repository.ReplayLiteMongoRepository;
@@ -48,20 +49,16 @@ public class ReplayLiteCleanupService {
     }
 
     private void drain(ReplayLitePageFinder finder, Function<ReplayLiteDocument, Instant> sortValue) {
-        ReplayLiteCursor cursor = null;
-        int batches = 0;
-        while (batches++ < MAX_BATCHES_PER_RUN) {
-            List<ReplayLiteDocument> page = finder.find(cursor, CLEANUP_BATCH_SIZE);
-            if (page.isEmpty()) {
-                break;
-            }
-            cleanup(page);
-            ReplayLiteDocument last = page.get(page.size() - 1);
-            cursor = new ReplayLiteCursor(sortValue.apply(last), last.getId());
-            if (page.size() < CLEANUP_BATCH_SIZE) {
-                break;
-            }
-        }
+        KeysetDrainer.<ReplayLiteDocument, ReplayLiteCursor>drain(MAX_BATCHES_PER_RUN, CLEANUP_BATCH_SIZE,
+            finder::find,
+            page -> {
+                ReplayLiteDocument last = page.get(page.size() - 1);
+                return new ReplayLiteCursor(sortValue.apply(last), last.getId());
+            },
+            page -> {
+                cleanup(page);
+                return 0L;
+            });
     }
 
     private void cleanup(Iterable<ReplayLiteDocument> documents) {

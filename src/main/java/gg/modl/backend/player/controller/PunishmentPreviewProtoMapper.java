@@ -1,9 +1,10 @@
 package gg.modl.backend.player.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.setOptionalString;
+
 import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentSeverityPreviewView;
 import gg.modl.proto.modl.v1.PunishmentPreviewResponse;
-import java.util.function.Consumer;
 
 public final class PunishmentPreviewProtoMapper {
     private PunishmentPreviewProtoMapper() {
@@ -21,11 +22,11 @@ public final class PunishmentPreviewProtoMapper {
             .setSocialPoints(preview.getSocialPoints())
             .setGameplayPoints(preview.getGameplayPoints());
 
-        setIfNotNull(builder::setMessage, preview.getMessage());
-        setIfNotNull(builder::setSocialStatus, preview.getSocialStatus());
-        setIfNotNull(builder::setGameplayStatus, preview.getGameplayStatus());
-        setIfNotNull(builder::setOffenderStatus, preview.getOffenderStatus());
-        setIfNotNull(builder::setCategory, preview.getCategory());
+        setOptionalString(builder::setMessage, preview.getMessage());
+        setOptionalString(builder::setSocialStatus, preview.getSocialStatus());
+        setOptionalString(builder::setGameplayStatus, preview.getGameplayStatus());
+        setOptionalString(builder::setOffenderStatus, preview.getOffenderStatus());
+        setOptionalString(builder::setCategory, preview.getCategory());
 
         if (preview.getLenient() != null) {
             builder.setLenient(toProto(preview.getLenient()));
@@ -52,18 +53,12 @@ public final class PunishmentPreviewProtoMapper {
                 .setNewSocialPoints(preview.getNewSocialPoints())
                 .setNewGameplayPoints(preview.getNewGameplayPoints());
 
-        setIfNotNull(builder::setSeverity, preview.getSeverity());
-        setIfNotNull(builder::setDurationFormatted, preview.getDurationFormatted());
-        setIfNotNull(builder::setPunishmentType, preview.getPunishmentType());
-        setIfNotNull(builder::setNewSocialStatus, preview.getNewSocialStatus());
-        setIfNotNull(builder::setNewGameplayStatus, preview.getNewGameplayStatus());
+        setOptionalString(builder::setSeverity, preview.getSeverity());
+        setOptionalString(builder::setDurationFormatted, preview.getDurationFormatted());
+        setOptionalString(builder::setPunishmentType, preview.getPunishmentType());
+        setOptionalString(builder::setNewSocialStatus, preview.getNewSocialStatus());
+        setOptionalString(builder::setNewGameplayStatus, preview.getNewGameplayStatus());
 
         return builder.build();
-    }
-
-    private static void setIfNotNull(Consumer<String> setter, String value) {
-        if (value != null) {
-            setter.accept(value);
-        }
     }
 }

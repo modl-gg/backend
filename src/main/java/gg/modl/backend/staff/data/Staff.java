@@ -30,6 +30,8 @@ import org.springframework.data.mongodb.core.mapping.Field;
     @MongoFieldAlias(name = "SUBSCRIBED_TICKET_POS_LAST_READ_AT", path = "subscribedTickets.$.lastReadAt")
 })
 public class Staff {
+    public static final String DEFAULT_DATE_FORMAT = "MMM D, YYYY";
+
     @Id
     private String id;
 
@@ -55,7 +57,7 @@ public class Staff {
 
     @Field("dateFormat")
     @Builder.Default
-    private String dateFormat = "MM/DD/YYYY";
+    private String dateFormat = DEFAULT_DATE_FORMAT;
 
     @Field("subscribedTickets")
     @Builder.Default

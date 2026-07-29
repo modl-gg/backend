@@ -2,9 +2,10 @@ package gg.modl.backend.appeal.controller;
 
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.addAll;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.structToMap;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.valuesToObjects;
 
-import com.google.protobuf.Value;
 import gg.modl.backend.appeal.dto.request.AddAppealReplyRequest;
+import gg.modl.backend.appeal.dto.request.CreateAppealRequest;
 import gg.modl.backend.appeal.dto.request.UpdateAppealStatusRequest;
 import gg.modl.backend.ticket.controller.PanelTicketProtoMapper;
 import gg.modl.backend.ticket.data.TicketReply;
@@ -34,17 +35,17 @@ final class PanelAppealProtoMapper {
             .build();
     }
 
-    static gg.modl.backend.appeal.dto.request.CreateAppealRequest fromCreateAppealRequest(
+    static CreateAppealRequest fromCreateAppealRequest(
         gg.modl.proto.modl.v1.CreateAppealRequest request
     ) {
-        return new gg.modl.backend.appeal.dto.request.CreateAppealRequest(
+        return new CreateAppealRequest(
             request.getPunishmentId(),
             request.getPlayerUuid(),
             request.getEmail(),
             request.hasReason() ? request.getReason() : null,
             request.hasEvidence() ? request.getEvidence() : null,
             request.hasAdditionalData() ? structToMap(request.getAdditionalData()) : null,
-            valueListToObjects(request.getAttachmentsList()),
+            valuesToObjects(request.getAttachmentsList()),
             request.getFieldLabelsMap().isEmpty() ? null : java.util.Map.copyOf(request.getFieldLabelsMap())
         );
     }
@@ -57,7 +58,7 @@ final class PanelAppealProtoMapper {
             request.getStaff(),
             request.hasAction() ? request.getAction() : null,
             request.hasAvatar() ? request.getAvatar() : null,
-            valueListToObjects(request.getAttachmentsList())
+            valuesToObjects(request.getAttachmentsList())
         );
     }
 
@@ -70,23 +71,4 @@ final class PanelAppealProtoMapper {
         );
     }
 
-    static List<Object> valueListToObjects(List<Value> values) {
-        if (values.isEmpty()) {
-            return null;
-        }
-        return values.stream().map(PanelAppealProtoMapper::valueToObject).toList();
-    }
-
-    private static Object valueToObject(Value value) {
-        return switch (value.getKindCase()) {
-            case NULL_VALUE, KIND_NOT_SET -> null;
-            case NUMBER_VALUE -> value.getNumberValue();
-            case STRING_VALUE -> value.getStringValue();
-            case BOOL_VALUE -> value.getBoolValue();
-            case STRUCT_VALUE -> structToMap(value.getStructValue());
-            case LIST_VALUE -> value.getListValue().getValuesList().stream()
-                .map(PanelAppealProtoMapper::valueToObject)
-                .toList();
-        };
-    }
 }

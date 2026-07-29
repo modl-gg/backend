@@ -7,6 +7,7 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.data.DefaultPunishmentTypes;
+import gg.modl.backend.settings.data.PunishmentCategory;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.data.Settings;
 import java.time.Duration;
@@ -14,13 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
 import java.util.Objects;
 
 @Service
-@Slf4j
 @RequiredArgsConstructor
 public class PunishmentTypeService {
     private final SettingsRepositoryAccess settingsRepositoryAccess;
@@ -32,12 +31,6 @@ public class PunishmentTypeService {
         .expireAfterWrite(Duration.ofSeconds(45))
         .maximumSize(500)
         .build();
-
-    public Optional<PunishmentType> getPunishmentTypeById(@NotNull Server server, int id) {
-        return getPunishmentTypes(server).stream()
-            .filter(pt -> pt.getId() != null && pt.getId() == id)
-            .findFirst();
-    }
 
     public List<PunishmentType> getPunishmentTypes(@NotNull Server server) {
         return typesCache.get(server.getId(), id -> loadOrInitializeTypes(server));
@@ -76,7 +69,7 @@ public class PunishmentTypeService {
     }
 
     public PunishmentType updatePunishmentType(@NotNull Server server, int ordinal, @NotNull PunishmentType updatedType) {
-        if (ordinal == 0 || ordinal == 5) {
+        if (ordinal == PunishmentCategory.MIN_CORE_ORDINAL || ordinal == PunishmentCategory.MAX_CORE_ORDINAL) {
             throw new IllegalArgumentException("Kick and Blacklist punishment types cannot be configured");
         }
 
@@ -121,7 +114,7 @@ public class PunishmentTypeService {
     }
 
     public boolean deletePunishmentType(@NotNull Server server, int ordinal) {
-        if (ordinal < 6) {
+        if (ordinal <= PunishmentCategory.MAX_CORE_ORDINAL) {
             throw new IllegalArgumentException("Cannot delete core administrative punishment types");
         }
 

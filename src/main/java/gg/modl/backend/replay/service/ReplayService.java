@@ -1,63 +1,40 @@
 package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.ReplayMongoRepository;
-import gg.modl.backend.database.mongo.repository.TicketMongoRepository;
 import gg.modl.backend.infrastructure.exception.ValidationException;
+import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.backend.replay.dto.InitReplayUploadResponse;
-import gg.modl.backend.replay.dto.PlayerReplayResponse;
 import gg.modl.backend.replay.dto.PublicReplayResponse;
 import gg.modl.backend.replay.util.ReplayReferenceUtil;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.PresignUploadResponse;
 import gg.modl.backend.storage.service.S3StorageService;
-import gg.modl.backend.storage.service.StorageMetadataService;
 import gg.modl.backend.storage.service.StorageQuotaService;
-import gg.modl.backend.ticket.data.Ticket;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validator;
-import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class ReplayService {
     private final ReplayMongoRepository replayRepository;
     private final S3StorageService s3StorageService;
     private final StorageQuotaService storageQuotaService;
     private final TrainingDataService trainingDataService;
-    private final StorageMetadataService storageMetadataService;
-    private final TicketMongoRepository ticketRepository;
-    private final Validator validator;
+    private final BeanValidationRunner validationRunner;
 
     @Value("${modl.replay.max-file-size:10485760}")
     private long maxFileSize;
-
-    public ReplayService(ReplayMongoRepository replayRepository, S3StorageService s3StorageService,
-                         StorageQuotaService storageQuotaService, TrainingDataService trainingDataService,
-                         StorageMetadataService storageMetadataService, TicketMongoRepository ticketRepository,
-                         Validator validator) {
-        this.replayRepository = replayRepository;
-        this.s3StorageService = s3StorageService;
-        this.storageQuotaService = storageQuotaService;
-        this.trainingDataService = trainingDataService;
-        this.storageMetadataService = storageMetadataService;
-        this.ticketRepository = ticketRepository;
-        this.validator = validator;
-    }
 
     public InitReplayUploadResponse initUpload(
         Server server,
@@ -70,7 +47,7 @@ public class ReplayService {
             throw new ValidationException("File size exceeds maximum of " + (maxFileSize / 1024 / 1024) + " MB");
         }
 
-        String normalizedTargetUuid = normalizeTargetUuid(targetUuid);
+        String normalizedTargetUuid = ReplayReferenceUtil.requireValidUuid(targetUuid);
         String normalizedTargetName = normalizeTargetName(targetName);
 
         if (!storageQuotaService.canUpload(server, fileSize)) {
@@ -161,10 +138,7 @@ public class ReplayService {
 
     private void validateLabels(List<ReplayLabel> labels) {
         for (ReplayLabel label : labels) {
-            Set<ConstraintViolation<ReplayLabel>> violations = validator.validate(label);
-            if (!violations.isEmpty()) {
-                throw new ValidationException(violations.iterator().next().getMessage());
-            }
+            validationRunner.validate(label);
         }
     }
 
@@ -182,113 +156,8 @@ public class ReplayService {
             ));
     }
 
-    public List<PlayerReplayResponse> listPlayerReplays(Server server, String playerUuid) {
-        String normalizedPlayerUuid = normalizeTargetUuid(playerUuid);
-        Map<String, PlayerReplayResponse> responses = new LinkedHashMap<>();
-
-        List<ReplayDocument> directReplays = replayRepository.findByTargetUuid(server, normalizedPlayerUuid, 100);
-        Set<String> orphanedReplayIds = orphanedCompleteReplayIds(server, directReplays);
-        for (ReplayDocument replay : directReplays) {
-            if (orphanedReplayIds.contains(replay.getId())) {
-                continue;
-            }
-            PlayerReplayResponse response = toPlayerReplayResponse(replay, PlayerReplayResponse.MatchSource.DIRECT_METADATA);
-            responses.put(response.deduplicationKey(), response);
-        }
-
-        List<Ticket> tickets = ticketRepository.findPlayerTicketsWithReplayUrl(server, normalizedPlayerUuid, 100);
-        for (Ticket ticket : tickets) {
-            String replayUrl = normalizeOptional(ticket.getReplayUrl());
-            if (replayUrl == null) {
-                continue;
-            }
-            String replayId = ReplayReferenceUtil.extractReplayId(replayUrl);
-            if (replayId != null && orphanedReplayIds.contains(replayId)) {
-                continue;
-            }
-            if (hasReplayReference(responses, replayUrl, replayId)) {
-                continue;
-            }
-            String key = replayId != null ? replayIdKey(replayId) : replayUrlKey(replayUrl);
-            if (responses.containsKey(key)) {
-                continue;
-            }
-            responses.put(key, PlayerReplayResponse.fromTicket(ticket, replayUrl, replayId));
-        }
-
-        return List.copyOf(responses.values());
-    }
-
-    private Set<String> orphanedCompleteReplayIds(Server server, List<ReplayDocument> replays) {
-        if (!storageMetadataService.isMetadataAuthoritative(server)) {
-            return Set.of();
-        }
-        List<String> completeStorageKeys = new ArrayList<>();
-        for (ReplayDocument replay : replays) {
-            if (isCompleteWithStorageKey(replay)) {
-                completeStorageKeys.add(replay.getStorageKey());
-            }
-        }
-        if (completeStorageKeys.isEmpty()) {
-            return Set.of();
-        }
-
-        Set<String> existingStorageKeys = storageMetadataService.existingKeys(server, completeStorageKeys);
-        if (existingStorageKeys.size() == completeStorageKeys.size()) {
-            return Set.of();
-        }
-
-        Set<String> orphanedReplayIds = new HashSet<>();
-        for (ReplayDocument replay : replays) {
-            if (isCompleteWithStorageKey(replay) && !existingStorageKeys.contains(replay.getStorageKey())) {
-                orphanedReplayIds.add(replay.getId());
-            }
-        }
-        return orphanedReplayIds;
-    }
-
-    private boolean isCompleteWithStorageKey(ReplayDocument replay) {
-        return ReplayDocument.STATUS_COMPLETE.equals(replay.getStatus()) && replay.getStorageKey() != null;
-    }
-
-    private PlayerReplayResponse toPlayerReplayResponse(ReplayDocument replay, PlayerReplayResponse.MatchSource matchSource) {
-        String replayUrl = ReplayDocument.STATUS_COMPLETE.equals(replay.getStatus()) && replay.getStorageKey() != null
-                           ? s3StorageService.getCdnUrl(replay.getStorageKey())
-                           : null;
-        return new PlayerReplayResponse(
-            replay.getId(),
-            replay.getTargetUuid(),
-            replay.getTargetName(),
-            replay.getMcVersion(),
-            replay.getFileSize(),
-            replay.getCreatedAt(),
-            replay.getStatus(),
-            replayUrl,
-            matchSource
-        );
-    }
-
-    private String normalizeOptional(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        return value.trim();
-    }
-
-    private String normalizeTargetUuid(String value) {
-        String normalized = normalizeOptional(value);
-        if (normalized == null) {
-            return null;
-        }
-        try {
-            return UUID.fromString(normalized).toString();
-        } catch (IllegalArgumentException exception) {
-            throw new ValidationException("Target UUID must be a valid UUID");
-        }
-    }
-
     private String normalizeTargetName(String value) {
-        String normalized = normalizeOptional(value);
+        String normalized = ReplayReferenceUtil.normalize(value);
         if (normalized == null) {
             return null;
         }
@@ -296,22 +165,5 @@ public class ReplayService {
             throw new ValidationException("Target name is too long");
         }
         return normalized;
-    }
-
-    private String replayUrlKey(String replayUrl) {
-        return "url:" + replayUrl;
-    }
-
-    private String replayIdKey(String replayId) {
-        return "id:" + replayId;
-    }
-
-    private boolean hasReplayReference(Map<String, PlayerReplayResponse> responses, String replayUrl, String replayId) {
-        return responses.values()
-            .stream()
-            .anyMatch(response ->
-                replayUrl.equals(response.replayUrl())
-                || (replayId != null && replayId.equals(response.replayId()))
-            );
     }
 }

@@ -1,6 +1,7 @@
 package gg.modl.backend.replay.service;
 
 import gg.modl.backend.database.mongo.repository.TrainingSegmentRepository;
+import gg.modl.backend.replay.config.ReplayExecutorConfig;
 import gg.modl.backend.replay.data.ReplayDocument;
 import gg.modl.backend.replay.data.ReplayLabel;
 import gg.modl.backend.replay.data.TrainingSegmentDocument;
@@ -47,7 +48,7 @@ public class TrainingDataService {
     private static final String VERDICT_CHEATING = "cheating";
     private static final String VERDICT_LEGIT = "legit";
 
-    @Async
+    @Async(ReplayExecutorConfig.TRAINING_SEGMENT_TASK_EXECUTOR)
     public void generateSegmentsAsync(Server server, ReplayDocument doc, List<ReplayLabel> labels) {
         try {
             generateSegments(server, doc, labels);

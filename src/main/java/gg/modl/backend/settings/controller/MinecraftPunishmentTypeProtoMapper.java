@@ -1,5 +1,8 @@
 package gg.modl.backend.settings.controller;
 
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.intValue;
+import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
+
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
 import gg.modl.backend.settings.data.DurationDetail;
@@ -112,13 +115,5 @@ final class MinecraftPunishmentTypeProtoMapper {
 
     private static void putString(Struct.Builder builder, String key, String value) {
         builder.putFields(key, Value.newBuilder().setStringValue(stringValue(value)).build());
-    }
-
-    private static int intValue(Integer value) {
-        return value == null ? 0 : value;
-    }
-
-    private static String stringValue(String value) {
-        return value == null ? "" : value;
     }
 }

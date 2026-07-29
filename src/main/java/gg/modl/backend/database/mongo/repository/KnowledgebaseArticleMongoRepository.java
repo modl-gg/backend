@@ -12,9 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.Sort;
-import org.springframework.data.mongodb.core.BulkOperations;
 import org.springframework.data.mongodb.core.FindAndModifyOptions;
-import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -132,18 +130,11 @@ public class KnowledgebaseArticleMongoRepository extends AbstractServerMongoRepo
     }
 
     public void reorderArticles(Server server, String categoryId, List<String> ids) {
-        if (ids.isEmpty()) return;
-
-        MongoTemplate template = serverTemplate(server);
-        BulkOperations bulk = template.bulkOps(BulkOperations.BulkMode.UNORDERED, collectionName());
-        for (int index = 0; index < ids.size(); index++) {
-            Query query = Query.query(new Criteria().andOperator(
-                Criteria.where(KnowledgebaseArticleFields.ID).is(ids.get(index)),
+        bulkUpdateByIds(server, ids,
+            (id, index) -> new Criteria().andOperator(
+                Criteria.where(KnowledgebaseArticleFields.ID).is(id),
                 Criteria.where(KnowledgebaseArticleFields.CATEGORY_ID).is(categoryId)
-            ));
-            Update update = new Update().set(KnowledgebaseArticleFields.ORDINAL, index);
-            bulk.updateOne(query, update);
-        }
-        bulk.execute();
+            ),
+            (id, index) -> new Update().set(KnowledgebaseArticleFields.ORDINAL, index));
     }
 }

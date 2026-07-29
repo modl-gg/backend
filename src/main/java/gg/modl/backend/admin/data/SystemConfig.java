@@ -7,11 +7,12 @@ import java.util.Date;
 import java.util.List;
 import lombok.Data;
 import org.springframework.data.annotation.Id;
+import gg.modl.backend.database.CollectionName;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 @Data
-@Document(collection = "system_config")
+@Document(collection = CollectionName.SYSTEM_CONFIG)
 @GenerateMongoFields
 public class SystemConfig {
     @Id

@@ -1,6 +1,7 @@
 package gg.modl.backend.database.mongo.repository;
 
 import gg.modl.backend.admin.data.AdminUser;
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractGlobalMongoRepository;
 import gg.modl.backend.email.EmailAddressUtil;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
@@ -15,10 +16,9 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AdminUserMongoRepository extends AbstractGlobalMongoRepository<AdminUser> {
-    private static final String COLLECTION_NAME = "admin_users";
 
     public AdminUserMongoRepository(TenantMongoAccess tenantMongoAccess) {
-        super(AdminUser.class, COLLECTION_NAME, tenantMongoAccess);
+        super(AdminUser.class, CollectionName.ADMIN_USERS, tenantMongoAccess);
     }
 
     public Optional<AdminUser> findByEmailIgnoreCase(String email) {

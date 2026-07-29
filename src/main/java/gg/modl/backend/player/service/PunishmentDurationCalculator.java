@@ -46,10 +46,7 @@ public class PunishmentDurationCalculator {
 
         DurationDetail durationDetail = PunishmentDurationResolver.resolveDetail(punishmentType, internalSeverity, offenseLevel);
 
-        String displayStatus = switch (offenseLevel) {
-            case "first" -> "low";
-            default -> offenseLevel;
-        };
+        String displayStatus = PunishmentMapper.offenseDisplayStatus(offenseLevel);
 
         Long calculatedDuration = null;
         if (durationDetail != null) {

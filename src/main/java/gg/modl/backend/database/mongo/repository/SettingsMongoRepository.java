@@ -31,26 +31,12 @@ public class SettingsMongoRepository extends AbstractServerMongoRepository<Setti
         return findOne(server, Query.query(Criteria.where(SettingsFields.TYPE).is(type)));
     }
 
-    public void upsertData(Server server, String type, Map<String, Object> data) {
-        upsertRawData(server, type, data);
-    }
-
-    private void upsertRawData(Server server, String type, Object data) {
+    public void upsertListData(Server server, String type, Object data) {
         Query query = Query.query(Criteria.where(SettingsFields.TYPE).is(type));
         Update update = new Update()
             .set(SettingsFields.TYPE, type)
             .set(SettingsFields.DATA, data);
         upsert(server, query, update);
-    }
-
-    public void upsertListData(Server server, String type, Object data) {
-        upsertRawData(server, type, data);
-    }
-
-    public void updateDataByType(Server server, String type, Map<String, Object> data) {
-        Query query = Query.query(Criteria.where(SettingsFields.TYPE).is(type));
-        Update update = new Update().set(SettingsFields.DATA, data);
-        updateFirst(server, query, update);
     }
 
     public void removeByType(Server server, String type) {

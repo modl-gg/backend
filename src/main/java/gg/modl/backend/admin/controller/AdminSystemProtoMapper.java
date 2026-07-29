@@ -6,6 +6,8 @@ import gg.modl.backend.admin.dto.request.ToggleMaintenanceRequest;
 import gg.modl.backend.admin.dto.request.UpdatePromptRequest;
 import gg.modl.backend.admin.dto.request.UpdateRateLimitsRequest;
 import gg.modl.backend.admin.dto.request.UpdateSystemConfigRequest;
+import gg.modl.backend.admin.dto.response.AdminMaintenanceStatus;
+import gg.modl.backend.admin.dto.response.AdminRateLimitStatus;
 import gg.modl.proto.modl.v1.AdminSystemConfig;
 import gg.modl.proto.modl.v1.AdminSystemConfigResponse;
 import gg.modl.proto.modl.v1.AdminSystemFeaturesConfig;
@@ -27,9 +29,7 @@ import gg.modl.proto.modl.v1.AdminSystemServiceRestartResponse;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
-import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.booleanValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.stringValue;
 import static gg.modl.backend.infrastructure.proto.ProtoMapperSupport.toTimestamp;
 
@@ -76,12 +76,11 @@ final class AdminSystemProtoMapper {
         return builder.build();
     }
 
-    static AdminSystemMaintenanceResponse toMaintenanceResponse(Map<String, Object> status, String message) {
+    static AdminSystemMaintenanceResponse toMaintenanceResponse(AdminMaintenanceStatus status, String message) {
         AdminSystemMaintenanceStatus.Builder data = AdminSystemMaintenanceStatus.newBuilder()
-            .setIsActive(booleanValue(status.get("isActive")));
-        Object messageValue = status.get("message");
-        if (messageValue != null) {
-            data.setMessage(stringValue(messageValue));
+            .setIsActive(status.active());
+        if (status.message() != null) {
+            data.setMessage(status.message());
         }
         AdminSystemMaintenanceResponse.Builder builder = AdminSystemMaintenanceResponse.newBuilder()
             .setSuccess(true)
@@ -92,16 +91,14 @@ final class AdminSystemProtoMapper {
         return builder.build();
     }
 
-    static AdminSystemRateLimitsResponse toRateLimitsResponse(Map<String, Object> status) {
+    static AdminSystemRateLimitsResponse toRateLimitsResponse(AdminRateLimitStatus status) {
         AdminSystemRateLimitsData.Builder data = AdminSystemRateLimitsData.newBuilder()
-            .setActive(booleanValue(status.get("active")));
-        Object current = status.get("current");
-        if (current instanceof SystemConfig.PerformanceConfig performance) {
-            data.setCurrent(toPerformance(performance));
+            .setActive(status.active());
+        if (status.current() != null) {
+            data.setCurrent(toPerformance(status.current()));
         }
-        Object resetTime = status.get("resetTime");
-        if (resetTime != null) {
-            data.setResetTime(toTimestamp(resetTime));
+        if (status.resetTime() != null) {
+            data.setResetTime(toTimestamp(status.resetTime()));
         }
         return AdminSystemRateLimitsResponse.newBuilder()
             .setSuccess(true)

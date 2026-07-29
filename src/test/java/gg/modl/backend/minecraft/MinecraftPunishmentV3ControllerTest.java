@@ -33,12 +33,14 @@ import gg.modl.backend.infrastructure.exception.GlobalExceptionHandler;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.player.controller.MinecraftPunishmentController;
 import gg.modl.backend.player.controller.MinecraftPunishmentV3Controller;
+import gg.modl.backend.player.dto.request.MinecraftCreatePunishmentRequest;
 import gg.modl.backend.player.dto.response.PunishmentPreviewView;
 import gg.modl.backend.player.dto.response.PunishmentSeverityPreviewView;
 import gg.modl.backend.player.service.PunishmentEvidenceService;
@@ -47,6 +49,7 @@ import gg.modl.backend.player.service.PunishmentMutationService;
 import gg.modl.backend.player.service.PunishmentQueryService;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationResult;
 import gg.modl.backend.player.service.PunishmentQueryService.PunishmentOperationStatus;
+import gg.modl.backend.player.dto.response.PunishmentView;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.proto.modl.v1.AddPunishmentEvidenceRequest;
@@ -114,7 +117,7 @@ class MinecraftPunishmentV3ControllerTest {
                 punishmentEvidenceService,
                 punishmentQueryService
             ))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
@@ -125,7 +128,7 @@ class MinecraftPunishmentV3ControllerTest {
                 punishmentEvidenceService,
                 punishmentMutationService
             ))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .defaultRequest(post("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }
@@ -277,20 +280,10 @@ class MinecraftPunishmentV3ControllerTest {
         evidence.put("uploadedAt", new Date(1_700_000_050_000L));
         evidence.put("fileSize", 2048L);
 
-        Map<String, Object> punishment = new LinkedHashMap<>();
-        punishment.put("playerName", "PlayerOne");
-        punishment.put("playerUuid", PLAYER_UUID);
-        punishment.put("id", "punishment-1");
-        punishment.put("issuerName", "Mod");
-        punishment.put("issued", new Date(1_700_000_000_000L));
-        punishment.put("started", new Date(1_700_000_010_000L));
-        punishment.put("type", "Mute");
-        punishment.put("typeOrdinal", 7);
-        punishment.put("modifications", List.of(modification));
-        punishment.put("notes", List.of(note));
-        punishment.put("evidence", List.of(evidence));
-        punishment.put("attachedTicketIds", List.of("ticket-1", "ticket-2"));
-        punishment.put("data", data);
+        PunishmentView punishment = new PunishmentView(
+            "punishment-1", "Mod", new Date(1_700_000_000_000L), new Date(1_700_000_010_000L),
+            7, "Mute", List.of(modification), List.of(note), List.of(evidence),
+            List.of("ticket-1", "ticket-2"), data, PLAYER_UUID, "PlayerOne");
         when(punishmentQueryService.getMinecraftPunishmentById(server, "punishment-1"))
             .thenReturn(Optional.of(punishment));
 
@@ -376,10 +369,9 @@ class MinecraftPunishmentV3ControllerTest {
 
     @Test
     void v1DetailStillReturnsJsonMapShape() throws Exception {
-        Map<String, Object> punishment = new LinkedHashMap<>();
-        punishment.put("id", "punishment-1");
-        punishment.put("playerUuid", PLAYER_UUID);
-        punishment.put("playerName", "PlayerOne");
+        PunishmentView punishment = new PunishmentView(
+            "punishment-1", null, null, null, 0, null, List.of(), List.of(), List.of(),
+            List.of(), Map.of(), PLAYER_UUID, "PlayerOne");
         when(punishmentQueryService.getMinecraftPunishmentById(server, "punishment-1"))
             .thenReturn(Optional.of(punishment));
 
@@ -435,20 +427,10 @@ class MinecraftPunishmentV3ControllerTest {
         evidence.put("fileType", "image/png");
         evidence.put("fileSize", 2048L);
 
-        Map<String, Object> punishment = new LinkedHashMap<>();
-        punishment.put("playerName", "PlayerOne");
-        punishment.put("playerUuid", PLAYER_UUID);
-        punishment.put("id", "punishment-1");
-        punishment.put("issuerName", "Mod");
-        punishment.put("issued", new Date(1_700_000_000_000L));
-        punishment.put("started", new Date(1_700_000_010_000L));
-        punishment.put("type", "Mute");
-        punishment.put("typeOrdinal", 7);
-        punishment.put("modifications", List.of(modification));
-        punishment.put("notes", List.of(note));
-        punishment.put("evidence", List.of(evidence));
-        punishment.put("attachedTicketIds", List.of("ticket-1", "ticket-2"));
-        punishment.put("data", data);
+        PunishmentView punishment = new PunishmentView(
+            "punishment-1", "Mod", new Date(1_700_000_000_000L), new Date(1_700_000_010_000L),
+            7, "Mute", List.of(modification), List.of(note), List.of(evidence),
+            List.of("ticket-1", "ticket-2"), data, PLAYER_UUID, "PlayerOne");
         when(punishmentQueryService.getRecentPunishments(server, 12)).thenReturn(List.of(punishment));
 
         MvcResult result = performV3Recent("12")
@@ -613,11 +595,9 @@ class MinecraftPunishmentV3ControllerTest {
 
     @Test
     void v1RecentStillReturnsJsonMapShape() throws Exception {
-        Map<String, Object> punishment = new LinkedHashMap<>();
-        punishment.put("playerName", "PlayerOne");
-        punishment.put("playerUuid", PLAYER_UUID);
-        punishment.put("id", "punishment-1");
-        punishment.put("issued", new Date(1_700_000_000_000L));
+        PunishmentView punishment = new PunishmentView(
+            "punishment-1", null, new Date(1_700_000_000_000L), null, 0, null, List.of(), List.of(),
+            List.of(), List.of(), Map.of(), PLAYER_UUID, "PlayerOne");
         when(punishmentQueryService.getRecentPunishments(server, 48)).thenReturn(List.of(punishment));
 
         MvcResult result = v1MockMvc.perform(get(RESTMappingV1.MINECRAFT_PUNISHMENTS + "/recent")
@@ -685,10 +665,10 @@ class MinecraftPunishmentV3ControllerTest {
         assertEquals("Punishment created", response.getMessage());
         assertEquals("punishment-1", response.getPunishmentId());
 
-        ArgumentCaptor<MinecraftPunishmentController.MinecraftCreatePunishmentRequest> requestCaptor =
-            ArgumentCaptor.forClass(MinecraftPunishmentController.MinecraftCreatePunishmentRequest.class);
+        ArgumentCaptor<MinecraftCreatePunishmentRequest> requestCaptor =
+            ArgumentCaptor.forClass(MinecraftCreatePunishmentRequest.class);
         verify(punishmentLifecycleService).createMinecraftPunishment(same(server), requestCaptor.capture());
-        MinecraftPunishmentController.MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
+        MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
         assertEquals(PLAYER_UUID, legacyRequest.targetUuid());
         assertEquals("Mod", legacyRequest.issuerName());
         assertEquals("issuer-1", legacyRequest.issuerId());
@@ -727,10 +707,10 @@ class MinecraftPunishmentV3ControllerTest {
         assertEquals(200, response.getStatus());
         assertEquals("punishment-2", response.getPunishmentId());
 
-        ArgumentCaptor<MinecraftPunishmentController.MinecraftCreatePunishmentRequest> requestCaptor =
-            ArgumentCaptor.forClass(MinecraftPunishmentController.MinecraftCreatePunishmentRequest.class);
+        ArgumentCaptor<MinecraftCreatePunishmentRequest> requestCaptor =
+            ArgumentCaptor.forClass(MinecraftCreatePunishmentRequest.class);
         verify(punishmentLifecycleService).createMinecraftPunishment(same(server), requestCaptor.capture());
-        MinecraftPunishmentController.MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
+        MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
         assertEquals(PLAYER_UUID, legacyRequest.targetUuid());
         assertNull(legacyRequest.issuerName());
         assertNull(legacyRequest.issuerId());
@@ -775,10 +755,10 @@ class MinecraftPunishmentV3ControllerTest {
         assertEquals(Empty.getDefaultInstance(), Empty.parseFrom(responseBody));
         assertEquals("", PunishmentCreateResponse.parseFrom(responseBody).getPunishmentId());
 
-        ArgumentCaptor<MinecraftPunishmentController.MinecraftCreatePunishmentRequest> requestCaptor =
-            ArgumentCaptor.forClass(MinecraftPunishmentController.MinecraftCreatePunishmentRequest.class);
+        ArgumentCaptor<MinecraftCreatePunishmentRequest> requestCaptor =
+            ArgumentCaptor.forClass(MinecraftCreatePunishmentRequest.class);
         verify(punishmentLifecycleService).createMinecraftPunishment(same(server), requestCaptor.capture());
-        MinecraftPunishmentController.MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
+        MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
         assertEquals(PLAYER_UUID, legacyRequest.targetUuid());
         assertEquals("Mod", legacyRequest.issuerName());
         assertEquals("issuer-1", legacyRequest.issuerId());
@@ -811,10 +791,10 @@ class MinecraftPunishmentV3ControllerTest {
             .andExpect(status().isOk())
             .andExpect(content().contentTypeCompatibleWith(ProtobufMediaTypes.APPLICATION_X_PROTOBUF));
 
-        ArgumentCaptor<MinecraftPunishmentController.MinecraftCreatePunishmentRequest> requestCaptor =
-            ArgumentCaptor.forClass(MinecraftPunishmentController.MinecraftCreatePunishmentRequest.class);
+        ArgumentCaptor<MinecraftCreatePunishmentRequest> requestCaptor =
+            ArgumentCaptor.forClass(MinecraftCreatePunishmentRequest.class);
         verify(punishmentLifecycleService).createMinecraftPunishment(same(server), requestCaptor.capture());
-        MinecraftPunishmentController.MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
+        MinecraftCreatePunishmentRequest legacyRequest = requestCaptor.getValue();
         assertEquals(PLAYER_UUID, legacyRequest.targetUuid());
         assertNull(legacyRequest.issuerName());
         assertNull(legacyRequest.issuerId());

@@ -4,6 +4,7 @@ import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.player.data.IPEntry;
 import gg.modl.backend.player.data.NoteEntry;
 import gg.modl.backend.player.data.Player;
+import gg.modl.backend.player.data.PlayerDataView;
 import gg.modl.backend.player.data.UsernameEntry;
 import gg.modl.backend.player.data.punishment.EnforcementCategory;
 import gg.modl.backend.player.data.punishment.Punishment;
@@ -31,6 +32,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import gg.modl.backend.infrastructure.util.IdGenerator;
+import gg.modl.backend.infrastructure.util.UuidUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -64,7 +66,7 @@ public class PlayerService {
 
         List<Player> players;
         if (isUuid(normalizedSearch)) {
-            players = playerRepository.findByMinecraftUuid(server, normalizeUuid(normalizedSearch))
+            players = playerRepository.findByMinecraftUuid(server, UuidUtils.normalize(normalizedSearch))
                 .map(List::of)
                 .orElseGet(List::of);
         } else {
@@ -111,8 +113,7 @@ public class PlayerService {
 
         String status = calculatePlayerStatus(server, player);
         Date lastOnline = getLastOnline(player);
-        boolean isOnline = Boolean.TRUE.equals(
-            player.getData() != null ? player.getData().get("isOnline") : null);
+        boolean isOnline = player.data().isOnline();
 
         return new PlayerSearchResult(
             player.getMinecraftUuid().toString(),
@@ -128,7 +129,7 @@ public class PlayerService {
         for (Punishment punishment : punishments) {
             if (statusCalculator.isPunishmentActive(punishment)) {
                 PunishmentType pt = punishmentTypeService.getPunishmentTypeByOrdinal(server, punishment.getTypeOrdinal()).orElse(null);
-                String category = statusCalculator.getEffectiveCategory(pt, punishment.getData());
+                String category = statusCalculator.getEffectiveCategory(pt, punishment.data());
                 if (EnforcementCategory.BAN.name().equals(category)) {
                     return "Banned";
                 }
@@ -233,19 +234,11 @@ public class PlayerService {
     }
 
     private Date getLastOnline(Player player) {
-        if (player.getData() == null) {
-            return null;
-        }
-        Object lastLogin = player.getData().get("lastLogin");
-        if (lastLogin instanceof Date) {
-            return (Date) lastLogin;
-        }
-        return null;
+        return player.data().lastLogin();
     }
 
     private boolean isOnline(Player player) {
-        Object isOnline = player.getData() != null ? player.getData().get("isOnline") : null;
-        return Boolean.TRUE.equals(isOnline);
+        return player.data().isOnline();
     }
 
     private boolean isUuid(String value) {
@@ -290,13 +283,10 @@ public class PlayerService {
         IPEntry latestIp = sanitizedIps.isEmpty() ? null :
                            sanitizedIps.get(sanitizedIps.size() - 1);
 
-        String lastServer = player.getData() != null ? (String) player.getData().get("lastServer") : null;
+        String lastServer = player.data().lastServer();
 
-        Object playtimeObj = player.getData() != null ? player.getData().get("totalPlaytimeSeconds") : null;
-        double playtimeHours = 0;
-        if (playtimeObj instanceof Number) {
-            playtimeHours = ((Number) playtimeObj).doubleValue() / 3600.0;
-        }
+        Number playtime = player.data().totalPlaytimeSeconds();
+        double playtimeHours = playtime != null ? playtime.doubleValue() / 3600.0 : 0;
 
         return new PlayerDetailResponse(
             player.getId(),
@@ -305,7 +295,7 @@ public class PlayerService {
             capNotes(player.getNotes()),
             sanitizedIps,
             punishmentResponses,
-            player.getData(),
+            player.data().asMap(),
             status.social(),
             status.gameplay(),
             status.socialPoints(),
@@ -465,9 +455,6 @@ public class PlayerService {
         return player;
     }
 
-    /**
-     * @return true if this IP was newly added, false if it already existed
-     */
     private boolean addIpToPlayer(Player player, String ipAddress, Map<String, Object> ipInfo) {
         if (ipAddress == null || ipAddress.isBlank()) {
             return false;
@@ -532,7 +519,7 @@ public class PlayerService {
             return;
         }
 
-        Player player = playerRepository.findByMinecraftUuid(server, normalizeUuid(minecraftUuid)).orElse(null);
+        Player player = playerRepository.findByMinecraftUuid(server, UuidUtils.normalize(minecraftUuid)).orElse(null);
         if (player == null) {
             return;
         }
@@ -567,31 +554,20 @@ public class PlayerService {
 
     private void updatePlayerDataOnLogin(Player player, String skinHash, String serverName) {
         Date now = new Date();
-        Map<String, Object> data = ensureData(player);
-        data.put("lastLogin", now);
-        data.put("isOnline", true);
+        PlayerDataView data = player.data();
+        data.setLastLogin(now);
+        data.setOnline(true);
 
-        if (!data.containsKey("firstJoin")) {
-            data.put("firstJoin", now);
+        if (!data.hasFirstJoin()) {
+            data.setFirstJoin(now);
         }
 
         if (skinHash != null && !skinHash.isBlank()) {
-            data.put("lastSkinHash", skinHash);
+            data.setLastSkinHash(skinHash);
         }
 
         if (serverName != null && !serverName.isBlank()) {
-            data.put("lastServer", serverName);
+            data.setLastServer(serverName);
         }
-    }
-
-    private Map<String, Object> ensureData(Player player) {
-        if (player.getData() == null) {
-            player.setData(new HashMap<>());
-        }
-        return player.getData();
-    }
-
-    private static String normalizeUuid(String value) {
-        return value == null ? null : value.toLowerCase(Locale.ROOT);
     }
 }

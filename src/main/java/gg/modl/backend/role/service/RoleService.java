@@ -165,12 +165,8 @@ public class RoleService {
             filteredPermissions = filterToGrantablePermissions(performerRole, filteredPermissions);
         }
 
-        // Generate unique ID
-        String id = "custom-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
-
-        // Find highest order and add 1
-        StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
-        int nextOrder = highestRole != null ? highestRole.getOrder() + 1 : 4;
+        String id = generateCustomRoleId();
+        int nextOrder = nextRoleOrder(server);
 
         StaffRole newRole = StaffRole.builder()
             .id(id)
@@ -186,6 +182,15 @@ public class RoleService {
         staffRoleRepository.saveEntity(server, newRole);
 
         return toRoleResponse(newRole, 0);
+    }
+
+    private static String generateCustomRoleId() {
+        return "custom-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private int nextRoleOrder(Server server) {
+        StaffRole highestRole = staffRoleRepository.findHighestOrdered(server).orElse(null);
+        return highestRole != null ? highestRole.getOrder() + 1 : 4;
     }
 
     private List<String> filterToGrantablePermissions(StaffRole performerRole, List<String> permissions) {
@@ -326,20 +331,21 @@ public class RoleService {
         List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
 
         List<String> adminPerms = new ArrayList<>(List.of(
-            "admin.settings.view", "admin.staff.manage", "admin.audit.view",
-            "punishment.view", "punishment.modify",
-            "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
-            "staff.chat.toggle", "staff.chat.clear", "staff.chat.slow",
-            "staff.maintenance", "staff.modactions",
-            "staff.intercept", "staff.chatlogs", "staff.commandlogs"
+            PermissionService.ADMIN_SETTINGS_VIEW, PermissionService.ADMIN_STAFF_MANAGE, PermissionService.ADMIN_AUDIT_VIEW,
+            PermissionService.ADMIN_AUDIT_ROLLBACK,
+            PermissionService.PUNISHMENT_VIEW, PermissionService.PUNISHMENT_MODIFY,
+            PermissionService.TICKET_VIEW_ALL, PermissionService.TICKET_REPLY_ALL, PermissionService.APPEAL_MODIFY, PermissionService.TICKET_CLOSE_ALL,
+            PermissionService.STAFF_CHAT_TOGGLE, PermissionService.STAFF_CHAT_CLEAR, PermissionService.STAFF_CHAT_SLOW,
+            PermissionService.STAFF_MAINTENANCE, PermissionService.STAFF_MODACTIONS,
+            PermissionService.STAFF_INTERCEPT, PermissionService.STAFF_CHATLOGS, PermissionService.STAFF_COMMANDLOGS
         ));
         adminPerms.addAll(allPunishmentPerms);
 
         List<String> moderatorPerms = new ArrayList<>(List.of(
-            "punishment.view", "punishment.modify",
-            "ticket.view.all", "ticket.reply.all", "appeal.modify", "ticket.close.all",
-            "staff.modactions",
-            "staff.chatlogs", "staff.commandlogs"
+            PermissionService.PUNISHMENT_VIEW, PermissionService.PUNISHMENT_MODIFY,
+            PermissionService.TICKET_VIEW_ALL, PermissionService.TICKET_REPLY_ALL, PermissionService.APPEAL_MODIFY, PermissionService.TICKET_CLOSE_ALL,
+            PermissionService.STAFF_MODACTIONS,
+            PermissionService.STAFF_CHATLOGS, PermissionService.STAFF_COMMANDLOGS
         ));
         moderatorPerms.addAll(moderatorPunishmentPerms);
 
@@ -378,7 +384,7 @@ public class RoleService {
                 .id("helper")
                 .name("Helper")
                 .description("Basic support permissions")
-                .permissions(new ArrayList<>(List.of("ticket.view.all", "ticket.reply.all", "appeal.modify")))
+                .permissions(new ArrayList<>(List.of(PermissionService.TICKET_VIEW_ALL, PermissionService.TICKET_REPLY_ALL, PermissionService.APPEAL_MODIFY)))
                 .isDefault(true)
                 .order(3)
                 .createdAt(new Date())

@@ -1,21 +1,23 @@
 package gg.modl.backend.infrastructure.ratelimit;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import io.github.bucket4j.Bandwidth;
+import gg.modl.backend.infrastructure.rest.RESTMappingV1;
+import gg.modl.backend.infrastructure.rest.RESTMappingV2;
+import gg.modl.backend.infrastructure.rest.RESTMappingV3;
+import gg.modl.backend.infrastructure.rest.RouteGroups;
 import io.github.bucket4j.Bucket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
+@RequiredArgsConstructor
 public class RateLimitConfig {
 
-    private final Map<RateLimitTier, Cache<String, Bucket>> buckets = new ConcurrentHashMap<>();
-    private static final int MAX_BUCKETS_PER_TIER = 50_000;
+    private final BucketPool bucketPool;
+
     private static final Set<String> HEAVY_PANEL_WRITE_PATTERNS = Set.of(
         "/staff/invite", "/settings", "/find-linked"
     );
@@ -29,34 +31,22 @@ public class RateLimitConfig {
     );
     private static final List<PathRule> PREFIX_RULES = List.of(
         new PathRule("/v1/webhooks/", RateLimitTier.WEBHOOK),
-        new PathRule("/v1/replay-lite/", RateLimitTier.REPLAY_LITE_UPLOAD),
-        new PathRule("/v1/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
-        new PathRule("/v2/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
-        new PathRule("/v3/minecraft/", RateLimitTier.MINECRAFT_STANDARD),
-        new PathRule("/v1/admin/auth/session", RateLimitTier.ADMIN_SESSION),
-        new PathRule("/v1/admin/auth/", RateLimitTier.ADMIN_AUTH),
-        new PathRule("/v1/admin/beta-testers", RateLimitTier.ADMIN_BETA),
-        new PathRule("/v1/admin/", RateLimitTier.ADMIN_STANDARD)
+        new PathRule(RESTMappingV1.PREFIX_REPLAY_LITE + "/", RateLimitTier.REPLAY_LITE_UPLOAD),
+        new PathRule(RESTMappingV1.PREFIX_MINECRAFT + "/", RateLimitTier.MINECRAFT_STANDARD),
+        new PathRule(RESTMappingV2.PREFIX_MINECRAFT + "/", RateLimitTier.MINECRAFT_STANDARD),
+        new PathRule(RESTMappingV3.PREFIX_MINECRAFT + "/", RateLimitTier.MINECRAFT_STANDARD),
+        new PathRule(RESTMappingV1.ADMIN_AUTH + "/session", RateLimitTier.ADMIN_SESSION),
+        new PathRule(RESTMappingV1.ADMIN_AUTH + "/", RateLimitTier.ADMIN_AUTH),
+        new PathRule(RESTMappingV1.ADMIN_BETA_TESTERS, RateLimitTier.ADMIN_BETA),
+        new PathRule(RESTMappingV1.PREFIX_ADMIN + "/", RateLimitTier.ADMIN_STANDARD)
     );
     private static final Map<String, RateLimitTier> EXACT_PATH_RULES = Map.of(
-        "/v1/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN,
-        "/v3/minecraft/players/login", RateLimitTier.MINECRAFT_LOGIN
+        RESTMappingV1.MINECRAFT_PLAYERS + "/login", RateLimitTier.MINECRAFT_LOGIN,
+        RESTMappingV3.PREFIX_MINECRAFT + "/players/login", RateLimitTier.MINECRAFT_LOGIN
     );
 
     public Bucket resolveBucket(String clientKey, RateLimitTier tier) {
-        return buckets
-            .computeIfAbsent(tier, t -> Caffeine.newBuilder()
-                .maximumSize(MAX_BUCKETS_PER_TIER)
-                .<String, Bucket>build())
-            .get(clientKey, k -> createBucket(tier));
-    }
-
-    private Bucket createBucket(RateLimitTier tier) {
-        Bandwidth limit = Bandwidth.builder()
-            .capacity(tier.getCapacity())
-            .refillGreedy(tier.getCapacity(), tier.getRefillDuration())
-            .build();
-        return Bucket.builder().addLimit(limit).build();
+        return bucketPool.resolveBucket(tier.name(), clientKey, tier.getCapacity(), tier.getRefillDuration());
     }
 
     public RateLimitTier getTierForPath(String path, String method) {
@@ -75,22 +65,22 @@ public class RateLimitConfig {
             }
         }
 
-        if (path.startsWith("/v1/panel/auth/")) {
-            boolean sendCode = path.equals("/v1/panel/auth/send-email-code")
-                               || path.equals("/v1/panel/auth/email/send-code");
+        if (path.startsWith(RESTMappingV1.PANEL_AUTH + "/")) {
+            boolean sendCode = path.equals(RESTMappingV1.PANEL_AUTH + "/send-email-code")
+                               || path.equals(RESTMappingV1.PANEL_AUTH + "/email/send-code");
             return sendCode ? RateLimitTier.AUTH_SEND_CODE : RateLimitTier.AUTH;
         }
 
-        if (path.startsWith("/v1/panel/migration/")) {
-            return path.equals("/v1/panel/migration/status") && "GET".equalsIgnoreCase(method)
+        if (path.startsWith(RESTMappingV1.PANEL_MIGRATION + "/")) {
+            return path.equals(RESTMappingV1.PANEL_MIGRATION + "/status") && "GET".equalsIgnoreCase(method)
                    ? RateLimitTier.MIGRATION_STATUS : RateLimitTier.MIGRATION;
         }
 
-        if (path.startsWith("/v1/panel/")) {
+        if (RouteGroups.isPanelChild(path)) {
             return resolvePanelTier(path, method);
         }
 
-        if (path.startsWith("/v1/public/")) {
+        if (RouteGroups.isPublicChild(path)) {
             return resolvePublicTier(path, method);
         }
 
@@ -108,21 +98,21 @@ public class RateLimitConfig {
     }
 
     private RateLimitTier resolvePublicTier(String path, String method) {
-        if (path.startsWith("/v1/public/replay-lite/") && isWriteMethod(method)) {
+        if (RouteGroups.isPublicReplayLiteChild(path) && isWriteMethod(method)) {
             return RateLimitTier.REPLAY_LITE_LABEL;
         }
-        if (path.startsWith("/v1/public/media/") && isWriteMethod(method)) {
+        if (path.startsWith(RESTMappingV1.PUBLIC_MEDIA + "/") && isWriteMethod(method)) {
             return RateLimitTier.PUBLIC_MEDIA_UPLOAD;
         }
-        if (path.startsWith("/v1/public/appeals") && isWriteMethod(method)
+        if (path.startsWith(RESTMappingV1.PUBLIC_APPEALS) && isWriteMethod(method)
             && (path.contains("/verify") || path.contains("/request-verification"))) {
             return RateLimitTier.PUBLIC_TICKET_VERIFY;
         }
-        if (path.startsWith("/v1/public/tickets") && isWriteMethod(method)) {
+        if (path.startsWith(RESTMappingV1.PUBLIC_TICKETS) && isWriteMethod(method)) {
             if (path.contains("/verify") || path.contains("/request-verification")) {
                 return RateLimitTier.PUBLIC_TICKET_VERIFY;
             }
-            if (path.equals("/v1/public/tickets") || path.equals("/v1/public/tickets/unfinished")) {
+            if (path.equals(RESTMappingV1.PUBLIC_TICKETS) || path.equals(RESTMappingV1.PUBLIC_TICKETS + "/unfinished")) {
                 return RateLimitTier.PUBLIC_TICKET_CREATE;
             }
             return RateLimitTier.PUBLIC_TICKET_INTERACT;

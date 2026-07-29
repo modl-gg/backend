@@ -26,7 +26,7 @@ public class MediaAccessService {
         }
 
         String normalizedEntityId = entityId.trim();
-        String normalizedType = normalizeUploadType(uploadType);
+        String normalizedType = StorageKeyUtils.normalizeUploadType(uploadType);
 
         if ("new".equalsIgnoreCase(normalizedEntityId)) {
             if ("ticket".equals(normalizedType) || "appeal".equals(normalizedType)) {
@@ -59,10 +59,6 @@ public class MediaAccessService {
         }
 
         return AccessResult.allowed();
-    }
-
-    private String normalizeUploadType(String uploadType) {
-        return "tickets".equals(uploadType) ? "ticket" : uploadType;
     }
 
     public enum AccessStatus {

@@ -1,0 +1,15 @@
+success: true
+data {
+  current {
+    cache_ttl: 60
+    rate_limit_requests: 1000
+    rate_limit_window: 900
+    database_connection_pool: 20
+    enable_compression: true
+    enable_caching: true
+  }
+  active: true
+  reset_time {
+    seconds: 1700000100
+  }
+}

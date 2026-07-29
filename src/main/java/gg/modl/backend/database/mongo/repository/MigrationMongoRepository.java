@@ -1,5 +1,6 @@
 package gg.modl.backend.database.mongo.repository;
 
+import gg.modl.backend.database.CollectionName;
 import gg.modl.backend.database.mongo.AbstractServerMongoRepository;
 import gg.modl.backend.database.mongo.TenantMongoAccess;
 import gg.modl.backend.database.mongo.fields.MigrationStatusFields;
@@ -16,12 +17,11 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class MigrationMongoRepository extends AbstractServerMongoRepository<MigrationStatus> {
-    private static final String COLLECTION_NAME = "migrations";
     private static final List<String> ACTIVE_STATUSES =
         List.of("building_json", "uploading_json", "processing_data");
 
     public MigrationMongoRepository(TenantMongoAccess tenantMongoAccess) {
-        super(MigrationStatus.class, COLLECTION_NAME, tenantMongoAccess);
+        super(MigrationStatus.class, CollectionName.MIGRATIONS, tenantMongoAccess);
     }
 
     public Optional<MigrationStatus> findLatest(Server server) {

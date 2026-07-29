@@ -1,0 +1,7 @@
+success: true
+data {
+  sources: "monitor"
+  sources: "gateway"
+  categories: "infra"
+  categories: "security"
+}

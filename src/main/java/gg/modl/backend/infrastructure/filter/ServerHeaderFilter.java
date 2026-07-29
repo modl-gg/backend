@@ -30,19 +30,19 @@ public class ServerHeaderFilter extends OncePerRequestFilter {
     );
 
     public ServerHeaderFilter(ServerService serverService) {
-        this(serverService, false, null, null);
+        this(serverService, false, null, new OriginPolicy(Set.of(), Set.of(), false));
     }
 
     public ServerHeaderFilter(
         ServerService serverService,
         boolean developmentMode,
         @Nullable String devServerDomain,
-        @Nullable String systemOrigins
+        OriginPolicy originPolicy
     ) {
         this.serverService = serverService;
         this.developmentMode = developmentMode;
         this.devServerDomain = devServerDomain;
-        this.originPolicy = new OriginPolicy(HostExtractionUtil.parseCommaSeparated(systemOrigins), Set.of(), developmentMode);
+        this.originPolicy = originPolicy;
     }
 
     @Override

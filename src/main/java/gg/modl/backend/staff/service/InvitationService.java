@@ -81,11 +81,11 @@ public class InvitationService {
             );
         }
 
-        int availableSlots = (int) (staffLimit - totalCurrentMembers);
-        if (normalizedEmailsToInvite.size() > availableSlots) {
+        int availableSeats = (int) (staffLimit - totalCurrentMembers);
+        if (normalizedEmailsToInvite.size() > availableSeats) {
             throw new ConflictException(
                 String.format("Cannot invite %d staff members. You only have %d available slot(s) remaining.",
-                    normalizedEmailsToInvite.size(), availableSlots)
+                    normalizedEmailsToInvite.size(), availableSeats)
             );
         }
 

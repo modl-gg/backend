@@ -17,15 +17,18 @@ public enum PunishmentModificationType {
         return this == MANUAL_PARDON || this == APPEAL_ACCEPT || this == SYSTEM_PARDON;
     }
 
+    public boolean isDurationChange() {
+        return this == MANUAL_DURATION_CHANGE || this == APPEAL_DURATION_CHANGE;
+    }
+
     public static boolean isPardon(String type) {
-        return MANUAL_PARDON.name().equals(type)
-            || APPEAL_ACCEPT.name().equals(type)
-            || SYSTEM_PARDON.name().equals(type);
+        PunishmentModificationType value = fromName(type);
+        return value != null && value.isPardon();
     }
 
     public static boolean isDurationChange(String type) {
-        return MANUAL_DURATION_CHANGE.name().equals(type)
-            || APPEAL_DURATION_CHANGE.name().equals(type);
+        PunishmentModificationType value = fromName(type);
+        return value != null && value.isDurationChange();
     }
 
     public AppealWorkflowStatus appealOutcome() {

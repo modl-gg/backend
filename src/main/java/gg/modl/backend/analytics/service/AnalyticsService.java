@@ -1,7 +1,5 @@
 package gg.modl.backend.analytics.service;
 
-import static gg.modl.backend.infrastructure.util.SafeConvertUtil.toInt;
-
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import gg.modl.backend.analytics.dto.response.AuditLogsAnalyticsResponse;
@@ -11,6 +9,8 @@ import gg.modl.backend.analytics.dto.response.PunishmentAnalyticsResponse;
 import gg.modl.backend.analytics.dto.response.TicketAnalyticsResponse;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository;
 import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.IdCountResult;
+import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.PlayerActivityFacet;
+import gg.modl.backend.database.mongo.repository.AnalyticsMongoRepository.PunishmentAnalyticsFacet;
 import gg.modl.backend.player.service.IssuerNameResolver;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.PunishmentTypeIndex;
@@ -18,15 +18,14 @@ import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.service.StaffService;
 import gg.modl.backend.ticket.data.TicketCategory;
 import gg.modl.backend.ticket.data.TicketStatus;
+import gg.modl.backend.infrastructure.proto.ProtoMapperSupport;
 import gg.modl.backend.infrastructure.util.DateRangeUtil;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -34,7 +33,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TimeZone;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
@@ -45,7 +43,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Slf4j
 public class AnalyticsService {
-    private static final String ANALYTICS_TIME_ZONE = TimeZone.getDefault().getID();
+    private static final String ANALYTICS_TIME_ZONE = "UTC";
+    private static final double MILLIS_PER_HOUR = 1000.0 * 60 * 60;
 
     private final AnalyticsMongoRepository analyticsRepository;
     private final PunishmentTypeService punishmentTypeService;
@@ -82,7 +81,9 @@ public class AnalyticsService {
         final int ticketChange = stats.previousTickets() > 0
                                  ? (int) Math.round(((double) (stats.recentTickets() - stats.previousTickets()) / stats.previousTickets()) * 100)
                                  : 0;
-        final int playerChange = 0; // TODO: implement or remove
+        final int playerChange = stats.previousPlayers() > 0
+                                 ? (int) Math.round(((double) (stats.recentPlayers() - stats.previousPlayers()) / stats.previousPlayers()) * 100)
+                                 : 0;
 
         return new OverviewResponse(
             stats.totalTickets(),
@@ -111,30 +112,19 @@ public class AnalyticsService {
             .map(result -> new TicketAnalyticsResponse.CategoryCount(normalizeCategory(result.id()), result.count()))
             .toList();
 
-        final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
         final List<TicketAnalyticsResponse.DailyTicket> dailyTickets = analyticsRepository.aggregateDailyTicketCounts(server, startDate, ANALYTICS_TIME_ZONE)
             .stream()
-            .map(result -> new TicketAnalyticsResponse.DailyTicket(
-                formatDateLabel(result.id(), dateFormatter),
-                result.count()
-            ))
+            .map(result -> new TicketAnalyticsResponse.DailyTicket(result.id(), result.count()))
             .toList();
 
-        final List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution = Collections.emptyList();
+        final List<TicketAnalyticsResponse.CategoryResolutionTime> avgResolution =
+            analyticsRepository.aggregateAvgResolutionByCategory(server, startDate).stream()
+                .map(result -> new TicketAnalyticsResponse.CategoryResolutionTime(
+                    normalizeCategory(result.id()),
+                    result.avgMillis() / MILLIS_PER_HOUR))
+                .toList();
 
         return new TicketAnalyticsResponse(byStatus, byCategory, avgResolution, dailyTickets);
-    }
-
-    private String formatDateLabel(String dateKey, DateTimeFormatter formatter) {
-        if (dateKey == null || dateKey.isBlank()) {
-            return "Unknown";
-        }
-
-        try {
-            return LocalDate.parse(dateKey).format(formatter);
-        } catch (Exception ignored) {
-            return dateKey;
-        }
     }
 
     private String normalizeCategory(String category) {
@@ -153,51 +143,47 @@ public class AnalyticsService {
         }
     }
 
-    public PunishmentAnalyticsResponse getPunishmentAnalytics(Server server, String period) {
+    @NotNull
+    public PunishmentAnalyticsResponse getPunishmentAnalytics(@NotNull Server server, @NotNull String period) {
         return punishmentAnalyticsCache.get(cacheKey(server, period), key -> computePunishmentAnalytics(server, period));
     }
 
     private PunishmentAnalyticsResponse computePunishmentAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
-        Document facetResults = analyticsRepository.aggregatePunishmentAnalytics(server, startDate, ANALYTICS_TIME_ZONE);
-        if (facetResults == null) {
+        PunishmentAnalyticsFacet facet = analyticsRepository.aggregatePunishmentAnalytics(server, startDate, ANALYTICS_TIME_ZONE);
+        if (facet == null) {
             return new PunishmentAnalyticsResponse(List.of(), List.of(), List.of());
         }
         Map<Integer, String> punishmentTypeNames = resolvePunishmentTypeNames(server);
 
-        List<PunishmentAnalyticsResponse.TypeCount> byType = toDocumentList(facetResults.get("byType")).stream()
-            .map(doc -> {
-                Object rawTypeOrdinal = doc.get("_id");
-                Integer typeOrdinal = rawTypeOrdinal instanceof Number number ? number.intValue() : null;
+        List<PunishmentAnalyticsResponse.TypeCount> byType = facet.byType().stream()
+            .map(entry -> {
+                Integer typeOrdinal = entry.typeOrdinal();
                 String typeName = typeOrdinal != null
                                   ? punishmentTypeNames.getOrDefault(typeOrdinal, "Unknown")
                                   : "Unknown";
-                return new PunishmentAnalyticsResponse.TypeCount(typeName, toInt(doc.get("count")));
+                return new PunishmentAnalyticsResponse.TypeCount(typeName, entry.count());
             })
             .sorted((a, b) -> Integer.compare(b.count(), a.count()))
             .toList();
 
-        // Collect potential staff IDs for batch resolution
-        List<Document> byStaffDocs = toDocumentList(facetResults.get("byStaff"));
         Set<String> potentialIds = new HashSet<>();
-        for (Document document : byStaffDocs) {
-            Object rawId = document.get("_id");
-            if (rawId instanceof String s && !s.isBlank()) {
-                potentialIds.add(s);
+        for (var entry : facet.byStaff()) {
+            if (entry.issuerId() != null && !entry.issuerId().isBlank()) {
+                potentialIds.add(entry.issuerId());
             }
         }
         Map<String, String> resolvedStaff = issuerNameResolver.batchResolve(potentialIds, server);
 
         Map<String, Integer> staffCountMap = new HashMap<>();
-        for (Document document : byStaffDocs) {
-            Object rawId = document.get("_id");
+        for (var entry : facet.byStaff()) {
             String staffName;
-            if (rawId instanceof String s && resolvedStaff.containsKey(s)) {
-                staffName = resolvedStaff.get(s);
+            if (entry.issuerId() != null && resolvedStaff.containsKey(entry.issuerId())) {
+                staffName = resolvedStaff.get(entry.issuerId());
             } else {
-                staffName = normalizeStaffName(rawId);
+                staffName = normalizeStaffName(entry.issuerId());
             }
-            staffCountMap.merge(staffName, toInt(document.get("count")), Integer::sum);
+            staffCountMap.merge(staffName, entry.count(), Integer::sum);
         }
         List<PunishmentAnalyticsResponse.StaffPunishment> byStaff = staffCountMap.entrySet()
             .stream()
@@ -207,9 +193,8 @@ public class AnalyticsService {
             .toList();
 
         Map<String, Integer> dailyPunishmentMap = new LinkedHashMap<>();
-        for (Document document : toDocumentList(facetResults.get("daily"))) {
-            String dayLabel = formatPunishmentDay(document.getString("_id"));
-            dailyPunishmentMap.merge(dayLabel, toInt(document.get("count")), Integer::sum);
+        for (var entry : facet.daily()) {
+            dailyPunishmentMap.merge(entry.date(), entry.count(), Integer::sum);
         }
         List<PunishmentAnalyticsResponse.DailyPunishment> dailyPunishments = dailyPunishmentMap.entrySet()
             .stream()
@@ -226,20 +211,6 @@ public class AnalyticsService {
         return typeNames;
     }
 
-    private List<Document> toDocumentList(Object value) {
-        if (!(value instanceof List<?> rawList)) {
-            return List.of();
-        }
-
-        List<Document> documents = new ArrayList<>();
-        for (Object item : rawList) {
-            if (item instanceof Document document) {
-                documents.add(document);
-            }
-        }
-        return documents;
-    }
-
     private String normalizeStaffName(Object rawStaffName) {
         if (rawStaffName == null) {
             return "Unknown";
@@ -249,13 +220,8 @@ public class AnalyticsService {
         return normalized.isBlank() ? "Unknown" : normalized;
     }
 
-    private static final DateTimeFormatter SHORT_DATE_FORMATTER = DateTimeFormatter.ofPattern("MMM dd");
-
-    private String formatPunishmentDay(String dateKey) {
-        return formatDateLabel(dateKey, SHORT_DATE_FORMATTER);
-    }
-
-    public AuditLogsAnalyticsResponse getAuditLogsAnalytics(Server server, String period) {
+    @NotNull
+    public AuditLogsAnalyticsResponse getAuditLogsAnalytics(@NotNull Server server, @NotNull String period) {
         return auditLogsAnalyticsCache.get(cacheKey(server, period), key -> computeAuditLogsAnalytics(server, period));
     }
 
@@ -280,7 +246,7 @@ public class AnalyticsService {
             if (bucketKey == null) {
                 continue;
             }
-            hourlyMap.merge(bucketKey, toInt(doc.get("count")), Integer::sum);
+            hourlyMap.merge(bucketKey, ProtoMapperSupport.intValueOrZero(doc.get("count")), Integer::sum);
         }
 
         ZoneId zone = ZoneId.of(ANALYTICS_TIME_ZONE);
@@ -297,46 +263,34 @@ public class AnalyticsService {
         return new AuditLogsAnalyticsResponse(byLevel, hourlyTrend);
     }
 
-    public PlayerActivityResponse getPlayerActivityAnalytics(Server server, String period) {
+    @NotNull
+    public PlayerActivityResponse getPlayerActivityAnalytics(@NotNull Server server, @NotNull String period) {
         return playerActivityCache.get(cacheKey(server, period), key -> computePlayerActivityAnalytics(server, period));
     }
 
     private PlayerActivityResponse computePlayerActivityAnalytics(Server server, String period) {
         Date startDate = DateRangeUtil.getStartDate(period);
 
-        Document facetResults = analyticsRepository.aggregatePlayerActivity(server, startDate, ANALYTICS_TIME_ZONE);
-        if (facetResults == null) {
+        PlayerActivityFacet facet = analyticsRepository.aggregatePlayerActivity(server, startDate, ANALYTICS_TIME_ZONE);
+        if (facet == null) {
             return new PlayerActivityResponse(List.of(), List.of(),
                 new PlayerActivityResponse.SuspiciousActivity(0, 0));
         }
 
-        DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("MMM dd");
-
-        List<PlayerActivityResponse.DailyCount> newPlayersTrend = toDocumentList(facetResults.get("newPlayers")).stream()
-            .map(doc -> new PlayerActivityResponse.DailyCount(
-                formatDateLabel(doc.getString("_id"), dateFormatter),
-                toInt(doc.get("count"))))
+        List<PlayerActivityResponse.DailyCount> newPlayersTrend = facet.newPlayers().stream()
+            .map(entry -> new PlayerActivityResponse.DailyCount(entry.date(), entry.count()))
             .toList();
 
-        List<PlayerActivityResponse.CountryCount> loginsByCountry = toDocumentList(facetResults.get("byCountry")).stream()
-            .map(doc -> new PlayerActivityResponse.CountryCount(
-                doc.getString("_id"),
-                toInt(doc.get("count"))))
+        List<PlayerActivityResponse.CountryCount> loginsByCountry = facet.byCountry().stream()
+            .map(entry -> new PlayerActivityResponse.CountryCount(entry.country(), entry.count()))
             .toList();
-
-        List<Document> suspiciousList = toDocumentList(facetResults.get("suspicious"));
-        int proxyCount = 0;
-        int hostingCount = 0;
-        if (!suspiciousList.isEmpty()) {
-            Document suspicious = suspiciousList.getFirst();
-            proxyCount = toInt(suspicious.get("proxyCount"));
-            hostingCount = toInt(suspicious.get("hostingCount"));
-        }
 
         return new PlayerActivityResponse(
             newPlayersTrend,
             loginsByCountry,
-            new PlayerActivityResponse.SuspiciousActivity(proxyCount, hostingCount)
+            new PlayerActivityResponse.SuspiciousActivity(
+                facet.suspicious().proxyCount(),
+                facet.suspicious().hostingCount())
         );
     }
 

@@ -22,6 +22,7 @@ import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.proto.ProtoBinaryHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoJsonHttpMessageConverter;
 import gg.modl.backend.infrastructure.proto.ProtoValidationAdvice;
+import gg.modl.backend.infrastructure.proto.ProtobufErrorResponseWriter;
 import gg.modl.backend.infrastructure.proto.ProtobufMediaTypes;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RESTMappingV3;
@@ -33,7 +34,7 @@ import gg.modl.backend.staff.controller.MinecraftStaffController;
 import gg.modl.backend.staff.controller.MinecraftStaffV3Controller;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.MinecraftStaffService;
 import gg.modl.proto.modl.v1.ApiError;
 import gg.modl.proto.modl.v1.MinecraftStaffOperationResponse;
 import gg.modl.proto.modl.v1.StaffDisconnectRequest;
@@ -50,7 +51,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class MinecraftStaffV3ControllerTest {
-    private StaffService staffService;
+    private MinecraftStaffService staffService;
     private RoleAuthorization roleAuthorization;
     private MockMvc v3MockMvc;
     private MockMvc v1MockMvc;
@@ -58,20 +59,20 @@ class MinecraftStaffV3ControllerTest {
 
     @BeforeEach
     void setUp() {
-        staffService = mock(StaffService.class);
+        staffService = mock(MinecraftStaffService.class);
         roleAuthorization = mock(RoleAuthorization.class);
         when(roleAuthorization.minecraftPerformer(any(), any()))
             .thenReturn(RoleAuthorization.PerformerAuthority.unidentified());
         server = new Server("Demo", "demo", "server_demo", "admin@example.com", true, ServerPlan.FREE);
 
         v3MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffV3Controller(staffService, roleAuthorization))
-            .setControllerAdvice(new GlobalExceptionHandler(), new ProtoValidationAdvice())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()), new ProtoValidationAdvice())
             .setMessageConverters(new ProtoBinaryHttpMessageConverter(), new ProtoJsonHttpMessageConverter())
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
 
         v1MockMvc = MockMvcBuilders.standaloneSetup(new MinecraftStaffController(staffService, roleAuthorization))
-            .setControllerAdvice(new GlobalExceptionHandler())
+            .setControllerAdvice(new GlobalExceptionHandler(new ProtobufErrorResponseWriter()))
             .defaultRequest(get("/").requestAttr(RequestAttribute.SERVER, server))
             .build();
     }

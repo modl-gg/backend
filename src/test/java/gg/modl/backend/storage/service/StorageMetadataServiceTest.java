@@ -10,7 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import gg.modl.backend.database.mongo.repository.ServerMongoRepository;
+import gg.modl.backend.database.mongo.repository.ServerUsageRepository;
 import gg.modl.backend.database.mongo.repository.StorageFileMongoRepository;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -25,7 +25,7 @@ class StorageMetadataServiceTest {
     private static final String SERVER_ID = "srv-1";
 
     private StorageFileMongoRepository storageFileRepository;
-    private ServerMongoRepository serverRepository;
+    private ServerUsageRepository serverRepository;
     private S3StorageService s3StorageService;
     private StorageSyncService storageSyncService;
     private StorageMetadataService service;
@@ -34,10 +34,11 @@ class StorageMetadataServiceTest {
     @BeforeEach
     void setUp() {
         storageFileRepository = mock(StorageFileMongoRepository.class);
-        serverRepository = mock(ServerMongoRepository.class);
+        serverRepository = mock(ServerUsageRepository.class);
         s3StorageService = mock(S3StorageService.class);
         storageSyncService = mock(StorageSyncService.class);
-        service = new StorageMetadataService(storageFileRepository, serverRepository, s3StorageService, storageSyncService);
+        StorageUsageAccountant storageUsageAccountant = new StorageUsageAccountant(serverRepository);
+        service = new StorageMetadataService(storageFileRepository, storageUsageAccountant, s3StorageService, storageSyncService);
         server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         server.setId(SERVER_ID);
     }

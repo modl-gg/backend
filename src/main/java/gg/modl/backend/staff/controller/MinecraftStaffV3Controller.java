@@ -7,7 +7,7 @@ import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.dto.response.MinecraftStaffPermissionsResponse;
 import gg.modl.backend.staff.dto.response.MinecraftStaffSummaryResponse;
-import gg.modl.backend.staff.service.StaffService;
+import gg.modl.backend.staff.service.MinecraftStaffService;
 import gg.modl.proto.modl.v1.MinecraftStaffOperationResponse;
 import gg.modl.proto.modl.v1.StaffDisconnectRequest;
 import gg.modl.proto.modl.v1.StaffListResponse;
@@ -31,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping(RESTMappingV3.PREFIX_MINECRAFT + "/staff")
 @RequiredArgsConstructor
 public class MinecraftStaffV3Controller {
-    private final StaffService staffService;
+    private final MinecraftStaffService staffService;
     private final RoleAuthorization roleAuthorization;
 
     @GetMapping(produces = ProtobufMediaTypes.APPLICATION_X_PROTOBUF_VALUE)
