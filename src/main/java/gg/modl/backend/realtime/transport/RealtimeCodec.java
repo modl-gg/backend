@@ -4,6 +4,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Timestamp;
 import gg.modl.backend.realtime.config.RealtimeProperties;
 import gg.modl.proto.modl.v1.ErrorCode;
+import gg.modl.proto.modl.v1.Heartbeat;
 import gg.modl.proto.modl.v1.RealtimeEnvelope;
 import gg.modl.proto.modl.v1.ReconnectAction;
 import gg.modl.proto.modl.v1.ReconnectAdvice;
@@ -42,6 +43,26 @@ public class RealtimeCodec {
             .build();
 
         return toMessage(baseEnvelope().setServerHello(hello).build());
+    }
+
+    /**
+     * Unsolicited server -> client keepalive. Clients treat prolonged inbound silence as a dead
+     * connection (the Minecraft plugin force-reconnects after 75s without a frame), so idle
+     * connections need this even when no domain events are flowing.
+     *
+     * <p>Built without an {@code event_id} on purpose: both the plugin and the panel transport-ACK
+     * any frame carrying one, which would turn every keepalive into a request/response pair.</p>
+     */
+    public BinaryMessage heartbeat(long sequence) {
+        Instant now = Instant.now();
+        return toMessage(RealtimeEnvelope.newBuilder()
+            .setProtocolVersion(properties.getProtocolVersion())
+            .setTimestamp(Timestamp.newBuilder()
+                .setSeconds(now.getEpochSecond())
+                .setNanos(now.getNano())
+                .build())
+            .setHeartbeat(Heartbeat.newBuilder().setSequence(sequence))
+            .build());
     }
 
     public BinaryMessage error(ErrorCode code, String message) {

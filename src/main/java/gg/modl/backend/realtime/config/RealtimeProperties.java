@@ -26,6 +26,14 @@ public class RealtimeProperties {
     @Min(5)
     private long heartbeatTimeoutSeconds = 60;
 
+    /**
+     * Interval between unsolicited server -> client heartbeats. Must stay comfortably below the
+     * client-side inbound liveness timeout (the Minecraft plugin force-reconnects after 75s of
+     * silence), so the default gives roughly three heartbeats per client window.
+     */
+    @Min(1000)
+    private long serverHeartbeatIntervalMs = 25_000;
+
     @Min(1)
     private long handshakeTimeoutSeconds = 10;
 
