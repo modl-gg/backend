@@ -1,16 +1,16 @@
 package gg.modl.backend.realtime.schedule;
 
 import gg.modl.backend.realtime.config.RealtimeProperties;
-import gg.modl.backend.realtime.dispatch.RealtimeDispatchExecutor;
 import gg.modl.backend.realtime.state.RealtimeConnectionRegistry;
 import gg.modl.backend.realtime.state.RealtimeConnectionState;
 import gg.modl.backend.realtime.transport.RealtimeCodec;
 import gg.modl.backend.realtime.transport.RealtimeSessionOperations;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PreDestroy;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketSession;
@@ -25,21 +25,50 @@ import org.springframework.web.socket.WebSocketSession;
  * full baseline fetch each cycle. {@link RealtimeHeartbeatSweeper} is the inbound counterpart — it
  * closes connections whose <em>client</em> heartbeats have stopped.</p>
  *
- * <p>Delivery is handed to {@link RealtimeDispatchExecutor} per server rather than sent inline. A
- * WebSocket write to a peer that has stopped reading blocks until the container's blocking-send
- * timeout (~20s), so sending inline would let one wedged client delay every connection behind it in
- * the sweep — starving healthy clients of the very heartbeat that keeps their watchdog quiet. The
- * sharded executor keeps that stall inside the offending tenant and off the scheduler thread, which
- * is how outbound domain events are already delivered.</p>
+ * <p>Each connection is delivered on its own virtual thread. A WebSocket write to a peer that has
+ * stopped reading blocks until the container's blocking-send timeout (~20s), so <em>any</em> shared
+ * delivery thread lets one wedged peer delay the connections queued behind it past the very 75s
+ * watchdog this component exists to satisfy — including a per-tenant sharded pool, where unrelated
+ * servers collide on the same worker. Per-connection dispatch matches the granularity of the
+ * per-connection send lock in {@link RealtimeSessionOperations}, so a wedged peer can only stall
+ * itself. Virtual threads make that isolation cheap: a blocked socket write parks and unmounts its
+ * carrier rather than occupying a pooled thread.</p>
  */
+@Slf4j
 @Component
-@RequiredArgsConstructor
 public class RealtimeServerHeartbeatEmitter {
     private final RealtimeProperties properties;
     private final RealtimeConnectionRegistry connectionRegistry;
     private final RealtimeCodec codec;
     private final RealtimeSessionOperations sessionOperations;
-    private final RealtimeDispatchExecutor dispatchExecutor;
+    private final Executor deliveryExecutor;
+
+    // Explicit: the package-private test constructor below makes the candidate set ambiguous, and
+    // Spring falls back to a (non-existent) no-arg constructor unless one is annotated.
+    @Autowired
+    public RealtimeServerHeartbeatEmitter(
+        RealtimeProperties properties,
+        RealtimeConnectionRegistry connectionRegistry,
+        RealtimeCodec codec,
+        RealtimeSessionOperations sessionOperations
+    ) {
+        this(properties, connectionRegistry, codec, sessionOperations,
+            Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    RealtimeServerHeartbeatEmitter(
+        RealtimeProperties properties,
+        RealtimeConnectionRegistry connectionRegistry,
+        RealtimeCodec codec,
+        RealtimeSessionOperations sessionOperations,
+        Executor deliveryExecutor
+    ) {
+        this.properties = properties;
+        this.connectionRegistry = connectionRegistry;
+        this.codec = codec;
+        this.sessionOperations = sessionOperations;
+        this.deliveryExecutor = deliveryExecutor;
+    }
 
     @Scheduled(fixedDelayString = "${modl.realtime.ws.server-heartbeat-interval-ms:25000}")
     public void emitHeartbeats() {
@@ -47,30 +76,28 @@ public class RealtimeServerHeartbeatEmitter {
             return;
         }
 
-        Map<String, List<RealtimeConnectionRegistry.RealtimeConnectionSnapshot>> byServer = new LinkedHashMap<>();
         for (RealtimeConnectionRegistry.RealtimeConnectionSnapshot snapshot : connectionRegistry.snapshot()) {
-            String serverId = snapshot.state().getServerId();
-            if (serverId == null || !isEligible(snapshot)) {
-                continue;
-            }
-            byServer.computeIfAbsent(serverId, key -> new ArrayList<>()).add(snapshot);
-        }
-
-        byServer.forEach((serverId, snapshots) -> dispatchExecutor.execute(serverId, () -> sendAll(snapshots)));
-    }
-
-    private void sendAll(List<RealtimeConnectionRegistry.RealtimeConnectionSnapshot> snapshots) {
-        for (RealtimeConnectionRegistry.RealtimeConnectionSnapshot snapshot : snapshots) {
-            // Re-checked here because the connection may have closed between the sweep and this task
-            // reaching the front of its worker queue.
             if (!isEligible(snapshot)) {
                 continue;
             }
-            RealtimeConnectionState state = snapshot.state();
+            deliveryExecutor.execute(() -> send(snapshot));
+        }
+    }
+
+    private void send(RealtimeConnectionRegistry.RealtimeConnectionSnapshot snapshot) {
+        // Re-checked here because the connection may have closed between the sweep and this task
+        // being scheduled.
+        if (!isEligible(snapshot)) {
+            return;
+        }
+        RealtimeConnectionState state = snapshot.state();
+        try {
             // Best effort: a failed keepalive is not itself grounds for tearing down the connection.
             // A genuinely dead peer stops sending client heartbeats and the sweeper closes it.
             sessionOperations.trySend(
                 snapshot.session(), state, codec.heartbeat(state.nextOutboundHeartbeatSequence()));
+        } catch (RuntimeException exception) {
+            log.warn("Failed to send realtime heartbeat connection={}", state.getConnectionId(), exception);
         }
     }
 
@@ -83,5 +110,12 @@ public class RealtimeServerHeartbeatEmitter {
             && !state.isClosing()
             && state.getTerminalSince() == null
             && session.isOpen();
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (deliveryExecutor instanceof ExecutorService service) {
+            service.shutdownNow();
+        }
     }
 }
