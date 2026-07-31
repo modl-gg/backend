@@ -17,6 +17,7 @@ public class RealtimeConnectionState {
     private final Object sendLock = new Object();
     private final AtomicLong deliveryAttempts = new AtomicLong();
     private final AtomicLong deliveryFailures = new AtomicLong();
+    private final AtomicLong outboundHeartbeatSequence = new AtomicLong();
     private volatile Instant lastHeartbeat = Instant.now();
     private volatile RealtimePrincipal principal;
     private volatile int protocolVersion;
@@ -108,6 +109,11 @@ public class RealtimeConnectionState {
 
     public void recordHeartbeat() {
         lastHeartbeat = Instant.now();
+    }
+
+    /** Sequence for the next unsolicited server -> client heartbeat on this connection. */
+    public long nextOutboundHeartbeatSequence() {
+        return outboundHeartbeatSequence.incrementAndGet();
     }
 
     public void setLastAcknowledgedEventId(@Nullable String lastAcknowledgedEventId) {
