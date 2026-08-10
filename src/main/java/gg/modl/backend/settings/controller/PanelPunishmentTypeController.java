@@ -1,5 +1,6 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
@@ -30,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS + "/punishment-types")
-@RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+@RequiresPanelPermission(rule = PanelAccessRule.PUNISHMENT_TYPE_ACCESS)
 @RequiredArgsConstructor
 public class PanelPunishmentTypeController {
     private final PunishmentTypeService punishmentTypeService;
