@@ -83,6 +83,7 @@ public class PanelAccessPolicyResolver {
         return switch (annotation.rule()) {
             case PERMIT_ALL -> PermitAllPolicy.INSTANCE;
             case PLAYER_ACCESS -> PlayerAccessPolicy.INSTANCE;
+            case PUNISHMENT_TYPE_ACCESS -> PunishmentTypeAccessPolicy.INSTANCE;
             case APPEAL_REPLY -> AppealReplyPolicy.INSTANCE;
             case REQUIRE_PERMISSION -> new ReadWritePermissionPolicy(viewPermission(annotation), modifyPermission(annotation));
         };

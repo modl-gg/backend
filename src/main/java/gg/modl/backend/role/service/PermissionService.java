@@ -36,6 +36,9 @@ public class PermissionService {
         .build();
 
     public static final String ADMIN_SETTINGS_VIEW = "admin.settings.view";
+    public static final String ADMIN_SETTINGS_VIEW_PUNISHMENTS = "admin.settings.view.punishments";
+    public static final String ADMIN_SETTINGS_MODIFY_PUNISHMENTS = "admin.settings.modify.punishments";
+    public static final String PUNISHMENT_APPLY_PREFIX = "punishment.apply.";
     public static final String ADMIN_STAFF_MANAGE = "admin.staff.manage";
     public static final String ADMIN_AUDIT_VIEW = "admin.audit.view";
     public static final String ADMIN_AUDIT_ROLLBACK = "admin.audit.rollback";
@@ -56,14 +59,14 @@ public class PermissionService {
 
     private static final List<Permission> BASE_PERMISSIONS = List.of(
         new Permission(ADMIN_SETTINGS_VIEW, "View Settings", "View all system settings (includes all sub-permissions)", "admin"),
-        new Permission("admin.settings.view.punishments", "View Punishments Config", "View punishment type configuration", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission(ADMIN_SETTINGS_VIEW_PUNISHMENTS, "View Punishments Config", "View punishment type configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.content", "View Content", "View homepage cards, knowledgebase, media", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.domain", "View Domain", "View custom domain configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.billing", "View Billing", "View billing, subscription, and payment info", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.migration", "View Migration", "View import/export data configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.storage", "View Storage", "View storage configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.modify", "Modify Settings", "Full control over system settings (includes all sub-permissions)", "admin"),
-        new Permission("admin.settings.modify.punishments", "Modify Punishments Config", "Create/edit/delete punishment types", "admin",
+        new Permission(ADMIN_SETTINGS_MODIFY_PUNISHMENTS, "Modify Punishments Config", "Create/edit/delete punishment types", "admin",
             "admin.settings.modify"),
         new Permission("admin.settings.modify.content", "Modify Content", "Edit homepage cards, knowledgebase, media", "admin", "admin.settings.modify"),
         new Permission("admin.settings.modify.domain", "Modify Domain", "Change custom domain configuration", "admin", "admin.settings.modify"),
@@ -150,7 +153,7 @@ public class PermissionService {
     }
 
     public static String punishmentApplyPermissionId(String typeName) {
-        return "punishment.apply." + typeName.toLowerCase().replace(" ", "-");
+        return PUNISHMENT_APPLY_PREFIX + typeName.toLowerCase().replace(" ", "-");
     }
 
     public void renamePunishmentApplyPermission(Server server, String oldName, String newName) {

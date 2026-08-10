@@ -98,6 +98,7 @@ class PanelAuthorizationMatrixTest {
         Row.permission("POST", "/v1/panel/settings/ai-dismiss-suggestion/t1", "admin.settings.modify.punishments"),
         Row.permission("GET", "/v1/panel/settings/punishment-types", "admin.settings.view.punishments"),
         Row.permission("POST", "/v1/panel/settings/punishment-types", "admin.settings.modify.punishments"),
+        Row.playerRead("/v1/panel/settings/punishment-types"),
         Row.permission("GET", "/v1/panel/settings/domain", "admin.settings.view.domain"),
         Row.permission("POST", "/v1/panel/settings/domain", "admin.settings.modify.domain"),
         Row.permission("POST", "/v1/panel/settings/api-keys/minecraft/generate", "admin.settings.modify"),
