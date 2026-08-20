@@ -5,6 +5,7 @@ import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.AISuggestionActionResponse;
 import gg.modl.proto.modl.v1.ApplyAIPunishmentRequest;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
-@RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+@RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS, modify = PermissionService.ADMIN_SETTINGS_MODIFY_PUNISHMENTS)
 @RequiredArgsConstructor
 public class PanelAiSuggestionController {
     private final AITicketAnalysisService aiTicketAnalysisService;

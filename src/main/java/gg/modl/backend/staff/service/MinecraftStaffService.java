@@ -154,7 +154,7 @@ public class MinecraftStaffService {
 
     private static List<String> rolePermissions(Map<String, StaffRole> rolesById, String roleId) {
         StaffRole role = roleId != null ? rolesById.get(roleId) : null;
-        return role != null && role.getPermissions() != null ? role.getPermissions() : List.of();
+        return role != null ? PermissionService.grantedPermissionIds(role) : List.of();
     }
 
     public List<MinecraftStaffPermissionsResponse> getMinecraftStaffPermissions(Server server) {
@@ -273,6 +273,6 @@ public class MinecraftStaffService {
     }
 
     private StaffResponse toStaffResponse(Server server, Staff staff, String status) {
-        return StaffResponseFactory.of(staff, status, permissionService.resolveRoleName(server, staff.getRoleId()));
+        return StaffResponseFactory.of(staff, status, permissionService.assignedRoleName(server, staff));
     }
 }

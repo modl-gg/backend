@@ -5,9 +5,14 @@ public record Permission(
     String name,
     String description,
     String category,
-    String parentId
+    String parentId,
+    boolean superAdminOnly
 ) {
     public Permission(String id, String name, String description, String category) {
-        this(id, name, description, category, null);
+        this(id, name, description, category, null, false);
+    }
+
+    public Permission(String id, String name, String description, String category, String parentId) {
+        this(id, name, description, category, parentId, false);
     }
 }

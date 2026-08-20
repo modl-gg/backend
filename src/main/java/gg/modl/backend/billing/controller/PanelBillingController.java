@@ -2,9 +2,11 @@ package gg.modl.backend.billing.controller;
 
 import gg.modl.backend.billing.service.BillingService;
 import gg.modl.backend.billing.service.UsageTrackingService;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.proto.modl.v1.BillingStatusResponse;
 import gg.modl.proto.modl.v1.CancelResponse;
@@ -29,7 +31,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_BILLING)
-@RequiresPanelPermission(view = "admin.settings.view.billing", modify = "admin.settings.modify.billing")
+@RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN,
+    supersedesPermissions = {PermissionService.ADMIN_SETTINGS_VIEW_BILLING, PermissionService.ADMIN_SETTINGS_MODIFY_BILLING})
 @RequiredArgsConstructor
 public class PanelBillingController {
     private final BillingService billingService;
@@ -39,8 +42,6 @@ public class PanelBillingController {
     public ResponseEntity<CheckoutSessionResponse> createCheckoutSession(HttpServletRequest request) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
-
         return ResponseEntity.ok(PanelBillingProtoMapper.toCheckoutSessionResponse(billingService.createCheckoutSession(server)));
     }
 
@@ -48,8 +49,6 @@ public class PanelBillingController {
     public ResponseEntity<PortalSessionResponse> createPortalSession(HttpServletRequest request) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
-
         return ResponseEntity.ok(PanelBillingProtoMapper.toPortalSessionResponse(billingService.createPortalSession(server)));
     }
 
@@ -57,8 +56,6 @@ public class PanelBillingController {
     public ResponseEntity<CancelResponse> cancelSubscription(HttpServletRequest request) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
-
         return ResponseEntity.ok(PanelBillingProtoMapper.toCancelResponse(billingService.cancelSubscription(server)));
     }
 
@@ -66,15 +63,12 @@ public class PanelBillingController {
     public ResponseEntity<ResubscribeResponse> resubscribe(HttpServletRequest request) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
-
         return ResponseEntity.ok(PanelBillingProtoMapper.toResubscribeResponse(billingService.resubscribe(server)));
     }
 
     @GetMapping("/status")
     public ResponseEntity<BillingStatusResponse> getBillingStatus(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
         billingService.reconcileBillingStatus(server);
         return ResponseEntity.ok(PanelBillingProtoMapper.toBillingStatusResponse(billingService.getBillingStatus(server)));
     }
@@ -82,7 +76,6 @@ public class PanelBillingController {
     @GetMapping("/usage")
     public ResponseEntity<UsageResponse> getUsage(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
         return ResponseEntity.ok(PanelBillingProtoMapper.toUsageResponse(usageTrackingService.getUsage(server)));
     }
 
@@ -93,8 +86,6 @@ public class PanelBillingController {
     ) {
         billingService.requireStripeConfigured();
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
-
         return ResponseEntity.ok(PanelBillingProtoMapper.toUsageBillingSettingsResponse(
             usageTrackingService.updateUsageBillingSettings(server, settingsRequest.getEnabled())));
     }
@@ -105,7 +96,6 @@ public class PanelBillingController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
         long maxStorageLimitBytes = body.getMaxStorageLimitBytes();
         usageTrackingService.updateStorageLimit(server, maxStorageLimitBytes);
@@ -119,7 +109,6 @@ public class PanelBillingController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        billingService.requireSuperAdmin(server, RequestUtil.getSessionEmail(request));
 
         int maxStorageOverageGB = body.hasMaxStorageOverageGbValue() ? body.getMaxStorageOverageGbValue() : body.getMaxStorageOverageGb();
         int maxAiOverageRequests = body.hasMaxAiOverageRequestsValue() ? body.getMaxAiOverageRequestsValue() : body.getMaxAiOverageRequests();

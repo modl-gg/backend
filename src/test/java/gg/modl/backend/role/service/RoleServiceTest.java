@@ -18,6 +18,7 @@ import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerTimestampService;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -38,12 +39,12 @@ class RoleServiceTest {
             roleRepository,
             staffRepository,
             permissionService,
-            new RoleAuthorization(permissionService, staffRepository),
+            new RoleAuthorization(permissionService, staffRepository, mock(StaffLookupCache.class)),
             mock(ServerTimestampService.class)
         );
         Server server = new Server("server", "domain", "db", "admin@example.com", true, ServerPlan.FREE);
         when(permissionService.getPunishmentPermissions(server)).thenReturn(List.of());
-        when(permissionService.getAllPermissionIds(server)).thenReturn(List.of(
+        when(permissionService.getGrantablePermissionIds(server)).thenReturn(List.of(
             "ticket.view.all",
             "ticket.reply.all",
             "appeal.modify"
@@ -54,6 +55,7 @@ class RoleServiceTest {
         ArgumentCaptor<StaffRole> captor = ArgumentCaptor.forClass(StaffRole.class);
         verify(roleRepository, org.mockito.Mockito.times(4)).insertRoleIfAbsent(org.mockito.Mockito.eq(server), captor.capture());
         for (StaffRole role : captor.getAllValues()) {
+            assertFalse(role.getPermissions().stream().anyMatch(PermissionService::isSuperAdminOnly), role.getId());
             if (!"super-admin".equals(role.getId())) {
                 assertTrue(role.getPermissions().contains("appeal.modify"), role.getId());
             }
@@ -96,7 +98,7 @@ class RoleServiceTest {
             .permissions(new ArrayList<>(List.of("ticket.reply.all", "ticket.close.all")))
             .build();
         when(roleRepository.findById(server, "custom-1")).thenReturn(Optional.of(role));
-        when(permissionService.getAllPermissionIds(server)).thenReturn(List.of("ticket.reply.all", "ticket.close.all"));
+        when(permissionService.getGrantablePermissionIds(server)).thenReturn(List.of("ticket.reply.all", "ticket.close.all"));
         when(roleRepository.saveEntity(eq(server), any())).thenAnswer(inv -> inv.getArgument(1));
 
         boolean result = roleService.updateRolePermissions(
@@ -123,7 +125,7 @@ class RoleServiceTest {
             .permissions(new ArrayList<>(List.of("ticket.reply.all")))
             .build();
         when(roleRepository.findById(server, "custom-target")).thenReturn(Optional.of(targetRole));
-        when(permissionService.getAllPermissionIds(server)).thenReturn(List.of("ticket.reply.all", "punishment.modify"));
+        when(permissionService.getGrantablePermissionIds(server)).thenReturn(List.of("ticket.reply.all", "punishment.modify"));
         when(permissionService.getRoleById(server, "custom-performer")).thenReturn(Optional.of(performerRole));
         when(permissionService.hasPermission(server, "custom-performer", RoleAuthorization.MANAGE_ROLES_PERMISSION))
             .thenReturn(true);
@@ -146,7 +148,7 @@ class RoleServiceTest {
             roleRepository,
             staffRepository,
             permissionService,
-            new RoleAuthorization(permissionService, staffRepository),
+            new RoleAuthorization(permissionService, staffRepository, mock(StaffLookupCache.class)),
             mock(ServerTimestampService.class));
     }
 

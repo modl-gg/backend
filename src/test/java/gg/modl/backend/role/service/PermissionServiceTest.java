@@ -83,6 +83,22 @@ class PermissionServiceTest {
         assertEquals("Helper", names.get("helper"));
     }
 
+    @Test
+    void superAdminOnlyPermissionsAreExcludedFromTheGrantableCatalog() {
+        PermissionService service = newService(mock(StaffRoleMongoRepository.class));
+        Server server = server();
+
+        List<String> all = service.getAllPermissionIds(server);
+        List<String> grantable = service.getGrantablePermissionIds(server);
+
+        assertTrue(all.containsAll(PermissionService.superAdminOnlyPermissionIds()));
+        assertTrue(PermissionService.superAdminOnlyPermissionIds().stream().noneMatch(grantable::contains));
+        assertTrue(PermissionService.isSuperAdminOnly(PermissionService.ADMIN_SETTINGS_VIEW_BILLING));
+        assertTrue(PermissionService.isSuperAdminOnly(PermissionService.ADMIN_SETTINGS_MODIFY_BILLING));
+        assertTrue(PermissionService.isSuperAdminOnly(PermissionService.ADMIN_AUDIT_ROLLBACK));
+        assertFalse(PermissionService.isSuperAdminOnly(PermissionService.ADMIN_SETTINGS_VIEW));
+    }
+
     private PermissionService newService(StaffRoleMongoRepository roleRepository) {
         return new PermissionService(roleRepository, mock(PunishmentTypeService.class), mock(StaffMongoRepository.class));
     }

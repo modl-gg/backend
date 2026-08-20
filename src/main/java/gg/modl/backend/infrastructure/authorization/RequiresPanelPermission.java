@@ -15,4 +15,6 @@ public @interface RequiresPanelPermission {
     String modify() default "";
 
     PanelAccessRule rule() default PanelAccessRule.REQUIRE_PERMISSION;
+
+    String[] supersedesPermissions() default {};
 }

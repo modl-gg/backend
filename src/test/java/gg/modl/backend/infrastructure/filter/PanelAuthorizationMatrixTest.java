@@ -1,5 +1,7 @@
 package gg.modl.backend.infrastructure.filter;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -13,6 +15,8 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffLookupCache;
+import gg.modl.backend.role.service.RoleAuthorization;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import jakarta.servlet.FilterChain;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +37,7 @@ class PanelAuthorizationMatrixTest {
     private static final String DENY_BODY =
         "{\"success\":false,\"status\":403,\"error\":\"Insufficient permissions\",\"message\":\"Insufficient permissions\"}";
 
-    private enum Kind { PERMISSION, PERMIT, PLAYER_READ, APPEAL_REPLY }
+    private enum Kind { PERMISSION, PERMIT, PLAYER_READ, APPEAL_REPLY, SUPER_ADMIN }
 
     private record Row(String method, String path, Kind kind, String permission) {
         static Row permission(String method, String path, String permission) {
@@ -51,6 +55,10 @@ class PanelAuthorizationMatrixTest {
         static Row appealReply(String path) {
             return new Row("POST", path, Kind.APPEAL_REPLY, null);
         }
+
+        static Row superAdminOnly(String method, String path) {
+            return new Row(method, path, Kind.SUPER_ADMIN, null);
+        }
     }
 
     private static final List<Row> MATRIX = List.of(
@@ -61,11 +69,11 @@ class PanelAuthorizationMatrixTest {
         Row.permission("GET", "/v1/panel/dashboard/metrics", "admin.audit.view.dashboard"),
         Row.permission("GET", "/v1/panel/analytics/overview", "admin.audit.view.analytics"),
         Row.permission("GET", "/v1/panel/audit/staff-performance", "admin.audit.view.logs"),
-        Row.permission("POST", "/v1/panel/audit/punishments/p1/rollback", "admin.audit.rollback"),
-        Row.permission("POST", "/v1/panel/audit/staff/staff1/rollback-all", "admin.audit.rollback"),
-        Row.permission("POST", "/v1/panel/audit/staff/staff1/rollback-date-range", "admin.audit.rollback"),
-        Row.permission("POST", "/v1/panel/audit/punishments/bulk-pardon", "admin.audit.rollback"),
-        Row.permission("POST", "/v1/panel/audit/punishments/bulk-set-expiration", "admin.audit.rollback"),
+        Row.superAdminOnly("POST", "/v1/panel/audit/punishments/p1/rollback"),
+        Row.superAdminOnly("POST", "/v1/panel/audit/staff/staff1/rollback-all"),
+        Row.superAdminOnly("POST", "/v1/panel/audit/staff/staff1/rollback-date-range"),
+        Row.superAdminOnly("POST", "/v1/panel/audit/punishments/bulk-pardon"),
+        Row.superAdminOnly("POST", "/v1/panel/audit/punishments/bulk-set-expiration"),
         Row.permission("GET", "/v1/panel/logs", "admin.audit.view.logs"),
         Row.permission("POST", "/v1/panel/replays/r1/label", "punishment.modify"),
         Row.permission("POST", "/v1/panel/players/uuid1/notes", "punishment.modify"),
@@ -77,8 +85,8 @@ class PanelAuthorizationMatrixTest {
         Row.permission("POST", "/v1/panel/ticket-subscriptions/updates/u1/read", "ticket.reply.all"),
         Row.permission("GET", "/v1/panel/appeals/a1", "ticket.view.all"),
         Row.permission("PATCH", "/v1/panel/appeals/a1/status", "appeal.modify"),
-        Row.permission("GET", "/v1/panel/billing/status", "admin.settings.view.billing"),
-        Row.permission("POST", "/v1/panel/billing/checkout-session", "admin.settings.modify.billing"),
+        Row.superAdminOnly("GET", "/v1/panel/billing/status"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/checkout-session"),
         Row.permission("GET", "/v1/panel/homepage-cards", "admin.settings.view.content"),
         Row.permission("POST", "/v1/panel/homepage-cards", "admin.settings.modify.content"),
         Row.permission("GET", "/v1/panel/knowledgebase/categories", "admin.settings.view.content"),
@@ -101,8 +109,8 @@ class PanelAuthorizationMatrixTest {
         Row.playerRead("/v1/panel/settings/punishment-types"),
         Row.permission("GET", "/v1/panel/settings/domain", "admin.settings.view.domain"),
         Row.permission("POST", "/v1/panel/settings/domain", "admin.settings.modify.domain"),
-        Row.permission("POST", "/v1/panel/settings/api-keys/minecraft/generate", "admin.settings.modify"),
-        Row.permission("GET", "/v1/panel/settings/api-keys/minecraft/exists", "admin.settings.view"),
+        Row.superAdminOnly("POST", "/v1/panel/settings/api-keys/minecraft/generate"),
+        Row.superAdminOnly("GET", "/v1/panel/settings/api-keys/minecraft/exists"),
         Row.permit("GET", "/v1/panel/dashboard/alerts"),
         Row.permit("POST", "/v1/panel/players/uuid1/punishments"),
         Row.permit("POST", "/v1/panel/settings/ai-apply-punishment/t1"),
@@ -110,6 +118,17 @@ class PanelAuthorizationMatrixTest {
         Row.playerRead("/v1/panel/players/uuid1"),
         Row.playerRead("/v1/panel/players/uuid1/punishments/active"),
         Row.playerRead("/v1/panel/players/punishments/search"),
+        Row.superAdminOnly("GET", "/v1/panel/audit/database/players"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/portal-session"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/cancel"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/resubscribe"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/usage-settings"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/storage-limit"),
+        Row.superAdminOnly("POST", "/v1/panel/billing/overage-limits"),
+        Row.superAdminOnly("GET", "/v1/panel/billing/usage"),
+        Row.superAdminOnly("GET", "/v1/panel/settings/api-keys/minecraft/reveal"),
+        Row.superAdminOnly("DELETE", "/v1/panel/settings/api-keys/minecraft"),
+        Row.superAdminOnly("POST", "/v1/panel/storage/sync"),
         Row.appealReply("/v1/panel/appeals/a1/replies")
     );
 
@@ -118,7 +137,11 @@ class PanelAuthorizationMatrixTest {
         List<String> failures = new ArrayList<>();
 
         for (Row row : MATRIX) {
-            assertGranted(row, "with-permission", staffWith(row), failures);
+            if (row.kind() == Kind.SUPER_ADMIN) {
+                assertDenied(row, "holding-every-permission", staffWith(row), failures);
+            } else {
+                assertGranted(row, "with-permission", staffWith(row), failures);
+            }
             if (row.kind() != Kind.PERMIT) {
                 assertDenied(row, "without-permission", staffWithout(), failures);
             }
@@ -237,6 +260,8 @@ class PanelAuthorizationMatrixTest {
             case PERMIT -> { }
             case PLAYER_READ -> lenient().when(permissionService.hasPermission(mocks.server(), ROLE, "punishment.view")).thenReturn(true);
             case APPEAL_REPLY -> lenient().when(permissionService.hasPermission(mocks.server(), ROLE, "appeal.modify")).thenReturn(true);
+            case SUPER_ADMIN -> lenient()
+                .when(permissionService.hasPermission(eq(mocks.server()), eq(ROLE), anyString())).thenReturn(true);
         }
     }
 
@@ -270,7 +295,7 @@ class PanelAuthorizationMatrixTest {
     private static final PanelAccessPolicyResolver POLICY_RESOLVER = PanelHandlerMappingTestSupport.buildResolver();
 
     private PanelPermissionFilter newFilter(PermissionService permissionService, StaffLookupCache staffLookupCache) {
-        return new PanelPermissionFilter(permissionService, staffLookupCache, POLICY_RESOLVER);
+        return new PanelPermissionFilter(permissionService, roleAuthorization(permissionService, staffLookupCache), POLICY_RESOLVER);
     }
 
     private record Mocks(PermissionService permissionService, StaffLookupCache staffLookupCache,
@@ -278,5 +303,10 @@ class PanelAuthorizationMatrixTest {
     }
 
     private record Outcome(boolean granted, int status, String body, String contentType) {
+    }
+
+    private static RoleAuthorization roleAuthorization(PermissionService permissionService,
+                                                      StaffLookupCache staffLookupCache) {
+        return new RoleAuthorization(permissionService, mock(StaffMongoRepository.class), staffLookupCache);
     }
 }

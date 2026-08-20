@@ -21,6 +21,7 @@ import gg.modl.backend.email.EmailService;
 import gg.modl.backend.infrastructure.rest.RequestAttribute;
 import gg.modl.backend.infrastructure.util.CookieUtil;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.ServerService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
@@ -86,6 +87,7 @@ class PanelAuthControllerTest {
             staffProfileService,
             mock(StaffLookupCache.class),
             permissionService,
+            mock(RoleAuthorization.class),
             new CookieUtil(authConfiguration),
             emailChangeService
         );
@@ -203,6 +205,7 @@ class PanelAuthControllerTest {
             mock(StaffProfileService.class),
             mock(StaffLookupCache.class),
             mock(PermissionService.class),
+            mock(RoleAuthorization.class),
             new CookieUtil(authConfiguration),
             mock(EmailChangeService.class)
         );

@@ -20,6 +20,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,7 @@ class StaffServiceRoleSecurityTest {
 
     private final StaffMongoRepository staffRepository = mock(StaffMongoRepository.class);
     private final PermissionService permissionService = mock(PermissionService.class);
-    private final RoleAuthorization roleAuthorization = new RoleAuthorization(permissionService, staffRepository);
+    private final RoleAuthorization roleAuthorization = new RoleAuthorization(permissionService, staffRepository, mock(StaffLookupCache.class));
     private final StaffService service = new StaffService(
         mock(InvitationMongoRepository.class),
         staffRepository,

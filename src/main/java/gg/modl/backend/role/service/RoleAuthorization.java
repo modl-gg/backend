@@ -6,6 +6,7 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.Nullable;
@@ -26,6 +27,7 @@ public class RoleAuthorization {
 
     private final PermissionService permissionService;
     private final StaffMongoRepository staffRepository;
+    private final StaffLookupCache staffLookupCache;
 
     public record PerformerAuthority(String email, String roleId, boolean superAdmin, boolean identified) {
         public static PerformerAuthority unidentified() {
@@ -40,10 +42,16 @@ public class RoleAuthorization {
         if (isSuperAdminEmail(server, sessionEmail)) {
             return new PerformerAuthority(sessionEmail, null, true, true);
         }
-        String roleId = staffRepository.findByEmailIgnoreCase(server, sessionEmail)
+        return new PerformerAuthority(sessionEmail, panelRoleId(server, sessionEmail), false, true);
+    }
+
+    public String panelRoleId(Server server, @Nullable String email) {
+        if (email == null || email.isBlank()) {
+            return null;
+        }
+        return staffLookupCache.findByEmail(server, email)
             .map(staff -> effectiveRoleId(server, staff))
             .orElse(null);
-        return new PerformerAuthority(sessionEmail, roleId, false, true);
     }
 
     public PerformerAuthority minecraftPerformer(Server server, @Nullable String actingStaffId) {
@@ -54,6 +62,17 @@ public class RoleAuthorization {
             .map(staff -> new PerformerAuthority(staff.getEmail(), effectiveRoleId(server, staff),
                 isSuperAdminEmail(server, staff.getEmail()), true))
             .orElseGet(PerformerAuthority::unidentified);
+    }
+
+    public List<String> effectivePermissionIds(Server server, PerformerAuthority performer) {
+        if (performer.superAdmin()) {
+            return permissionService.getAllPermissionIds(server);
+        }
+        return permissionService.getRoleById(server, performer.roleId())
+            .map(role -> permissionService.getGrantablePermissionIds(server).stream()
+                .filter(permissionId -> roleGrants(role, permissionId))
+                .toList())
+            .orElseGet(List::of);
     }
 
     public void requireStaffManage(Server server, PerformerAuthority performer, String requiredManagePermission) {

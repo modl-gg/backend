@@ -2,7 +2,6 @@ package gg.modl.backend.player.service;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.player.dto.request.MinecraftCreatePunishmentRequest;
@@ -45,7 +44,7 @@ import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.infrastructure.validation.SafeUrls;
 import gg.modl.backend.log.service.LogService;
 import gg.modl.backend.role.service.PermissionService;
-import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.infrastructure.util.IdGenerator;
 import gg.modl.backend.settings.service.WebhookSettingsService;
 import org.springframework.stereotype.Service;
@@ -62,9 +61,9 @@ public class PunishmentLifecycleService {
     private final OffenderThresholdSettingsService thresholdSettingsService;
     private final PunishmentDurationCalculator durationCalculator;
     private final IssuerNameResolver issuerNameResolver;
-    private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
     private final PermissionService permissionService;
+    private final RoleAuthorization roleAuthorization;
     private final WebhookSettingsService webhookSettingsService;
     private final PunishmentRealtimePublisher realtimePublisher;
     private final LogService logService;
@@ -115,10 +114,11 @@ public class PunishmentLifecycleService {
     }
 
     public void validatePunishmentPermission(Server server, String email, int typeOrdinal) {
-        if (email == null) {
+        RoleAuthorization.PerformerAuthority performer = roleAuthorization.panelPerformer(server, email);
+        if (!performer.identified()) {
             throw new ForbiddenException("No authenticated user found for permission check");
         }
-        if (permissionService.isSuperAdmin(server, email)) {
+        if (performer.superAdmin()) {
             return;
         }
 
@@ -126,11 +126,7 @@ public class PunishmentLifecycleService {
             .orElseThrow(() -> new ValidationException("Invalid punishment type"));
 
         String applyPermission = PermissionService.punishmentApplyPermissionId(type.getName());
-        String roleId = staffRepository.findByEmailIgnoreCase(server, email)
-            .map(Staff::getRoleId)
-            .orElse(null);
-
-        if (!permissionService.hasPermission(server, roleId, applyPermission)) {
+        if (!permissionService.hasPermission(server, performer.roleId(), applyPermission)) {
             throw new ForbiddenException("You do not have permission to apply this punishment type");
         }
     }

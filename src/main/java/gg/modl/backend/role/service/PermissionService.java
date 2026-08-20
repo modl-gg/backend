@@ -6,6 +6,7 @@ import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.database.mongo.repository.StaffRoleMongoRepository;
 import gg.modl.backend.role.data.Permission;
 import gg.modl.backend.role.data.StaffRole;
+import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.PunishmentType;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -36,6 +37,8 @@ public class PermissionService {
         .build();
 
     public static final String ADMIN_SETTINGS_VIEW = "admin.settings.view";
+    public static final String ADMIN_SETTINGS_VIEW_BILLING = "admin.settings.view.billing";
+    public static final String ADMIN_SETTINGS_MODIFY_BILLING = "admin.settings.modify.billing";
     public static final String ADMIN_SETTINGS_VIEW_PUNISHMENTS = "admin.settings.view.punishments";
     public static final String ADMIN_SETTINGS_MODIFY_PUNISHMENTS = "admin.settings.modify.punishments";
     public static final String PUNISHMENT_APPLY_PREFIX = "punishment.apply.";
@@ -62,7 +65,7 @@ public class PermissionService {
         new Permission(ADMIN_SETTINGS_VIEW_PUNISHMENTS, "View Punishments Config", "View punishment type configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.content", "View Content", "View homepage cards, knowledgebase, media", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.domain", "View Domain", "View custom domain configuration", "admin", ADMIN_SETTINGS_VIEW),
-        new Permission("admin.settings.view.billing", "View Billing", "View billing, subscription, and payment info", "admin", ADMIN_SETTINGS_VIEW),
+        new Permission(ADMIN_SETTINGS_VIEW_BILLING, "View Billing", "View billing, subscription, and payment info", "admin", ADMIN_SETTINGS_VIEW, true),
         new Permission("admin.settings.view.migration", "View Migration", "View import/export data configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.view.storage", "View Storage", "View storage configuration", "admin", ADMIN_SETTINGS_VIEW),
         new Permission("admin.settings.modify", "Modify Settings", "Full control over system settings (includes all sub-permissions)", "admin"),
@@ -70,7 +73,7 @@ public class PermissionService {
             "admin.settings.modify"),
         new Permission("admin.settings.modify.content", "Modify Content", "Edit homepage cards, knowledgebase, media", "admin", "admin.settings.modify"),
         new Permission("admin.settings.modify.domain", "Modify Domain", "Change custom domain configuration", "admin", "admin.settings.modify"),
-        new Permission("admin.settings.modify.billing", "Modify Billing", "Update subscription and payment methods", "admin", "admin.settings.modify"),
+        new Permission(ADMIN_SETTINGS_MODIFY_BILLING, "Modify Billing", "Update subscription and payment methods", "admin", "admin.settings.modify", true),
         new Permission("admin.settings.modify.migration", "Modify Migration", "Import/export data between platforms", "admin", "admin.settings.modify"),
         new Permission("admin.settings.modify.storage", "Modify Storage", "Configure storage backends and limits", "admin", "admin.settings.modify"),
         new Permission(ADMIN_STAFF_MANAGE, "Manage Staff", "Full staff management (includes all sub-permissions)", "admin"),
@@ -80,7 +83,7 @@ public class PermissionService {
         new Permission("admin.audit.view.dashboard", "View Dashboard", "View dashboard statistics", "admin", ADMIN_AUDIT_VIEW),
         new Permission("admin.audit.view.analytics", "View Analytics", "View player and ticket analytics", "admin", ADMIN_AUDIT_VIEW),
         new Permission("admin.audit.view.logs", "View Logs", "View audit trail of staff actions", "admin", ADMIN_AUDIT_VIEW),
-        new Permission(ADMIN_AUDIT_ROLLBACK, "Rollback Audit Actions", "Roll back punishments and perform destructive bulk audit operations", "admin"),
+        new Permission(ADMIN_AUDIT_ROLLBACK, "Rollback Audit Actions", "Roll back punishments and perform destructive bulk audit operations", "admin", null, true),
         new Permission(PUNISHMENT_VIEW, "View Punishments", "View player profiles, punishments, and linked accounts", "punishment"),
         new Permission(PUNISHMENT_MODIFY, "Modify Punishments", "Full control over existing punishments (includes all sub-permissions)", "punishment"),
         new Permission("punishment.modify.pardon", "Pardon Punishments", "Pardon punishments and clear associated points", "punishment", PUNISHMENT_MODIFY),
@@ -110,6 +113,11 @@ public class PermissionService {
         new Permission("ticket.delete.all", "Delete Tickets", "Delete tickets from the system", "ticket")
     );
 
+    private static final Set<String> SUPER_ADMIN_ONLY_PERMISSION_IDS = BASE_PERMISSIONS.stream()
+        .filter(Permission::superAdminOnly)
+        .map(Permission::id)
+        .collect(Collectors.toUnmodifiableSet());
+
     private static final Map<String, String> PERMISSION_CATEGORIES = Map.of(
         "punishment", "Punishment Permissions",
         "ticket", "Ticket Permissions",
@@ -133,6 +141,32 @@ public class PermissionService {
         List<Permission> all = new ArrayList<>(BASE_PERMISSIONS);
         all.addAll(getPunishmentPermissions(server));
         return all;
+    }
+
+    public List<Permission> getGrantablePermissions(Server server) {
+        return getAllPermissions(server).stream()
+            .filter(permission -> !permission.superAdminOnly())
+            .toList();
+    }
+
+    public List<String> getGrantablePermissionIds(Server server) {
+        return getGrantablePermissions(server).stream().map(Permission::id).toList();
+    }
+
+    public static boolean isSuperAdminOnly(String permissionId) {
+        return SUPER_ADMIN_ONLY_PERMISSION_IDS.contains(permissionId);
+    }
+
+    public static Set<String> superAdminOnlyPermissionIds() {
+        return SUPER_ADMIN_ONLY_PERMISSION_IDS;
+    }
+
+    public static List<String> grantedPermissionIds(StaffRole role) {
+        List<String> permissions = role.getPermissions();
+        if (permissions == null) {
+            return List.of();
+        }
+        return permissions.stream().filter(permissionId -> !isSuperAdminOnly(permissionId)).toList();
     }
 
     public List<Permission> getPunishmentPermissions(Server server) {
@@ -204,6 +238,9 @@ public class PermissionService {
         if (role == null) {
             return false;
         }
+        if (isSuperAdminOnly(permission) && !RoleAuthorization.isSuperAdminRole(role)) {
+            return false;
+        }
         return RoleAuthorization.roleGrants(role, permission);
     }
 
@@ -266,6 +303,14 @@ public class PermissionService {
         Map<String, String> names = new LinkedHashMap<>();
         getRolesByIds(server, roleIds).forEach((id, role) -> names.put(id, role.getName()));
         return names;
+    }
+
+    public String assignedRoleName(Server server, Staff staff) {
+        return resolveRoleName(server, staff.getRoleId());
+    }
+
+    public String effectiveRoleName(Server server, Staff staff) {
+        return resolveRoleName(server, RoleAuthorization.effectiveRoleId(server, staff));
     }
 
     public String resolveRoleName(Server server, String roleId) {

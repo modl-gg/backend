@@ -10,13 +10,13 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.log.service.LogService;
 import gg.modl.backend.player.dto.request.CreatePunishmentRequest;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
@@ -49,9 +49,9 @@ class PunishmentLifecycleServiceReasonValidationTest {
             mock(OffenderThresholdSettingsService.class),
             mock(PunishmentDurationCalculator.class),
             mock(IssuerNameResolver.class),
-            mock(StaffMongoRepository.class),
             mock(PunishmentQueryService.class),
             mock(PermissionService.class),
+            mock(RoleAuthorization.class),
             mock(WebhookSettingsService.class),
             mock(PunishmentRealtimePublisher.class),
             mock(LogService.class)

@@ -56,7 +56,7 @@ public class PanelRoleController {
     @GetMapping("/permissions")
     public ResponseEntity<PermissionsResponse> getPermissions(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        List<Permission> permissions = permissionService.getAllPermissions(server);
+        List<Permission> permissions = permissionService.getGrantablePermissions(server);
         Map<String, String> categories = permissionService.getPermissionCategories();
         return ResponseEntity.ok(PanelRoleProtoMapper.toPermissionsResponse(permissions, categories));
     }

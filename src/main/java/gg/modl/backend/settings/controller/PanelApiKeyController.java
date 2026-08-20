@@ -1,10 +1,9 @@
 package gg.modl.backend.settings.controller;
 
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.service.ApiKeySettingsService;
 import gg.modl.proto.modl.v1.ApiKeyDeleteResponse;
@@ -23,11 +22,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
-@RequiresPanelPermission(view = "admin.settings.view", modify = "admin.settings.modify")
+@RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN)
 @RequiredArgsConstructor
 public class PanelApiKeyController {
     private final ApiKeySettingsService apiKeySettingsService;
-    private final PermissionService permissionService;
     private final SettingsInvalidationPublisher settingsInvalidationPublisher;
 
     @PostMapping("/api-keys/{type}/generate")
@@ -36,7 +34,6 @@ public class PanelApiKeyController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         String apiKey = apiKeySettingsService.generateApiKey(server, type);
         settingsInvalidationPublisher.invalidateSettings(server);
         return PanelSettingsProtoMapper.toApiKeyGenerateResponse("API key generated successfully", apiKey);
@@ -48,7 +45,6 @@ public class PanelApiKeyController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         String apiKey = apiKeySettingsService.revealApiKey(server, type);
 
         if (apiKey == null) {
@@ -64,7 +60,6 @@ public class PanelApiKeyController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         boolean deleted = apiKeySettingsService.deleteApiKey(server, type);
 
         if (!deleted) {
@@ -81,15 +76,7 @@ public class PanelApiKeyController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         boolean exists = apiKeySettingsService.hasApiKey(server, type);
         return PanelSettingsProtoMapper.toApiKeyExistsResponse(exists);
-    }
-
-    private void requireSuperAdmin(Server server, HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            throw new ForbiddenException("Only super admins can manage API keys");
-        }
     }
 }
