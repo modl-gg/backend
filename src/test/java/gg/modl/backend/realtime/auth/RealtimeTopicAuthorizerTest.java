@@ -11,6 +11,8 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.staff.data.Staff;
 import gg.modl.backend.staff.service.StaffLookupCache;
 import gg.modl.proto.modl.v1.Topic;
+import gg.modl.backend.role.service.RoleAuthorization;
+import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +22,7 @@ class RealtimeTopicAuthorizerTest {
     void panelTicketTopicsRequireReadPermission() {
         PermissionService permissionService = mock(PermissionService.class);
         StaffLookupCache staffLookupCache = mock(StaffLookupCache.class);
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffLookupCache);
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, roleAuthorization(permissionService, staffLookupCache));
         Server server = server();
 
         Staff staff = Staff.builder()
@@ -40,7 +42,7 @@ class RealtimeTopicAuthorizerTest {
     void panelPermissionScopesAreEnforcedPerTopic() {
         PermissionService permissionService = mock(PermissionService.class);
         StaffLookupCache staffLookupCache = mock(StaffLookupCache.class);
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, staffLookupCache);
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(permissionService, roleAuthorization(permissionService, staffLookupCache));
         Server server = server();
 
         Staff staff = Staff.builder()
@@ -57,7 +59,7 @@ class RealtimeTopicAuthorizerTest {
 
     @Test
     void panelCannotSubscribeToMinecraftTopics() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffLookupCache.class));
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(RoleAuthorization.class));
 
         assertFalse(authorizer.canSubscribe(
             RealtimePrincipal.panel(server(), "staff@example.com"),
@@ -67,7 +69,7 @@ class RealtimeTopicAuthorizerTest {
 
     @Test
     void minecraftCanSubscribeToAllMinecraftTopics() {
-        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(StaffLookupCache.class));
+        RealtimeTopicAuthorizer authorizer = new RealtimeTopicAuthorizer(mock(PermissionService.class), mock(RoleAuthorization.class));
         RealtimePrincipal principal = RealtimePrincipal.minecraft(server(), "instance-1");
 
         assertTrue(authorizer.canSubscribe(principal, Topic.TOPIC_MINECRAFT_PERMISSIONS));
@@ -86,5 +88,10 @@ class RealtimeTopicAuthorizerTest {
         Server server = new Server("server", "server", "server_db", "admin@example.com", true, ServerPlan.FREE);
         server.setId("server-id");
         return server;
+    }
+
+    private static RoleAuthorization roleAuthorization(PermissionService permissionService,
+                                                      StaffLookupCache staffLookupCache) {
+        return new RoleAuthorization(permissionService, mock(StaffMongoRepository.class), staffLookupCache);
     }
 }

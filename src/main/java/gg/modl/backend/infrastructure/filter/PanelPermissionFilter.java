@@ -10,15 +10,12 @@ import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
-import gg.modl.backend.staff.data.Staff;
-import gg.modl.backend.staff.service.StaffLookupCache;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
@@ -28,7 +25,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class PanelPermissionFilter extends OncePerRequestFilter {
     private final PermissionService permissionService;
-    private final StaffLookupCache staffLookupCache;
+    private final RoleAuthorization roleAuthorization;
     private final PanelAccessPolicyResolver policyResolver;
 
     @Override
@@ -53,7 +50,8 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (permissionService.isSuperAdmin(server, email)) {
+        boolean superAdmin = permissionService.isSuperAdmin(server, email);
+        if (superAdmin) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -70,9 +68,8 @@ public class PanelPermissionFilter extends OncePerRequestFilter {
             return;
         }
 
-        Optional<Staff> staffOpt = staffLookupCache.findByEmail(server, email);
-        String roleId = staffOpt.map(staff -> RoleAuthorization.effectiveRoleId(server, staff)).orElse(null);
-        PanelPrincipalPermissions permissions = new PanelPrincipalPermissions(server, roleId, permissionService);
+        String roleId = roleAuthorization.panelRoleId(server, email);
+        PanelPrincipalPermissions permissions = new PanelPrincipalPermissions(server, roleId, superAdmin, permissionService);
 
         if (policies.stream().anyMatch(policy -> policy.permitsWithRole(accessRequest, permissions))) {
             filterChain.doFilter(request, response);

@@ -20,6 +20,7 @@ import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.service.ServerTimestampService;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.staff.data.Staff;
+import gg.modl.backend.staff.service.StaffLookupCache;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -48,7 +49,7 @@ class RoleAuthorizationTest {
         punishmentTypeService = mock(PunishmentTypeService.class);
         serverTimestampService = mock(ServerTimestampService.class);
         permissionService = new PermissionService(roleRepository, punishmentTypeService, staffRepository);
-        roleAuthorization = new RoleAuthorization(permissionService, staffRepository);
+        roleAuthorization = new RoleAuthorization(permissionService, staffRepository, mock(StaffLookupCache.class));
         server = new Server("server", "domain", "db", ADMIN_EMAIL, true, ServerPlan.FREE);
         server.setId("server-id");
         when(punishmentTypeService.getPunishmentTypes(server)).thenReturn(List.of());
@@ -221,6 +222,52 @@ class RoleAuthorizationTest {
         ForbiddenException higherError = assertThrows(ForbiddenException.class,
             () -> roleService.updateRolePermissions(server, "higher", higher.getPermissions(), performer));
         assertEquals(HIGHER_AUTHORITY_MESSAGE, higherError.getMessage());
+    }
+
+    @Test
+    void effectivePermissionIdsExpandSettingsViewWithoutBilling() {
+        givenRole("admin", 1, PermissionService.ADMIN_SETTINGS_VIEW);
+
+        List<String> effective = roleAuthorization.effectivePermissionIds(server, staffPerformer("admin"));
+
+        assertTrue(effective.contains(PermissionService.ADMIN_SETTINGS_VIEW));
+        assertTrue(effective.contains("admin.settings.view.content"));
+        assertTrue(effective.contains("admin.settings.view.domain"));
+        assertTrue(effective.contains("admin.settings.view.storage"));
+        assertTrue(effective.contains("admin.settings.view.migration"));
+        assertTrue(effective.contains(PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS));
+        assertFalse(effective.contains(PermissionService.ADMIN_SETTINGS_VIEW_BILLING));
+    }
+
+    @Test
+    void effectivePermissionIdsForSuperAdminIncludeSuperAdminOnlyPermissions() {
+        List<String> effective = roleAuthorization.effectivePermissionIds(server,
+            new RoleAuthorization.PerformerAuthority(ADMIN_EMAIL, null, true, true));
+
+        assertTrue(effective.containsAll(PermissionService.superAdminOnlyPermissionIds()));
+    }
+
+    @Test
+    void effectivePermissionIdsDropStoredSuperAdminOnlyPermissionWithoutMigration() {
+        givenRole("admin", 1, PermissionService.ADMIN_SETTINGS_VIEW_BILLING,
+            PermissionService.ADMIN_AUDIT_ROLLBACK, "ticket.view.all");
+
+        List<String> effective = roleAuthorization.effectivePermissionIds(server, staffPerformer("admin"));
+
+        assertFalse(effective.contains(PermissionService.ADMIN_SETTINGS_VIEW_BILLING));
+        assertFalse(effective.contains(PermissionService.ADMIN_AUDIT_ROLLBACK));
+        assertTrue(effective.contains("ticket.view.all"));
+        assertFalse(permissionService.hasPermission(server, "admin", PermissionService.ADMIN_SETTINGS_VIEW_BILLING));
+        assertFalse(permissionService.hasPermission(server, "admin", PermissionService.ADMIN_AUDIT_ROLLBACK));
+    }
+
+    @Test
+    void effectivePermissionIdsAreEmptyWithoutARole() {
+        assertTrue(roleAuthorization.effectivePermissionIds(server, RoleAuthorization.PerformerAuthority.unidentified()).isEmpty());
+    }
+
+    private RoleAuthorization.PerformerAuthority staffPerformer(String roleId) {
+        return new RoleAuthorization.PerformerAuthority("staff@example.com", roleId, false, true);
     }
 
     private RoleService roleService() {

@@ -125,7 +125,7 @@ public class RoleService {
             return false;
         }
 
-        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        Set<String> validPermissions = new HashSet<>(permissionService.getGrantablePermissionIds(server));
         List<String> requested = permissions != null ? permissions : List.of();
         List<String> filtered = requested.stream()
             .filter(validPermissions::contains)
@@ -154,7 +154,7 @@ public class RoleService {
         String roleName = request.name() != null ? request.name().trim() : "";
         ensureRoleNameAvailable(server, roleName, null);
 
-        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        Set<String> validPermissions = new HashSet<>(permissionService.getGrantablePermissionIds(server));
         List<String> filteredPermissions = request.permissions()
             .stream()
             .filter(validPermissions::contains)
@@ -237,7 +237,7 @@ public class RoleService {
         String roleName = request.name() != null ? request.name().trim() : "";
         ensureRoleNameAvailable(server, roleName, id);
 
-        Set<String> validPermissions = new HashSet<>(permissionService.getAllPermissionIds(server));
+        Set<String> validPermissions = new HashSet<>(permissionService.getGrantablePermissionIds(server));
         List<String> filteredPermissions = request.permissions()
             .stream()
             .filter(validPermissions::contains)
@@ -328,11 +328,10 @@ public class RoleService {
             .filter(p -> !p.contains("blacklist"))
             .toList();
 
-        List<String> superAdminPerms = new ArrayList<>(permissionService.getAllPermissionIds(server));
+        List<String> superAdminPerms = new ArrayList<>(permissionService.getGrantablePermissionIds(server));
 
         List<String> adminPerms = new ArrayList<>(List.of(
             PermissionService.ADMIN_SETTINGS_VIEW, PermissionService.ADMIN_STAFF_MANAGE, PermissionService.ADMIN_AUDIT_VIEW,
-            PermissionService.ADMIN_AUDIT_ROLLBACK,
             PermissionService.PUNISHMENT_VIEW, PermissionService.PUNISHMENT_MODIFY,
             PermissionService.TICKET_VIEW_ALL, PermissionService.TICKET_REPLY_ALL, PermissionService.APPEAL_MODIFY, PermissionService.TICKET_CLOSE_ALL,
             PermissionService.STAFF_CHAT_TOGGLE, PermissionService.STAFF_CHAT_CLEAR, PermissionService.STAFF_CHAT_SLOW,

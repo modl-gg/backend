@@ -5,14 +5,12 @@ import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import gg.modl.backend.infrastructure.exception.ConflictException;
 import gg.modl.backend.infrastructure.exception.ExternalServiceException;
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
 import gg.modl.backend.billing.dto.response.BillingStatusResponse;
 import gg.modl.backend.billing.dto.response.CancelResponse;
 import gg.modl.backend.billing.dto.response.CheckoutSessionResponse;
 import gg.modl.backend.billing.dto.response.PortalSessionResponse;
 import gg.modl.backend.billing.dto.response.ResubscribeResponse;
-import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.server.data.SubscriptionStatus;
@@ -28,17 +26,10 @@ import org.springframework.stereotype.Service;
 public class BillingService {
     private final StripeService stripeService;
     private final ServerMutationHelper serverMutationHelper;
-    private final PermissionService permissionService;
 
     public void requireStripeConfigured() {
         if (!stripeService.isConfigured()) {
             throw new ExternalServiceException("Billing service unavailable. Stripe not configured.");
-        }
-    }
-
-    public void requireSuperAdmin(Server server, String email) {
-        if (email == null || !permissionService.isSuperAdmin(server, email)) {
-            throw new ForbiddenException("Only the super admin can manage billing");
         }
     }
 

@@ -5,6 +5,7 @@ import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.validation.BeanValidationRunner;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
+import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.settings.data.AIModerationSettings;
 import gg.modl.backend.settings.data.GeneralSettings;
@@ -57,7 +58,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping(RESTMappingV1.PANEL_SETTINGS)
-@RequiresPanelPermission(view = "admin.settings.view", modify = "admin.settings.modify")
+@RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW, modify = "admin.settings.modify")
 @RequiredArgsConstructor
 public class PanelSettingsController {
     private final GeneralSettingsService generalSettingsService;
@@ -116,7 +117,7 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/status-thresholds")
-    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+    @RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS, modify = PermissionService.ADMIN_SETTINGS_MODIFY_PUNISHMENTS)
     public OffenderThresholdSettingsEnvelope getStatusThresholds(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         return PanelSettingsProtoMapper.toOffenderThresholdSettingsEnvelope(
@@ -124,7 +125,7 @@ public class PanelSettingsController {
     }
 
     @PatchMapping("/status-thresholds")
-    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+    @RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS, modify = PermissionService.ADMIN_SETTINGS_MODIFY_PUNISHMENTS)
     public OffenderThresholdSettingsEnvelope patchStatusThresholds(
         @RequestBody PatchStatusThresholdSettingsRequest body,
         HttpServletRequest request
@@ -163,7 +164,7 @@ public class PanelSettingsController {
     }
 
     @GetMapping("/ai-moderation")
-    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+    @RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS, modify = PermissionService.ADMIN_SETTINGS_MODIFY_PUNISHMENTS)
     public gg.modl.proto.modl.v1.AIModerationSettings getAIModerationSettings(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
         AIModerationSettings settings = aiModerationSettingsService.getAIModerationSettings(server);
@@ -171,7 +172,7 @@ public class PanelSettingsController {
     }
 
     @PatchMapping("/ai-moderation")
-    @RequiresPanelPermission(view = "admin.settings.view.punishments", modify = "admin.settings.modify.punishments")
+    @RequiresPanelPermission(view = PermissionService.ADMIN_SETTINGS_VIEW_PUNISHMENTS, modify = PermissionService.ADMIN_SETTINGS_MODIFY_PUNISHMENTS)
     public gg.modl.proto.modl.v1.AIModerationSettings updateAIModerationSettings(
         @RequestBody UpdateAIModerationSettingsRequest requestBody,
         HttpServletRequest request

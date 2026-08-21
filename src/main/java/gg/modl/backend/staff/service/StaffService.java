@@ -95,7 +95,7 @@ public class StaffService {
     }
 
     private StaffResponse toStaffResponse(Server server, Staff staff, String status) {
-        return StaffResponseFactory.of(staff, status, permissionService.resolveRoleName(server, staff.getRoleId()));
+        return StaffResponseFactory.of(staff, status, permissionService.assignedRoleName(server, staff));
     }
 
     private static String fallbackRoleName(Map<String, String> roleNamesById, String roleId) {

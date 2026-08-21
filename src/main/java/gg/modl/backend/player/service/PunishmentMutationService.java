@@ -3,7 +3,6 @@ package gg.modl.backend.player.service;
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
 import gg.modl.backend.infrastructure.exception.ResourceNotFoundException;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.player.data.Player;
 import gg.modl.backend.player.data.punishment.Punishment;
 import gg.modl.backend.player.data.punishment.PunishmentModification;
@@ -39,7 +38,6 @@ public class PunishmentMutationService {
     private final TicketService ticketService;
     private final AppealWorkflowTransitionService appealWorkflowTransitionService;
     private final IssuerNameResolver issuerNameResolver;
-    private final StaffMongoRepository staffRepository;
     private final PunishmentQueryService punishmentQueryService;
     private final PunishmentLifecycleService punishmentLifecycleService;
     private final PunishmentRealtimePublisher realtimePublisher;

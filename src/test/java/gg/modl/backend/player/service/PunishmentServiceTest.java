@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import gg.modl.backend.database.mongo.repository.PlayerMongoRepository;
 import gg.modl.backend.database.mongo.repository.PunishmentMongoRepository;
-import gg.modl.backend.database.mongo.repository.StaffMongoRepository;
 import gg.modl.backend.ticket.service.AppealWorkflowTransitionService;
 import gg.modl.backend.ticket.service.TicketService;
 import gg.modl.backend.player.data.Player;
@@ -27,6 +26,7 @@ import gg.modl.backend.server.data.Server;
 import gg.modl.backend.server.data.ServerPlan;
 import gg.modl.backend.settings.service.OffenderThresholdSettingsService;
 import gg.modl.backend.role.service.PermissionService;
+import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.settings.service.PunishmentTypeService;
 import gg.modl.backend.settings.service.WebhookSettingsService;
 import gg.modl.backend.log.service.LogService;
@@ -74,13 +74,13 @@ class PunishmentServiceTest {
     private IssuerNameResolver issuerNameResolver;
 
     @Mock
-    private StaffMongoRepository staffRepository;
-
-    @Mock
     private PunishmentQueryService punishmentQueryService;
 
     @Mock
     private PermissionService permissionService;
+
+    @Mock
+    private RoleAuthorization roleAuthorization;
 
     @Mock
     private WebhookSettingsService webhookSettingsService;
@@ -106,9 +106,9 @@ class PunishmentServiceTest {
             thresholdSettingsService,
             durationCalculator,
             issuerNameResolver,
-            staffRepository,
             punishmentQueryService,
             permissionService,
+            roleAuthorization,
             webhookSettingsService,
             realtimePublisher,
             logService
@@ -119,7 +119,6 @@ class PunishmentServiceTest {
             ticketService,
             appealWorkflowTransitionService,
             issuerNameResolver,
-            staffRepository,
             punishmentQueryService,
             punishmentLifecycleService,
             realtimePublisher

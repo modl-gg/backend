@@ -1,13 +1,12 @@
 package gg.modl.backend.storage.controller;
 
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
 import gg.modl.backend.infrastructure.validation.RequestValidationLimits;
 import gg.modl.backend.replay.service.ReplayDeletionService;
-import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.server.data.Server;
 import gg.modl.backend.storage.dto.response.StorageFileResponse;
 import gg.modl.backend.storage.service.MediaValidationService;
@@ -42,7 +41,6 @@ public class PanelStorageController {
     private final StorageQuotaService quotaService;
     private final StorageMetadataService storageMetadataService;
     private final StorageSyncService storageSyncService;
-    private final PermissionService permissionService;
     private final MediaValidationService validationService;
     private final ReplayDeletionService replayDeletionService;
 
@@ -84,11 +82,9 @@ public class PanelStorageController {
     }
 
     @PostMapping("/sync")
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN)
     public ResponseEntity<StorageSyncResponse> syncFiles(HttpServletRequest request) {
         Server server = RequestUtil.getRequestServer(request);
-        if (!permissionService.isSuperAdmin(server, RequestUtil.getSessionEmail(request))) {
-            throw new ForbiddenException("Only super admins can trigger a storage sync");
-        }
         int synced = storageSyncService.syncServerFiles(server, true);
         return ResponseEntity.ok(StorageProtoMapper.toStorageSyncResponse(synced));
     }

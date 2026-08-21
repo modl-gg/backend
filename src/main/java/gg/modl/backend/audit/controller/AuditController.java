@@ -3,7 +3,7 @@ package gg.modl.backend.audit.controller;
 import gg.modl.backend.audit.service.AdminDatabaseBrowserService;
 import gg.modl.backend.audit.service.AuditService;
 import gg.modl.backend.audit.service.StaffPerformanceService;
-import gg.modl.backend.infrastructure.exception.ForbiddenException;
+import gg.modl.backend.infrastructure.authorization.PanelAccessRule;
 import gg.modl.backend.infrastructure.authorization.RequiresPanelPermission;
 import gg.modl.backend.infrastructure.exception.ValidationException;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
@@ -52,7 +52,6 @@ public class AuditController {
     private final AuditService auditService;
     private final AdminDatabaseBrowserService adminDatabaseBrowserService;
     private final StaffPerformanceService staffPerformanceService;
-    private final PermissionService permissionService;
     private final RealtimeEventPublisher realtimeEventPublisher;
 
     @GetMapping("/staff-performance")
@@ -98,6 +97,7 @@ public class AuditController {
     }
 
     @GetMapping("/database/{table}")
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN)
     public ResponseEntity<AuditDatabaseTableResponse> getDatabaseTable(
         @PathVariable String table,
         @RequestParam(defaultValue = "100") @Min(RequestValidationLimits.PAGINATION_LIMIT_MIN) @Max(RequestValidationLimits.PAGINATION_LIMIT_MAX) int limit,
@@ -105,7 +105,6 @@ public class AuditController {
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
 
         if (!AdminDatabaseBrowserService.ALLOWED_TABLES.contains(table)) {
             throw new ValidationException("Invalid table name");
@@ -116,14 +115,13 @@ public class AuditController {
     }
 
     @PostMapping("/punishments/{id}/rollback")
-    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN, supersedesPermissions = PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditRollbackResponse> rollbackPunishment(
         @PathVariable String id,
         @RequestBody(required = false) RollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         String reason = rollbackRequest != null && rollbackRequest.hasReason()
@@ -139,14 +137,13 @@ public class AuditController {
     }
 
     @PostMapping("/staff/{username}/rollback-all")
-    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN, supersedesPermissions = PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> rollbackAllByStaff(
         @PathVariable String username,
         @RequestBody(required = false) RollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         String reason = rollbackRequest != null && rollbackRequest.hasReason()
@@ -159,14 +156,13 @@ public class AuditController {
     }
 
     @PostMapping("/staff/{username}/rollback-date-range")
-    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN, supersedesPermissions = PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> rollbackByDateRange(
         @PathVariable String username,
         @RequestBody DateRangeRollbackRequest rollbackRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
         String performerUsername = RequestUtil.getCurrentUsername(request);
 
         Date startDate = AuditProtoMapper.toDate(rollbackRequest.getStartDate());
@@ -191,14 +187,12 @@ public class AuditController {
     }
 
     @PostMapping("/punishments/bulk-pardon")
-    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN, supersedesPermissions = PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> bulkPardon(
         @RequestBody BulkPunishmentActionRequest actionRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
-
         String performerUsername = RequestUtil.getCurrentUsername(request);
         int count = auditService.bulkPardonByType(
             server, actionRequest.getTypeOrdinalsList(), actionRequest.getReason(), performerUsername);
@@ -209,13 +203,12 @@ public class AuditController {
     }
 
     @PostMapping("/punishments/bulk-set-expiration")
-    @RequiresPanelPermission(PermissionService.ADMIN_AUDIT_ROLLBACK)
+    @RequiresPanelPermission(rule = PanelAccessRule.SUPER_ADMIN, supersedesPermissions = PermissionService.ADMIN_AUDIT_ROLLBACK)
     public ResponseEntity<AuditBulkOperationResponse> bulkSetExpiration(
         @RequestBody BulkPunishmentActionRequest actionRequest,
         HttpServletRequest request
     ) {
         Server server = RequestUtil.getRequestServer(request);
-        requireSuperAdmin(server, request);
 
         if (!actionRequest.hasNewDurationMs()) {
             throw new ValidationException("newDurationMs is required for set-expiration");
@@ -229,13 +222,6 @@ public class AuditController {
         invalidateAudit(server);
         return ResponseEntity.ok(AuditProtoMapper.toBulkOperationResponse(
             true, count, "Successfully updated expiration for " + count + " punishments"));
-    }
-
-    private void requireSuperAdmin(Server server, HttpServletRequest request) {
-        String email = RequestUtil.getSessionEmail(request);
-        if (!permissionService.isSuperAdmin(server, email)) {
-            throw new ForbiddenException("Only super admins can perform this action");
-        }
     }
 
     private void invalidateAudit(Server server) {

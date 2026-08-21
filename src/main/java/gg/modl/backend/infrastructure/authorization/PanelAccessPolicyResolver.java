@@ -45,7 +45,17 @@ public class PanelAccessPolicyResolver {
     }
 
     public Optional<PanelAccessPolicy> resolve(HandlerMethod handlerMethod) {
-        return Optional.ofNullable(findAnnotation(handlerMethod)).map(PanelAccessPolicyResolver::toPolicy);
+        return resolveAnnotation(handlerMethod).map(PanelAccessPolicyResolver::toPolicy);
+    }
+
+    public Optional<RequiresPanelPermission> resolveAnnotation(HandlerMethod handlerMethod) {
+        RequiresPanelPermission methodAnnotation = handlerMethod.getMethodAnnotation(RequiresPanelPermission.class);
+        return methodAnnotation != null ? Optional.of(methodAnnotation) : resolveTypeAnnotation(handlerMethod);
+    }
+
+    public Optional<RequiresPanelPermission> resolveTypeAnnotation(HandlerMethod handlerMethod) {
+        return Optional.ofNullable(
+            AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getBeanType(), RequiresPanelPermission.class));
     }
 
     private List<PanelAccessPolicy> siblingPolicies(RequestMappingHandlerMapping handlerMapping, HttpServletRequest request) {
@@ -71,20 +81,13 @@ public class PanelAccessPolicyResolver {
         return true;
     }
 
-    private static RequiresPanelPermission findAnnotation(HandlerMethod handlerMethod) {
-        RequiresPanelPermission methodAnnotation = handlerMethod.getMethodAnnotation(RequiresPanelPermission.class);
-        if (methodAnnotation != null) {
-            return methodAnnotation;
-        }
-        return AnnotatedElementUtils.findMergedAnnotation(handlerMethod.getBeanType(), RequiresPanelPermission.class);
-    }
-
     private static PanelAccessPolicy toPolicy(RequiresPanelPermission annotation) {
         return switch (annotation.rule()) {
             case PERMIT_ALL -> PermitAllPolicy.INSTANCE;
             case PLAYER_ACCESS -> PlayerAccessPolicy.INSTANCE;
             case PUNISHMENT_TYPE_ACCESS -> PunishmentTypeAccessPolicy.INSTANCE;
             case APPEAL_REPLY -> AppealReplyPolicy.INSTANCE;
+            case SUPER_ADMIN -> SuperAdminOnlyPolicy.INSTANCE;
             case REQUIRE_PERMISSION -> new ReadWritePermissionPolicy(viewPermission(annotation), modifyPermission(annotation));
         };
     }

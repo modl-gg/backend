@@ -8,7 +8,6 @@ import gg.modl.backend.auth.session.AuthSessionData;
 import gg.modl.backend.auth.session.SessionService;
 import gg.modl.backend.infrastructure.rest.RESTMappingV1;
 import gg.modl.backend.infrastructure.rest.RequestUtil;
-import gg.modl.backend.role.data.StaffRole;
 import gg.modl.backend.role.service.PermissionService;
 import gg.modl.backend.role.service.RoleAuthorization;
 import gg.modl.backend.server.data.Server;
@@ -57,6 +56,7 @@ public class PanelAuthController {
     private final StaffProfileService staffProfileService;
     private final StaffLookupCache staffLookupCache;
     private final PermissionService permissionService;
+    private final RoleAuthorization roleAuthorization;
     private final CookieUtil cookieUtil;
     private final EmailChangeService emailChangeService;
 
@@ -158,7 +158,7 @@ public class PanelAuthController {
             return ResponseEntity.status(404).body(PanelAuthProtoMapper.toAuthResponse(false, "Staff member not found"));
         }
         Staff staff = result.get();
-        String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.resolveRoleName(server, staff.getRoleId());
+        String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.effectiveRoleName(server, staff);
         String minecraftUsername = minecraftUsernameOrPanel(staff);
         return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
             staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
@@ -214,7 +214,7 @@ public class PanelAuthController {
 
         if (staffOpt.isPresent()) {
             Staff staff = staffOpt.get();
-            String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.resolveRoleName(server, staff.getRoleId());
+            String role = isSuperAdmin ? RoleAuthorization.SUPER_ADMIN_ROLE_NAME : permissionService.effectiveRoleName(server, staff);
             String minecraftUsername = minecraftUsernameOrPanel(staff);
             return ResponseEntity.ok(PanelAuthProtoMapper.toProfileResponse(
                 staff.getId(), staff.getEmail(), staff.getUsername(), role, minecraftUsername, staff.getLanguage(), staff.getDateFormat()));
@@ -321,20 +321,8 @@ public class PanelAuthController {
         }
 
         Server server = RequestUtil.getRequestServer(request);
+        List<String> permissions = roleAuthorization.effectivePermissionIds(server, roleAuthorization.panelPerformer(server, email));
 
-        if (permissionService.isSuperAdmin(server, email)) {
-            return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(permissionService.getAllPermissionIds(server)));
-        }
-
-        Optional<Staff> staffOpt = staffLookupCache.findByEmail(server, email);
-        if (staffOpt.isEmpty()) {
-            return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of()));
-        }
-
-        String roleId = RoleAuthorization.effectiveRoleId(server, staffOpt.get());
-        Optional<StaffRole> roleOpt = permissionService.getRoleById(server, roleId);
-
-        return roleOpt.map(staffRole -> ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(staffRole.getPermissions())))
-            .orElseGet(() -> ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(List.of())));
+        return ResponseEntity.ok(PanelAuthProtoMapper.toPermissionsResponse(permissions));
     }
 }
